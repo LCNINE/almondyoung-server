@@ -105,20 +105,33 @@ describe('F1 출고 검수 — 송장 스캔 즉시 시작, 상품 스캔 = +1, 
     await waitFor(() => expect(server.scans.at(-1)).toMatchObject({ shipmentId: 's-2', barcode: '8801003' }));
   });
 
-  it('앞 스캔을 확인 못 한 채로는 다른 송장·Esc 를 받지 않는다 — 박스를 그대로 든다', async () => {
+  it('앞 스캔의 결과를 모르면 그 박스는 확인할 일로 넘기고 내려놓는다 — 다른 송장을 찍고, 다시 열면 같은 키로 맞춘다', async () => {
     const { server, runtime } = await setupInspection();
     await openBox('421033881907');
     server.loseResponses(true);
     scan('8801002');
     await waitFor(async () => expect((await runtime.store.pending('scope'))[0]?.status).toBe('uncertain'));
-    scan('421033881915');
-    expect(await screen.findByRole('alert')).toHaveTextContent('앞 스캔이 처리됐는지 확인하지 못했어요');
+    expect(await screen.findByText('상품 바코드 8801002 ×1')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '확인할 일 1' })).toBeInTheDocument();
+    server.loseResponses(false);
+    // 내려놓기가 된다
     press('Escape');
-    await act(async () => {
-      await sleep(30);
-    });
-    expect(heading('4210-3388-1907')).toBeInTheDocument();
-    expect(flash()).toBe('error');
+    expect(await screen.findByText('송장 바코드')).toBeInTheDocument();
+    expect(screen.getByText(/4210-3388-1907 처리 여부 확인 중/)).toBeInTheDocument();
+    // 다른 박스는 그대로 찍힌다
+    scan('421033881915');
+    expect(await screen.findByRole('heading', { name: '4210-3388-1915' })).toBeInTheDocument();
+    await waitFor(() => expect(document.querySelector('[data-intake="open"]')).not.toBeNull());
+    scan('8801003');
+    await waitFor(() => expect(server.scans.at(-1)).toMatchObject({ shipmentId: 's-2', barcode: '8801003' }));
+    expect(await screen.findByText('출고 완료')).toBeInTheDocument();
+    // 다시 열면 저장된 스캔을 같은 키로 보낸다 — 서버는 한 번만 반영한다
+    scan('421033881907');
+    expect(await screen.findByRole('heading', { name: '4210-3388-1907' })).toBeInTheDocument();
+    await waitFor(() => expect(progress()).toHaveTextContent('1 / 4'));
+    expect(server.scans.filter((s) => s.shipmentId === 's-1')).toHaveLength(1);
+    await waitFor(async () => expect(await runtime.store.pending('scope')).toHaveLength(0));
+    expect(screen.queryByRole('button', { name: /확인할 일/ })).toBeNull();
   });
 
   it('송장과 길이가 같은 숫자 상품 바코드는 조회해 보고, 없으면 상품으로 찍는다', async () => {

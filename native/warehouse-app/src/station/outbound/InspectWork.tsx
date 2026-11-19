@@ -23,7 +23,7 @@ import type { StationAction } from '../actions';
 import { modalOpen } from '../useStationKeys';
 import { INSPECTION_ACTIONS } from './inspectionActions';
 import type { Alert, BoxWorkHandle } from './model';
-import { BigPanel, BoxCard, LineTable, QueueTrouble, RecentList, ScanWaiting, WorkGrid, type BigPanelContent } from './panels';
+import { BigPanel, BoxCard, LineTable, QueueTrouble, RecentList, ScanChecking, ScanWaiting, WorkGrid, type BigPanelContent } from './panels';
 import type { RecentEntry } from './recent';
 import { ShortPickDialog } from './ShortPickDialog';
 import { INTAKE_BLOCKED_MESSAGE, STATION_WITHDRAW_REASON, useInspectionBox } from './useInspectionBox';
@@ -339,7 +339,14 @@ export function InspectWork({
           <>
             <BoxCard trackingNo={box.trackingNo} recipient={box.recipientMasked} deliveryNote={box.deliveryNote} ownerName={box.ownerName} />
             <BigPanel content={big} />
-            {work.queueError ? (
+            {work.checking.length > 0 ? (
+              <ScanChecking
+                scans={work.checking.map((scan) => ({
+                  name: scan.barcode ? `상품 바코드 ${scan.barcode}` : '강제출고',
+                  quantity: scan.quantity,
+                }))}
+              />
+            ) : work.queueError ? (
               <QueueTrouble storage={!!work.storageError} onRetry={() => void work.retryHead().catch(() => {})} />
             ) : work.waitingForNetwork > 0 ? (
               <ScanWaiting count={work.waitingForNetwork} />

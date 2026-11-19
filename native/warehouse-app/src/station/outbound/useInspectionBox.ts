@@ -4,7 +4,10 @@ import { errorMessage } from '../../core/data/errorMessage';
 import { ApiError } from '../../core/data/httpClient';
 import { useWorkScanQueue } from '../../core/hardware/scan/useWorkScanQueue';
 import { useWorkAreaBlocked } from '../../core/operations/WorkBoundary';
-import { progressOf, scannedLineOf } from '../../domains/outbound/inspection';
+import { rememberBoxLabel } from '../../core/operations/boxChecks';
+import { useWorkRuntime } from '../../core/operations/OperationContext';
+import { useBoxChecks } from '../../core/operations/workArea';
+import { formatTrackingNo, progressOf, scannedLineOf } from '../../domains/outbound/inspection';
 import { useForceSimpleOutbound, useSimpleOutboundScan } from '../../domains/outbound/mutations';
 import type { ShipmentByWaybill, SimpleOutboundLineProgress, SimpleOutboundState } from '../../domains/outbound/types';
 
@@ -23,6 +26,9 @@ export class ScanWaitingError extends Error {
     super(WAITING_SCAN_MESSAGE);
   }
 }
+
+/** 내려놓기·전환 전 정리 결과 — `checking` 이면 결과 모름이 남아 확인할 일로 넘어갔다 */
+export type SettleOutcome = 'settled' | 'checking';
 
 export interface InspectionBoxEvents {
   /** 서버가 반영한 스캔 — 오른 줄(못 찾으면 null)과 수량 */
@@ -71,18 +77,24 @@ export function useInspectionBox(box: ShipmentByWaybill, events: InspectionBoxEv
     }
     try {
       const state = await scan.mutateAsync({ shipmentId: box.shipmentId, ...input, idempotencyKey: id });
+      // 내려놓은 박스의 늦은 결과 — 다른 박스의 화면을 바꾸지 않는다
+      if (queue.detached()) return;
       const line = scannedLineOf(progressRef.current, state.lines);
       if (line) setLastScan({ barcode: input.barcode, shipmentLineId: line });
       if (!apply(state)) eventsRef.current.onAccepted(line, input.quantity);
     } catch (error) {
       const rejected = error instanceof ApiError && error.outcome === 'rejected';
+      if (queue.detached()) {
+        if (rejected) return;
+        throw error;
+      }
 
       if (rejected && error.code === 'SHIPMENT_WITHDRAWN') eventsRef.current.onWithdrawn(input.barcode);
       else eventsRef.current.onRejected(rejected ? errorMessage(error, 'outbound') : UNCERTAIN_SCAN_MESSAGE, input.barcode);
       // 확정된 거절만 큐에서 뺀다 — 결과를 모르는 스캔은 머리에 남겨 같은 키로 다시 맞춘다
       if (!rejected) throw error;
     }
-  }, `outbound:${box.shipmentId}`);
+  }, `outbound:${box.shipmentId}`, () => leavable());
 
   const areaBlocked = useWorkAreaBlocked('outbound', {
     path: `/shipments/${box.shipmentId}/simple-outbound-scans`,
@@ -90,18 +102,36 @@ export function useInspectionBox(box: ShipmentByWaybill, events: InspectionBoxEv
   });
   const intakeBlocked = !queue.ready || !!queue.error() || areaBlocked || force.isPending;
 
+  // 이 박스에 남은 결과 모름 — 박스만 막고, 내려놓기·전환은 허용한다(스캔은 저장돼 있고 같은 키로 다시 맞춘다)
+  const checks = useBoxChecks(box.shipmentId);
+  const checking = checks.length > 0;
+  const checkingRef = useRef(checking);
+  checkingRef.current = checking;
+  const storageFailed = !!queue.storageError();
+  // 출고된 박스는 떠나도 뒤에 줄 선 스캔을 «반영 안 됨» 으로 알려야 한다 — 맡기지 않는다
+  const leavable = (): boolean => checkingRef.current && !shipped.current && !queue.storageError() && !queue.unsaved();
+  const runtime = useWorkRuntime();
+  const checkScope = checks[0]?.scope;
+  useEffect(() => {
+    if (!runtime || !checkScope) return;
+    void rememberBoxLabel(runtime.store, checkScope, box.shipmentId, { trackingNo: formatTrackingNo(box.trackingNo) }).catch(() => {});
+  }, [runtime, checkScope, box.shipmentId, box.trackingNo]);
+
   // settle 을 기다리는 쪽(내려놓기·전환). 결과를 모르는 단순출고 스캔은 실행기의 약속이 풀리지 않은 채 머물러
   // 큐의 drain 이 끝나지 않는다 — 그래서 «비었다» 와 «확인 못 한 것이 생겼다» 를 렌더마다 직접 본다.
-  const waiters = useRef<Array<{ resolve: () => void; reject: (error: Error) => void }>>([]);
+  const waiters = useRef<Array<{ resolve: (outcome: SettleOutcome) => void; reject: (error: Error) => void }>>([]);
   const unsettled = !queue.ready || !!queue.error() || areaBlocked;
   const waitingForNetwork = scan.isPaused ? queue.size() : 0;
   // 렌더를 기다리지 않는 판정 — 끊긴 직후 찍은 스캔은 아직 멈춤으로 그려지기 전일 수 있다
   const waitingNow = () => queue.size() > 0 && (scan.isPaused || !onlineManager.isOnline());
   useEffect(() => {
     if (waiters.current.length === 0) return;
-    if (unsettled) waiters.current.splice(0).forEach((w) => w.reject(new Error(UNCERTAIN_SCAN_MESSAGE)));
+    if (checking && !storageFailed) {
+      // 뒤에 찍은 스캔이 아직 저장 중이면 저장될 때까지 기다린다 — 저장 전에 떠나면 그 스캔을 잃는다
+      if (!queue.unsaved()) waiters.current.splice(0).forEach((w) => w.resolve('checking'));
+    } else if (unsettled) waiters.current.splice(0).forEach((w) => w.reject(new Error(UNCERTAIN_SCAN_MESSAGE)));
     else if (waitingForNetwork > 0) waiters.current.splice(0).forEach((w) => w.reject(new ScanWaitingError()));
-    else if (queue.size() === 0) waiters.current.splice(0).forEach((w) => w.resolve());
+    else if (queue.size() === 0) waiters.current.splice(0).forEach((w) => w.resolve('settled'));
   });
 
   return {
@@ -117,6 +147,8 @@ export function useInspectionBox(box: ShipmentByWaybill, events: InspectionBoxEv
     waitingForNetwork,
     waitingNow,
     storageError: queue.storageError(),
+    /** 이 박스에서 처리 여부를 확인하고 있는 스캔(바코드·수량) — 다시 열었을 때 같은 상품을 또 찍지 않게 */
+    checking: checks.map((op) => scanOf(op.bodyJson)),
     /** 상품 하나(수량 n). 받을 수 없으면 false — 화면이 오류로 알린다 */
     accept(barcode: string, quantity: number): boolean {
       if (intakeBlocked || shipped.current) return false;
@@ -127,15 +159,19 @@ export function useInspectionBox(box: ShipmentByWaybill, events: InspectionBoxEv
      * 앞 스캔이 다 보내질 때까지 기다린다 — 내려놓기·전환 전에(U13). 확인 못 한 스캔이 있거나 기다리는 사이 생기면
      * 기다리지 않고 거절한다(UNCERTAIN_SCAN_MESSAGE). 크기는 렌더 값이 아니라 지금 값을 본다 — 같은 틱의 accept 뒤에도 맞게.
      */
-    settle(): Promise<void> {
+    settle(): Promise<SettleOutcome> {
+      if (leavable()) return Promise.resolve('checking');
       if (!queue.ready || queue.error() || areaBlocked) return Promise.reject(new Error(UNCERTAIN_SCAN_MESSAGE));
       if (waitingNow()) return Promise.reject(new ScanWaitingError());
-      if (queue.size() === 0) return Promise.resolve();
-      return new Promise<void>((resolve, reject) => {
+      if (queue.size() === 0) return Promise.resolve('settled');
+      return new Promise<SettleOutcome>((resolve, reject) => {
         waiters.current.push({ resolve, reject });
         // 다 보내지면 렌더를 기다리지 않고 바로 풀린다 — 렌더가 미뤄지는 동안(act 범위 등) 기다려도 매달리지 않게.
-        // 결과를 모르는 스캔이면 이 약속은 풀리지 않고, 위 effect 가 거절한다
-        queue.settle().then(resolve, () => reject(new Error(UNCERTAIN_SCAN_MESSAGE)));
+        // 결과를 모르는 스캔이면 이 약속은 풀리지 않고, 위 effect 가 확인할 일로 넘긴다
+        queue.settle().then(
+          () => resolve('settled'),
+          () => reject(new Error(UNCERTAIN_SCAN_MESSAGE))
+        );
       });
     },
     retryHead: () => queue.retryHead(),
@@ -154,4 +190,16 @@ export function useInspectionBox(box: ShipmentByWaybill, events: InspectionBoxEv
       }
     },
   };
+}
+
+function scanOf(bodyJson: string): { barcode: string; quantity: number } {
+  try {
+    const body = JSON.parse(bodyJson) as { barcode?: unknown; quantity?: unknown };
+    return {
+      barcode: typeof body.barcode === 'string' ? body.barcode : '',
+      quantity: typeof body.quantity === 'number' ? body.quantity : 1,
+    };
+  } catch {
+    return { barcode: '', quantity: 1 };
+  }
 }

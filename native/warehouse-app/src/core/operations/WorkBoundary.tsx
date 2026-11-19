@@ -11,6 +11,8 @@ import { workStatus } from './workStatus';
 import { Button } from '../design/Button';
 import { useWorkReadiness } from './useWorkReadiness';
 import { AreaContext } from './workArea';
+import { isBoxCheck, shipmentOf, useBoxChecksHosted } from './boxChecks';
+import { BoxChecks } from './BoxChecks';
 
 export interface ScanAllowance {
   path: string;
@@ -20,15 +22,23 @@ export interface ScanAllowance {
   sourceLocationId?: string;
 }
 const SCAN_PATH = /^\/shipments\/[^/]+\/(location|simple)-outbound-scans$/;
-/** A scan region can accept more inputs only for its first, normal send. */
+/**
+ * A scan region can accept more inputs only for its first, normal send.
+ * 출고는 박스 단위다 — `shipmentId` 를 주면 그 박스의 작업만 보고, 안 주면(목록 화면) 다른 박스의 결과 모름은 보지 않는다.
+ */
 export function useWorkAreaBlocked(
   kind: string,
-  scanAllowance?: ScanAllowance
+  scanAllowance?: ScanAllowance,
+  shipmentId?: string
 ) {
   const state = useContext(AreaContext);
   if (state.problem || state.restoring) return true;
-  if (scanAllowance && state.operations.length) {
-    return !state.operations.every((op) => {
+  const box = shipmentId ?? (scanAllowance && shipmentOf(scanAllowance.path));
+  const operations = state.operations.filter((op) =>
+    box ? shipmentOf(op.path) === box || !shipmentOf(op.path) : !isBoxCheck(op)
+  );
+  if (scanAllowance && operations.length) {
+    return !operations.every((op) => {
       if (
         op.scope !== state.scope ||
         op.id !== scanAllowance.operationId ||
@@ -51,7 +61,7 @@ export function useWorkAreaBlocked(
       }
     });
   }
-  return state.operations.some(({ path }) =>
+  return operations.some(({ path }) =>
     kind === 'inbound'
       ? path.startsWith('/inbound/') || path.startsWith('/purchase-orders/')
       : kind === 'outbound'
@@ -64,13 +74,15 @@ export function useWorkAreaBlocked(
 export function WorkArea({
   kind,
   scanAllowance,
+  shipmentId,
   children,
 }: {
   kind: string;
   scanAllowance?: ScanAllowance;
+  shipmentId?: string;
   children: ReactNode;
 }) {
-  const blocked = useWorkAreaBlocked(kind, scanAllowance);
+  const blocked = useWorkAreaBlocked(kind, scanAllowance, shipmentId);
   return <div inert={blocked || undefined}>{children}</div>;
 }
 export function WorkBoundary({ children }: { children: ReactNode }) {
@@ -119,6 +131,7 @@ function ActiveBoundary({
   }, [authed, recheck]);
   const state = workStatus(authed ? ops : [], now);
   const blocked = authed && (state.blocksWork || problem);
+  const hosted = useBoxChecksHosted();
   return (
     <AreaContext.Provider
       value={{
@@ -130,6 +143,11 @@ function ActiveBoundary({
       }}
     >
       {children}
+      {authed && ready && !hosted && (
+        <div className="fixed bottom-4 right-4 z-[80]">
+          <BoxChecks />
+        </div>
+      )}
       {authed && restoring && (
         <p role="status">
           저장된 작업을 확인하고 있어요. 잠시만 기다려 주세요.

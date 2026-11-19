@@ -1,4 +1,5 @@
 import type { ServerReach } from '../../core/data/serverStatus';
+import { isBoxCheck } from '../../core/operations/boxChecks';
 import type { StoredOperation } from '../../core/operations/operationStore';
 import type { TabKey } from '../keys';
 
@@ -28,7 +29,8 @@ export interface StatusInput {
 export const UNSENT_AFTER_MS = 1500;
 
 export function unsentCount(operations: readonly StoredOperation[], now: number): number {
-  return operations.filter((o) => o.status === 'uncertain' || now - o.createdAt >= UNSENT_AFTER_MS).length;
+  // 박스에 묶인 결과 모름은 «확인할 일» 칸이 따로 센다
+  return operations.filter((o) => !isBoxCheck(o) && (o.status === 'uncertain' || now - o.createdAt >= UNSENT_AFTER_MS)).length;
 }
 
 /**

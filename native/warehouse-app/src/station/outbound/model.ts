@@ -43,7 +43,8 @@ export interface BoxWorkHandle {
   accept(code: string): void;
   /** 스캔이 이 화면에 닿았다 — 부모가 거절한 송장 스캔도 «한 번 더» 대기를 푼다 */
   disarm(): void;
-  settle(): Promise<void>;
+  /** `checking` — 결과 모름이 남아 확인할 일로 넘겼다(박스는 내려놓아도 된다) */
+  settle(): Promise<'settled' | 'checking' | void>;
   /** 오프라인이라 보내지 못한 스캔이 있다 — 내려놓기·전환을 기다리지 않고 거절한다 */
   waitingForNetwork?(): boolean;
 }

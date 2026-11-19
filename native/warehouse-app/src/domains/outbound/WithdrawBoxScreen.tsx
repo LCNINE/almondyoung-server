@@ -9,6 +9,8 @@ import { BarcodeInput } from '../../core/hardware/scan/BarcodeInput';
 import { useScanner } from '../../core/hardware/scan/useScanner';
 import { SCAN_STORAGE_MESSAGE, useWorkScanQueue } from '../../core/hardware/scan/useWorkScanQueue';
 import { WorkArea } from '../../core/operations/WorkBoundary';
+import { useBoxChecks } from '../../core/operations/workArea';
+import { BoxCheckingExit } from './BoxCheckingExit';
 import { isReturnBinCode } from '../returns/returnBin';
 import type { ShipmentByWaybill, WithdrawalRemoval } from './types';
 import { removeToReturnBin, withdrawalRows } from './withdraw';
@@ -50,7 +52,10 @@ function WithdrawBoxContent({
       }
     },
     `withdraw:${shipmentId}`,
+    () => checkingRef.current,
   );
+  const checkingRef = useRef(false);
+  checkingRef.current = useBoxChecks(shipmentId).length > 0;
   const rows = withdrawalRows(removals);
   const cartOnly = rows.length > 0 && rows.every((row) => row.onCart);
   const accept = (barcode: string) => {
@@ -153,8 +158,11 @@ function WithdrawBoxContent({
 
 export function WithdrawBoxScreen(props: Parameters<typeof WithdrawBoxContent>[0]) {
   return (
-    <WorkArea kind="outbound">
-      <WithdrawBoxContent {...props} />
-    </WorkArea>
+    <>
+      <BoxCheckingExit shipmentId={props.shipmentId} trackingNo={props.shipment?.trackingNo} />
+      <WorkArea kind="outbound" shipmentId={props.shipmentId}>
+        <WithdrawBoxContent {...props} />
+      </WorkArea>
+    </>
   );
 }

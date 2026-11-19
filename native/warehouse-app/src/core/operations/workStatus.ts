@@ -1,18 +1,15 @@
 import { permissionNames } from '../auth/permissionNames';
+import { deniedByPermission, isBoxCheck } from './boxChecks';
 import type { StoredOperation } from './operationStore';
-// 응답 필터는 403 을 FORBIDDEN 으로, Nest 기본 예외 본문은 Forbidden 으로 싣는다.
-const deniedByPermission = (o: StoredOperation) =>
-  o.errorStatus === 403 ||
-  Boolean(o.requiredPermissions?.length) ||
-  o.errorCode === 'FORBIDDEN' ||
-  o.errorCode === 'Forbidden';
-export function workStatus(operations: StoredOperation[], now: number) {
-  if (!operations.length) return { message: null, blocksWork: false };
-  if (operations.some((o) => now - o.createdAt >= 29 * 86400000))
+export function workStatus(all: StoredOperation[], now: number) {
+  if (all.some((o) => now - o.createdAt >= 29 * 86400000))
     return {
       message: '오래된 작업이 있어요. 관리자와 처리 내역을 확인해 주세요.',
       blocksWork: true,
     };
+  // 박스 하나에 묶인 결과 모름은 «확인할 일» 이 따로 보인다 — 기기 전체를 막지 않는다
+  const operations = all.filter((o) => !isBoxCheck(o));
+  if (!operations.length) return { message: null, blocksWork: false };
   const uncertain = operations.filter((o) => o.status === 'uncertain');
   // 권한에서 막힌 요청도 그 전 시도가 반영됐을 수 있어 결과는 단정하지 않는다. 「처리 내역 확인」이
   // 같은 키로 다시 보내고, 새 역할을 받았으면 토큰이 바뀌어야 하므로 다시 로그인이 필요하다.

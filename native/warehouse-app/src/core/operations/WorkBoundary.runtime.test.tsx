@@ -250,25 +250,102 @@ it('preserves an uncertain outbound operation when login restores saved work', a
   });
   await store.finish('uncertain-outbound', 'uncertain');
   renderBoundary(
-    <WorkArea kind="outbound">
-      <button>출고 실행</button>
-    </WorkArea>
+    <>
+      <WorkArea kind="outbound" shipmentId="shipment-1">
+        <button>출고 실행</button>
+      </WorkArea>
+      <WorkArea kind="outbound">
+        <button>다른 박스 찾기</button>
+      </WorkArea>
+    </>
   );
 
   await act(async () => {
     await session.login();
   });
 
+  // 박스에 묶인 결과 모름 — 그 박스만 막고, 기기 전체 안내 대신 «확인할 일» 로 보인다
   expect(
-    await screen.findByText(
-      '처리 여부를 확인하고 있어요. 이 상품은 다시 찍지 마세요.'
-    )
+    await screen.findByRole('button', { name: '확인할 일 1' })
   ).toBeInTheDocument();
+  expect(
+    screen.queryByText('처리 여부를 확인하고 있어요. 이 상품은 다시 찍지 마세요.')
+  ).toBeNull();
   expect(screen.getByText('출고 실행').closest('[inert]')).not.toBeNull();
+  expect(screen.getByText('다른 박스 찾기').closest('[inert]')).toBeNull();
   expect(await store.get('uncertain-outbound')).toMatchObject({
     status: 'uncertain',
     attempts: 0,
   });
+});
+
+it('확인할 일에서 박스별로 다시 확인하고, 결과를 보인 뒤 목록과 저장된 스캔에서 뺀다', async () => {
+  const scope = JSON.stringify([apiBaseUrl, 'worker']);
+  const store = createOperationStore();
+  for (const [id, shipment] of [
+    ['scan-a', 'shipment-a'],
+    ['scan-b', 'shipment-b'],
+  ]) {
+    await store.begin({
+      id,
+      scope,
+      resource: `/shipments/${shipment}`,
+      method: 'POST',
+      path: `/shipments/${shipment}/simple-outbound-scans`,
+      bodyJson: JSON.stringify({ barcode: '8801', quantity: 2 }),
+      createdAt: Date.now(),
+    });
+    await store.finish(id, 'uncertain');
+  }
+  await store.draft(`${scope}:scan:outbound:shipment-a`, () => [
+    { id: 'scan-a', data: { barcode: '8801', quantity: 2 } },
+    { id: 'later', data: { barcode: '8802', quantity: 1 } },
+  ]);
+  await store.draft(`${scope}:box-check-labels`, () => ({
+    'shipment-a': { trackingNo: '421033881907' },
+  }));
+  const defaultHandler = fetchHandler;
+  const sent: string[] = [];
+  fetchHandler = async (...args) => {
+    const url = String(args[0]);
+    if (url.endsWith('/simple-outbound-scans')) {
+      sent.push(url);
+      return Response.json({
+        shipmentId: 'shipment-a',
+        status: 'in_progress',
+        workItemStatus: 'picking',
+        lines: [],
+      });
+    }
+    return defaultHandler(...args);
+  };
+  authed = true;
+  renderBoundary(<p>화면</p>);
+
+  await userEvent.click(
+    await screen.findByRole('button', { name: '확인할 일 2' })
+  );
+  const dialog = await screen.findByRole('dialog', { name: '확인할 일' });
+  expect(dialog).toHaveTextContent('421033881907');
+  expect(dialog).toHaveTextContent('송장을 모르는 박스');
+  expect(dialog).toHaveTextContent('상품 바코드 8801 ×2');
+
+  await userEvent.click(screen.getAllByRole('button', { name: '다시 확인' })[0]);
+
+  expect(
+    await screen.findByText('반영됐어요. 이 상품은 다시 찍지 마세요.')
+  ).toBeInTheDocument();
+  expect(sent).toHaveLength(1);
+  expect(sent[0]).toContain('/shipments/shipment-a/');
+  expect(await store.get('scan-a')).toMatchObject({ status: 'confirmed' });
+  expect((await store.get('scan-b'))?.status).toBe('uncertain');
+  // 박스를 다시 열 때 이미 반영된 스캔은 재생하지 않고, 뒤에 줄 선 것만 남는다
+  expect(
+    await store.draft<Array<{ id: string }>>(`${scope}:scan:outbound:shipment-a`)
+  ).toEqual([{ id: 'later', data: { barcode: '8802', quantity: 1 } }]);
+  expect(
+    screen.getByRole('button', { name: '확인할 일 1' })
+  ).toBeInTheDocument();
 });
 
 it('keeps account B scan allowance after a late account A scope result', async () => {

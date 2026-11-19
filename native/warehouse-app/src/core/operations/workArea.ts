@@ -1,5 +1,6 @@
 import { createContext, useContext } from 'react';
 import type { StoredOperation } from './operationStore';
+import { isBoxCheck, shipmentOf } from './boxChecks';
 
 export interface WorkAreaState {
   operations: StoredOperation[];
@@ -28,4 +29,14 @@ export function useUnresolvedWork() {
     unknown: problem || restoring,
     recheck,
   };
+}
+
+/** 박스에 묶인 결과 모름(확인할 일). `shipmentId` 를 주면 그 박스 것만 */
+export function useBoxChecks(shipmentId?: string): StoredOperation[] {
+  const { operations } = useContext(AreaContext);
+  return operations.filter(
+    (op) =>
+      isBoxCheck(op) &&
+      (shipmentId === undefined || shipmentOf(op.path) === shipmentId)
+  );
 }
