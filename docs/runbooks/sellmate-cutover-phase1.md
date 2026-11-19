@@ -83,7 +83,7 @@ cd deployments/lcnine/auth     && npx sst shell --stage live -- npx tsx ../../..
 - [ ] **터널(별도 창, 유지):** `cd deployments/lcnine/services && npx sst tunnel --stage live` (sudo). 사람이 띄운다. 「Tunnel listening…」 을 본다.
 - [ ] **판정 한 번:** §0-2 두 셸. 어제 초록이 오늘도 초록인지.
 - [ ] **막혔을 때:** 「이 상자가 왜 안 열리나」는 먼저 어드민 «출고 정체 보드»(`/order/stall-board`)와 출고주문 상세(`/order/fulfillments`)로 본다. 거기서 안 풀리면 개발자가 Claude 에게 라이브 DB 를 읽게 한다 — 시작점은 §12.
-- [ ] **작업 폴더:** 오늘 받을 셀메이트 파일을 모을 폴더(`apps/core/tmp/`)를 비우거나 날짜 폴더로 나눈다 — `sync-stock` 은 폴더 안 파일을 전부 읽는다.
+- [ ] **작업 폴더:** 오늘 받을 셀메이트 파일은 날짜 폴더(`apps/core/tmp/<T-날짜>/`)에 모은다. §4 의 명령은 폴더가 아니라 **재고 CSV 한 파일**(`<재고 CSV>`)을 가리킨다 — `import-products`·`sync-stock` 은 폴더를 주면 안의 `.csv/.xlsx/.xls` 를 전부 읽고, 필수 열이 없는 파일(상품목록·주문 파일, §5 가 남기는 `cutover-1236-kept-*.csv`)에서 멈춘다(11-19 라이브 리허설에서 찾았다).
 
 ---
 
@@ -129,17 +129,18 @@ cd deployments/lcnine/services && npx sst shell --stage live -- bash -c '
 # ✅ 같은 명령 끝에 --apply --by <이름>
 ```
 
-- `--at` 은 오프셋 없는 시각을 거절한다(9시간 어긋남 방지).
+- `--at` 은 오프셋 없는 시각을 거절한다(9시간 어긋남 방지). 출력의 «바꿀 T» 는 UTC(`…Z`)로 찍힌다 — `09:00+09:00` 이 `00:00Z` 로 보이면 맞다.
+- dry-run 출력은 `현재 T: (비어 있음)` · `바꿀 T: …` · `dry-run — 쓰지 않았다` 세 줄이다(11-19 라이브, 몇 초).
 - T 가 설정되면 `clear-reservations --apply` 는 스스로 거부한다.
 - 실패 시: 투영을 멈춰야 하면 `--clear --apply`(T 를 비움). T 를 잘못 넣었으면 바른 값으로 다시 `--apply`.
 
 ### 4-2. Ⓐ 재고 동기화 — 마지막
 
 ```bash
-DRY_RUN=1 bash scripts/sellmate/run.sh live import-products apps/core/tmp/   # 🔍
-bash scripts/sellmate/run.sh live import-products apps/core/tmp/             # ✅
-DRY_RUN=1 bash scripts/sellmate/run.sh live sync-stock apps/core/tmp/        # 🔍 증가·감소 건수
-bash scripts/sellmate/run.sh live sync-stock apps/core/tmp/                  # ⛔ 마지막 sync-stock
+DRY_RUN=1 bash scripts/sellmate/run.sh live import-products <재고 CSV>   # 🔍
+bash scripts/sellmate/run.sh live import-products <재고 CSV>             # ✅
+DRY_RUN=1 bash scripts/sellmate/run.sh live sync-stock <재고 CSV>        # 🔍 증가·감소 건수
+bash scripts/sellmate/run.sh live sync-stock <재고 CSV>                  # ⛔ 마지막 sync-stock
 ```
 
 - `sync-stock` 이 **exit 2**(매칭된 SKU 재고 바뀜)로 끝나면 짝으로 `bash scripts/sellmate/run.sh live recalc-sellable .`(🔍 `DRY_RUN=1` 먼저).
@@ -175,7 +176,7 @@ WITH_MEDUSA=1 bash scripts/sellmate/run.sh live evening-reconcile init <재고 C
 - 넘긴 자사몰 주문 0건으로 거절되면: 판매처 이름이 틀렸을 가능성이 먼저다. 정말 0건이면 `--no-handed-over-orders`.
 - 짝 못 지은 품목·사라진 품목·SKU 가 바뀐 품목이 있으면 쓰지 않고 1. 짝 표도 안 쓰므로 같은 CSV 로 `pair --apply` 를 돌려 판정이 보게 한 뒤 고친다.
 
-**판정:** 판정 «재고 1. 저녁 맞추기» 의 기준값이 생겼고 짝 못 지은 품목 0. `--after-cutover=<T>` 의 «출고 7» 은 «저녁 맞추기 init(…) 뒤 셀메이트 재고 sync 없음» — 4-2 의 마지막 sync 는 T 뒤에 찍히지만(T ≥ 스냅샷) 금지선은 init 이라 정상이다. init 전에 돌리면 «init 이 없다» ✗ 가 나온다(이 단계를 먼저 하라는 뜻). 이 뒤 `sync-stock` dry-run 이 거절하는지 본다(가드가 살아 있다는 증거, `DRY_RUN=1 bash scripts/sellmate/run.sh live sync-stock apps/core/tmp/`).
+**판정:** 판정 «재고 1. 저녁 맞추기» 의 기준값이 생겼고 짝 못 지은 품목 0. `--after-cutover=<T>` 의 «출고 7» 은 «저녁 맞추기 init(…) 뒤 셀메이트 재고 sync 없음» — 4-2 의 마지막 sync 는 T 뒤에 찍히지만(T ≥ 스냅샷) 금지선은 init 이라 정상이다. init 전에 돌리면 «init 이 없다» ✗ 가 나온다(이 단계를 먼저 하라는 뜻). 이 뒤 `sync-stock` dry-run 이 거절하는지 본다(가드가 살아 있다는 증거, `DRY_RUN=1 bash scripts/sellmate/run.sh live sync-stock <재고 CSV>` — 열을 읽은 뒤 DB 를 보므로 «init 뒤 거절» 문구를 확인한다. 열 오류로 멈추면 가드를 본 것이 아니다).
 
 ### 4-5. 이 뒤로 다시 돌리지 않는 스크립트
 
@@ -428,14 +429,14 @@ npx tsx scripts/ops/emergency-outbound/index.ts prepare --stage live --warehouse
 
 ### 11-1. 이 런북을 위에서부터
 
-- [ ] §0-2 판정을 두 셸에서 돌리고 출력 절 이름으로 이 문서의 «판정 …» 을 찾을 수 있다
+- [x] §0-2 판정을 두 셸에서 돌리고 출력 절 이름으로 이 문서의 «판정 …» 을 찾을 수 있다 — 11-19 라이브: services 7초·auth 3초. 이 문서가 부르는 절(로케이션 2·3, 출고 4·6·7, 재고 1, Medusa 0·1)이 다 있다. 워크트리에서도 `deployments/lcnine/*` 의 sst shell 이 돈다
 - [ ] §2 아침 준비(로그인·터널·판정)를 이 문서만 보고 했다
 - [ ] §3 셀메이트 파일 다섯 개를 받았다(받는 화면·양식 이름을 여기 고쳐 적는다)
 - [ ] §4 의 모든 🔍 를 **dry-run 으로만** 돌렸다. ⛔ `--apply` 는 리허설에서 돌리지 않는다(`sync-stock` 은 dry-run 도 `DATABASE_URL` 이 필요하다 — `run.sh` 가 넣는다)
-- [ ] §4-1 `set-reservation-cutover` 를 sst shell 꼴 그대로 **dry-run** 으로 돌려 «지금 값»(비어 있음)이 찍힌다 — 라이브에서 처음 쓰는 명령 꼴이라 여기서 확인한다
-- [ ] §5 `move-stock-to-shelf` dry-run 의 대상 수가 0 이 아니고, 걸린 시간을 적었다(apply 는 그 몇 배)
-- [ ] §6-2 SQL 을 읽기 전용으로 돌렸다(init 전이라 0 이 정상 — 쿼리가 도는지만)
-- [ ] §7-1 `close-sellmate-leftovers` dry-run 이 «넘긴 주문 집합 없음(init 전)» 을 찍는다
+- [x] §4-1 `set-reservation-cutover` 를 sst shell 꼴 그대로 **dry-run** 으로 돌려 «지금 값»(비어 있음)이 찍힌다 — 라이브에서 처음 쓰는 명령 꼴이라 여기서 확인한다 — 11-19 라이브: 몇 초, `현재 T: (비어 있음)`. 오프셋 없는 `--at` 은 거절됐다
+- [x] §5 `move-stock-to-shelf` dry-run 의 대상 수가 0 이 아니고, 걸린 시간을 적었다(apply 는 그 몇 배) — 11-19 라이브(`--include-rule=dash-position`, 동시 4): **약 5분**, 대상·옮길 것 모두 0 아님, 터널 안 죽음. 남김 사유에 `stale` 이 있었다 — `--positions-since` 보다 먼저 적재된 위치 행이다. T 당일엔 `load-shelf-positions` 직전 시각을 쓰므로 그 SKU 는 실사 대상으로 남는다
+- [x] §6-2 SQL 을 읽기 전용으로 돌렸다(init 전이라 0 이 정상 — 쿼리가 도는지만) — 11-19 라이브: READ ONLY 트랜잭션(§12-1 의 `readOnly`), 1초 미만, 세 값 0
+- [x] §7-1 `close-sellmate-leftovers` dry-run 이 «넘긴 주문 집합 없음(init 전)» 을 찍는다 — 11-19 라이브: 17초. dry-run 은 실제로 닫는 문장을 한 트랜잭션에서 돌린 뒤 롤백한다(그동안 대상 행이 잠긴다 — 짧지만 물류팀 작업이 적은 때에 돌린다). 돌린 뒤 판정 «출고 6» 의 ◆ 건수가 그대로인 것으로 롤백을 확인했다
 - [ ] §8 의 «첫 live `--apply` 전 확인»(§1) 네 개가 끝났다
 
 ### 11-2. 알려진 막힘의 탈출구 — 작업자 계정으로 한 번씩
@@ -461,7 +462,7 @@ npx tsx scripts/ops/emergency-outbound/index.ts prepare --stage live --warehouse
 | 수취인 정보 수정 | 오배송과 바로 이어진다 |
 
 대신 이렇게 한다.
-- [ ] 물류 관리자(`logistics_manager`)를 맡을 사람을 정해 역할을 준다
+- [ ] 물류 관리자(`logistics_manager`)를 맡을 사람을 정해 역할을 준다 — ⚠️ 11-19 라이브 판정 «사람 1»: **`logistics_manager` 역할 행이 아직 없다**(«첫날엔 만들지 않는다(#1233)»). 이 결정대로 가려면 역할을 먼저 만들어야 한다. 아니면 첫날은 admin 이 맡는다고 고쳐 적는다
 - [ ] 물류 관리자 역할에 `order.order.read`(주문 조회)와 `order.matching.write`(매칭)를 더한다. 지금은 둘 다 없다
 - [ ] 물류 관리자가 모두 쉬는 날에는 그날 출근한 작업자에게 물류 관리자 역할을 그날만 주고, 끝나면 회수한다
 
