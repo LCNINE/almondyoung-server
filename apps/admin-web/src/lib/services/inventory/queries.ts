@@ -79,6 +79,7 @@ export const useStockSummaryByGroup = (query: StockSummaryByGroupQuery = {}) => 
   return useQuery({
     queryKey: inventoryQueryKeys.stockSummaryByGroup(query),
     queryFn: () => stocksClient.getStockSummaryByGroup(query),
+    placeholderData: keepPreviousData,
   });
 };
 

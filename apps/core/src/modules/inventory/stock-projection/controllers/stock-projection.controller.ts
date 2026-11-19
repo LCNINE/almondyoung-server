@@ -8,7 +8,6 @@ import {
   HttpStatus,
   Param,
   ParseUUIDPipe,
-  Post,
   Query,
 } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
@@ -224,18 +223,6 @@ export class StockProjectionController {
     @Query('endDate') endDate?: string,
   ) {
     return this.stockProjection.getHistory(skuId, warehouseId, startDate, endDate);
-  }
-
-  @RequirePermission('inventory.stock.adjust')
-  @Post('/stocks/summary/:skuId/:warehouseId/rebuild')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: '재고 현황 재구축 (이벤트 소싱으로부터)' })
-  @ApiParam({ name: 'skuId', description: 'SKU ID' })
-  @ApiParam({ name: 'warehouseId', description: '창고 ID' })
-  @ApiResponse({ status: 204, description: '재고 현황이 성공적으로 재구축되었습니다.' })
-  @ApiResponse({ status: 403, description: '재고 원장 조정 권한이 없습니다.' })
-  async rebuildStockSummary(@Param('skuId') skuId: string, @Param('warehouseId') warehouseId: string) {
-    await this.stockProjection.rebuildSummary(skuId, warehouseId);
   }
 
   @RequirePermission('inventory.stock.adjust')

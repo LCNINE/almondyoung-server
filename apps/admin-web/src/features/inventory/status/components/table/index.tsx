@@ -2,10 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { toast } from 'sonner';
 import {
   useStockSummaryByGroup,
-  useRebuildStockSummary,
   useAdjustStock,
   useWarehouses,
   useSuppliers,
@@ -17,13 +15,15 @@ import type {
   StockSummaryGroupSkuDto,
 } from '@/lib/types/dto/inventory';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { SimplePagination } from '@/components/simple-pagination';
@@ -118,10 +118,8 @@ export function InventoryStatusTable() {
     null
   );
 
-  const rebuildMutation = useRebuildStockSummary();
   const { canRun } = usePermissionCheck();
   const canAdjust = canRun(useAdjustStock);
-  const canRebuild = canRun(useRebuildStockSummary);
 
   const setParams = useCallback(
     (changes: Record<string, string | undefined>) => {
@@ -147,20 +145,6 @@ export function InventoryStatusTable() {
 
     if (saved) setParams({ warehouseId: saved });
   }, [searchParams, setParams]);
-
-  const rebuildGroup = async (group: StockSummaryGroupDto) => {
-    try {
-      for (const sku of group.skus) {
-        await rebuildMutation.mutateAsync({
-          skuId: sku.skuId,
-          warehouseId: sku.warehouseId,
-        });
-      }
-      toast.success(`${group.groupName} 재고 요약을 다시 계산했습니다.`);
-    } catch {
-      toast.error('재고 요약을 다시 계산하지 못했습니다.');
-    }
-  };
 
   const groups = data?.data ?? [];
   const summary = data?.summary;
@@ -222,10 +206,16 @@ export function InventoryStatusTable() {
               {card.label}
             </span>
             <span className="text-[28px] font-extrabold leading-tight tabular-nums">
-              {card.value === undefined ? '–' : fmt(card.value)}
-              <span className="ml-1 text-sm font-normal text-muted-foreground">
-                {card.unit}
-              </span>
+              {card.value === undefined ? (
+                <Skeleton className="my-1.5 h-7 w-16" />
+              ) : (
+                <>
+                  {fmt(card.value)}
+                  <span className="ml-1 text-sm font-normal text-muted-foreground">
+                    {card.unit}
+                  </span>
+                </>
+              )}
             </span>
           </button>
         ))}
@@ -303,16 +293,16 @@ export function InventoryStatusTable() {
             </tr>
           </thead>
           <tbody>
-            {isLoading && (
-              <tr>
-                <td
-                  colSpan={8}
-                  className="border px-3 py-10 text-center text-muted-foreground"
-                >
-                  불러오는 중…
-                </td>
-              </tr>
-            )}
+            {isLoading &&
+              Array.from({ length: 5 }, (_, i) => (
+                <tr key={i} className="[&>td]:border [&>td]:px-3 [&>td]:py-4">
+                  {Array.from({ length: 8 }, (_, j) => (
+                    <td key={j}>
+                      <Skeleton className="h-4 w-full" />
+                    </td>
+                  ))}
+                </tr>
+              ))}
             {!isLoading && groups.length === 0 && (
               <tr>
                 <td
@@ -430,28 +420,30 @@ export function InventoryStatusTable() {
                                 재고 조정
                               </DropdownMenuItem>
                             )}
-                            <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
-                              재고 이력
-                            </DropdownMenuLabel>
-                            {group.skus.map((sku) => (
+                            {group.skus.length === 1 ? (
                               <DropdownMenuItem
-                                key={`${sku.skuId}-${sku.warehouseId}`}
-                                onSelect={() => setHistoryRow(sku)}
+                                onSelect={() => setHistoryRow(group.skus[0])}
                               >
-                                {sku.skuName}
-                                {showWarehouse && ` · ${sku.warehouseName}`}
+                                재고 이력
                               </DropdownMenuItem>
-                            ))}
-                            {canRebuild && (
-                              <>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem
-                                  className="text-muted-foreground"
-                                  onSelect={() => void rebuildGroup(group)}
-                                >
-                                  요약 다시 계산
-                                </DropdownMenuItem>
-                              </>
+                            ) : (
+                              <DropdownMenuSub>
+                                <DropdownMenuSubTrigger>
+                                  재고 이력
+                                </DropdownMenuSubTrigger>
+                                <DropdownMenuSubContent>
+                                  {group.skus.map((sku) => (
+                                    <DropdownMenuItem
+                                      key={`${sku.skuId}-${sku.warehouseId}`}
+                                      onSelect={() => setHistoryRow(sku)}
+                                    >
+                                      {sku.skuName}
+                                      {showWarehouse &&
+                                        ` · ${sku.warehouseName}`}
+                                    </DropdownMenuItem>
+                                  ))}
+                                </DropdownMenuSubContent>
+                              </DropdownMenuSub>
                             )}
                           </DropdownMenuContent>
                         </DropdownMenu>

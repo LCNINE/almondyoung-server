@@ -123,18 +123,6 @@ export const useAdjustStock = () => {
 };
 useAdjustStock.permission = ['inventory.stock.adjust'] as const satisfies PermissionRequirement;
 
-export const useRebuildStockSummary = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ skuId, warehouseId }: { skuId: string; warehouseId: string }) =>
-      stocksClient.rebuildStockSummary(skuId, warehouseId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['stocks', 'summary'] });
-    },
-  });
-};
-useRebuildStockSummary.permission = ['inventory.stock.adjust'] as const satisfies PermissionRequirement;
-
 export const useCancelStockEvent = () => {
   const queryClient = useQueryClient();
   return useMutation({

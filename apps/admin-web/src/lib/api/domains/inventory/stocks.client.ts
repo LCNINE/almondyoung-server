@@ -96,14 +96,6 @@ export const stocksClient = {
     return response.data;
   },
 
-  rebuildStockSummary: async (skuId: string, warehouseId: string): Promise<void> => {
-    await client.post(
-      `${ALMONDYOUNG_API_BASE_URL}/inventory/stocks/summary/${encodeURIComponent(
-        skuId
-      )}/${encodeURIComponent(warehouseId)}/rebuild`
-    );
-  },
-
   cancelStockEvent: async (eventId: string): Promise<void> => {
     await client.delete(
       `${ALMONDYOUNG_API_BASE_URL}/inventory/stocks/events/${encodeURIComponent(eventId)}/cancel`

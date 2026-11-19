@@ -74,8 +74,4 @@ export class StockProjectionService {
   cancelEvent(eventId: string, reason?: string) {
     return this.manager.cancelEvent(eventId, reason);
   }
-
-  rebuildSummary(skuId: string, warehouseId: string) {
-    return this.manager.rebuildSummary(skuId, warehouseId);
-  }
 }
