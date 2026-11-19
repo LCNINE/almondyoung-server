@@ -464,6 +464,58 @@ describe('OutboundPreparationTemplate', () => {
     expect(screen.getByRole('button', { name: '다시 시도' })).toBeTruthy();
   });
 
+  it('셀메이트가 내보내는 상자는 다시 시도를 두지 않는다', async () => {
+    mockRun.mockResolvedValueOnce(
+      result({
+        waybilled: 35,
+        joined: 34,
+        failures: [
+          {
+            shipmentId: 'ready-1',
+            stage: 'join',
+            message:
+              '셀메이트가 내보내는 주문이에요. 이 상자는 두고 넘어가 주세요',
+            retryable: false,
+            code: 'SHIPMENT_HANDED_OVER_TO_SELLMATE',
+          },
+        ],
+      })
+    );
+    render(<OutboundPreparationTemplate />);
+    await start();
+
+    expect(
+      await screen.findByText(
+        '셀메이트가 내보내는 주문이에요. 이 상자는 두고 넘어가 주세요'
+      )
+    ).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '다시 시도' })).toBeNull();
+  });
+
+  it('배치를 만들었어도 담긴 상자가 없으면 실패로 보이고 배치 열기를 숨긴다', async () => {
+    mockRun.mockResolvedValueOnce(
+      result({
+        joined: 0,
+        failures: Array.from({ length: 35 }, (_, index) => ({
+          shipmentId: `ready-${index + 1}`,
+          stage: 'join' as const,
+          message:
+            '셀메이트가 내보내는 주문이에요. 이 상자는 두고 넘어가 주세요',
+          retryable: false,
+          code: 'SHIPMENT_HANDED_OVER_TO_SELLMATE',
+        })),
+      })
+    );
+    mockLoadBatch.mockResolvedValue(batchData({}, []));
+    render(<OutboundPreparationTemplate />);
+    await start();
+
+    expect(await screen.findByText('35상자를 준비하지 못했어요')).toBeTruthy();
+    expect(screen.queryByRole('link', { name: '출고 배치 열기' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '다시 시도' })).toBeNull();
+    expect(screen.getByRole('button', { name: '닫기' })).toBeTruthy();
+  });
+
   it('권한이 없으면 쓰기 버튼을 보여 주지 않는다', () => {
     mockAllowed = false;
     render(<OutboundPreparationTemplate />);
@@ -1494,7 +1546,11 @@ describe('현장에 넘길 배치', () => {
     expect(await screen.findByText('35상자 출고 준비를 마쳤어요')).toBeTruthy();
     expect(screen.getByText(/출고 배치에 담기 35\/35/)).toBeTruthy();
     expect(steps(await handoff())).toHaveLength(4);
-    expect(screen.queryByText('출고 배치에 담은 상자가 없어요.')).toBeNull();
+    expect(
+      screen.queryByText(
+        '출고 배치에 담긴 상자가 없어요. 현장에 넘길 것이 없어요.'
+      )
+    ).toBeNull();
   });
 
   it('배치를 확인하기 전에는 담기 실패를 단정하지 않고 순서도 보이지 않는다', async () => {
@@ -1683,7 +1739,9 @@ describe('현장에 넘길 배치', () => {
     await start();
 
     expect(
-      await screen.findByText('출고 배치에 담은 상자가 없어요.')
+      await screen.findByText(
+        '출고 배치에 담긴 상자가 없어요. 현장에 넘길 것이 없어요.'
+      )
     ).toBeTruthy();
     expect(
       screen.queryByRole('region', { name: '현장에 넘길 배치' })

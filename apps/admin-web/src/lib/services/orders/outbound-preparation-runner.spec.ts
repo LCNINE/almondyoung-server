@@ -138,6 +138,7 @@ describe('runOutboundPreparation', () => {
         stage: 'plan',
         message: '처리하지 못했어요.',
         retryable: false,
+        code: 'FAILED',
       },
     ]);
     expect(result.joined).toBe(2);
@@ -312,6 +313,7 @@ describe('runOutboundPreparation', () => {
         stage: 'join',
         message: '처리하지 못했어요.',
         retryable: false,
+        code: 'FAILED',
       },
     ]);
   });
