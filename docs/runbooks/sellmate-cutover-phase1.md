@@ -101,10 +101,9 @@ cd deployments/lcnine/auth     && npx sst shell --stage live -- npx tsx ../../..
 
 1. **`collect-cellmate` 마지막 실행.** 매일 돌리던 사람이 늘 하던 방식(`scripts/ops/cellmate-local/README.md`)으로 돌리고, 나온 파일을 셀메이트에 올린다. **이 뒤로는 돌리지 않는다.** 이 뒤에 들어온 자사몰 주문은 앱 몫이다.
    - [ ] 돌린 사람이 **두 값을 적어 개발자에게 보낸다**: ① 실행을 시작한 시각(KST, 초까지 — 모르면 출력 파일 `cellmate-after-…xlsx` 가 생긴 시각), ② 출력의 `orders:` 줄에서 **가장 큰 주문번호**(`#…`). 이 스크립트는 «마지막으로 넘긴 주문번호(`LATEST_DISPLAY_ID`) 다음부터» 모으므로, 셀메이트로 간 주문은 시각보다 **번호로** 정확히 갈린다
-   - [ ] 개발자가 Medusa 에서 그 번호 앞뒤 주문의 생성 시각을 읽기 전용으로 본다(3번 판정). 터널 위 services 셸, §12-1 의 `readOnly` 로:
-     ```sql
-     -- medusa DB. <N> = ②의 가장 큰 주문번호
-     select display_id, created_at from "order" where display_id between <N> - 2 and <N> + 3 order by display_id;
+   - [ ] 개발자가 Medusa 에서 그 번호 앞뒤 주문의 생성 시각을 읽기 전용으로 본다(3번 판정):
+     ```bash
+     cd deployments/lcnine/services && npx sst shell --stage live -- npx tsx ../../../scripts/ops/cutover-preflight/sql.ts --db medusa --set N=<②의 가장 큰 주문번호> ../../../scripts/ops/cutover-preflight/sql/collect-boundary.sql
      ```
 2. 셀메이트 화면에서 바로 이어서 받는다(`docs/runbooks/feature-admin-web-merge.md` §4-1, `scripts/sellmate/README.md` «입력 파일 받기»):
    - [ ] **재고 현황 CSV** — `상품코드(카페)`·`미발송주문수`·`상품위치` 열 포함. 이 파일이 마지막 `sync-stock`·`load-shelf-positions`·`init` 의 입력이다
@@ -115,7 +114,11 @@ cd deployments/lcnine/auth     && npx sst shell --stage live -- npx tsx ../../..
    - [ ] **상품목록 엑셀**(상품관리 > 상품목록, `공급처`·`원가`·`바코드번호(서식)` 포함)
    - [ ] **미발송 주문 목록** — `init --sellmate-orders` 의 입력. 판매처·주문번호 열
      - 받는 법(11-19 라이브 리허설): 주문관리 > 주문내역 목록 → 일자 «3개월» → 확장필터 → 진행상황 **«지정»** → 매칭 «매칭상관안함» · 송장 «송장입력상관안함» · 발송 «발송안됨» → «검색» → «엑셀다운로드 > 검색결과 전체 다운로드» → 양식 «셀메이트 기본 양식»(`판매처명`·`판매처주문번호` 열) → 대기열에서 받는다(생성 1분 안). 진행상황을 «지정» 으로 바꾸지 않으면 발송 조건이 안 걸려 전체 주문이 나온다
-     - 🔒 개인정보가 든 파일이라 **비밀번호를 걸어야 받을 수 있다**(암호화된 `.xls`). init 은 암호 파일을 못 읽는다 — 판매처·주문번호 두 열만 뽑은 CSV 를 만들어 넘긴다(원본을 암호 없이 풀어 두지 않는다). 11-19 에는 LibreOffice UNO 로 메모리에서 열어 두 열만 썼다
+     - 🔒 개인정보가 든 파일이라 **비밀번호를 걸어야 받을 수 있다**(암호화된 `.xls`). init 은 암호 파일을 못 읽는다 — 판매처·주문번호 두 열만 뽑은 CSV 를 만들어 넘긴다(원본을 암호 없이 풀어 두지 않는다):
+       ```bash
+       python3 scripts/sellmate/orders-two-columns.py <받은 ord_ordList_….xls> apps/core/tmp/<T-날짜>/sellmate-orders.csv   # 비밀번호는 숨김 입력
+       ```
+       출력 끝의 «판매처별 행 수» 에서 자사몰 판매처 이름을 그대로 4-4 의 `--own-mall-channel` 에 쓴다
    - [ ] **주문이력** — 보충 제안 수요(`import-demand-history`)를 나중에 메울 원본
 3. **T 를 정한다.** T = **1번 `collect-cellmate` 마지막 실행 시각**(셀메이트가 받는 자사몰 주문 집합이 굳는 때, 11-19 결정). 적어 둔다: `<T>`(오프셋 붙은 ISO)와 같은 시각의 KST `YYYY-MM-DD HH:mm:ss`(4-1 의 `--before`).
    - 왜 재고 CSV 파일명 시각이 아닌가: 재고 CSV 는 만드는 데 약 20분이 걸리고 파일명은 **완료** 시각이다. 1번 뒤 그 시각까지 들어온 자사몰 주문은 셀메이트에 없어 CSV 의 미발송에도 없는데, 파일명 시각으로 `clear-reservations` 를 돌리면 그 주문들의 Medusa 예약까지 지워진다. 투영(#1247)은 T 이전 주문을 다시 잡지 않으므로(`reservation-reconcile.service.ts` «T 이전 주문은 끝까지 건드리지 않는다») 출고될 때까지 스토어프론트 가용이 그만큼 많아 보인다. T 를 1번 시각으로 두면 그 주문들은 T 이후 주문 — 앱·투영의 몫이 된다
@@ -194,7 +197,7 @@ bash scripts/sellmate/run.sh live build-location-master --apply               # 
 
 ```bash
 WITH_MEDUSA=1 bash scripts/sellmate/run.sh live evening-reconcile init <재고 CSV> \
-  --cutover-at=<T> --sellmate-orders=<미발송 주문 목록> --own-mall-channel=<자사몰 판매처 이름>            # 🔍
+  --cutover-at=<T> --sellmate-orders=apps/core/tmp/<T-날짜>/sellmate-orders.csv --own-mall-channel=<자사몰 판매처 이름>            # 🔍
 # ⛔ 같은 명령 끝에 --apply
 ```
 
@@ -253,27 +256,10 @@ bash scripts/sellmate/run.sh live move-stock-to-shelf --positions-since=<positio
 
 ### 6-2. init 직후 셀메이트 상자 세기 (읽기 전용)
 
-core DB 에서 읽기 전용으로 돌린다. 교환 상자까지 세어 넉넉히 센다.
+core DB 에서 읽기 전용으로 돌린다. 교환 상자까지 세어 넉넉히 센다(SQL 은 `scripts/ops/cutover-preflight/sql/sellmate-shipments-after-init.sql`).
 
-```sql
-WITH s AS (
-  SELECT sh.id, sh.status,
-         bool_or(h.sales_order_id IS NOT NULL) AS has_sellmate,
-         bool_or(h.sales_order_id IS NULL) AS has_other
-    FROM shipments sh
-    JOIN shipment_lines sl ON sl.shipment_id = sh.id
-    JOIN fulfillment_order_items foi ON foi.id = sl.fulfillment_order_item_id
-    JOIN fulfillment_orders fo ON fo.id = foi.fulfillment_order_id
-    LEFT JOIN sellmate_handed_over_orders h ON h.sales_order_id = fo.sales_order_id
-   WHERE sh.status IN ('draft', 'planned')
-   GROUP BY sh.id, sh.status
-)
-SELECT count(*) FILTER (WHERE has_sellmate AND EXISTS (
-         SELECT 1 FROM outbound_batch_work_items w
-          WHERE w.shipment_id = s.id AND w.status NOT IN ('excluded', 'completed'))) AS in_batch,
-       count(*) FILTER (WHERE has_sellmate AND status = 'planned') AS planned,
-       count(*) FILTER (WHERE has_sellmate AND has_other) AS mixed
-  FROM s;
+```bash
+cd deployments/lcnine/services && npx sst shell --stage live -- npx tsx ../../../scripts/ops/cutover-preflight/sql.ts --db core ../../../scripts/ops/cutover-preflight/sql/sellmate-shipments-after-init.sql
 ```
 
 | 열 | 0 이 아니면 |
@@ -480,11 +466,11 @@ npx tsx scripts/ops/emergency-outbound/index.ts prepare --stage live --warehouse
 
 | 막힘 | 탈출구 | 누른 사람 | 결과 |
 |---|---|---|---|
-| 배송 프로필 없음(계획 확정 실패) | 어드민 «배송 프로필»(`/inventory/delivery-profiles`) — 판정 «출고 2» | skutest1(작업자), 11-19 라이브 | 목록만 보이고 추가·편집·삭제가 없다(`inventory.master.write` 는 admin·물류 관리자만). SKU 의 프로필 지정도 같은 권한이다 → **물류 관리자·admin 이 맡는다** |
-| 예약 불일치(재고 부족·유령 예약) | 출고 정체 보드(`/order/stall-board`)에서 사유 확인 → 판정 «출고 4» 가 적은 해결책 | skutest1(작업자), 11-19 라이브 | 보드는 열리고 단계별 건수·정체 사유가 보인다(0 수집 칸만 가림). 해결 버튼은 없고 주문번호 링크는 주문 내역(`/order/history`, `order.order.read`)으로 가서 403. 3 예약 칸이 0 이라 예약 불일치 해결 동작은 미확인 → **작업자는 사유까지 보고 admin 에게 넘긴다** |
-| 매칭 대기 | 어드민 «매칭»(`/order/matching`) — 판정 «출고 6» | skutest1(작업자), 11-19 라이브 | 화면이 열리지 않는다(접근 권한 없음, `order.order.read`). 매칭 저장(`order.matching.write`)도 admin 만 → **admin 이 맡는다** |
-| 수취인 정보 빠짐 | 출고주문 상세(`/order/fulfillments`)의 수취인 수정 — 판정 «출고 3» | skutest1(작업자), 11-19 라이브 | 출고주문 상세는 열리지만 «수령인 변경» 버튼이 없다(`fulfillment.shipment.override_recipient` 는 admin·물류 관리자만). 받는 분 정보도 가려져 보인다 → **물류 관리자·admin 이 맡는다** |
-| 운송장 교착(멈춘 송장) | 출고주문 상세의 멈춘 송장 패널 → abandon(#1241) | skutest1(작업자), 11-19 라이브 | 테스트 주문 상자에 `pending` 송장 행을 직접 넣어 재현했다. 패널이 뜨고 «중단하고 다시 발급» → 사유 입력 → 중단까지 작업자가 403 없이 끝냈고 행은 `abandoned` 가 됐다. 이어지는 새 발급 창은 닫아도 된다 → **작업자가 맡는다** |
+| 배송 프로필 없음(계획 확정 실패) | 어드민 «배송 프로필»(`/inventory/delivery-profiles`) — 판정 «출고 2» | 작업자 계정(`logistics_worker` 만), 11-19 라이브 | 목록만 보이고 추가·편집·삭제가 없다(`inventory.master.write` 는 admin·물류 관리자만). SKU 의 프로필 지정도 같은 권한이다 → **물류 관리자·admin 이 맡는다** |
+| 예약 불일치(재고 부족·유령 예약) | 출고 정체 보드(`/order/stall-board`)에서 사유 확인 → 판정 «출고 4» 가 적은 해결책 | 작업자 계정(`logistics_worker` 만), 11-19 라이브 | 보드는 열리고 단계별 건수·정체 사유가 보인다(0 수집 칸만 가림). 해결 버튼은 없고 주문번호 링크는 주문 내역(`/order/history`, `order.order.read`)으로 가서 403. 3 예약 칸이 0 이라 예약 불일치 해결 동작은 미확인 → **작업자는 사유까지 보고 admin 에게 넘긴다** |
+| 매칭 대기 | 어드민 «매칭»(`/order/matching`) — 판정 «출고 6» | 작업자 계정(`logistics_worker` 만), 11-19 라이브 | 화면이 열리지 않는다(접근 권한 없음, `order.order.read`). 매칭 저장(`order.matching.write`)도 admin 만 → **admin 이 맡는다** |
+| 수취인 정보 빠짐 | 출고주문 상세(`/order/fulfillments`)의 수취인 수정 — 판정 «출고 3» | 작업자 계정(`logistics_worker` 만), 11-19 라이브 | 출고주문 상세는 열리지만 «수령인 변경» 버튼이 없다(`fulfillment.shipment.override_recipient` 는 admin·물류 관리자만). 받는 분 정보도 가려져 보인다 → **물류 관리자·admin 이 맡는다** |
+| 운송장 교착(멈춘 송장) | 출고주문 상세의 멈춘 송장 패널 → abandon(#1241) | 작업자 계정(`logistics_worker` 만), 11-19 라이브 | 테스트 주문 상자에 `pending` 송장 행을 직접 넣어 재현했다. 패널이 뜨고 «중단하고 다시 발급» → 사유 입력 → 중단까지 작업자가 403 없이 끝냈고 행은 `abandoned` 가 됐다. 이어지는 새 발급 창은 닫아도 된다 → **작업자가 맡는다** |
 | 셀메이트 상자 거절(409 `SHIPMENT_HANDED_OVER_TO_SELLMATE`) | 거절 문구를 작업자가 읽고 다음 할 일을 아는가(§6) | worker01(작업자), 11-19 로컬 | 새로 연 화면에서는 셀메이트 상자가 출고 준비 목록·배치 상자 추가 후보에서 빠져 고를 수 없다(상자 상세의 «이 상자 출고 준비» 는 «목록에서 이 상자를 찾지 못했어요»). 열어 둔 출고 준비 화면에서 init 뒤 누르면 송장 발급까지 되고 배치 담기에서 «셀메이트가 내보내는 주문이에요» 로 막힌다(영어 문장 없음). 결과 창은 «셀메이트가 내보내는 주문이에요. 이 상자는 두고 넘어가 주세요» 를 빨간 글씨로 보이고 «다시 시도» 를 두지 않는다. 담긴 상자가 0개면 «출고 배치 열기» 없이 닫기만 남는다(11-19 배포). 열어 둔 배치 상세에서 «추가» 를 누르면 같은 뜻의 토스트가 뜬다 → **작업자가 읽고 넘어갈 수 있다. init 직후 출고 준비 화면을 새로고침하게 공지한다** |
 
 **누가 맡나 (11-19 결정)**
@@ -525,7 +511,7 @@ npx tsx scripts/ops/emergency-outbound/index.ts prepare --stage live --warehouse
 
 ### 12-1. Claude 에게 맡기는 법
 
-- 터널(§2) 위에서, 판정 스크립트의 `scripts/ops/cutover-preflight/db.ts` 의 `connect`·`readOnly` 로만 읽게 한다. READ ONLY 트랜잭션이라 쓰기 문이 섞여도 DB 가 거부한다. 실행은 §0-2 와 같은 `npx sst shell --stage live -- npx tsx <스크립트>` 꼴(services 셸 = core·channel_adapter·medusa).
+- 터널(§2) 위에서, 판정 스크립트의 `scripts/ops/cutover-preflight/db.ts` 의 `connect`·`readOnly` 로만 읽게 한다 — 한 번 돌릴 SQL 은 `scripts/ops/cutover-preflight/sql.ts`(`--db core|channel_adapter|medusa` services 셸, `user_service` auth 셸, `-e "<SQL>"` 또는 파일, `--set 이름=값` 으로 `{{이름}}` 채움). READ ONLY 트랜잭션이라 쓰기 문이 섞여도 DB 가 거부한다. 실행은 §0-2 와 같은 `npx sst shell --stage live -- npx tsx <스크립트>` 꼴(services 셸 = core·channel_adapter·medusa).
 - 주문번호·상자 id·송장번호 중 하나와 «어디서 무엇이 거절됐나»(화면 문구·409 코드)를 함께 준다.
 - Claude 는 고치지 않는다. 아래 «푸는 곳»을 사람이 누른다 — 누가 맡는지는 §11-2.
 - 시작 말 예: «런북 §12 를 읽고, 주문 <번호> 의 상자가 왜 <단계> 로 못 가는지 라이브 DB 를 readOnly 로 읽어 판정해 줘. 판정 조건은 §12-2 의 함수 코드를 읽고 따른다.»
@@ -553,7 +539,7 @@ npx tsx scripts/ops/emergency-outbound/index.ts prepare --stage live --warehouse
 
 ### 12-3. 발송했는데 Medusa 에 반영이 안 보인다
 
-core 가 `ShipmentShipped` 를 내면 channel-adapter 가 받아 Medusa 에 반영한다. 어디서 멈췄는지 차례로 본다(`<상자 id>` 를 넣는다). 이 흐름을 화면에서 따라가는 일은 #1478(급하지 않음).
+core 가 `ShipmentShipped` 를 내면 channel-adapter 가 받아 Medusa 에 반영한다. 아래 SQL 은 `sql.ts` 의 `-e` 로 돌린다(첫 줄 core, 나머지 channel_adapter). 어디서 멈췄는지 차례로 본다(`<상자 id>` 를 넣는다). 이 흐름을 화면에서 따라가는 일은 #1478(급하지 않음).
 
 ```sql
 -- core: 나갔나
