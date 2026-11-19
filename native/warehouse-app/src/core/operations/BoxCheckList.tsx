@@ -2,8 +2,14 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '../design/Button';
 import { cn } from '../design/cn';
 import { errorMessage } from '../data/errorMessage';
+import { useHumanKeys } from '../hardware/scan/useScanner';
 import { useWorkRuntime } from './OperationContext';
-import { boxCheckLabelsKey, shipmentOf, type BoxCheckLabel } from './boxChecks';
+import {
+  boxCheckLabelsKey,
+  shipmentOf,
+  useBoxChecksOpenRequests,
+  type BoxCheckLabel,
+} from './boxChecks';
 import { storedRejection } from './operationRunner';
 import type { StoredOperation } from './operationStore';
 import { useBoxChecks } from './workArea';
@@ -31,14 +37,17 @@ function groupsOf(operations: readonly StoredOperation[]): Group[] {
   }));
 }
 
-function whatOf(op: StoredOperation): string {
+function whatOf(op: StoredOperation, label: BoxCheckLabel | undefined): string {
   try {
     const body = JSON.parse(op.bodyJson) as {
       barcode?: unknown;
       quantity?: unknown;
     };
-    if (typeof body.barcode === 'string')
-      return `상품 바코드 ${body.barcode} ×${typeof body.quantity === 'number' ? body.quantity : 1}`;
+    if (typeof body.barcode === 'string') {
+      const quantity = typeof body.quantity === 'number' ? body.quantity : 1;
+      const name = label?.items?.[body.barcode];
+      return `${name ?? `상품 바코드 ${body.barcode}`} ×${quantity}`;
+    }
   } catch {
     // 본문을 못 읽으면 무엇을 했는지만 적는다
   }
@@ -64,9 +73,12 @@ const RESULT_TEXT: Record<Exclude<Result['kind'], 'rejected'>, string> = {
 export function BoxChecks({
   className,
   compact = false,
+  keys = false,
 }: {
   className?: string;
   compact?: boolean;
+  /** 키로 고르게 상자마다 번호(1~9)를 보이고 받는다 — 키보드가 있는 스테이션 */
+  keys?: boolean;
 }) {
   const runtime = useWorkRuntime();
   const checks = useBoxChecks();
@@ -83,6 +95,8 @@ export function BoxChecks({
     setOpen(false);
     setResults({});
   }, []);
+  // 기능키·명령 바코드로 여는 곳(스테이션 송장 대기의 F8)
+  useBoxChecksOpenRequests(useCallback(() => setOpen(true), []));
 
   useEffect(() => {
     if (!open || !runtime) return;
@@ -191,6 +205,14 @@ export function BoxChecks({
             }}
             className="max-h-[80vh] w-full max-w-lg space-y-3 overflow-y-auto rounded-lg bg-white p-4 text-[15px] text-[#15171C] shadow-lg outline-none"
           >
+            {keys ? (
+              <DigitPicks
+                onPick={(index) => {
+                  const group = groups[index];
+                  if (group && busy === null) void recheck(group);
+                }}
+              />
+            ) : null}
             <h2 className="text-lg font-semibold">확인할 일</h2>
             <p className="text-sm text-[#3F4450]">
               처리됐는지 확인하지 못한 스캔이에요. 같은 상품은 다시 찍지 말고,
@@ -200,21 +222,22 @@ export function BoxChecks({
               <p>확인할 일이 없어요.</p>
             ) : null}
             <ul className="list-none space-y-2">
-              {groups.map((group) => {
+              {groups.map((group, index) => {
                 const shown = results[group.shipmentId];
+                const label = labels[group.shipmentId];
+                const digit = keys && index < 9 ? String(index + 1) : null;
                 return (
                   <li
                     key={group.shipmentId}
                     className="space-y-1 rounded-md border border-[#D5D8DE] p-3"
                   >
                     <p className="font-mono font-semibold">
-                      {labels[group.shipmentId]?.trackingNo ??
-                        '송장을 모르는 박스'}
+                      {label?.trackingNo ?? '송장을 모르는 박스'}
                     </p>
                     <ul className="list-none text-sm">
                       {group.operations.map((op) => (
                         <li key={op.id}>
-                          {clock(op.createdAt)} · {whatOf(op)}
+                          {clock(op.createdAt)} · {whatOf(op, label)}
                         </li>
                       ))}
                     </ul>
@@ -227,6 +250,11 @@ export function BoxChecks({
                       disabled={busy !== null}
                       onClick={() => void recheck(group)}
                     >
+                      {digit ? (
+                        <span className="mr-2 inline-flex h-6 min-w-[30px] items-center justify-center rounded bg-[#E2E4E8] px-1.5 font-mono text-xs font-semibold text-[#15171C]">
+                          {digit}
+                        </span>
+                      ) : null}
                       {busy === group.shipmentId ? '확인 중…' : '다시 확인'}
                     </Button>
                   </li>
@@ -264,4 +292,18 @@ export function BoxChecks({
       ) : null}
     </>
   );
+}
+
+/**
+ * 열린 창의 숫자 키(1~9) — 그 번호의 상자를 다시 확인한다. 창이 열린 동안 숫자는 이 창만 받는다(뒤 화면의 송장 직접 입력·수량이
+ * 같은 숫자를 받지 않게). 키 버스 안(스테이션 상태바)에서만 그린다 — 작업 경계는 키 버스 바깥이다
+ */
+function DigitPicks({ onPick }: { onPick: (index: number) => void }) {
+  useHumanKeys(
+    (key: string) => {
+      if (/^[1-9]$/.test(key)) onPick(Number(key) - 1);
+    },
+    { exclusive: true }
+  );
+  return null;
 }

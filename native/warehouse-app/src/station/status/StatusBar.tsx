@@ -79,7 +79,7 @@ export function StatusBar({ tab, prefs = localStoragePrefs }: { tab: TabKey | nu
           </span>
         )
       )}
-      <BoxChecks compact />
+      <BoxChecks compact keys />
     </footer>
   );
 }

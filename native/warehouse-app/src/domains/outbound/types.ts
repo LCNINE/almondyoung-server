@@ -30,6 +30,8 @@ export interface ShipmentByWaybillLine {
   skuId: string;
   skuCode: string;
   skuName: string;
+  /** 이 SKU 에 등록된 바코드 — 찍은 바코드의 상품 이름을 응답 없이 알아본다. 옛 core 면 없다 */
+  barcodes?: string[];
   qty: number;
   pickedQty: number;
   inspectedQty: number;

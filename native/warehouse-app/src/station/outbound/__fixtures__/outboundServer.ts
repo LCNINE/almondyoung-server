@@ -201,6 +201,7 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
         ...(box.legacy
           ? {}
           : {
+              barcodes: [l.barcode],
               lineVersion: box.lineVersion,
               allocations: (l.locations ?? []).map((loc) => ({
                 sourceLocationId: `loc-${loc.code}`,

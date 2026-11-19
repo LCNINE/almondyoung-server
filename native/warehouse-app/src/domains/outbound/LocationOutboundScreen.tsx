@@ -375,6 +375,7 @@ function LocationWork({
       <BoxCheckingExit
         shipmentId={shipmentId}
         trackingNo={shipment.trackingNo}
+        lines={shipment.lines}
       />
       <p>
         {shipment.carrier} {shipment.trackingNo} · {shipment.recipientMasked}
