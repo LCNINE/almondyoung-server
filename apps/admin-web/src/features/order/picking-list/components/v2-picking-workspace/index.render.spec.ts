@@ -229,6 +229,42 @@ describe('피킹 시작 오류 안내', () => {
     }
   );
 
+  it('상세 사유가 없으면 관리자가 확인할 화면을 안내한다', async () => {
+    await loadBatch('batch-1');
+    await start();
+    await act(async () =>
+      request.reject({
+        ...blockedError,
+        response: { ...blockedError.response, errors: [] },
+      })
+    );
+
+    expect(alertText()).toContain('배치와 해당 박스의 출고 상태를 확인해 주세요.');
+    expect(alertText()).not.toContain('관리자에게 문의해 주세요.');
+  });
+
+  it('시작 차단 응답 때 배치 화면이 사라지면 상세 토스트로 알린다', async () => {
+    await loadBatch('batch-1');
+    await start();
+    mockBatchQuery.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      refetch: mockRefetch,
+    });
+    await act(async () => root.render(createElement(V2PickingWorkspace)));
+    await act(async () => request.reject(blockedError));
+
+    expect(alertText()).toBe('');
+    const receivedToast = toast.getToasts()[0];
+    expect(receivedToast).toEqual(expect.objectContaining({ type: 'error' }));
+    if (!receivedToast || !('title' in receivedToast))
+      throw new Error('오류 토스트가 없습니다.');
+    const title = String(receivedToast.title);
+    expect(title).toContain('차단 항목 1건');
+    expect(title).toContain('박스 box-1');
+    expect(title).toContain('3개 중 1개 부족');
+  });
+
   it.each([blockedError])(
     '다른 배치를 조회하면 이전 안내를 지우고 늦은 응답으로 되살리지 않는다: %p',
     async (error) => {

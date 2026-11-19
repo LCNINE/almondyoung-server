@@ -31,7 +31,7 @@ describe('inspection domain error guidance', () => {
         message: 'Label has changed or was never printed',
       })
     ).toBe(
-      '송장이 바뀌었거나 아직 출력하지 않았어요. 프린터가 있는 창고 앱에서 송장을 출력한 뒤 계속해 주세요.'
+      '송장이 바뀌었거나 아직 출력하지 않았어요. 창고 담당자에게 프린터가 있는 창고 앱에서 송장을 출력하도록 요청해 주세요.'
     );
   });
 
@@ -55,65 +55,15 @@ describe('preparation reason message priority', () => {
     [
       'BATCH_NOT_STARTED',
       'retry_preparation',
-      '배치 화면에서 「피킹 시작」을 먼저 눌러 주세요.',
-    ],
-    [
-      'BATCH_NOT_STARTED',
-      'review_batch',
-      '배치 화면에서 「피킹 시작」을 먼저 눌러 주세요.',
-    ],
-    [
-      'SOURCE_INSUFFICIENT',
-      'retry_preparation',
-      '출고할 재고가 부족해요. 재고를 확인한 뒤 다시 준비해 주세요.',
-    ],
-    [
-      'SOURCE_INSUFFICIENT',
-      'review_batch',
-      '출고 대상이나 작업 상태가 바뀌었어요. 배치와 송장을 확인해 주세요.',
-    ],
-    [
-      'SOURCE_STOCK_CHANGED',
-      'retry_preparation',
-      '재고가 변경됐어요. 현재 재고를 확인한 뒤 다시 준비해 주세요.',
-    ],
-    [
-      'REPLAN_LIMIT_REACHED',
-      'retry_preparation',
-      '재고가 변경됐어요. 현재 재고를 확인한 뒤 다시 준비해 주세요.',
-    ],
-    [
-      'PLAN_IDENTITY_CHANGED',
-      'review_batch',
-      '출고 대상이나 작업 상태가 바뀌었어요. 배치와 송장을 확인해 주세요.',
-    ],
-    [
-      'PLAN_NOT_DRAFT',
-      'review_batch',
-      '출고 대상이나 작업 상태가 바뀌었어요. 배치와 송장을 확인해 주세요.',
-    ],
-    [
-      'SHIPMENT_SNAPSHOT_CHANGED',
-      'review_batch',
-      '출고 대상이나 작업 상태가 바뀌었어요. 배치와 송장을 확인해 주세요.',
-    ],
-    [
-      'ALLOCATION_INVALID',
-      'review_batch',
-      '출고 대상이나 작업 상태가 바뀌었어요. 배치와 송장을 확인해 주세요.',
-    ],
-    [
-      'ELIGIBILITY_CHANGED',
-      'review_batch',
-      '출고 대상이나 작업 상태가 바뀌었어요. 배치와 송장을 확인해 주세요.',
+      '피킹 화면에서 「피킹 시작」을 먼저 눌러 주세요.',
     ],
     [
       'ACTIVE_WORK_REQUIRES_REVIEW',
       'review_batch',
-      '출고 대상이나 작업 상태가 바뀌었어요. 배치와 송장을 확인해 주세요.',
+      '배치의 진행 중인 재고 작업을 확인할 수 없어요. 배치 상세에서 재고 작업 상태를 확인해 주세요.',
     ],
   ])(
-    'uses admin guidance for %s / %s even when the server message is English or absent',
+    'shows guidance for the currently emitted reason %s / %s',
     (reasonCode, recovery, expected) => {
       for (const message of ['Preparation blocked', undefined]) {
         const body = {
@@ -125,6 +75,22 @@ describe('preparation reason message priority', () => {
         expect(show(body)).toBe(expected);
         expect(body.code).toBe('SIMPLE_OUTBOUND_PLAN_INVALIDATED');
       }
+    }
+  );
+
+  it.each([
+    ['BATCH_NOT_STARTED', 'review_batch'],
+    ['SOURCE_INSUFFICIENT', 'review_batch'],
+    ['SOURCE_STOCK_CHANGED', 'retry_preparation'],
+  ])(
+    'uses general guidance for an invalid reason/recovery pair: %s / %s',
+    (reasonCode, recovery) => {
+      expect(
+        show({
+          code: 'SIMPLE_OUTBOUND_PLAN_INVALIDATED',
+          details: { reasonCode, recovery },
+        })
+      ).toBe('출고 준비를 진행할 수 없어요. 배치와 송장 상태를 확인해 주세요.');
     }
   );
 
@@ -152,7 +118,7 @@ describe('preparation reason message priority', () => {
           message: 'Preparation blocked',
           details,
         })
-      ).toBe('출고 계획이 바뀌었어요. 송장을 다시 확인해 주세요.');
+      ).toBe('출고 준비를 진행할 수 없어요. 배치와 송장 상태를 확인해 주세요.');
     }
   );
 
@@ -166,6 +132,6 @@ describe('preparation reason message priority', () => {
           recovery: 'retry_preparation',
         },
       })
-    ).toBe('배치 화면에서 「피킹 시작」을 먼저 눌러 주세요.');
+    ).toBe('피킹 화면에서 「피킹 시작」을 먼저 눌러 주세요.');
   });
 });

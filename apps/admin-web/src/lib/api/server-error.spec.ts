@@ -100,12 +100,24 @@ describe('server error parser', () => {
 
 describe('Korean outbound error guidance', () => {
   it.each([
-    ['BATCH_START_BLOCKED', '시작하지 못했어요.'],
-    ['BATCH_JOIN_BLOCKED', '넣지 못했어요.'],
-    ['SHIPMENT_WITHDRAWN', '빠진 박스예요. 송장은 버려 주세요.'],
+    ['PICKING_BATCH_EMPTY', '배치에 박스가 없어서 시작할 수 없어요. 배치 상세에서 박스를 먼저 넣어 주세요.'],
+    ['PICKING_BATCH_NOT_STARTED', '피킹 화면에서 「피킹 시작」을 먼저 눌러 주세요.'],
+    ['WAYBILL_LABEL_NOT_ALLOCATED', '작업이 시작되지 않은 박스예요. 피킹 화면에서 「피킹 시작」을 먼저 눌러 주세요.'],
+    ['PICKING_SESSION_NOT_ACTIVE', '배치 재고 작업이 진행 가능한 상태가 아니에요. 배치 상세에서 재고 작업 상태를 확인해 주세요.'],
+    ['SHIPMENT_ALREADY_WITHDRAWING', '이미 빼는 중인 박스예요. 창고 담당자에게 뺄 상품의 되돌림 처리를 요청해 주세요.'],
+    ['LABEL_REPRINT_REQUIRED', '송장이 바뀌었거나 아직 출력하지 않았어요. 창고 담당자에게 프린터가 있는 창고 앱에서 송장을 출력하도록 요청해 주세요.'],
+    ['WAYBILL_NOT_DISPATCHABLE', '한진 등록이 끝나지 않은 송장이에요. 출고 상세에서 운송장 발급 상태를 확인해 주세요.'],
+    ['SHORT_PICK_WORK_ITEM_WAITING', '이 박스는 지금 결품을 보고할 수 없어요. 창고 담당자에게 송장을 다시 스캔하도록 요청해 주세요.'],
+    ['SHORT_PICK_INVOICE_NOT_VOIDABLE', '송장을 지금 무효화할 수 없어 결품을 보고하지 못했어요. 출고 상세에서 송장 상태를 확인해 주세요.'],
+  ])('shows administrator action for %s', (code, expected) => {
+    expect(getServerDenyMessage({ statusCode: 409, response: { code, message: 'English server message' } })).toBe(expected);
+  });
+
+  it.each([
+    ['SHIPMENT_WITHDRAWN', '배치에서 빠졌거나 빠지는 중인 박스예요. 창고 담당자에게 해당 송장을 사용하지 않도록 알려 주세요.'],
     [
       'WAYBILL_STALE',
-      '주문(주소·상품)이 바뀌어 이 송장은 쓸 수 없어요. 관리자에게 재발급을 요청해 주세요.',
+      '주문(주소·상품)이 바뀌어 이 송장은 쓸 수 없어요. 출고 상세에서 송장 상태를 확인해 주세요. 재발급이 가능한 상태라면 재발급해 주세요.',
     ],
   ])(
     'shows Korean for %s in both supported response shapes',
@@ -144,7 +156,7 @@ describe('Korean outbound error guidance', () => {
     };
     expect(parseServerError(error).code).toBe('SHIPMENT_WITHDRAWN');
     expect(getServerDenyMessage(error)).toBe(
-      '빠진 박스예요. 송장은 버려 주세요.'
+      '배치에서 빠졌거나 빠지는 중인 박스예요. 창고 담당자에게 해당 송장을 사용하지 않도록 알려 주세요.'
     );
   });
 
@@ -174,24 +186,166 @@ describe('Korean outbound error guidance', () => {
           message: 'original detail',
         },
       })
-    ).toBe('출고 계획이 바뀌었어요. 송장을 다시 확인해 주세요.');
+    ).toBe('출고 준비를 진행할 수 없어요. 배치와 송장 상태를 확인해 주세요.');
   });
+});
+
+describe('batch blocker toast fallback', () => {
+  const { startBlocked, joinBlocked } = jest.requireActual(
+    'apps/core/src/modules/fulfillment/picking/allocation/allocation.errors'
+  );
+  const blockers = [
+    {
+      shipmentId: 'shipment-full-id',
+      reason: 'STOCK_SHORT',
+      shipmentLineId: 'line-a',
+      skuId: 'sku-a',
+      requiredQty: 3,
+      shortQty: 1,
+      detail: null,
+      trackingNo: null,
+      skuCode: 'SKU-A',
+      skuName: '상품 A',
+    },
+    {
+      shipmentId: 'shipment-full-id',
+      reason: 'STOCK_SHORT',
+      shipmentLineId: 'line-b',
+      skuId: 'sku-b',
+      requiredQty: 2,
+      shortQty: 0,
+      detail: null,
+      trackingNo: null,
+      skuCode: 'SKU-B',
+      skuName: null,
+    },
+  ];
+
+  it.each([
+    ['start', startBlocked('batch-1', blockers)],
+    ['join', joinBlocked('shipment-full-id', blockers)],
+  ])(
+    'keeps the real core %s response details in a toast',
+    (_operation, exception) => {
+      const body = exception.getResponse() as {
+        message: string;
+        errors: unknown[];
+      };
+      const message = getServerDenyMessage({ statusCode: 409, response: body });
+      expect(message).toContain('차단 항목 2건');
+      expect(message).toContain('shipment-full-id');
+      expect(message).toContain('상품 A');
+      expect(message).toContain('SKU-A');
+      expect(message).toContain('SKU-B');
+      expect(message).toContain('3개 중 1개 부족');
+      expect(message).toContain('2개 중 0개 부족');
+      expect(message).toContain('재고 부족');
+      expect(message).not.toContain(body.message);
+      expect(message).not.toContain('박스 2개');
+    }
+  );
+
+  it('keeps an unknown reason and every readable field', () => {
+    const message = getServerDenyMessage({
+      statusCode: 409,
+      response: {
+        code: 'BATCH_JOIN_BLOCKED',
+        message: 'Shipment shipment-full-id cannot join: 1 blocker(s)',
+        errors: [
+          {
+            shipmentId: 'shipment-full-id',
+            reason: 'NEW_REASON',
+            trackingNo: '123456789012',
+            skuName: '상품 A',
+            skuCode: 'SKU-A',
+            requiredQty: 3,
+            shortQty: null,
+          },
+        ],
+      },
+    });
+
+    expect(message).toContain('123456789012');
+    expect(message).toContain('상품 A');
+    expect(message).toContain('SKU-A');
+    expect(message).toContain('3개 중 ?개 부족');
+    expect(message).toContain('NEW_REASON');
+  });
+
+  it('shows Korean guidance for a core waybill blocker', () => {
+    const exception = joinBlocked('shipment-full-id', [
+      {
+        shipmentId: 'shipment-full-id',
+        reason: 'WAYBILL_NOT_READY',
+        shipmentLineId: null,
+        skuId: null,
+        requiredQty: null,
+        shortQty: null,
+        detail: 'WAYBILL_STALE: manifest changed',
+        trackingNo: '123456789012',
+        skuCode: null,
+        skuName: null,
+      },
+    ]);
+    const message = getServerDenyMessage({
+      statusCode: 409,
+      response: exception.getResponse(),
+    });
+
+    expect(message).toContain('송장 123456789012');
+    expect(message).toContain('송장 미발급·재발급 필요');
+    expect(message).not.toContain('WAYBILL_STALE: manifest changed');
+    expect(message).not.toContain('?개');
+  });
+
+  it.each([null, {}])('keeps server-only identifiers when a blocker row is %p', (unreadable) => {
+    const body = joinBlocked('shipment-full-id', blockers).getResponse() as {
+      code: string;
+      message: string;
+      errors: unknown[];
+    };
+    const message = getServerDenyMessage({
+      statusCode: 409,
+      response: { ...body, errors: [body.errors[0], unreadable] },
+    });
+
+    expect(message).toContain('차단 항목 2건');
+    expect(message).toContain('SKU-A');
+    expect(message).toContain('일부 박스의 상세 사유를 확인하지 못했어요.');
+    expect(message).toContain(body.message);
+  });
+
+  it.each([undefined, [], 'invalid'])(
+    'keeps Korean guidance when errors are %p',
+    (errors) => {
+      const message = getServerDenyMessage({
+        statusCode: 409,
+        response: {
+          code: 'BATCH_START_BLOCKED',
+          message: 'Batch batch-1 cannot start: 0 blocker(s)',
+          errors,
+        },
+      });
+
+      expect(message).toContain('배치를 시작하지 못했어요.');
+      expect(message).toContain('일부 박스의 상세 사유를 확인하지 못했어요.');
+      expect(message).toContain('Batch batch-1 cannot start: 0 blocker(s)');
+      if (Array.isArray(errors)) expect(message).toContain('차단 항목 0건');
+    }
+  );
 });
 
 describe('preparation reason message priority', () => {
   const show = (body: { code: string; message?: string; details?: unknown }) =>
     getServerDenyMessage({ statusCode: 409, response: body });
 
+  // Current callers emit BATCH_NOT_STARTED and ACTIVE_WORK_REQUIRES_REVIEW;
+  // the remaining reasons are compatibility contracts retained in core.
   it.each([
     [
       'BATCH_NOT_STARTED',
       'retry_preparation',
-      '배치 화면에서 「피킹 시작」을 먼저 눌러 주세요.',
-    ],
-    [
-      'BATCH_NOT_STARTED',
-      'review_batch',
-      '배치 화면에서 「피킹 시작」을 먼저 눌러 주세요.',
+      '피킹 화면에서 「피킹 시작」을 먼저 눌러 주세요.',
     ],
     [
       'SOURCE_INSUFFICIENT',
@@ -199,63 +353,100 @@ describe('preparation reason message priority', () => {
       '출고할 재고가 부족해요. 재고를 확인한 뒤 다시 준비해 주세요.',
     ],
     [
-      'SOURCE_INSUFFICIENT',
-      'review_batch',
-      '출고 대상이나 작업 상태가 바뀌었어요. 배치와 송장을 확인해 주세요.',
+      'REPLAN_LIMIT_REACHED',
+      'retry_preparation',
+      '출고 준비의 자동 재시도 한도에 도달했어요. 재고를 확인한 뒤 다시 준비해 주세요.',
     ],
     [
       'SOURCE_STOCK_CHANGED',
-      'retry_preparation',
-      '재고가 변경됐어요. 현재 재고를 확인한 뒤 다시 준비해 주세요.',
-    ],
-    [
-      'REPLAN_LIMIT_REACHED',
-      'retry_preparation',
-      '재고가 변경됐어요. 현재 재고를 확인한 뒤 다시 준비해 주세요.',
+      'review_batch',
+      '출고에 사용할 재고 상태가 바뀌었어요. 배치와 재고 상태를 확인해 주세요.',
     ],
     [
       'PLAN_IDENTITY_CHANGED',
       'review_batch',
-      '출고 대상이나 작업 상태가 바뀌었어요. 배치와 송장을 확인해 주세요.',
+      '출고 계획이 바뀌었어요. 배치와 송장 상태를 확인해 주세요.',
     ],
     [
       'PLAN_NOT_DRAFT',
       'review_batch',
-      '출고 대상이나 작업 상태가 바뀌었어요. 배치와 송장을 확인해 주세요.',
+      '현재 출고 계획은 초안 상태가 아니에요. 배치의 진행 상태를 확인해 주세요.',
     ],
     [
       'SHIPMENT_SNAPSHOT_CHANGED',
       'review_batch',
-      '출고 대상이나 작업 상태가 바뀌었어요. 배치와 송장을 확인해 주세요.',
+      '박스의 출고 정보가 바뀌었어요. 주문과 송장 상태를 확인해 주세요.',
     ],
     [
       'ALLOCATION_INVALID',
       'review_batch',
-      '출고 대상이나 작업 상태가 바뀌었어요. 배치와 송장을 확인해 주세요.',
+      '출고 재고 배정이 유효하지 않아요. 배치와 재고 배정 상태를 확인해 주세요.',
     ],
     [
       'ELIGIBILITY_CHANGED',
       'review_batch',
-      '출고 대상이나 작업 상태가 바뀌었어요. 배치와 송장을 확인해 주세요.',
+      '박스의 출고 가능 상태가 바뀌었어요. 주문과 배치 상태를 확인해 주세요.',
     ],
     [
       'ACTIVE_WORK_REQUIRES_REVIEW',
       'review_batch',
-      '출고 대상이나 작업 상태가 바뀌었어요. 배치와 송장을 확인해 주세요.',
+      '배치의 진행 중인 재고 작업을 확인할 수 없어요. 배치 상세에서 재고 작업 상태를 확인해 주세요.',
     ],
   ])(
-    'uses admin guidance for %s / %s even when the server message is English or absent',
-    (reasonCode, recovery, expected) => {
-      for (const message of ['Preparation blocked', undefined]) {
-        const body = {
-          code: 'SIMPLE_OUTBOUND_PLAN_INVALIDATED',
-          message,
-          details: { reasonCode, recovery },
-        };
+    'translates the real core HTTP contract for %s / %s in both response shapes',
+    (reasonCode, expectedRecovery, expectedMessage) => {
+      const { preparationBlocked } = jest.requireActual(
+        'apps/core/src/modules/fulfillment/services/outbound-preparation-result'
+      );
+      const { unwrapPreparedOutbound } = jest.requireActual(
+        'apps/core/src/modules/fulfillment/controllers/outbound-preparation-http'
+      );
+      const body = (() => {
+        try {
+          unwrapPreparedOutbound(
+            preparationBlocked('batch-1', null, reasonCode)
+          );
+        } catch (error) {
+          return (
+            error as {
+              getResponse: () => {
+                code: string;
+                message: string;
+                details: unknown;
+              };
+            }
+          ).getResponse();
+        }
 
-        expect(show(body)).toBe(expected);
-        expect(body.code).toBe('SIMPLE_OUTBOUND_PLAN_INVALIDATED');
-      }
+        throw new Error(
+          'Expected preparationBlocked to produce an HTTP exception'
+        );
+      })();
+
+      expect(body.details).toEqual({ reasonCode, recovery: expectedRecovery });
+      expect(getServerDenyMessage({ statusCode: 409, response: body })).toBe(
+        expectedMessage
+      );
+      expect(
+        getServerDenyMessage({ response: { status: 409, data: body } })
+      ).toBe(expectedMessage);
+      expect(body.code).toBe('SIMPLE_OUTBOUND_PLAN_INVALIDATED');
+    }
+  );
+
+  it.each([
+    ['BATCH_NOT_STARTED', 'review_batch'],
+    ['SOURCE_INSUFFICIENT', 'review_batch'],
+    ['SOURCE_STOCK_CHANGED', 'retry_preparation'],
+  ])(
+    'uses general guidance for an invalid reason/recovery pair: %s / %s',
+    (reasonCode, recovery) => {
+      expect(
+        show({
+          code: 'SIMPLE_OUTBOUND_PLAN_INVALIDATED',
+          details: { reasonCode, recovery },
+        })
+      ).toBe('출고 준비를 진행할 수 없어요. 배치와 송장 상태를 확인해 주세요.');
     }
   );
 
@@ -283,7 +474,7 @@ describe('preparation reason message priority', () => {
           message: 'Preparation blocked',
           details,
         })
-      ).toBe('출고 계획이 바뀌었어요. 송장을 다시 확인해 주세요.');
+      ).toBe('출고 준비를 진행할 수 없어요. 배치와 송장 상태를 확인해 주세요.');
     }
   );
 
@@ -297,7 +488,7 @@ describe('preparation reason message priority', () => {
           recovery: 'retry_preparation',
         },
       })
-    ).toBe('배치 화면에서 「피킹 시작」을 먼저 눌러 주세요.');
+    ).toBe('피킹 화면에서 「피킹 시작」을 먼저 눌러 주세요.');
   });
 });
 
@@ -307,6 +498,19 @@ describe('batch blocker groups', () => {
       parseServerError({ response: { status: 409, data: { code, errors } } })
     );
   }
+  it.each([
+    ['INBOUND_PENDING', 'BATCH_START_BLOCKED', '창고 담당자에게 적치 완료를 요청한 뒤 다시 「피킹 시작」을 누르거나, 배치 상세에서 이 박스를 빼고 시작하세요.'],
+    ['INBOUND_PENDING', 'BATCH_JOIN_BLOCKED', '창고 담당자에게 적치 완료를 요청한 뒤 다시 넣어 주세요.'],
+    ['STOCK_SHORT', 'BATCH_START_BLOCKED', '배치 상세에서 이 박스를 빼고 시작하세요.'],
+    ['STOCK_SHORT', 'BATCH_JOIN_BLOCKED', '재고가 모자라 이 배치에 넣을 수 없어요. 재고를 확인해 주세요.'],
+    ['WAYBILL_NOT_READY', 'BATCH_START_BLOCKED', '출고 상세에서 송장 상태를 확인하고 발급(재발급)한 뒤 다시 시작하거나, 배치 상세에서 이 박스를 빼고 시작하세요.'],
+    ['WAYBILL_NOT_READY', 'BATCH_JOIN_BLOCKED', '출고 상세에서 송장 상태를 확인하고 발급(재발급)한 뒤 다시 넣어 주세요.'],
+    ['CANCEL_REQUESTED', 'BATCH_START_BLOCKED', '취소 처리가 끝날 때까지 이 박스는 출고할 수 없어요. 배치 상세에서 이 박스를 빼고 시작하세요.'],
+  ])('guides the administrator for %s in %s', (reason, code, expected) => {
+    const result = group([{ shipmentId: 'box-1', reason, requiredQty: 1, shortQty: 1 }], code);
+    expect(result.groups[0].guidance).toBe(expected);
+  });
+
   it('사유별로 묶고 송장 번호와 상품별 필요·부족 수량을 보여 준다', () => {
     const result = group([
       {
@@ -355,7 +559,7 @@ describe('batch blocker groups', () => {
       result.groups
         .map((g) => [g.title, ...g.rows, g.guidance].join(' '))
         .join(' ')
-    ).toContain('관리자 화면에서 이 박스를 배치에서 빼고 시작하세요.');
+    ).toContain('배치 상세에서 이 박스를 빼고 시작하세요.');
   });
 
   it('합류 차단에는 합류용 조치 안내를 보여 준다', () => {
@@ -376,7 +580,7 @@ describe('batch blocker groups', () => {
         .map((g) => [g.title, ...g.rows, g.guidance].join(' '))
         .join(' ')
     ).toContain(
-      '재고가 모자라 이 배치에 넣을 수 없어요. 관리자에게 문의해 주세요.'
+      '재고가 모자라 이 배치에 넣을 수 없어요. 재고를 확인해 주세요.'
     );
     expect(
       result.groups

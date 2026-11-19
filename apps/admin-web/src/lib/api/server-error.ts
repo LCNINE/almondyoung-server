@@ -75,31 +75,31 @@ export const CONFLICT_MESSAGES: Record<string, string> = {
   OUTBOUND_BATCH_STARTED_RETRY:
     '방금 작업이 시작된 배치예요. 다시 넣어 주세요.',
   PICKING_BATCH_EMPTY:
-    '배치에 박스가 없어서 시작할 수 없어요. 관리자 화면에서 박스를 먼저 넣어 주세요.',
-  PICKING_BATCH_NOT_STARTED: '배치 화면에서 「피킹 시작」을 먼저 눌러 주세요.',
+    '배치에 박스가 없어서 시작할 수 없어요. 배치 상세에서 박스를 먼저 넣어 주세요.',
+  PICKING_BATCH_NOT_STARTED: '피킹 화면에서 「피킹 시작」을 먼저 눌러 주세요.',
   PICKING_SESSION_NOT_ACTIVE:
-    '배치 재고 기록을 확인해야 해요. 관리자에게 문의해 주세요.',
-  SHIPMENT_WITHDRAWN: '빠진 박스예요. 송장은 버려 주세요.',
+    '배치 재고 작업이 진행 가능한 상태가 아니에요. 배치 상세에서 재고 작업 상태를 확인해 주세요.',
+  SHIPMENT_WITHDRAWN: '배치에서 빠졌거나 빠지는 중인 박스예요. 창고 담당자에게 해당 송장을 사용하지 않도록 알려 주세요.',
   SHIPMENT_ALREADY_WITHDRAWING:
-    '이미 빼는 중인 박스예요. 송장을 스캔해 뺄 상품을 되돌림 바구니에 넣어 주세요.',
+    '이미 빼는 중인 박스예요. 창고 담당자에게 뺄 상품의 되돌림 처리를 요청해 주세요.',
   TOTE_BARCODE_RESERVED:
     '되돌림 바구니용 바코드는 토트로 등록할 수 없어요. 다른 바코드를 사용해 주세요.',
   LABEL_REPRINT_REQUIRED:
-    '송장이 바뀌었거나 아직 출력하지 않았어요. 프린터가 있는 창고 앱에서 송장을 출력한 뒤 계속해 주세요.',
+    '송장이 바뀌었거나 아직 출력하지 않았어요. 창고 담당자에게 프린터가 있는 창고 앱에서 송장을 출력하도록 요청해 주세요.',
   WAYBILL_LABEL_NOT_ALLOCATED:
-    '작업이 시작되지 않은 박스예요. 배치 화면에서 「피킹 시작」을 먼저 눌러 주세요.',
+    '작업이 시작되지 않은 박스예요. 피킹 화면에서 「피킹 시작」을 먼저 눌러 주세요.',
   WAYBILL_STALE:
-    '주문(주소·상품)이 바뀌어 이 송장은 쓸 수 없어요. 관리자에게 재발급을 요청해 주세요.',
+    '주문(주소·상품)이 바뀌어 이 송장은 쓸 수 없어요. 출고 상세에서 송장 상태를 확인해 주세요. 재발급이 가능한 상태라면 재발급해 주세요.',
   WAYBILL_NOT_DISPATCHABLE:
-    '한진 등록이 끝나지 않은 송장이에요. 관리자에게 운송장 발급 상태를 확인해 달라고 해 주세요.',
+    '한진 등록이 끝나지 않은 송장이에요. 출고 상세에서 운송장 발급 상태를 확인해 주세요.',
   SIMPLE_OUTBOUND_PLAN_INVALIDATED:
-    '출고 계획이 바뀌었어요. 송장을 다시 확인해 주세요.',
+    '출고 준비를 진행할 수 없어요. 배치와 송장 상태를 확인해 주세요.',
   SHORT_PICK_EXCEEDS_UNPICKED:
     '아직 집지 않은 수량보다 많이 결품 보고할 수 없어요. 해당 로케이션의 남은 수량을 확인해 주세요.',
   SHORT_PICK_WORK_ITEM_WAITING:
-    '이 박스는 지금 결품을 보고할 수 없어요. 송장을 다시 찍어 주세요.',
+    '이 박스는 지금 결품을 보고할 수 없어요. 창고 담당자에게 송장을 다시 스캔하도록 요청해 주세요.',
   SHORT_PICK_INVOICE_NOT_VOIDABLE:
-    '송장을 지금 처리할 수 없어 결품을 보고하지 못했어요. 관리자에게 문의해 주세요.',
+    '송장을 지금 무효화할 수 없어 결품을 보고하지 못했어요. 출고 상세에서 송장 상태를 확인해 주세요.',
   SHIPMENT_RECOVERY_IN_PROGRESS:
     '같은 상자의 다른 취소를 처리하고 있어요. 상자가 출고 배치에 있으면 먼저 빼고, 1~2분 뒤 다시 시도해 주세요.',
   SHIPMENT_ALREADY_DISPATCHED:
@@ -109,18 +109,48 @@ export const CONFLICT_MESSAGES: Record<string, string> = {
     '그사이 주문이 바뀌었어요. 새로고침한 뒤 다시 시도해 주세요.',
 };
 
-const PREPARATION_REASON_CODES: readonly string[] = [
-  'SOURCE_STOCK_CHANGED',
-  'PLAN_IDENTITY_CHANGED',
-  'PLAN_NOT_DRAFT',
-  'SHIPMENT_SNAPSHOT_CHANGED',
-  'ALLOCATION_INVALID',
-  'ELIGIBILITY_CHANGED',
-  'SOURCE_INSUFFICIENT',
-  'ACTIVE_WORK_REQUIRES_REVIEW',
-  'REPLAN_LIMIT_REACHED',
-  'BATCH_NOT_STARTED',
-];
+const PREPARATION_REASON_MESSAGES: Record<string, { recovery: 'retry_preparation' | 'review_batch'; message: string }> = {
+  BATCH_NOT_STARTED: {
+    recovery: 'retry_preparation',
+    message: '피킹 화면에서 「피킹 시작」을 먼저 눌러 주세요.',
+  },
+  SOURCE_INSUFFICIENT: {
+    recovery: 'retry_preparation',
+    message: '출고할 재고가 부족해요. 재고를 확인한 뒤 다시 준비해 주세요.',
+  },
+  REPLAN_LIMIT_REACHED: {
+    recovery: 'retry_preparation',
+    message: '출고 준비의 자동 재시도 한도에 도달했어요. 재고를 확인한 뒤 다시 준비해 주세요.',
+  },
+  SOURCE_STOCK_CHANGED: {
+    recovery: 'review_batch',
+    message: '출고에 사용할 재고 상태가 바뀌었어요. 배치와 재고 상태를 확인해 주세요.',
+  },
+  PLAN_IDENTITY_CHANGED: {
+    recovery: 'review_batch',
+    message: '출고 계획이 바뀌었어요. 배치와 송장 상태를 확인해 주세요.',
+  },
+  PLAN_NOT_DRAFT: {
+    recovery: 'review_batch',
+    message: '현재 출고 계획은 초안 상태가 아니에요. 배치의 진행 상태를 확인해 주세요.',
+  },
+  SHIPMENT_SNAPSHOT_CHANGED: {
+    recovery: 'review_batch',
+    message: '박스의 출고 정보가 바뀌었어요. 주문과 송장 상태를 확인해 주세요.',
+  },
+  ALLOCATION_INVALID: {
+    recovery: 'review_batch',
+    message: '출고 재고 배정이 유효하지 않아요. 배치와 재고 배정 상태를 확인해 주세요.',
+  },
+  ELIGIBILITY_CHANGED: {
+    recovery: 'review_batch',
+    message: '박스의 출고 가능 상태가 바뀌었어요. 주문과 배치 상태를 확인해 주세요.',
+  },
+  ACTIVE_WORK_REQUIRES_REVIEW: {
+    recovery: 'review_batch',
+    message: '배치의 진행 중인 재고 작업을 확인할 수 없어요. 배치 상세에서 재고 작업 상태를 확인해 주세요.',
+  },
+};
 
 /** 화면에 따로 문장을 둔 거절 코드면 그 문장 */
 export function knownConflictMessage(code: string | null): string | undefined {
@@ -140,19 +170,15 @@ export function getServerDenyMessage(
     parsed.code === 'SIMPLE_OUTBOUND_PLAN_INVALIDATED' &&
     !Array.isArray(parsed.details) &&
     typeof reasonCode === 'string' &&
-    PREPARATION_REASON_CODES.includes(reasonCode) &&
-    (recovery === 'retry_preparation' || recovery === 'review_batch')
+    Object.hasOwn(PREPARATION_REASON_MESSAGES, reasonCode)
   ) {
-    if (reasonCode === 'BATCH_NOT_STARTED')
-      return '배치 화면에서 「피킹 시작」을 먼저 눌러 주세요.';
+    const guidance = PREPARATION_REASON_MESSAGES[reasonCode];
 
-    if (recovery === 'review_batch')
-      return '출고 대상이나 작업 상태가 바뀌었어요. 배치와 송장을 확인해 주세요.';
+    if (recovery === guidance.recovery) return guidance.message;
+  }
 
-    if (reasonCode === 'SOURCE_INSUFFICIENT')
-      return '출고할 재고가 부족해요. 재고를 확인한 뒤 다시 준비해 주세요.';
-
-    return '재고가 변경됐어요. 현재 재고를 확인한 뒤 다시 준비해 주세요.';
+  if (parsed.code === 'BATCH_START_BLOCKED' || parsed.code === 'BATCH_JOIN_BLOCKED') {
+    return batchBlockedToastMessage(parsed);
   }
 
   const known = parsed.code ? CONFLICT_MESSAGES[parsed.code] : undefined;
@@ -172,24 +198,24 @@ const BATCH_BLOCKER_TEXT = {
   INBOUND_PENDING: {
     title: '적치 대기 중인 상품',
     start:
-      '적치를 끝낸 뒤 다시 「피킹 시작」을 누르거나, 관리자 화면에서 이 박스를 배치에서 빼고 시작하세요.',
-    join: '적치를 끝낸 뒤 다시 넣어 주세요.',
+      '창고 담당자에게 적치 완료를 요청한 뒤 다시 「피킹 시작」을 누르거나, 배치 상세에서 이 박스를 빼고 시작하세요.',
+    join: '창고 담당자에게 적치 완료를 요청한 뒤 다시 넣어 주세요.',
   },
   STOCK_SHORT: {
     title: '재고 부족',
-    start: '관리자 화면에서 이 박스를 배치에서 빼고 시작하세요.',
-    join: '재고가 모자라 이 배치에 넣을 수 없어요. 관리자에게 문의해 주세요.',
+    start: '배치 상세에서 이 박스를 빼고 시작하세요.',
+    join: '재고가 모자라 이 배치에 넣을 수 없어요. 재고를 확인해 주세요.',
   },
   WAYBILL_NOT_READY: {
     title: '송장 미발급·재발급 필요',
     start:
-      '송장을 발급(재발급)한 뒤 다시 시작하거나, 관리자 화면에서 이 박스를 배치에서 빼고 시작하세요.',
-    join: '관리자에게 송장 재발급을 요청한 뒤 다시 넣어 주세요.',
+      '출고 상세에서 송장 상태를 확인하고 발급(재발급)한 뒤 다시 시작하거나, 배치 상세에서 이 박스를 빼고 시작하세요.',
+    join: '출고 상세에서 송장 상태를 확인하고 발급(재발급)한 뒤 다시 넣어 주세요.',
   },
   CANCEL_REQUESTED: {
     title: '취소 처리 중인 주문',
     start:
-      '취소 처리가 끝날 때까지 이 박스는 출고할 수 없어요. 관리자 화면에서 이 박스를 배치에서 빼고 시작하세요.',
+      '취소 처리가 끝날 때까지 이 박스는 출고할 수 없어요. 배치 상세에서 이 박스를 빼고 시작하세요.',
     join: '취소가 끝날 때까지 이 박스는 넣을 수 없어요.',
   },
 };
@@ -200,6 +226,51 @@ const quantity = (value: unknown) =>
   typeof value === 'number' && Number.isFinite(value) && value >= 0
     ? value
     : '?';
+
+const INCOMPLETE_BLOCKER_MESSAGE = '일부 박스의 상세 사유를 확인하지 못했어요. 배치와 해당 박스의 출고 상태를 확인해 주세요.';
+
+function batchBlockedToastMessage(error: ParsedServerError): string {
+  const joining = error.code === 'BATCH_JOIN_BLOCKED';
+  const lines = [joining ? '박스를 배치에 추가하지 못했어요.' : '배치를 시작하지 못했어요.'];
+  const entries = Array.isArray(error.errors) ? error.errors : null;
+  const guidance = new Set<string>();
+  let readableCount = 0;
+
+  if (entries) {
+    lines.push(`차단 항목 ${entries.length}건`);
+    for (const entry of entries) {
+      const blocker = record(entry);
+      if (!blocker) continue;
+
+      const reason = text(blocker.reason);
+      const wording = reason && Object.hasOwn(BATCH_BLOCKER_TEXT, reason)
+        ? BATCH_BLOCKER_TEXT[reason as keyof typeof BATCH_BLOCKER_TEXT]
+        : null;
+      const shipmentId = text(blocker.shipmentId);
+      const trackingNo = text(blocker.trackingNo);
+      const skuName = text(blocker.skuName);
+      const skuCode = text(blocker.skuCode);
+      const row = [shipmentId ? `박스 ${shipmentId}` : '박스 확인 필요'];
+
+      if (trackingNo) row.push(`송장 ${trackingNo}`);
+      if (skuName || skuCode)
+        row.push(`상품 ${skuName ?? skuCode}${skuName && skuCode ? ` (${skuCode})` : ''}`);
+      if (blocker.requiredQty != null || blocker.shortQty != null)
+        row.push(`${quantity(blocker.requiredQty)}개 중 ${quantity(blocker.shortQty)}개 부족`);
+      row.push(`사유: ${wording?.title ?? reason ?? '확인 필요'}`);
+      lines.push(row.join(' · '));
+      if (wording) guidance.add(joining ? wording.join : wording.start);
+      if (shipmentId && reason) readableCount++;
+    }
+  }
+
+  lines.push(...guidance);
+  if (!entries || readableCount === 0 || readableCount !== entries.length) {
+    lines.push(INCOMPLETE_BLOCKER_MESSAGE);
+    lines.push(`서버 상세: ${error.message}`);
+  }
+  return lines.join('\n');
+}
 
 function batchBlockerRow(blocker: Record<string, unknown>): string {
   const trackingNo = text(blocker.trackingNo);

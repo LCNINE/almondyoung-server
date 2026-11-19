@@ -108,8 +108,13 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
     null
   );
   const noticeRequest = useRef(0);
+  const canShowBlockerPanel = useRef(false);
   const [adding, setAdding] = useState(false);
   const addingRef = useRef(false);
+
+  useEffect(() => {
+    canShowBlockerPanel.current = open && !!batch && !closed;
+  }, [open, batch, closed]);
 
   useEffect(() => {
     setBlockerError(null);
@@ -178,7 +183,7 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
 
         toast.success(
           refreshedBatch?.startedAt || batch?.startedAt
-            ? '배치에 넣었어요. 송장 출력이 필요한 박스는 프린터가 있는 창고 앱에서 송장을 출력한 뒤 피킹해 주세요.'
+            ? '배치에 넣었어요. 송장 출력이 필요한 박스는 창고 담당자에게 프린터가 있는 창고 앱에서 송장을 출력한 뒤 피킹하도록 안내해 주세요.'
             : successMessage
         );
       } else {
@@ -192,13 +197,27 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
 
       const parsed = parseServerError(error);
       const { code, status } = parsed;
+      const showBlockedToast = () => toast.error(`요청 배치 ${batchId}: ${getServerDenyMessage(error)}`, {
+          duration: Infinity,
+          closeButton: true,
+          style: {
+            maxHeight: '70vh',
+            overflowY: 'auto',
+            whiteSpace: 'pre-line',
+          },
+        });
+      let blockerShownInPanel = false;
 
       if (
         handlesBlockers &&
         code === 'BATCH_JOIN_BLOCKED' &&
-        request === noticeRequest.current
+        request === noticeRequest.current &&
+        canShowBlockerPanel.current
       ) {
         setBlockerError(parsed);
+        blockerShownInPanel = true;
+      } else if (handlesBlockers && code === 'BATCH_JOIN_BLOCKED') {
+        showBlockedToast();
       } else {
         toast.error(
           status === 404
@@ -208,7 +227,16 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
         );
       }
 
-      await refetch();
+      const { data: refreshedBatch } = await refetch();
+      if (
+        blockerShownInPanel &&
+        (request !== noticeRequest.current ||
+          !canShowBlockerPanel.current ||
+          (refreshedBatch && isClosed(refreshedBatch)))
+      ) {
+        if (request === noticeRequest.current) setBlockerError(null);
+        showBlockedToast();
+      }
       return false;
     } finally {
       if (request === noticeRequest.current) {
@@ -377,10 +405,7 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                         </div>
                       ))}
                       {blockerGroups.incomplete && (
-                        <p>
-                          일부 박스의 상세 사유를 확인하지 못했어요. 관리자에게
-                          문의해 주세요.
-                        </p>
+                        <p>일부 박스의 상세 사유를 확인하지 못했어요. 배치와 해당 박스의 출고 상태를 확인해 주세요.</p>
                       )}
                     </section>
                   )}

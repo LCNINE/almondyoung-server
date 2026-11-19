@@ -233,14 +233,19 @@ describe('배치 상세에 남는 상자 추가 결과', () => {
     statusCode: 409,
     response: {
       code: 'BATCH_JOIN_BLOCKED',
+      message: 'Shipment box-A cannot join the running batch: 1 blocker(s)',
       errors: [
         {
           shipmentId: 'box-A',
           reason: 'STOCK_SHORT',
+          shipmentLineId: 'line-A',
+          skuId: 'sku-A',
           trackingNo: '123456789012',
+          skuCode: 'SKU-A',
           skuName: '상품 A',
           requiredQty: 3,
           shortQty: 1,
+          detail: null,
         },
       ],
     },
@@ -400,7 +405,7 @@ describe('배치 상세에 남는 상자 추가 결과', () => {
         expect.objectContaining({
           type: 'success',
           title: expectsGuidance
-            ? '배치에 넣었어요. 송장 출력이 필요한 박스는 프린터가 있는 창고 앱에서 송장을 출력한 뒤 피킹해 주세요.'
+            ? '배치에 넣었어요. 송장 출력이 필요한 박스는 창고 담당자에게 프린터가 있는 창고 앱에서 송장을 출력한 뒤 피킹하도록 안내해 주세요.'
             : '명령을 접수했습니다. 서버 상태를 다시 확인합니다.',
         }),
       ]);
@@ -470,8 +475,22 @@ describe('배치 상세에 남는 상자 추가 결과', () => {
     expect(noticeTexts('alert')).toEqual([]);
   });
 
+  it('합류 차단의 상세 사유가 없으면 관리자가 확인할 화면을 안내한다', async () => {
+    await render();
+    await add('box-A');
+    await act(async () =>
+      first.reject({
+        ...blocked,
+        response: { ...blocked.response, errors: [] },
+      })
+    );
+
+    expect(noticeTexts('alert').join('')).toContain('배치와 해당 박스의 출고 상태를 확인해 주세요.');
+    expect(noticeTexts('alert').join('')).not.toContain('관리자에게 문의해 주세요.');
+  });
+
   it.each(['close', 'switch'])(
-    '%s 후 늦게 도착한 차단 응답은 표시하지 않는다',
+    '%s 후 늦게 도착한 차단 응답은 이전 배치의 상세 토스트로 알린다',
     async (change) => {
       await render();
       await add('box-A');
@@ -482,6 +501,119 @@ describe('배치 상세에 남는 상자 추가 결과', () => {
       await act(async () => first.reject(blocked));
       await render();
       expect(noticeTexts('alert')).toEqual([]);
+      expect(toast.getToasts()).toEqual([
+        expect.objectContaining({
+          type: 'error',
+          title: expect.stringContaining('요청 배치 batch-1:'),
+          duration: Infinity,
+          closeButton: true,
+          style: expect.objectContaining({
+            maxHeight: '70vh',
+            overflowY: 'auto',
+            whiteSpace: 'pre-line',
+          }),
+        }),
+      ]);
+      const receivedToast = toast.getToasts()[0];
+      if (!('title' in receivedToast)) throw new Error('오류 토스트가 없습니다.');
+      const title = String(receivedToast.title);
+      expect(title).toContain('차단 항목 1건');
+      expect(title).toContain('123456789012');
+      expect(title).toContain('SKU-A');
+      expect(title).toContain('3개 중 1개 부족');
+      expect(title).toContain('재고가 모자라 이 배치에 넣을 수 없어요. 재고를 확인해 주세요.');
+      expect(title).not.toContain(blocked.response.message);
     }
   );
+
+  it('차단 응답 때 배치가 완료되어 패널이 숨겨져도 상세 토스트를 보인다', async () => {
+    await render();
+    await add('box-A');
+    mockBatchQuery.mockReturnValue({
+      data: { ...batch(), status: 'completed', inventorySession: null },
+      isLoading: false,
+      refetch: mockRefetch,
+    });
+    await render();
+    await act(async () => first.reject(blocked));
+
+    expect(noticeTexts('alert')).toEqual([]);
+    const receivedToast = toast.getToasts()[0];
+    expect(receivedToast).toEqual(expect.objectContaining({ type: 'error' }));
+    if (!receivedToast || !('title' in receivedToast))
+      throw new Error('오류 토스트가 없습니다.');
+    const title = String(receivedToast.title);
+    expect(title).toContain('요청 배치 batch-1:');
+    expect(title).toContain('차단 항목 1건');
+    expect(title).toContain('박스 box-A');
+    expect(title).toContain('SKU-A');
+  });
+
+  it('이전 배치의 차단 재조회가 늦게 끝나도 새 배치의 차단 패널을 지우지 않는다', async () => {
+    let finishRefresh!: (value: Awaited<ReturnType<typeof mockRefetch>>) => void;
+    mockRefetch.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishRefresh = resolve;
+        })
+    );
+
+    await render();
+    await add('box-A');
+    await act(async () => first.reject(blocked));
+    await render('batch-2');
+    await add('box-B');
+    await act(async () =>
+      second.reject({
+        ...blocked,
+        response: {
+          ...blocked.response,
+          message: 'Shipment box-B cannot join the running batch: 1 blocker(s)',
+          errors: [
+            {
+              ...blocked.response.errors[0],
+              shipmentId: 'box-B',
+              skuName: '상품 B',
+            },
+          ],
+        },
+      })
+    );
+    expect(noticeTexts('alert').join('')).toContain('상품 B');
+
+    await act(async () =>
+      finishRefresh({ data: batch('batch-1'), isError: false })
+    );
+    expect(noticeTexts('alert').join('')).toContain('상품 B');
+  });
+
+  it('차단 응답 후 재조회에서 배치가 완료되면 숨겨진 패널 대신 상세 토스트를 보인다', async () => {
+    await render();
+    await add('box-A');
+    const completed = {
+      ...batch(),
+      status: 'completed' as const,
+      inventorySession: null,
+    };
+    mockRefetch.mockImplementationOnce(async () => {
+      mockBatchQuery.mockReturnValue({
+        data: completed,
+        isLoading: false,
+        refetch: mockRefetch,
+      });
+      await render();
+      return { data: completed, isError: false };
+    });
+    await act(async () => first.reject(blocked));
+
+    expect(noticeTexts('alert')).toEqual([]);
+    const receivedToast = toast.getToasts()[0];
+    expect(receivedToast).toEqual(expect.objectContaining({ type: 'error' }));
+    if (!receivedToast || !('title' in receivedToast))
+      throw new Error('오류 토스트가 없습니다.');
+    const title = String(receivedToast.title);
+    expect(title).toContain('요청 배치 batch-1:');
+    expect(title).toContain('차단 항목 1건');
+    expect(title).toContain('박스 box-A');
+  });
 });

@@ -54,6 +54,11 @@ export function V2PickingWorkspace() {
     null
   );
   const noticeRequest = useRef(0);
+  const canShowBlockerPanel = useRef(false);
+
+  useEffect(() => {
+    canShowBlockerPanel.current = !!batch;
+  }, [batch]);
 
   useEffect(() => {
     setBlockerError(null);
@@ -154,8 +159,14 @@ export function V2PickingWorkspace() {
         const parsed = parseServerError(error);
         const blocked = parsed.code === 'BATCH_START_BLOCKED';
 
-        setBlockerError(blocked ? parsed : null);
-        if (!blocked) toast.error(getServerDenyMessage(error));
+        setBlockerError(blocked && canShowBlockerPanel.current ? parsed : null);
+        if (blocked && !canShowBlockerPanel.current) {
+          toast.error(getServerDenyMessage(error), {
+            duration: Infinity,
+            closeButton: true,
+            style: { maxHeight: '70vh', overflowY: 'auto', whiteSpace: 'pre-line' },
+          });
+        } else if (!blocked) toast.error(getServerDenyMessage(error));
       } else {
         toast.error(getServerDenyMessage(error));
       }
@@ -248,10 +259,7 @@ export function V2PickingWorkspace() {
                   </div>
                 ))}
                 {blockerGroups.incomplete && (
-                  <p>
-                    일부 박스의 상세 사유를 확인하지 못했어요. 관리자에게 문의해
-                    주세요.
-                  </p>
+                  <p>일부 박스의 상세 사유를 확인하지 못했어요. 배치와 해당 박스의 출고 상태를 확인해 주세요.</p>
                 )}
               </section>
             )}
