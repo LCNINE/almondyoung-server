@@ -24,6 +24,19 @@ function resource(path: string, body: Record<string, unknown>) {
     return `adjust:${body.skuId}:${body.locationId}`;
   return `${path}:${body.warehouseId}`;
 }
+/** 저장된 거절을 화면에 돌려줄 오류로 다시 만든다 — 경로가 있어야 출고 저장 경로의 거절로 읽힌다. */
+function storedRejection(op: StoredOperation) {
+  return new ApiError(
+    '작업이 반영되지 않았어요.',
+    op.errorStatus ?? 400,
+    op.errorCode,
+    op.preparation,
+    undefined,
+    op.requiredPermissions,
+    undefined,
+    op.path
+  );
+}
 export function createOperationRunner(deps: {
   api: ApiClient;
   store: OperationStore;
@@ -55,16 +68,7 @@ export function createOperationRunner(deps: {
     callbacks?.forEach((w) =>
       op.status === 'confirmed'
         ? w.resolve(op.result)
-        : w.reject(
-            new ApiError(
-              '작업이 반영되지 않았어요.',
-              op.errorStatus ?? 400,
-              op.errorCode,
-              op.preparation,
-              undefined,
-              op.requiredPermissions
-            )
-          )
+        : w.reject(storedRejection(op))
     );
   }
   async function execute(input: StoredOperation) {
@@ -263,15 +267,7 @@ export function createOperationRunner(deps: {
       createdAt: Date.now(),
     });
     if (op.status === 'confirmed') return op.result as T;
-    if (op.status === 'rejected')
-      throw new ApiError(
-        '작업이 반영되지 않았어요.',
-        op.errorStatus ?? 400,
-        op.errorCode,
-        op.preparation,
-        undefined,
-        op.requiredPermissions
-      );
+    if (op.status === 'rejected') throw storedRejection(op);
     return new Promise<T>((resolve, reject) => {
       const list = waiting.get(id) ?? [];
       list.push({ resolve: (v) => resolve(v as T), reject });
