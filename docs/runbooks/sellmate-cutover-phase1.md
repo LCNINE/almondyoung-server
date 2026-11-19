@@ -257,7 +257,7 @@ SELECT count(*) FILTER (WHERE has_sellmate AND EXISTS (
 
 **판정:** 세 값이 0, 또는 0 이 아닌 상자마다 처리를 적었다. `in_batch` 는 빼고 나서 같은 SQL 을 다시 돌려 0 을 본다 — 작업자 권한(`fulfillment.warehouse.operate`)으로 뺄 수 있고, 뺀 상자를 다시 넣으면 409 다(11-19 로컬 리허설, `worker01`).
 
-⚠️ 409 `SHIPMENT_HANDED_OVER_TO_SELLMATE` 는 어드민·창고 앱에 한국어 문구가 없다 — 작업자에게는 서버의 영어 문장(`… belongs to an order Sellmate ships`)이 보인다. 당일 전에 작업자에게 «이 문장 = 셀메이트가 내보낼 주문, 건드리지 않는다» 를 알려 둔다.
+⚠️ 409 `SHIPMENT_HANDED_OVER_TO_SELLMATE` 는 어드민·창고 앱에 한국어 문구가 없다(#1465 가 고친다 — 고쳐지면 이 문단을 지운다) — 작업자에게는 서버의 영어 문장(`… belongs to an order Sellmate ships`)이 보인다. 당일 전에 작업자에게 «이 문장 = 셀메이트가 내보낼 주문, 건드리지 않는다» 를 알려 둔다.
 
 ### 6-3. 첫 1건 먼저
 
