@@ -263,16 +263,19 @@ export class StockProjectionReader {
             ),
           ),
       );
-      let queueMatch: SQL | undefined;
 
       const isShort = sql`${rows.unshippedQuantity} > ${rows.onHandQty}`;
       const isBelowSafety = and(isNotNull(rows.safetyStock), lt(rows.availableQuantity, rows.safetyStock));
       const isEmpty = lte(rows.availableQuantity, 0);
 
-      if (queue === 'unshipped') queueMatch = gt(rows.unshippedQuantity, 0);
-      if (queue === 'shortage') queueMatch = isShort;
-      if (queue === 'below_safety_stock') queueMatch = isBelowSafety;
-      if (queue === 'out_of_stock') queueMatch = isEmpty;
+      const queueConditions = {
+        unshipped: gt(rows.unshippedQuantity, 0),
+        shortage: isShort,
+        below_safety_stock: isBelowSafety,
+        out_of_stock: isEmpty,
+      };
+
+      const queueMatch = queue?.length ? and(...queue.map((q) => queueConditions[q])) : undefined;
 
       const groups = trx.$with('stock_groups').as(
         trx
@@ -338,12 +341,13 @@ export class StockProjectionReader {
               .selectDistinctOn([productVariantSkuLinks.skuId], {
                 skuId: productVariantSkuLinks.skuId,
                 fileId: productImages.fileId,
+                masterId: productMasterVersions.masterId,
               })
               .from(productVariantSkuLinks)
               .innerJoin(productMatchings, eq(productMatchings.id, productVariantSkuLinks.productMatchingId))
               .innerJoin(productMasterVariants, eq(productMasterVariants.variantId, productMatchings.variantId))
               .innerJoin(productMasterVersions, eq(productMasterVersions.id, productMasterVariants.versionId))
-              .innerJoin(
+              .leftJoin(
                 productImages,
                 and(eq(productImages.versionId, productMasterVersions.id), eq(productImages.isPrimary, true)),
               )
@@ -354,10 +358,19 @@ export class StockProjectionReader {
                   isNull(productMasterVersions.deletedAt),
                 ),
               )
-              .orderBy(productVariantSkuLinks.skuId, productMasterVersions.createdAt, productMasterVersions.id);
+              // 대표 이미지가 있는 상품을 먼저 고르고, 없으면 상품 링크만이라도 남긴다.
+              .orderBy(
+                productVariantSkuLinks.skuId,
+                sql`${productImages.fileId} is null`,
+                productMasterVersions.createdAt,
+                productMasterVersions.id,
+              );
 
       return {
-        data: groupStockSummaries(pageSkuRows, new Map(images.map((image) => [image.skuId, image.fileId]))),
+        data: groupStockSummaries(
+          pageSkuRows,
+          new Map(images.map((image) => [image.skuId, { fileId: image.fileId, masterId: image.masterId }])),
+        ),
         total: countResult?.total ?? 0,
         page,
         limit,

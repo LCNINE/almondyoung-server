@@ -83,12 +83,26 @@ describe('groupStockSummaries', () => {
     const [group] = groupStockSummaries(
       [row({ skuId: 'no-image' }), row({ skuId: 'with-image' }), row({ skuId: 'later' })],
       new Map([
-        ['with-image', 'file-1'],
-        ['later', 'file-2'],
+        ['with-image', { fileId: 'file-1', masterId: 'master-1' }],
+        ['later', { fileId: 'file-2', masterId: 'master-2' }],
       ]),
     );
 
     expect(group.imageFileId).toBe('file-1');
+    expect(group.masterId).toBe('master-1');
+  });
+
+  it('takes the product link from the same product as the image', () => {
+    const [group] = groupStockSummaries(
+      [row({ skuId: 'no-image' }), row({ skuId: 'with-image' })],
+      new Map([
+        ['no-image', { fileId: null, masterId: 'master-no-image' }],
+        ['with-image', { fileId: 'file-1', masterId: 'master-with-image' }],
+      ]),
+    );
+
+    expect(group.imageFileId).toBe('file-1');
+    expect(group.masterId).toBe('master-with-image');
   });
 
   it('returns no groups for an empty page', () => {

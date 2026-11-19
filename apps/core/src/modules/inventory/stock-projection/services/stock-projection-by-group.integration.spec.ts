@@ -131,7 +131,7 @@ describeIfDb('stock summary by group (DB integration, rollback-only)', () => {
       await demandFor(tx, demand.id, warehouse.id, 'created', { qty: 5, shippedQty: 3, canceledQty: 2 });
       await demandFor(tx, demand.id, otherWarehouse.id, 'created', { qty: 7 });
 
-      const result = await reader.listStockSummariesByGroup({ warehouseId: warehouse.id, queue: 'unshipped' }, tx);
+      const result = await reader.listStockSummariesByGroup({ warehouseId: warehouse.id, queue: ['unshipped'] }, tx);
 
       expect(result.total).toBe(1);
       expect(result.data[0].skus[0]).toMatchObject({
@@ -180,7 +180,7 @@ describeIfDb('stock summary by group (DB integration, rollback-only)', () => {
 
       await demandFor(tx, demand.id, warehouse.id);
 
-      const queues: GetStockSummaryByGroupQueryDto['queue'][] = [
+      const queues: NonNullable<GetStockSummaryByGroupQueryDto['queue']>[number][] = [
         'unshipped',
         'shortage',
         'below_safety_stock',
@@ -188,18 +188,34 @@ describeIfDb('stock summary by group (DB integration, rollback-only)', () => {
       ];
 
       for (const queue of queues) {
-        const result = await reader.listStockSummariesByGroup({ warehouseId: warehouse.id, queue }, tx);
+        const result = await reader.listStockSummariesByGroup({ warehouseId: warehouse.id, queue: [queue] }, tx);
 
         expect(result.data[0].groupId).toBe(group.id);
         expect(result.data[0].skus).toHaveLength(2);
       }
 
       // 부족 = 미발송이 정상 재고보다 많은 옵션 — 이 시드의 수요 SKU 는 재고 0 에 미발송이 있다.
-      const shortage = await reader.listStockSummariesByGroup({ warehouseId: warehouse.id, queue: 'shortage' }, tx);
+      const shortage = await reader.listStockSummariesByGroup({ warehouseId: warehouse.id, queue: ['shortage'] }, tx);
 
       expect(shortage.total).toBe(1);
       expect(shortage.data[0].skus).toHaveLength(2);
       expect(shortage.summary.shortageOptions).toBeGreaterThan(0);
+
+      // 여러 큐는 한 옵션이 모두 해당해야 한다 — 수요 SKU 는 미발송이면서 부족하다.
+      const both = await reader.listStockSummariesByGroup(
+        { warehouseId: warehouse.id, queue: ['unshipped', 'shortage'] },
+        tx,
+      );
+
+      expect(both.data.map((g) => g.groupId)).toContain(group.id);
+
+      // 미발송은 수요 SKU, 안정재고 미만은 형제 SKU 라 둘 다 해당하는 옵션이 없다.
+      const split = await reader.listStockSummariesByGroup(
+        { warehouseId: warehouse.id, queue: ['unshipped', 'below_safety_stock'] },
+        tx,
+      );
+
+      expect(split.data.map((g) => g.groupId)).not.toContain(group.id);
     });
   });
 
@@ -333,7 +349,7 @@ describeIfDb('stock summary by group (DB integration, rollback-only)', () => {
       expect(rows.find((row) => row.skuId === empty.id)).toMatchObject({ onHandQuantity: 0, availableQuantity: 0 });
 
       const outOfStock = await reader.listStockSummariesByGroup(
-        { warehouseId: warehouse.id, queue: 'out_of_stock' },
+        { warehouseId: warehouse.id, queue: ['out_of_stock'] },
         tx,
       );
 

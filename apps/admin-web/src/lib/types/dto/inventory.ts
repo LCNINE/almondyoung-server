@@ -811,7 +811,7 @@ export interface StockSummaryByGroupQuery {
   warehouseId?: string;
   supplierId?: string;
   search?: string;
-  queue?: StockQueue;
+  queue?: StockQueue[];
   page?: number;
   limit?: number;
 }
@@ -840,6 +840,7 @@ export interface StockSummaryGroupDto {
   groupCode: string | null;
   /** 쇼핑몰 상품 대표 이미지 fileId — resolvePublicFileUrl 로 그린다 */
   imageFileId: string | null;
+  masterId: string | null;
   skus: StockSummaryGroupSkuDto[];
 }
 

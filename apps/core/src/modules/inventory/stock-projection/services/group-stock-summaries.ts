@@ -17,7 +17,7 @@ export interface GroupStockSummaryRow extends Omit<
 /** DB에서 정렬·페이지 처리한 행의 순서를 유지한다. */
 export function groupStockSummaries(
   rows: GroupStockSummaryRow[],
-  imageFileIdBySku: ReadonlyMap<string, string> = new Map(),
+  productBySku: ReadonlyMap<string, { fileId: string | null; masterId: string }> = new Map(),
 ): StockSummaryGroupDto[] {
   const groups = new Map<string, StockSummaryGroupDto>();
 
@@ -31,12 +31,20 @@ export function groupStockSummaries(
         groupName: row.groupId === null ? row.skuName : row.groupName,
         groupCode: row.groupId === null ? null : row.groupCode,
         imageFileId: null,
+        masterId: null,
         skus: [],
       };
       groups.set(key, group);
     }
 
-    group.imageFileId ??= imageFileIdBySku.get(row.skuId) ?? null;
+    const product = productBySku.get(row.skuId);
+
+    if (!group.imageFileId && product?.fileId) {
+      group.imageFileId = product.fileId;
+      group.masterId = product.masterId;
+    }
+
+    group.masterId ??= product?.masterId ?? null;
 
     const currentQuantity = physicalQuantity(row);
 

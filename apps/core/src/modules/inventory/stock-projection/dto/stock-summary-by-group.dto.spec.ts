@@ -25,6 +25,11 @@ describe('GetStockSummaryByGroupQueryDto', () => {
     expect(await invalidFields({ queue })).toEqual([]);
   });
 
+  it('accepts several queues joined by commas and rejects an unknown one among them', async () => {
+    expect(await invalidFields({ queue: 'unshipped,below_safety_stock' })).toEqual([]);
+    expect(await invalidFields({ queue: 'unshipped,reserved' })).toEqual(['queue']);
+  });
+
   it('rejects malformed identifiers, unknown queues and invalid pagination', async () => {
     expect(
       await invalidFields({

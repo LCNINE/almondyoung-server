@@ -49,8 +49,10 @@ const QUEUES: StockQueue[] = [
 
 const fmt = (n: number) => n.toLocaleString('ko-KR');
 
-function toQueue(value: string | null): StockQueue | undefined {
-  return QUEUES.find((queue) => queue === value);
+function toQueues(value: string | null): StockQueue[] {
+  const picked = value?.split(',') ?? [];
+
+  return QUEUES.filter((queue) => picked.includes(queue));
 }
 
 function readSavedWarehouse(): string | null {
@@ -90,14 +92,14 @@ export function InventoryStatusTable() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const queue = toQueue(searchParams.get('queue'));
+  const queues = toQueues(searchParams.get('queue'));
   const warehouseId = searchParams.get('warehouseId') ?? '';
   const supplierId = searchParams.get('supplierId') ?? '';
   const q = searchParams.get('q') ?? '';
   const page = Number(searchParams.get('page')) || 1;
 
   const { data, isLoading, isFetching } = useStockSummaryByGroup({
-    queue,
+    queue: queues.length ? queues : undefined,
     warehouseId: warehouseId || undefined,
     supplierId: supplierId || undefined,
     search: q || undefined,
@@ -190,15 +192,17 @@ export function InventoryStatusTable() {
           <button
             key={card.queue}
             type="button"
-            aria-pressed={queue === card.queue}
-            onClick={() =>
-              setParams({
-                queue: queue === card.queue ? undefined : card.queue,
-              })
-            }
+            aria-pressed={queues.includes(card.queue)}
+            onClick={() => {
+              const next = queues.includes(card.queue)
+                ? queues.filter((item) => item !== card.queue)
+                : [...queues, card.queue];
+
+              setParams({ queue: next.join(',') || undefined });
+            }}
             className={cn(
               'flex flex-col gap-1 rounded-lg border bg-background px-4 py-3 text-left transition-colors hover:bg-muted/40',
-              queue === card.queue &&
+              queues.includes(card.queue) &&
                 'border-2 border-foreground px-[15px] py-[11px]'
             )}
           >
@@ -330,7 +334,20 @@ export function InventoryStatusTable() {
                         rowSpan={group.skus.length}
                         className="py-3 align-top"
                       >
-                        <div className="flex gap-3">
+                        <a
+                          href={
+                            group.masterId
+                              ? `/mall/products-list/${group.masterId}`
+                              : undefined
+                          }
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className={cn(
+                            'flex gap-3',
+                            group.masterId &&
+                              'hover:[&_.product-name]:underline'
+                          )}
+                        >
                           {group.imageFileId ? (
                             <img
                               src={`${PUBLIC_FILE_BASE}/files/public/${group.imageFileId}`}
@@ -341,12 +358,12 @@ export function InventoryStatusTable() {
                             <div className="size-[72px] flex-none rounded-md bg-muted" />
                           )}
                           <div className="flex flex-col gap-0.5 text-xs text-muted-foreground">
-                            <span className="text-sm font-bold text-foreground">
+                            <span className="product-name text-sm font-bold text-foreground">
                               {group.groupName}
                             </span>
                             {group.groupCode && <span>{group.groupCode}</span>}
                           </div>
-                        </div>
+                        </a>
                       </td>
                     )}
                     <td className="py-2">

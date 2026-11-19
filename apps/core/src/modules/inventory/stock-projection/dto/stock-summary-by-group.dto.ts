@@ -1,10 +1,12 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
 import { IsIn, IsOptional, IsString, Matches } from 'class-validator';
 import { PaginationQueryDto } from '../../shared/dto';
 
 // 기본 창고 UUID도 허용한다 — IsUUID는 version/variant 니블이 없는 기존 ID를 거부한다.
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const STOCK_QUEUES = ['unshipped', 'shortage', 'below_safety_stock', 'out_of_stock'];
+const STOCK_QUEUES = ['unshipped', 'shortage', 'below_safety_stock', 'out_of_stock'] as const;
+export type StockQueue = (typeof STOCK_QUEUES)[number];
 
 export class GetStockSummaryByGroupQueryDto extends PaginationQueryDto {
   @ApiProperty({ description: '창고 ID', required: false })
@@ -22,10 +24,16 @@ export class GetStockSummaryByGroupQueryDto extends PaginationQueryDto {
   @IsString()
   search?: string;
 
-  @ApiProperty({ description: '하나 이상의 SKU 행이 해당하는 상품 그룹', required: false, enum: STOCK_QUEUES })
+  @ApiProperty({
+    description: '쉼표로 여럿 — 한 옵션(창고별 행)이 모두 해당하는 상품 그룹',
+    required: false,
+    enum: STOCK_QUEUES,
+    isArray: true,
+  })
   @IsOptional()
-  @IsIn(STOCK_QUEUES)
-  queue?: 'unshipped' | 'shortage' | 'below_safety_stock' | 'out_of_stock';
+  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.split(',') : value))
+  @IsIn(STOCK_QUEUES, { each: true })
+  queue?: StockQueue[];
 }
 
 export class StockSummaryGroupSkuDto {
@@ -85,6 +93,9 @@ export class StockSummaryGroupDto {
     description: '쇼핑몰 상품(PIM) 대표 이미지 file-service fileId — 그룹 옵션 중 매칭된 활성 상품의 대표 이미지',
   })
   imageFileId: string | null;
+
+  @ApiProperty({ type: String, nullable: true, description: '대표 이미지를 낸 쇼핑몰 상품(PIM) masterId' })
+  masterId: string | null;
 
   @ApiProperty({ type: [StockSummaryGroupSkuDto] })
   skus: StockSummaryGroupSkuDto[];
