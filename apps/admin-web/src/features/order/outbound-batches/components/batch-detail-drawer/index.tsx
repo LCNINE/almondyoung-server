@@ -408,12 +408,13 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                     {batch.workItems.map((item) => (
                       <TableRow key={item.id}>
                         <TableCell>
-                          <p
-                            className="font-medium"
+                          <Link
+                            className="font-medium hover:underline"
+                            href={`/order/fulfillments?shipmentId=${item.shipmentId}`}
                             title={`상자 ${item.shipmentId} · 작업 ${item.id} · lease v${item.leaseVersion}`}
                           >
                             {item.displayOrderNo ? `#${item.displayOrderNo}` : '주문번호 없음'}
-                          </p>
+                          </Link>
                           <p className="text-xs text-muted-foreground">
                             {item.itemSummary}
                           </p>
