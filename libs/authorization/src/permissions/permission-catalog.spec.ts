@@ -135,6 +135,14 @@ describe('permission catalog', () => {
     }
   });
 
+  // 셀메이트 컷오버 1단계(#1251 런북 §11-2): 작업자가 막히는 매칭·정체 주문을 물류 관리자가 맡는다.
+  // 매칭 화면(/order/matching)과 정체 보드의 주문 링크(/order/history)는 order.order.read, 매칭 저장은 order.matching.write.
+  it('gives the logistics manager order read and order matching', () => {
+    expect(findPermission('order.order.read')?.grantOnFirstRegistration).toEqual(['admin', 'intern', 'logistics_manager']);
+    expect(findPermission('order.matching.write')?.grantOnFirstRegistration).toEqual(['admin', 'logistics_manager']);
+    expect(findPermission('order.matching.write')?.grantOnFirstRegistration).not.toContain('logistics_worker');
+  });
+
   it('declares the recipient permission for logistics and admin', () => {
     const recipient = findPermission('fulfillment.recipient.read');
     expect(recipient?.dangerous).toBe(true);
