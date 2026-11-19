@@ -315,7 +315,8 @@ export function WaybillActions({
         {shown.includes('void') && canRun(useVoidWaybill) && (
           <Button
             size="sm"
-            variant="destructive"
+            // 취소를 기다리는 상자는 다 빠지면 송장이 저절로 무효가 된다 — 직접 무효화는 보조로 둔다
+            variant={shipment.pendingCancellation ? 'outline' : 'destructive'}
             disabled={!voidTarget || !!voidLockedReason}
             onClick={() => openWithReason('void')}
           >

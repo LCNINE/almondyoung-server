@@ -237,3 +237,17 @@ it('배치에 없는 상자의 무효화 창에는 배치 경고가 없다', asy
     '출고 배치에 들어 있어요'
   );
 });
+
+it.each([
+  ['취소를 기다리는 상자', { operationId: 'op-1', lines: [] }, 'bg-background'],
+  ['그 밖의 상자', null, 'bg-destructive'],
+])('%s의 무효화 단추 모양', (_, pendingCancellation, className) => {
+  render(
+    <WaybillActions
+      shipment={{ ...shipment, pendingCancellation } as ShipmentAdminDetail}
+    />
+  );
+  const button = screen.getByRole('button', { name: '무효화' });
+  expect(button.className).toContain(className);
+  expect(button.hasAttribute('disabled')).toBe(false);
+});

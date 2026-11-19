@@ -67,6 +67,17 @@ export function shipmentGroupOf(
   return shipment.batchReturn ? 'batch_return' : 'other';
 }
 
+// 상자 상세로 가 볼 까닭이 있는 행. 고칠 것이 있거나, 송장 오류가 있거나, 배치에서 돌아와
+// 무엇을 뺐는지·무엇이 남았는지를 상세의 작업 기록으로 확인하는 상자다.
+export function showsShipmentDetailLink(
+  bucket: PreparationBucket,
+  shipment: Pick<PreparationShipmentDto, 'shortPick' | 'batchReturn' | 'reason'>
+): boolean {
+  if (bucket === 'needs_info') return true;
+  if (bucket === 'resume' && shipment.reason) return true;
+  return shipmentGroupOf(shipment) !== 'other';
+}
+
 // 언제·어느 배치에서·어디서 뺐는지. 사유는 따로 보인다.
 export function batchReturnText(batchReturn: PreparationBatchReturn): string {
   return [

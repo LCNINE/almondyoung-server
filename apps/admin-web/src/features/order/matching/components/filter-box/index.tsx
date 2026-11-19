@@ -88,8 +88,11 @@ export function FilterBox() {
               {filters.dateType === 'custom' && (
                 <FormDateRangePicker
                   value={
-                    filters.startDate && filters.endDate
-                      ? { from: dateOfKey(filters.startDate), to: dateOfKey(filters.endDate) }
+                    filters.startDate || filters.endDate
+                      ? {
+                          from: filters.startDate ? dateOfKey(filters.startDate) : undefined,
+                          to: filters.endDate ? dateOfKey(filters.endDate) : undefined,
+                        }
                       : undefined
                   }
                   onChange={(range) =>
