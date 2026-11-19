@@ -356,3 +356,67 @@ it('출고 판정이 거절한 마지막 스캔은 확정 거절로 본다', () 
   ])
     expect(new ConflictError('refused', code).outcome).toBe('rejected');
 });
+
+describe('출고 저장 경로의 409', () => {
+  const client = (body: unknown) =>
+    createApiClient({
+      baseUrl: 'https://api.test',
+      getToken: async () => 'TOK',
+      authMode: 'bearer',
+      doFetch: async () => jsonResponse(409, body),
+    });
+  const failure = async (path: string, body: unknown) => {
+    const error = await client(body)
+      .request({ method: 'POST', path })
+      .catch((e: unknown) => e);
+    if (!(error instanceof ApiError)) throw new Error('Expected ApiError');
+    return error;
+  };
+
+  it.each([
+    'simple-outbound-scans',
+    'simple-outbound-forces',
+    'location-outbound-scans',
+    'location-outbound-forces',
+  ])('%s: 목록에 없는 코드도 반영 안 된 거절이다', async (route) => {
+    const error = await failure(`/shipments/s1/${route}`, {
+      code: 'SOMETHING_NEW',
+      error: 'SOMETHING_NEW',
+    });
+    expect(error.outcome).toBe('rejected');
+    expect(error.notApplied).toBe(true);
+    expect(error.retryable).toBe(false);
+  });
+
+  it('같은 키가 아직 처리 중이면 결과 모름으로 두고 다시 보낸다', async () => {
+    const error = await failure('/shipments/s1/simple-outbound-scans', {
+      code: 'FULFILLMENT_COMMAND_IN_PROGRESS',
+    });
+    expect(error.outcome).toBe('uncertain');
+    expect(error.notApplied).toBe(false);
+    expect(error.retryable).toBe(true);
+  });
+
+  it('같은 키에 다른 요청이 저장돼 있으면 결과 모름으로 둔다', async () => {
+    const error = await failure('/shipments/s1/location-outbound-forces', {
+      code: 'FULFILLMENT_IDEMPOTENCY_MISMATCH',
+    });
+    expect(error.outcome).toBe('uncertain');
+    expect(error.notApplied).toBe(false);
+  });
+
+  it('코드 없는 409 는 결과 모름으로 둔다', async () => {
+    const error = await failure('/shipments/s1/simple-outbound-scans', {});
+    expect(error.outcome).toBe('uncertain');
+  });
+
+  it.each([
+    '/shipments/s1/location-outbound-starts',
+    '/shipments/s1/location-outbound-force-resolutions',
+    '/shipments/s1/simple-outbound-scans/extra',
+  ])('다른 경로의 모르는 409 는 그대로 결과 모름이다: %s', async (path) => {
+    const error = await failure(path, { code: 'SOMETHING_NEW' });
+    expect(error.outcome).toBe('uncertain');
+    expect(error.notApplied).toBe(false);
+  });
+});
