@@ -448,7 +448,7 @@ npx tsx scripts/ops/emergency-outbound/index.ts prepare --stage live --warehouse
 | 예약 불일치(재고 부족·유령 예약) | 출고 정체 보드(`/order/stall-board`)에서 사유 확인 → 판정 «출고 4» 가 적은 해결책 | skutest1(작업자), 11-19 라이브 | 보드는 열리고 단계별 건수·정체 사유가 보인다(0 수집 칸만 가림). 해결 버튼은 없고 주문번호 링크는 주문 내역(`/order/history`, `order.order.read`)으로 가서 403. 3 예약 칸이 0 이라 예약 불일치 해결 동작은 미확인 → **작업자는 사유까지 보고 admin 에게 넘긴다** |
 | 매칭 대기 | 어드민 «매칭»(`/order/matching`) — 판정 «출고 6» | skutest1(작업자), 11-19 라이브 | 화면이 열리지 않는다(접근 권한 없음, `order.order.read`). 매칭 저장(`order.matching.write`)도 admin 만 → **admin 이 맡는다** |
 | 수취인 정보 빠짐 | 출고주문 상세(`/order/fulfillments`)의 수취인 수정 — 판정 «출고 3» | skutest1(작업자), 11-19 라이브 | 출고주문 상세는 열리지만 «수령인 변경» 버튼이 없다(`fulfillment.shipment.override_recipient` 는 admin·물류 관리자만). 받는 분 정보도 가려져 보인다 → **물류 관리자·admin 이 맡는다** |
-| 운송장 교착(멈춘 송장) | 출고주문 상세의 멈춘 송장 패널 → abandon(#1241) | | |
+| 운송장 교착(멈춘 송장) | 출고주문 상세의 멈춘 송장 패널 → abandon(#1241) | skutest1(작업자), 11-19 라이브 | 테스트 주문 상자에 `pending` 송장 행을 직접 넣어 재현했다. 패널이 뜨고 «중단하고 다시 발급» → 사유 입력 → 중단까지 작업자가 403 없이 끝냈고 행은 `abandoned` 가 됐다. 이어지는 새 발급 창은 닫아도 된다 → **작업자가 맡는다** |
 | 셀메이트 상자 거절(409 `SHIPMENT_HANDED_OVER_TO_SELLMATE`) | 거절 문구를 작업자가 읽고 다음 할 일을 아는가(§6) | | |
 
 ### 11-3. 비상 출고 경로 한 번 (라이브 창고)
