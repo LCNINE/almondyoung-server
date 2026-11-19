@@ -25,7 +25,7 @@ describe('physicalCancellationByItem', () => {
 
   it('미출고보다 많이 취소하려 하면 400(출고·이미 취소된 수량 포함)', () => {
     expect(() => physicalCancellationByItem('l', 2, [item('i1', 'a', 2, 1)], [{ skuId: 'a', qtyPerUnit: 1 }])).toThrow(
-      /includes shipped or already canceled quantity/,
+      /이미 출고됐거나 취소된 수량이 있어/,
     );
   });
 });
