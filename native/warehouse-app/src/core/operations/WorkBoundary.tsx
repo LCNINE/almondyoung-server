@@ -12,7 +12,7 @@ import { Button } from '../design/Button';
 import { useWorkReadiness } from './useWorkReadiness';
 import { AreaContext } from './workArea';
 import { isBoxCheck, shipmentOf, useBoxChecksHosted } from './boxChecks';
-import { BoxChecks } from './BoxChecks';
+import { BoxChecks } from './BoxCheckList';
 
 export interface ScanAllowance {
   path: string;

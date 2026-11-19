@@ -5,7 +5,7 @@ import { localStoragePrefs, type DevicePrefs } from '../../core/data/devicePrefs
 import { currentServerReach, subscribeServerReach } from '../../core/data/serverStatus';
 import { readLabelPrinter } from '../../core/hardware/print/labelPrinter';
 import { lastPrintFailed, printerStatusVersion, subscribePrintOutcome } from '../../core/hardware/print/printerStatus';
-import { BoxChecks } from '../../core/operations/BoxChecks';
+import { BoxChecks } from '../../core/operations/BoxCheckList';
 import { useHostBoxChecks } from '../../core/operations/boxChecks';
 import { useWorkRuntime } from '../../core/operations/OperationContext';
 import type { StoredOperation } from '../../core/operations/operationStore';
