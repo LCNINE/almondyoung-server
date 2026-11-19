@@ -1,12 +1,22 @@
 /** @jest-environment jsdom */
 import * as React from 'react';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { BucketList } from './bucket-list';
 import type { PreparationBucketDto } from '@/lib/types/dto/fulfillment';
 
 jest.mock('@/lib/services/orders', () => ({
   useCreateShipmentConsolidation: jest.fn(),
   useRunOutboundPreparation: jest.fn(),
+  useSplitShipment: jest.fn(),
+}));
+jest.mock('./profile-split-dialog', () => ({
+  ProfileSplitDialog: ({
+    shipmentId,
+    orderText,
+  }: {
+    shipmentId: string;
+    orderText: string;
+  }) => <div role="dialog">{`${orderText} ${shipmentId} 나누기 창`}</div>,
 }));
 jest.mock('@/components/auth/can', () => ({
   Can: ({ children }: { children: React.ReactNode }) => children,
@@ -308,4 +318,47 @@ it('배치에서 돌아온 상자와 결품 상자는 사유가 없어도 상자
     '/order/fulfillments?shipmentId=short',
     '/order/fulfillments?shipmentId=returned',
   ]);
+});
+
+it('배송 프로필이 섞인 정보 부족 상자에만 그 자리에서 나누는 버튼을 두고, 누르면 그 상자의 나누기 창을 연다', () => {
+  render(
+    list({
+      bucket: 'needs_info',
+      count: 2,
+      singleCount: 2,
+      multiCount: 0,
+      shipments: [
+        {
+          ...shipment('mixed', null),
+          needsInfo: [
+            {
+              kind: 'shipping_profile_mixed',
+              skus: [
+                { name: '상품 A', code: 'A', profileName: '기본' },
+                { name: '상품 B', code: 'B', profileName: '냉장' },
+              ],
+            },
+          ],
+        },
+        {
+          ...shipment('missing', null),
+          needsInfo: [
+            {
+              kind: 'shipping_profile_missing',
+              skus: [{ name: '상품 C', code: 'C' }],
+            },
+          ],
+        },
+      ],
+    })
+  );
+
+  const buttons = screen.getAllByRole('button', {
+    name: '배송 프로필별로 나누기',
+  });
+  expect(buttons).toHaveLength(1);
+  expect(screen.queryByRole('dialog')).toBeNull();
+
+  fireEvent.click(buttons[0]);
+  expect(screen.getByRole('dialog').textContent).toBe('#MIXED mixed 나누기 창');
 });

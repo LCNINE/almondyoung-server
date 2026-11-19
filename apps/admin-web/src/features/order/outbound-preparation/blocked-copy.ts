@@ -145,7 +145,10 @@ export function needsInfoCopy(
           label: `${sku.name} «${sku.profileName}»`,
           href: skuHref(sku.code),
         })),
-        fix: `SKU 의 배송 프로필을 같게 맞추거나, ${here}«분할»로 상자를 나눠 주세요`,
+        fix:
+          place === 'detail'
+            ? 'SKU 의 배송 프로필을 같게 맞추거나, «분할»로 상자를 나눠 주세요'
+            : 'SKU 의 배송 프로필을 같게 맞추거나, 상자를 배송 프로필별로 나눠 주세요',
       };
     case 'recipient_incomplete':
       return {
