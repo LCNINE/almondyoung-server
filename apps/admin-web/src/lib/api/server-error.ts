@@ -64,6 +64,8 @@ const UNDER_RESERVED_MESSAGE =
   '재고가 부족해 예약되지 않은 상품이 있어요. 입고하거나 재고를 조정하면 자동으로 예약돼요.';
 
 const CONFLICT_MESSAGES: Record<string, string> = {
+  SHIPMENT_HANDED_OVER_TO_SELLMATE:
+    '셀메이트가 내보내는 주문의 상자예요. 이 상자는 두고 넘어가 주세요.',
   SHIPMENT_NOT_FULLY_RESERVED: UNDER_RESERVED_MESSAGE,
   SHIPMENT_NOT_FULLY_RESERVED_PHYSICAL: UNDER_RESERVED_MESSAGE,
   SHIPMENT_RECOVERY_IN_PROGRESS:

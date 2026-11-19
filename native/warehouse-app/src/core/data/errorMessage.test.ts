@@ -58,6 +58,18 @@ describe('errorMessage', () => {
 });
 
 describe('errorMessage with context', () => {
+  it('셀메이트가 내보내는 박스는 두고 다음으로 넘어가도록 안내한다', () => {
+    const error = new ConflictError(
+      'Shipment s-1 belongs to an order Sellmate ships',
+      'SHIPMENT_HANDED_OVER_TO_SELLMATE'
+    );
+
+    expect(error.status).toBe(409);
+    expect(errorMessage(error, 'outbound')).toBe(
+      '셀메이트가 내보내는 주문의 박스예요. 이 박스는 두고 다음으로 넘어가 주세요.'
+    );
+  });
+
   it('바코드 문맥의 404 는 미등록 바코드로 안내한다', () => {
     expect(
       errorMessage(new Error('GET /inventory/skus → 404'), 'barcode')

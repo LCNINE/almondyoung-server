@@ -1,6 +1,27 @@
-import { getServerDenyMessage, parseServerError } from './server-error';
+import {
+  getServerDenyMessage,
+  knownConflictMessage,
+  parseServerError,
+} from './server-error';
 
 describe('server error parser', () => {
+  it('셀메이트가 내보내는 상자는 두고 넘어가도록 안내한다', () => {
+    const error = {
+      response: {
+        status: 409,
+        data: {
+          code: 'SHIPMENT_HANDED_OVER_TO_SELLMATE',
+          message: 'Shipment s-1 belongs to an order Sellmate ships',
+        },
+      },
+    };
+    const message =
+      '셀메이트가 내보내는 주문의 상자예요. 이 상자는 두고 넘어가 주세요.';
+
+    expect(getServerDenyMessage(error)).toBe(message);
+    expect(knownConflictMessage(parseServerError(error).code)).toBe(message);
+  });
+
   it('preserves Axios 403 code and message', () => {
     const parsed = parseServerError({
       response: {
