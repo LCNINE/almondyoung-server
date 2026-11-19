@@ -70,8 +70,11 @@
 
 아래는 판정이 다 못 보는 사람 일이다.
 
-- [ ] **T 전에 라이브여야 하는 변경이 라이브인지** — 판정 «Medusa 0. 예약 투영»(#1247), 드레인 중 셀메이트 상자 거절(#1412, core), 저녁 맞추기 테이블(#1304, live `db:migrate` 만), 멈춘 송장 abandon 화면(#1241), 라벨 출력(#1281). 배포 기록은 `deploy/live/*` 태그로 본다(`npm run deploy:preflight -- --stage live` 의 대기 마이그 0). 라이브가 아니면 전날 배포한다 — 배포는 develop 전체를 싣고 남의 머지분 마이그도 함께 실린다. `deploy:preflight` 가 expand(migrate→deploy)·contract(deploy→migrate) 순서와 배포 명령을 알려 준다(CLAUDE.md «배포는 여러 PR 을 모아 한 번에»).
+- [x] **T 전에 라이브여야 하는 변경이 라이브인지** — 판정 «Medusa 0. 예약 투영»(#1247), 드레인 중 셀메이트 상자 거절(#1412, core), 저녁 맞추기 테이블(#1304, live `db:migrate` 만), 멈춘 송장 abandon 화면(#1241), 라벨 출력(#1281). 배포 기록은 `deploy/live/*` 태그로 본다(`npm run deploy:preflight -- --stage live` 의 대기 마이그 0). 라이브가 아니면 전날 배포한다 — 배포는 develop 전체를 싣고 남의 머지분 마이그도 함께 실린다. `deploy:preflight` 가 expand(migrate→deploy)·contract(deploy→migrate) 순서와 배포 명령을 알려 준다(CLAUDE.md «배포는 여러 PR 을 모아 한 번에»).
 - [ ] **물류 관리자(§11-2 «누가 맡나»)** — `logistics_manager` 역할 행(참조 시드), 카탈로그의 `order.order.read`·`order.matching.write` 를 이 역할에도(PR #1481 + auth 배포, 못 하면 그때까지 어드민 «역할 관리»에서 직접 붙인다), 물류팀장 계정에 부여. 판정 «사람 1»·«사람 2» 의 `logistics_manager` 줄이 초록이면 끝(#1248 은 11-19 라이브).
+  - [x] 역할 행 — 11-20 라이브. 🔴 **참조 시드는 라이브에 돌리지 않는다**(#1482 — 테넌트 1 백필이 다른 테넌트의 master 를 플랫폼 운영자로 만들고, `db:seed:ref` 는 `--yes` 를 빼도 미리보기 없이 바로 쓴다). 시드 1단계의 그 한 줄(`USER_SERVICE_REFERENCE_ROLES` 의 `logistics_manager`, 고정 id, `ON CONFLICT DO NOTHING`)만 auth 셸에서 넣었다
+  - [x] #1481 auth 배포 — 11-20(태그 `deploy/live/20261120-0214`). 판정 «사람 2» 의 `logistics_manager` 줄 초록
+  - [ ] 물류팀장 계정에 부여 — 판정 «사람 1» 의 보유자가 0 이 아니면 끝
 - [ ] **저녁 맞추기 «첫 live `--apply` 전에 사람이 확인할 것»**(#1304, `scripts/sellmate/README.md` 같은 절) 네 개:
   - [x] 재고 수정 업로드가 바코드번호 1~3·글로벌바코드 중 무엇과 맞추는지 — 시험 상품 1개 값을 바꿔 올리고 되돌려 본다. 결과대로 `COL_*` 를 정한다 — 11-19 라이브: 재고관리 > 재고 조사 > **재고 수정**(`/stock/stk_xls_modify.asp`, 창고 «(기본)부천 물류창고», 바코드 A열·수량 B열이 기본). 재고 0·연동안함·자사 공급처 시험 상품 하나로: 바코드번호2 값은 «바코드번호를 찾을 수 없습니다»(안 바뀜), **바코드번호(숫자, `(서식)` 열 값)는 «입력성공»** → 1 로 올렸다가 0 으로 되돌렸다(입출고목록에 «엑셀, 재고수정» 두 줄이 남는다). 업로드 CSV 는 짝 표의 바코드 = 재고 CSV `바코드번호(서식)` 를 쓰므로 `COL_*` 는 그대로 둔다. 바코드번호3·글로벌바코드는 시험할 상품이 없어 못 봤다
   - [x] 마켓에 보내는 숫자에 안정재고가 끼는지 — 끼면 `U` 정의를 고친 뒤 간다 — 11-19 운영자 확인: **끼지 않는다.** 셀메이트 «안정재고» 는 재고가 일정 아래로 떨어진 상품을 걸러 발주하기 위한 셀메이트 안의 편의 값이다(다른 연동 도구의 «안전재고» 처럼 마켓 전송 숫자에서 빼는 완충값이 아니다). `U` 는 그대로
@@ -79,8 +82,17 @@
   - [x] 재고 현황 CSV 양식에 바코드 열이 있는지 — 없으면 «개발팀 데이터 내보내기용» 양식에 더한다 — 11-19: `바코드번호`·`바코드번호(서식)`·`바코드번호2`·`바코드번호3` 다 있다
   - [x] ⚠️ 옵션정보일련번호가 빈데 값이 있는 행이 있으면 파일 전체를 거절한다 — 실제 export 로 dry-run 해 본다 — 11-19: 상품마다 든 `합계` 행 때문에 실제로 거절됐다 → 파서가 첫 칸 `합계` 행만 건너뛰게 고쳤다. 고친 뒤 init dry-run 은 짝 표에서 멈춘다(위 «짝 표» 가 남은 일)
 - [ ] **짝 표:** 🔍 `bash scripts/sellmate/run.sh live evening-reconcile pair <재고 CSV>` → ✅ `--apply`. 종료 0 이 될 때까지 짝 못 지은 품목을 고친다. 판정 «재고 1. 저녁 맞추기» 가 이 표를 본다.
+  - 11-20 `--apply`(종료 1). 남은 사유 셋: `no_core_sku` = 그날 셀메이트에 새로 생긴 품목(T 의 `import-products` 가 푼다), `code_barcode_conflict` = 옵션번호의 SKU 와 바코드의 SKU 가 다르다 — 대부분 셀메이트에서 내린 예전 품목의 core SKU 가 같은 바코드를 들고 있다, `barcode_shared` = 셀메이트 두 품목이 같은 바코드. 뒤의 둘은 물류팀장이 «같은 물건인가·어느 쪽 바코드인가» 를 정해야 고친다
+  - 🔴 `code_barcode_conflict` 의 «예전 품목» SKU 에는 core 재고가 남아 있을 수 있다. `sync-stock` 은 셀메이트 재고 CSV 에 있는 품목만 맞추므로, 셀메이트에서 내린 품목의 core 재고는 T 뒤에도 그대로 남아 **같은 물건이 두 번 세어진다**. 같은 물건으로 판정되면 짝 표를 다시 돌리기 전에 예전 SKU 의 재고·바코드를 정리한다(정리 절차는 판정을 받은 뒤 정한다 — 아직 스크립트가 없다)
 - [ ] **init dry-run 이 끝까지 간다** — 짝 표 뒤, 전날 받은 재고 CSV·미발송 주문(§3 받는 법)으로 4-4 의 🔍 명령을 임시 T(미래 시각, 어디에도 저장하지 않는다)로 돌려 **종료 0**. 11-19 리허설은 «짝 못 지은 품목» 에서 멈춰, 그 뒤 검사(부천 ON_HAND ↔ `max(0, 현재재고 − 미발송)`, 넘긴 주문 ↔ Medusa 주문)가 라이브 데이터로 돈 적이 없다 — 당일 4-2 뒤(되돌릴 수 없는 구간)에서 처음 걸리지 않게 여기서 본다. ON_HAND 불일치는 전날이면 그날 셀메이트·앱 움직임 때문일 수 있다 — 품목 표를 보고 설명되는지만 확인한다
-- [ ] **바코드번호2 백필**(#1356, PR #1371). 터널 필요.
+  - 전날에는 그날 새로 생긴 품목(`no_core_sku`)이 늘 남아 원본으로는 init 이 짝 표에서 멈춘다. 그 행을 뺀 사본으로 뒤 검사까지 본다(사본은 dry-run 에만 쓴다 — 당일 4-4 는 원본):
+    ```bash
+    bash scripts/sellmate/run.sh live evening-reconcile pair <재고 CSV> > apps/core/tmp/<날짜>/pair.txt     # 종료 1 이어도 된다
+    python3 scripts/sellmate/without-unpaired.py apps/core/tmp/<날짜>/pair.txt <재고 CSV> apps/core/tmp/<날짜>/without-unpaired
+    # 4-4 의 🔍 명령에서 <재고 CSV> 자리에 apps/core/tmp/<날짜>/without-unpaired/<같은 파일 이름>
+    ```
+  - 11-20: 짝 못 지은 품목 행을 뺀 사본(파일 이름은 그대로, 다른 폴더)으로 돌렸다. ON_HAND 불일치에서 멈춘 뒤 `--accept-onhand-mismatch` 를 붙인 dry-run 은 **종료 0** — 넘긴 주문 ↔ Medusa 검사까지 라이브 데이터로 처음 지났다. 이월 목록에 «BUP(매칭용)»(3PL 제품, 재고 0·미발송 큼)이 큰 이월로 잡힌다 — 저녁 맞추기 제외(`excluded.ts`)에 넣을지 T 전에 정한다. 원본 파일로 종료 0 은 짝 표가 0 이 된 뒤다
+- [ ] **바코드번호2 백필**(#1356, PR #1371). 터널 필요. — 11-20: 1~3 끝(재고 현황 «개발팀 데이터 내보내기용» CSV 한 파일로. 이 양식에 `바코드번호2` 가 있다). 백필이 넣는 보조 바코드는 짝 짓기 결과를 바꾸지 않는 것을 읽기 전용으로 확인했다. 4 는 dry-run 만 — ★ 대부분이 짝 표의 `code_barcode_conflict` SKU 라 물류팀장 판정 뒤에 `--apply` 한다
   1. 🔍 `DRY_RUN=1 bash scripts/sellmate/run.sh live backfill-barcode2 <현재고 전체 CSV>` — 넣을 것·충돌을 본다
   2. **«현재고 전체» 를 다시 받아서** ✅ `bash scripts/sellmate/run.sh live backfill-barcode2 <새 CSV> --apply` (받은 뒤 생긴 SKU 는 파일에 없어 빠진다)
   3. 판정: 같은 CSV 로 다시 dry-run → «core 에 넣을 것» 0. 충돌 목록은 사람이 정한다
@@ -129,7 +141,7 @@
        ```bash
        python3 scripts/sellmate/orders-two-columns.py <받은 ord_ordList_….xls> apps/core/tmp/<T-날짜>/sellmate-orders.csv   # 비밀번호는 숨김 입력
        ```
-       출력 끝의 «판매처별 행 수» 에서 자사몰 판매처 이름을 그대로 4-4 의 `--own-mall-channel` 에 쓴다
+       출력 끝의 «판매처별 행 수» 에서 자사몰 판매처 이름을 그대로 4-4 의 `--own-mall-channel` 에 쓴다. 이 명령은 **별도 터미널**에서 저장소 루트로 가서 돌린다 — Claude Code 의 `!` 셸은 숨김 입력을 못 받아 `EOFError` 로 끝난다(11-20)
    - (나중에) **주문이력** — 보충 제안 수요(`import-demand-history`)를 메울 원본. §9 에서 필요하면 받는다(`scripts/sellmate/README.md`)
 3. **T 를 정한다.** T = **1번 `collect-cellmate` 마지막 실행 시각**(셀메이트가 받는 자사몰 주문 집합이 굳는 때, 11-19 결정). 적어 둔다: `<T>`(오프셋 붙은 ISO)와 같은 시각의 KST `YYYY-MM-DD HH:mm:ss`(4-1 의 `--before`).
    - 왜 재고 CSV 파일명 시각이 아닌가: 재고 CSV 는 만드는 데 약 20분이 걸리고 파일명은 **완료** 시각이다. 1번 뒤 그 시각까지 들어온 자사몰 주문은 셀메이트에 없어 CSV 의 미발송에도 없는데, 파일명 시각으로 `clear-reservations` 를 돌리면 그 주문들의 Medusa 예약까지 지워진다. 투영(#1247)은 T 이전 주문을 다시 잡지 않으므로(`reservation-reconcile.service.ts` «T 이전 주문은 끝까지 건드리지 않는다») 출고될 때까지 스토어프론트 가용이 그만큼 많아 보인다. T 를 1번 시각으로 두면 그 주문들은 T 이후 주문 — 앱·투영의 몫이 된다
@@ -519,8 +531,8 @@ npx tsx scripts/ops/emergency-outbound/index.ts prepare --stage live --warehouse
 
 대신 물류 관리자(`logistics_manager`)가 맡는다(11-19 결정). 기본은 물류팀장이고, 필요하면 물류팀의 다른 사람이 일시 또는 영구로 받는다.
 
-- [ ] **역할 행을 만든다** — 11-19 라이브에는 행이 없다(판정 «사람 1» ✗). 참조 시드 `npm run db:seed:ref -- --stage live --deployment lcnine-auth` 로 만든다(`--yes` 없이 계획부터 본다. 라이브에는 고정 관리자 행이 있어 새 계정은 안 생긴다 — 판정이 그 행을 같이 본다). **관리자 화면 «역할 만들기»로 만들지 않는다** — 사람이 만든 역할은 이름이 같아도 카탈로그 부여를 받지 않는다. 행이 생기면 다음 user-service 부팅에 카탈로그 권한이 들어간다(#1248). 판정 «사람 2» 의 `logistics_manager` 줄이 초록이면 끝
-- [ ] **물류 관리자에 `order.order.read`(주문 조회)·`order.matching.write`(매칭)를 더한다** — 카탈로그(`permission-catalog.ts`)의 두 권한 `grant` 에 `logistics_manager` 를 넣는 코드 변경 + auth 배포. 지금 카탈로그는 둘 다 admin(·intern) 에게만 준다. 배포 뒤 판정 «사람 2» 가 빠진 권한을 보여 주지 않으면 들어간 것이다
+- [x] **역할 행을 만든다** — 11-19 라이브에는 행이 없었다(판정 «사람 1» ✗). 11-20 에 만들었다. 🔴 **참조 시드 `db:seed:ref` 로 만들지 않는다**(#1482): 시드 끝의 테넌트 1 백필이 다른 테넌트의 기간 없는 master 를 플랫폼 운영자로 만들고, 역할 없는 계정 전부에 `user` 를 주며, `--yes` 를 빼도 미리보기 없이 바로 쓴다. 대신 `user-service.seed-step.ts` 의 `USER_SERVICE_REFERENCE_ROLES` 에서 그 역할 한 줄을 고정 id 그대로 `INSERT … ON CONFLICT DO NOTHING` 한다(auth 셸, 트랜잭션 안에서 넣고 롤백해 먼저 본다). **관리자 화면 «역할 만들기»로 만들지 않는다** — 사람이 만든 역할은 이름이 같아도 카탈로그 부여를 받지 않는다. 행이 생기면 다음 user-service 부팅에 카탈로그 권한이 들어간다(#1248). 판정 «사람 2» 의 `logistics_manager` 줄이 초록이면 끝
+- [x] **물류 관리자에 `order.order.read`(주문 조회)·`order.matching.write`(매칭)를 더한다** — 카탈로그(`permission-catalog.ts`)의 두 권한 `grant` 에 `logistics_manager` 를 넣는 코드 변경 + auth 배포. 배포 뒤 판정 «사람 2» 가 빠진 권한을 보여 주지 않으면 들어간 것이다 — PR #1481, 11-20 auth 배포(태그 `deploy/live/20261120-0214`), «사람 2» 초록
 - [ ] **물류팀장 계정에 역할을 준다** — 어드민 사용자 상세 «역할»
 - **일시로 줄 때:** 같은 화면의 «종료일(비우면 무기한)» 에 날짜를 넣는다. 그날 KST 하루 끝까지 유효하고, 지나면 따로 회수하지 않아도 빠진다(토큰을 새로 받을 때 지금 유효한 역할만 싣는다 — 이미 받은 access token 의 수명만큼은 늦을 수 있다). 영구로 줄 때는 비운다. 물류 관리자가 모두 쉬는 날에는 그날 출근한 작업자에게 종료일을 **그날**로 넣어 준다
 

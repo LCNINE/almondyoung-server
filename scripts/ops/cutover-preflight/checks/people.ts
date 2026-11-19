@@ -26,11 +26,10 @@ export async function checkPeople(tx: Sql, r: Report): Promise<void> {
     // 관리자 화면으로 만들면 안 된다 — 사람이 만든 역할은 이름이 같아도 카탈로그 부여를 받지 않는다(permission-catalog-sync).
     r.bad(
       `역할 행이 없다: ${missingRoles.join(', ')} — 계정에 부여할 수조차 없다`,
-      seedAdmin.n
-        ? '참조 시드 db:seed:ref --deployment lcnine-auth (고정 관리자 행이 이미 있어 새 계정은 안 생긴다 — 그래도 --yes 없이 계획부터 볼 것). ' +
-            '관리자 화면으로 만들지 않는다 — 카탈로그 부여를 못 받는다. 다음 user-service 부팅에 권한이 들어간다(#1248)'
-        : '🔴 db:seed:ref 를 그냥 돌리지 말 것 — 고정 관리자 행이 없어 기본 비밀번호 master 계정이 생긴다. ' +
-            'ADMIN_INITIAL_PASSWORD 를 강한 값으로 주거나 roles 행만 손으로 넣는다',
+      '🔴 라이브에 db:seed:ref 를 돌리지 않는다(#1482 — 다른 테넌트 master 를 플랫폼 운영자로 만들고, --yes 를 빼도 바로 쓴다' +
+        (seedAdmin.n ? '' : ', 고정 관리자 행이 없어 master 계정까지 생긴다') +
+        '). user-service.seed-step.ts USER_SERVICE_REFERENCE_ROLES 의 그 역할 한 줄만 고정 id 로 INSERT … ON CONFLICT DO NOTHING. ' +
+        '관리자 화면으로 만들지 않는다 — 카탈로그 부여를 못 받는다. 다음 user-service 부팅에 권한이 들어간다(#1248)',
     );
   }
 
