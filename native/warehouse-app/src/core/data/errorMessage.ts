@@ -110,6 +110,8 @@ const SAVE_POINT_OUTBOUND_MESSAGES: Record<string, string> = {
 };
 
 const OUTBOUND_CONFLICT_MESSAGES: Record<string, string> = {
+  SHIPMENT_HANDED_OVER_TO_SELLMATE:
+    '셀메이트가 내보내는 주문의 박스예요. 이 박스는 두고 다음으로 넘어가 주세요.',
   LOCATION_OUTBOUND_FORCE_PERMISSION_UNAVAILABLE:
     '강제출고 권한을 확인하지 못했어요. 연결과 로그인을 확인해 주세요.',
   LOCATION_OUTBOUND_FORCE_PERMISSION_REQUIRED:
