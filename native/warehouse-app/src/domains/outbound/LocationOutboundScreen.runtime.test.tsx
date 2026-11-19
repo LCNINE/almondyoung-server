@@ -353,6 +353,28 @@ it('keeps A, A, B scan order and fixed quantities while reads are delayed', asyn
   expect(f.calls.map((c) => c.body.barcode)).toEqual(['A', 'A', 'B']);
   expect(f.picked()).toBe(3);
 });
+it('응답을 잃은 박스는 그 박스만 막고, 다른 박스로 나갈 길과 확인할 일 표시 이름을 남긴다', async () => {
+  const f = await fixture(4);
+  f.loseResponse(true);
+  act(() => emitScan('A'));
+  await waitFor(async () =>
+    expect((await f.store.pending('scope'))[0]).toMatchObject({
+      status: 'uncertain',
+    })
+  );
+  expect(
+    await screen.findByText(
+      '이 박스의 처리 여부를 확인하고 있어요. 같은 상품은 다시 찍지 마세요.'
+    )
+  ).toBeInTheDocument();
+  const exit = screen.getByRole('link', { name: '다른 박스 작업하기' });
+  expect(exit.closest('[inert]')).toBeNull();
+  await waitFor(async () =>
+    expect(await f.store.draft('scope:box-check-labels')).toEqual({
+      s: { trackingNo: 'T' },
+    })
+  );
+});
 it('blocks intake after response loss and reconciles the original key without duplicate picking', async () => {
   const f = await fixture(4);
   f.loseResponse(true);
@@ -416,7 +438,32 @@ it('reopening replays persisted inputs with their original keys and latest progr
   expect(f.picked()).toBe(2);
   expect(await screen.findByText(/피킹 2 \/ 남은 2개/)).toBeInTheDocument();
 });
-it.each(['other shipment', 'other source', 'scope failure'])(
+it('다른 박스의 결과 모름은 이 박스의 스캔을 막지 않는다', async () => {
+  const f = await fixture(3);
+  await f.store.begin({
+    id: 'foreign',
+    scope: 'scope',
+    resource: '/shipments/other',
+    path: '/shipments/other/location-outbound-scans',
+    method: 'POST',
+    createdAt: Date.now(),
+    bodyJson: JSON.stringify({
+      warehouseId: 'w',
+      sourceLocationId: 'B',
+      barcode: 'A',
+      quantity: 1,
+    }),
+  });
+  await f.store.finish('foreign', 'sending');
+  await act(async () => f.runner.restore());
+  expect((await f.store.get('foreign'))?.status).toBe('uncertain');
+  const input = screen.getByLabelText('출고 상품 바코드');
+  await waitFor(() => expect(input).not.toBeDisabled());
+  expect(input.closest('[inert]')).toBeNull();
+  act(() => emitScan('A'));
+  await waitFor(() => expect(f.calls).toHaveLength(1));
+});
+it.each(['other source', 'scope failure'])(
   'blocks the scan exception for %s',
   async (kind) => {
     const f = await fixture(3);

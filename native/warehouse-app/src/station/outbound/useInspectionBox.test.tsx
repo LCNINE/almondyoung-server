@@ -238,8 +238,8 @@ describe('useInspectionBox — 박스 하나의 스캔 큐(스펙 §6.3·§10.1)
     expect(server.scans).toHaveLength(1);
   });
 
-  it('settle 은 확인 못 한 스캔이 있으면 기다리지 않고 거절한다', async () => {
-    const { server, runtime } = await setup();
+  it('결과를 모르는 스캔이 남으면 이 박스만 막고, settle 은 확인할 일로 넘겨 바로 끝난다', async () => {
+    const { server, runtime, saved } = await setup();
     server.loseResponses(true);
     act(() => {
       box.accept('A', 1);
@@ -248,23 +248,44 @@ describe('useInspectionBox — 박스 하나의 스캔 큐(스펙 §6.3·§10.1)
       expect((await runtime.store.pending('scope'))[0]).toMatchObject({ status: 'uncertain', leaseExpiresAt: 0 })
     );
     await waitFor(() => expect(box.intakeBlocked).toBe(true));
-    await expect(box.settle()).rejects.toThrow(UNCERTAIN_SCAN_MESSAGE);
+    expect(box.accept('A', 1)).toBe(false);
+    await expect(box.settle()).resolves.toBe('checking');
+    expect(box.checking).toEqual([{ barcode: 'A', quantity: 1 }]);
+    // 내려놓아도 스캔은 저장돼 있다 — 다시 열면 같은 키로 맞춘다
+    expect((await saved())?.map((e) => e.data.barcode)).toEqual(['A']);
+    await waitFor(async () =>
+      expect(await runtime.store.draft('scope:box-check-labels')).toEqual({ 's-1': { trackingNo: '4210-3388-1907' } })
+    );
   });
 
-  it('기다리던 settle 도 그 사이 스캔이 불확실해지면 거절된다 — 매달리지 않는다', async () => {
+  it('기다리던 settle 도 그 사이 스캔이 불확실해지면 확인할 일로 넘기고 끝난다 — 매달리지 않는다', async () => {
     const { server } = await setup();
     const release = server.holdSends();
     server.loseResponses(true);
-    let settling!: Promise<void>;
+    let settling!: Promise<unknown>;
     act(() => {
       box.accept('A', 1);
       settling = box.settle();
     });
     release();
-    await expect(settling).rejects.toThrow(UNCERTAIN_SCAN_MESSAGE);
+    await expect(settling).resolves.toBe('checking');
   });
 
-  it('다른 박스의 확인 못 한 스캔이 남아 있으면 입력을 막는다', async () => {
+  it('저장하지 못한 스캔은 여전히 내려놓기를 거절한다', async () => {
+    const { runtime } = await setup();
+    const draft = runtime.store.draft.bind(runtime.store);
+    runtime.store.draft = (async (id: string, update?: (v: unknown) => unknown) => {
+      if (update && id.includes(':scan:')) throw new Error('disk full');
+      return draft(id, update as never);
+    }) as typeof runtime.store.draft;
+    act(() => {
+      box.accept('A', 1);
+    });
+    await waitFor(() => expect(box.storageError).toBeTruthy());
+    await expect(box.settle()).rejects.toThrow(UNCERTAIN_SCAN_MESSAGE);
+  });
+
+  it('다른 박스의 확인 못 한 스캔은 이 박스를 막지 않는다', async () => {
     const server = createOutboundServer({ boxes: [BOX] });
     const runtime = createTestRuntime(server);
     await runtime.store.begin({
@@ -281,8 +302,80 @@ describe('useInspectionBox — 박스 하나의 스캔 큐(스펙 §6.3·§10.1)
     mount(runtime, found, newEvents());
     await screen.findByTestId('progress');
     await act(async () => runtime.runner.restore());
+    await waitFor(() => expect(box.intakeBlocked).toBe(false));
+    act(() => {
+      expect(box.accept('A', 1)).toBe(true);
+    });
+    await waitFor(() => expect(progress()).toBe('l-1:1/2,l-2:0/2'));
+    expect(box.checking).toEqual([]);
+  });
+
+  it('다른 일(입고 등)의 확인 못 한 작업은 여전히 입력을 막는다', async () => {
+    const server = createOutboundServer({ boxes: [BOX] });
+    const runtime = createTestRuntime(server);
+    await runtime.store.begin({
+      id: 'inbound',
+      scope: 'scope',
+      resource: '/inbound/simple:w',
+      path: '/inbound/simple',
+      method: 'POST',
+      createdAt: Date.now(),
+      bodyJson: JSON.stringify({ barcode: 'A', quantity: 1 }),
+    });
+    await runtime.store.finish('inbound', 'uncertain');
+    const found = await server.request<ShipmentByWaybill>({ path: `/shipments/by-waybill?trackingNo=${BOX.trackingNo}` });
+    mount(runtime, found, newEvents());
+    await screen.findByTestId('progress');
+    await act(async () => runtime.runner.restore());
     await waitFor(() => expect(box.intakeBlocked).toBe(true));
     expect(box.accept('A', 1)).toBe(false);
+  });
+
+  it('내려놓은 박스의 늦은 결과는 화면에 알리지 않고, 뒤에 줄 선 스캔도 보내지 않는다', async () => {
+    const { server, runtime, events, view, saved } = await setup();
+    server.loseResponses(true);
+    act(() => {
+      box.accept('A', 1);
+      box.accept('B', 1);
+    });
+    await waitFor(() => expect(box.checking).toHaveLength(1));
+    await expect(box.settle()).resolves.toBe('checking');
+    view.unmount();
+    server.loseResponses(false);
+    const id = (await runtime.store.pending('scope'))[0].id;
+    await act(async () => {
+      await runtime.runner.recheck([id]);
+    });
+    expect(await runtime.store.get(id)).toMatchObject({ status: 'confirmed' });
+    await act(async () => {});
+    expect(events.onAccepted).not.toHaveBeenCalled();
+    expect(events.onRejected).not.toHaveBeenCalled();
+    // B 는 박스를 다시 열 때까지 보내지 않는다
+    expect(server.scans.filter((scan) => scan.barcode === 'B')).toHaveLength(0);
+    expect((await saved())?.map((e) => e.data.barcode)).toEqual(['B']);
+  });
+
+  it('확인 중이던 마지막 스캔이 다시 확인으로 출고되면, 뒤에 줄 선 스캔은 여전히 «반영 안 됨» 으로 알린다', async () => {
+    const { server, runtime, events, view } = await setup();
+    events.onShipped.mockImplementation(() => view.unmount());
+    act(() => {
+      box.accept('A', 2);
+      box.accept('B', 1);
+    });
+    await waitFor(() => expect(progress()).toBe('l-1:2/2,l-2:1/2'));
+    server.loseResponses(true);
+    act(() => {
+      box.accept('B', 1);
+      box.accept('B', 1);
+    });
+    await waitFor(() => expect(box.checking).toHaveLength(1));
+    server.loseResponses(false);
+    const id = (await runtime.store.pending('scope'))[0].id;
+    await act(async () => {
+      await runtime.runner.recheck([id]);
+    });
+    await waitFor(() => expect(events.onShipped).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(events.onExcess).toHaveBeenCalledTimes(1));
   });
 
   it('강제출고는 고정 사유로 보내고, 출고되면 알린다', async () => {

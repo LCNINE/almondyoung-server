@@ -66,6 +66,13 @@ describe('unsentCount', () => {
     const now = 10_000;
     expect(unsentCount([op('sending', now - 200)], now)).toBe(0);
     expect(unsentCount([op('queued', now - 1500)], now)).toBe(1);
-    expect(unsentCount([op('uncertain', now - 10)], now)).toBe(1);
+    expect(unsentCount([op('uncertain', now - 10)], now)).toBe(0);
+    expect(unsentCount([{ ...op('uncertain', now - 10), path: '/inbound/simple' }], now)).toBe(1);
+  });
+
+  it('박스에 묶인 결과 모름은 «확인할 일» 이 따로 센다 — 로그인·권한에서 막힌 것은 미전송으로 남는다', () => {
+    const now = 10_000;
+    expect(unsentCount([{ ...op('uncertain', now - 10), errorStatus: 401 }], now)).toBe(1);
+    expect(unsentCount([{ ...op('uncertain', now - 10), errorStatus: 403 }], now)).toBe(1);
   });
 });
