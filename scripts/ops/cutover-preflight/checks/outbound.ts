@@ -2,6 +2,7 @@
 // 판정 조건은 코드에서 옮겼다(각 검사 옆 주석의 파일이 정본이다 — 코드가 바뀌면 여기도 바꾼다).
 import type { Sql } from '../db';
 import type { Report } from '../report';
+import { judgeSellmateSyncAfterCutover } from '../rules';
 
 const OPEN_SHIPMENT = `s.status in ('draft','planned')`;
 
@@ -205,13 +206,19 @@ export async function checkOutbound(tx: Sql, r: Report): Promise<void> {
   r.info(
     `셀메이트 재고 sync 마지막 실행 ${sellmate.last_at?.toISOString() ?? '없음'} (누적 ${sellmate.n}건) — 컷오버 후엔 이 값이 멈춰야 한다`,
   );
-  // sync-stock 은 절대값 수렴이라 컷오버 뒤 한 번만 돌아도 우리 원장(SHIP·RECEIVE)을 되돌린다.
-  if (r.cutoverAt && sellmate.last_at && sellmate.last_at > r.cutoverAt)
-    r.bad(
-      `셀메이트 재고 sync 가 컷오버 시각 뒤(${sellmate.last_at.toISOString()})에 돌았다 — 원장이 셀메이트 값으로 덮였다`,
-      '즉시 sync 를 멈추고, 그 뒤의 앱 출고·입고분을 원장과 대조한다 (#1251 런북)',
-    );
-  else if (r.cutoverAt) r.ok('컷오버 시각 뒤 셀메이트 재고 sync 없음');
+  // sync-stock 은 절대값 수렴이라 컷오버 뒤 한 번만 돌아도 우리 원장(SHIP·RECEIVE)을 되돌린다. 금지선은 저녁 맞추기 init(rules.ts).
+  // 테이블은 #1304 마이그 뒤에만 있다 — 없는 테이블을 부르면 문장 해석에서 실패하므로 먼저 본다.
+  const [runs] = await tx<{ ok: boolean }[]>`select to_regclass('sellmate_reconcile_runs') is not null as ok`;
+  const [init] = runs?.ok
+    ? await tx<{ created_at: Date }[]>`select created_at from sellmate_reconcile_runs where kind = 'init' limit 1`
+    : [];
+  const syncVerdict = judgeSellmateSyncAfterCutover({
+    cutoverAt: r.cutoverAt,
+    lastSyncAt: sellmate.last_at,
+    initAt: init?.created_at ?? null,
+  });
+  if (syncVerdict?.level === 'bad') r.bad(syncVerdict.msg, syncVerdict.fix ?? '');
+  else if (syncVerdict) r.ok(syncVerdict.msg);
   const [scriptShipped] = await tx`
     select count(*)::int as n from fulfillment_orders fo
     where fo.status = 'shipped' and not exists (

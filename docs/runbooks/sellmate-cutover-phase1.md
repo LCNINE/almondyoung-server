@@ -175,7 +175,7 @@ WITH_MEDUSA=1 bash scripts/sellmate/run.sh live evening-reconcile init <재고 C
 - 넘긴 자사몰 주문 0건으로 거절되면: 판매처 이름이 틀렸을 가능성이 먼저다. 정말 0건이면 `--no-handed-over-orders`.
 - 짝 못 지은 품목·사라진 품목·SKU 가 바뀐 품목이 있으면 쓰지 않고 1. 짝 표도 안 쓰므로 같은 CSV 로 `pair --apply` 를 돌려 판정이 보게 한 뒤 고친다.
 
-**판정:** 판정 «재고 1. 저녁 맞추기» 의 기준값이 생겼고 짝 못 지은 품목 0. 이 뒤 `sync-stock` dry-run 이 거절하는지 본다(가드가 살아 있다는 증거, `DRY_RUN=1 bash scripts/sellmate/run.sh live sync-stock apps/core/tmp/`).
+**판정:** 판정 «재고 1. 저녁 맞추기» 의 기준값이 생겼고 짝 못 지은 품목 0. `--after-cutover=<T>` 의 «출고 7» 은 «저녁 맞추기 init(…) 뒤 셀메이트 재고 sync 없음» — 4-2 의 마지막 sync 는 T 뒤에 찍히지만(T ≥ 스냅샷) 금지선은 init 이라 정상이다. init 전에 돌리면 «init 이 없다» ✗ 가 나온다(이 단계를 먼저 하라는 뜻). 이 뒤 `sync-stock` dry-run 이 거절하는지 본다(가드가 살아 있다는 증거, `DRY_RUN=1 bash scripts/sellmate/run.sh live sync-stock apps/core/tmp/`).
 
 ### 4-5. 이 뒤로 다시 돌리지 않는 스크립트
 
@@ -341,7 +341,7 @@ bash scripts/sellmate/run.sh live evening-reconcile close apps/core/tmp/<다시 
 **판정:**
 - [ ] `close` 종료 0(✗ 없음) — 품목마다 셀메이트 가용 = core 가용
 - [ ] `bash scripts/sellmate/run.sh live evening-reconcile status` — 열린 회차 없음. 이월 모자람이 있는 품목은 목록을 남긴다
-- [ ] 판정 `--after-cutover=<T>` 재실행 — «재고 1» 초록, «출고 7» 의 «컷오버 시각 뒤 셀메이트 재고 sync 없음»
+- [ ] 판정 `--after-cutover=<T>` 재실행 — «재고 1» 초록, «출고 7» 의 «저녁 맞추기 init(…) 뒤 셀메이트 재고 sync 없음»
 
 ### 8-3. 실패 시
 
