@@ -159,6 +159,8 @@ bash scripts/sellmate/run.sh live build-location-master --apply               # 
 
 판정: 판정 «로케이션 3» 에 `로케이션이 없는 선반 코드` ✗ 가 없다.
 
+실패 시: `랙 … 건너뜀: 같은 코드의 zone 로케이션이 있어` 가 나오면 그 랙의 칸은 안 생긴다 — 그 선반의 SKU 는 §5 에서 `no-location` 으로 입고기본존에 남는다(출고는 셀메이트 위치 텍스트로 된다). 같은 코드의 zone 을 어떻게 할지는 사람이 정하고, 정한 뒤 `build-location-master --apply` 를 다시 돌린다(11-19 로컬 리허설에서 나왔다).
+
 ### 4-4. ⛔ 저녁 맞추기 init — 첫 기준값·넘긴 주문 (#1304)
 
 마지막 `sync-stock` 에 쓴 **바로 그 재고 CSV** 로 돌린다. 기준값(셀메이트 가용, 음수는 0 + 이월 모자람)·넘긴 자사몰 주문 집합(`sellmate_handed_over_orders`)을 쓴다. 원장은 안 쓴다. **한 번뿐이다** — 두 번째는 거절한다.
@@ -253,7 +255,9 @@ SELECT count(*) FILTER (WHERE has_sellmate AND EXISTS (
 | `planned` | 이미 계획 확정된 셀메이트 상자다. 배치에 넣지 않는다(추가·합류는 409). 드레인 끝 `close-sellmate-leftovers` 가 닫는다 |
 | `mixed` | 셀메이트 줄과 다른 줄이 함께 든 상자. 그 안의 앱 주문은 드레인 끝까지 묶이니 상자를 나눈다 |
 
-**판정:** 세 값이 0, 또는 0 이 아닌 상자마다 처리를 적었다.
+**판정:** 세 값이 0, 또는 0 이 아닌 상자마다 처리를 적었다. `in_batch` 는 빼고 나서 같은 SQL 을 다시 돌려 0 을 본다 — 작업자 권한(`fulfillment.warehouse.operate`)으로 뺄 수 있고, 뺀 상자를 다시 넣으면 409 다(11-19 로컬 리허설, `worker01`).
+
+⚠️ 409 `SHIPMENT_HANDED_OVER_TO_SELLMATE` 는 어드민·창고 앱에 한국어 문구가 없다 — 작업자에게는 서버의 영어 문장(`… belongs to an order Sellmate ships`)이 보인다. 당일 전에 작업자에게 «이 문장 = 셀메이트가 내보낼 주문, 건드리지 않는다» 를 알려 둔다.
 
 ### 6-3. 첫 1건 먼저
 
@@ -261,7 +265,7 @@ T 이후 자사몰 주문 **1건만** 출고 준비 → 배치 → 스테이션 
 
 - [ ] core `stock_events` 에 그 상자의 SHIP 이 찍혔다
 - [ ] Medusa 주문 `metadata.coreShipmentAttempts[].invoice.trackingNo` 가 상자 송장과 같다(최상위 `coreTrackingNumber` 는 보지 않는다 — 쓰는 코드가 없다)
-- [ ] 판정 «Medusa 1» 에 그 주문의 남은 예약이 없다
+- [ ] 판정 «Medusa 1» 에 그 주문의 남은 예약이 없다 — **출고 뒤 몇 분 기다린 뒤에 본다.** 예약을 줄이는 쓰기는 정착 지연(`RESERVATION_PROJECTION_SETTLE_MS`, 기본 5분)과 그 variant 의 가용재고 이벤트가 처리될 때까지 미뤄진다(오버셀 방지). 그동안 channel_adapter `inbox_events` 의 그 판매주문 행은 `deferred: 재고 정착 대기` 로 남고 «Medusa 1» 은 ✗ 다 — 정상이다. 11-19 로컬 리허설에서 출고 약 6분 뒤 풀렸다
 
 **실패 시:** 진단은 §2 의 진단 도구. 송장 발급에서 멈추면 출고주문 상세의 멈춘 송장 패널(#1241). 앱 출고 경로가 막히고 core·한진은 응답하면 §10 비상 출고.
 
@@ -344,7 +348,7 @@ bash scripts/sellmate/run.sh live evening-reconcile close apps/core/tmp/<다시 
 | 증상 | 할 일 |
 |---|---|
 | `apply` 가 짝 못 지은·사라진·SKU 바뀐 품목으로 1 | 쓰지 않았다. 같은 CSV 로 `pair --apply` → 고친 뒤 **새로 받은 CSV** 로 다시 |
-| 같은 CSV 로 `apply` 를 또 돌림 | 거절된다(정상). 새로 받는다 |
+| 같은 CSV 로 `apply` 를 또 돌림 | «이미 반영했다 — 원장을 다시 쓰지 않는다» 와 업로드 파일 경로를 다시 찍고 0 으로 끝난다(멱등, 정상). 그 업로드 파일을 올리면 된다 |
 | `apply --apply` 뒤 sellable 재계산 실패 | 원장은 이미 커밋됐다. `apply` 를 다시 돌리지 말고 24시간 안에 `bash scripts/sellmate/run.sh live recalc-sellable .` |
 | `close` 가 `shipped_before_upload` | 업로드 전 출고 또는 마켓 취소다. 셀메이트 주문 목록에서 본다. 출고면 `--apply` 가 쓴 `…-fix.csv` 를 올리고 다시 받아 `close`. 취소면 fix 를 올리지 말고 새로 받은 CSV 로 `close --accept-landed=<품목>` |
 | `close` 가 다른 ✗ | **자동으로 다시 올리지 않는다.** 어긋난 품목·양쪽 숫자를 보고 사람이 정한다. 실패한 `close` 에 쓴 CSV 는 다시 못 쓴다 — 새로 받는다 |

@@ -222,6 +222,8 @@ async function init(args: string[]): Promise<void> {
     });
 
     // 넘긴 자사몰 주문 = core 에 출고주문 항목이 있고 아직 안 나간 Medusa 주문. 셀메이트가 이미 미발송으로 들고 있다.
+    // 앱으로 이미 한 번이라도 나간(shipped_qty > 0) 주문은 뺀다 — 라이브엔 T 전에 앱으로 나간 주문이 없다. 로컬엔 앞선 작업이
+    // 판매주문 상태는 그대로 둔 채 상자만 내보낸 주문이 남아 있어, 넣으면 «셀메이트가 들고 있는데 이미 나간» 주문이 된다(11-19 리허설).
     const open = await core<{ channel_order_id: string; sku_code: string; qty: number }[]>`
       select so.channel_order_id, s.code as sku_code, sum(foi.qty - coalesce(foi.canceled_qty, 0))::int as qty
         from sales_orders so
@@ -229,6 +231,8 @@ async function init(args: string[]): Promise<void> {
         join fulfillment_order_items foi on foi.fulfillment_order_id = fo.id
         join skus s on s.id = foi.sku_id
        where so.sales_channel = 'medusa' and so.status::text not in ('shipped', 'delivered', 'cancelled', 'canceled')
+         and not exists (select 1 from fulfillment_orders fo2 join fulfillment_order_items i2 on i2.fulfillment_order_id = fo2.id
+                          where fo2.sales_order_id = so.id and coalesce(i2.shipped_qty, 0) > 0)
        group by 1, 2 having sum(foi.qty - coalesce(foi.canceled_qty, 0)) > 0`;
     const ids = [...new Set(open.map((r) => r.channel_order_id))];
     const mo = ids.length

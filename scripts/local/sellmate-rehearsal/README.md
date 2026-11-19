@@ -7,6 +7,7 @@
 |---|---|
 | `fake-sellmate.ts` | 가짜 셀메이트. 재고 현황·미발송 주문·출고 주문 파일을 만들고, 마켓 주문·출고·반품·«재고 수정» 업로드를 흉내 낸다 |
 | `seed-worker.ts` | 로컬 작업자 계정 `worker01`(`logistics_worker` 하나만, 비밀번호는 로컬 시드 값 `Rehearsal1234!`) |
+| `snapshot.sh` | 리허설 전후로 `dev_core`·`medusa`·`channel_adapter`·`user_service` 를 떠 두고 되돌린다 — 리허설이 DB 를 «컷오버 이후» 로 만들기 때문 |
 
 **로컬 통과가 증명하지 않는 것** — 라이브 리허설(런북 §11) 몫이다:
 셀메이트 실제 양식·업로드의 의미·안정재고(런북 §1 의 사람 확인), AWS 로그인·터널·`run.sh`·sst shell 명령 꼴, 라이브 역할·권한, 데이터 규모(재고 이동 시간·터널 동시성), 송장 프린터.
@@ -14,6 +15,7 @@
 ## 0. 준비
 
 ```bash
+bash scripts/local/sellmate-rehearsal/snapshot.sh save   # 스택을 띄우기 «전»(연결 0 이어야 한다)
 npm run bootstrap:e2e:local
 npm run start:all:local                  # 안 끝나는 명령 — 다른 창에서. 가짜 한진 포함
 npm run seed:order-path:local
@@ -112,3 +114,14 @@ DATABASE_URL=$L/dev_core npx tsx scripts/sellmate/evening-reconcile.ts status
 ## 6. 런북 §10 — 비상 출고
 
 `npx tsx scripts/ops/emergency-outbound/index.ts prepare --stage local --warehouse <부천 id> …` — 절차는 `scripts/ops/emergency-outbound/README.md` «로컬 확인».
+
+## 7. 끝 — 되돌리기
+
+```bash
+# start:all:local 창에서 Ctrl+C (연결이 남으면 restore 가 거절한다)
+bash scripts/local/sellmate-rehearsal/snapshot.sh restore   # DB 넷 되돌림 + Kafka 소비 그룹 오프셋 끝으로 + Redis 비움
+bash scripts/local/sellmate-rehearsal/snapshot.sh drop      # 다시 리허설할 게 아니면
+```
+
+`.scratch/emergency-outbound/<실행 id>/` 는 되돌리지 않는다 — 리허설 실행 폴더라 지워도 되지만, 남겨 두면 다음 로컬 비상 출고가 «앞 실행» 으로 읽는다(끝난 실행이면 상관없다).
+
