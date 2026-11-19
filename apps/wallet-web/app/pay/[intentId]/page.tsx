@@ -50,7 +50,7 @@ export default async function PayPage({ params, searchParams }: Props) {
         intent_id: intentId,
         order_id: orderId ?? null,
         code,
-        message: message ?? null,
+        toss_message: message ?? null,
         user_agent: (await headers()).get('user-agent'),
       },
     });
