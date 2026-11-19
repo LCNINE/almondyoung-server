@@ -69,6 +69,11 @@ export type OrderLineRow = {
   imageUrl?: string;
   skuId?: string;
 
+  /** 현장에서 상자가 빠지기를 기다리는 이 줄의 취소 수량. 옛 core 응답은 0 */
+  warehouseCancelPendingQty: number;
+  /** 이 주문의 출고주문. 상세를 못 읽었거나 아직 없으면 undefined */
+  fulfillmentOrderId?: string;
+
   // 매칭 상태
   isMatched: boolean;
   isDirect: boolean;
@@ -332,6 +337,8 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
           productName: line.productName ?? variant?.masterName ?? line.variantId,
           optionName: optionName ?? undefined,
           quantity: Number(line.quantity ?? 1),
+          warehouseCancelPendingQty: Number(line.warehouseCancelPendingQty ?? 0),
+          fulfillmentOrderId: detail?.fulfillmentOrder?.id ?? undefined,
           unitPrice: line.unitPrice ?? undefined,
           totalPrice: line.totalPrice ?? undefined,
           // 주문 라인에는 이미지가 없어 PIM Variant(마스터 썸네일)에서 가져온다. (products-list 와 동일 소스)
@@ -399,6 +406,7 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
           variantId: '',
           productName: '(상품 정보 없음)',
           quantity: 0,
+          warehouseCancelPendingQty: 0,
           isMatched: false,
           isDirect: false,
           shipmentPhase: toShipmentPhase(detail?.shipmentPhase ?? listItem.shipmentPhase),

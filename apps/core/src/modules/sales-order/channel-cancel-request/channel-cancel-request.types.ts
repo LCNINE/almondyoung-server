@@ -165,6 +165,8 @@ export interface CancelRequestView {
   settlement: SettlementView | null;
   /** 새 흐름(PR 5 뒤) 요청의 환불 방식. 정산 전 흐름(PR 5 전) 행은 null */
   refundMode: SettlementMode | null;
+  /** 이 요청이 취소하는 판매 줄과 수량. 줄을 읽지 못하면 빈 배열 */
+  lines: Array<{ salesOrderLineId: string; quantity: number }>;
 }
 
 type AmendmentRow = typeof wmsTables.salesOrderAmendments.$inferSelect;
@@ -196,7 +198,7 @@ export function toSettlementView(
 }
 
 export function toCancelRequestView(
-  row: Pick<AmendmentRow, 'id' | 'status' | 'createdAt' | 'metadata'>,
+  row: Pick<AmendmentRow, 'id' | 'status' | 'createdAt' | 'metadata'> & Partial<Pick<AmendmentRow, 'deltas'>>,
   now: Date = new Date(),
 ): CancelRequestView {
   if (!isViewStatus(row.status)) throw new Error(`Cancel request ${row.id} has status ${row.status}`);
@@ -212,5 +214,13 @@ export function toCancelRequestView(
     outcome: meta.outcome ?? null,
     settlement: toSettlementView(row, now),
     refundMode: meta.settlement?.mode ?? null,
+    lines: viewLines(row.deltas),
   };
+}
+
+function viewLines(deltas: unknown): CancelRequestView['lines'] {
+  const parsed = z.array(CancelRequestLineSchema).safeParse(deltas);
+  return parsed.success
+    ? parsed.data.map((line) => ({ salesOrderLineId: line.salesOrderLineId, quantity: line.quantity }))
+    : [];
 }

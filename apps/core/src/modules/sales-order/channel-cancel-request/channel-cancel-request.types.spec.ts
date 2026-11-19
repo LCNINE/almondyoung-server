@@ -58,6 +58,7 @@ describe('취소 요청 메타데이터', () => {
       outcome: null,
       settlement: null,
       refundMode: null,
+      lines: [],
     });
   });
 });
@@ -146,6 +147,12 @@ describe('정산 상태(#1016 36번 재설계 §5.1)', () => {
   it('끝난 수동 정산도 refundMode 는 남는다 — admin-web 이 «계좌 송금» 링크를 그린다', () => {
     const view = toCancelRequestView(row({ status: 'applied', settlement: { state: 'in_progress', mode: 'manual', since: CONFIRMED.toISOString() } }));
     expect(view).toMatchObject({ status: 'applied', settlement: null, refundMode: 'manual' });
+  });
+
+  it('요청 뷰는 취소하는 판매 줄과 수량을 싣고, 줄을 못 읽으면 빈 배열이다', () => {
+    const line = { type: 'cancel_line', salesOrderLineId: 'l1', channelOrderItemId: 'item_1', quantity: 2 };
+    expect(toCancelRequestView({ ...row(), deltas: [line] }).lines).toEqual([{ salesOrderLineId: 'l1', quantity: 2 }]);
+    expect(toCancelRequestView({ ...row(), deltas: [{ type: 'quantity_correction' }] }).lines).toEqual([]);
   });
 
   it('나쁜 순서: 거절 < 지연 < 정산 중', () => {

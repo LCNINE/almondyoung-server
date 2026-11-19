@@ -26,6 +26,7 @@ export const BATCH_EXIT_REASONS = {
   shortPickPrefix: 'short_pick:',
   beforeStartPrefix: '작업 시작 전 뺌 — ',
   wrongBox: '잘못 넣은 상자',
+  cancelWaiting: '부분 취소로 뺌',
   consolidation: '합포장',
 } as const;
 
@@ -48,7 +49,7 @@ export function batchExitReasonOf(reason: string): BatchExitReason {
     return { place: '물류앱 작업 시작', reason: text.slice(BATCH_EXIT_REASONS.beforeStartPrefix.length) };
   }
 
-  if (text === BATCH_EXIT_REASONS.wrongBox) {
+  if (text === BATCH_EXIT_REASONS.wrongBox || text === BATCH_EXIT_REASONS.cancelWaiting) {
     return { place: '관리자 출고 배치', reason: text };
   }
 

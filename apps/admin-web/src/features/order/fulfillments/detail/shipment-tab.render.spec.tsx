@@ -4,7 +4,7 @@
 import { randomUUID } from 'node:crypto';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { rememberPending } from './shipment-action-pending';
 import type { PermissionedAction } from '@/lib/auth/mutation-permission';
@@ -995,5 +995,64 @@ describe('운송장 영역은 지금 쓸 송장과 다음 작업을 먼저 보�
     expect(
       screen.queryByRole('link', { name: '이 상자 출고 준비' })
     ).toBeNull();
+  });
+});
+
+describe('부분 취소를 기다리는 상자', () => {
+  const pendingCancellation = {
+    operationId: 'op-1',
+    lines: [
+      {
+        shipmentLineId: 'line-1',
+        salesOrderLineId: 'sol-1',
+        skuName: '상품 A',
+        qty: 1,
+      },
+    ],
+  };
+  const show = (workItemStatus: string) => {
+    mockShipments.mockReturnValue(
+      loaded([summary('box', 'recovery_required')])
+    );
+    mockDetail.mockReturnValue(
+      loaded({
+        ...detail('box', 'recovery_required'),
+        recoveryCode: 'CANCEL_REPLAN_PENDING',
+        workItems: [{ id: 'wi-1', status: workItemStatus, batchId: 'batch-1' }],
+        pendingCancellation,
+      })
+    );
+    renderTab();
+  };
+
+  it('무엇을 몇 개 취소하려고 기다리는지와 빼는 방법, 배치로 가는 링크를 보인다', () => {
+    show('picking');
+    const notice = screen.getByRole('region', { name: '부분 취소 대기' });
+
+    expect(notice.textContent).toContain('부분 취소 대기 — 상품 A 1개');
+    expect(notice.textContent).toContain('F11');
+    expect(
+      within(notice)
+        .getByRole('link', { name: '배치에서 빼러 가기' })
+        .getAttribute('href')
+    ).toBe('/order/outbound-batches?batchId=batch-1');
+  });
+
+  it('빼는 중이면 되돌림 바구니에 넣으면 끝난다고 알려 준다', () => {
+    show('withdrawing');
+    const notice = screen.getByRole('region', { name: '부분 취소 대기' });
+
+    expect(notice.textContent).toContain(
+      '되돌림 바구니에 넣으면 취소가 끝나요'
+    );
+    expect(notice.textContent).not.toContain('F11');
+  });
+
+  it('기다리는 취소가 없으면 안내가 없다', () => {
+    mockShipments.mockReturnValue(loaded([summary('box', 'planned')]));
+    mockDetail.mockReturnValue(loaded(detail('box', 'planned')));
+    renderTab();
+
+    expect(screen.queryByRole('region', { name: '부분 취소 대기' })).toBeNull();
   });
 });
