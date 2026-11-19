@@ -446,7 +446,7 @@ npx tsx scripts/ops/emergency-outbound/index.ts prepare --stage live --warehouse
 |---|---|---|---|
 | 배송 프로필 없음(계획 확정 실패) | 어드민 «배송 프로필»(`/inventory/delivery-profiles`) — 판정 «출고 2» | skutest1(작업자), 11-19 라이브 | 목록만 보이고 추가·편집·삭제가 없다(`inventory.master.write` 는 admin·물류 관리자만). SKU 의 프로필 지정도 같은 권한이다 → **물류 관리자·admin 이 맡는다** |
 | 예약 불일치(재고 부족·유령 예약) | 출고 정체 보드(`/order/stall-board`)에서 사유 확인 → 판정 «출고 4» 가 적은 해결책 | skutest1(작업자), 11-19 라이브 | 보드는 열리고 단계별 건수·정체 사유가 보인다(0 수집 칸만 가림). 해결 버튼은 없고 주문번호 링크는 주문 내역(`/order/history`, `order.order.read`)으로 가서 403. 3 예약 칸이 0 이라 예약 불일치 해결 동작은 미확인 → **작업자는 사유까지 보고 admin 에게 넘긴다** |
-| 매칭 대기 | 어드민 «매칭»(`/order/matching`) — 판정 «출고 6» | | |
+| 매칭 대기 | 어드민 «매칭»(`/order/matching`) — 판정 «출고 6» | skutest1(작업자), 11-19 라이브 | 화면이 열리지 않는다(접근 권한 없음, `order.order.read`). 매칭 저장(`order.matching.write`)도 admin 만 → **admin 이 맡는다** |
 | 수취인 정보 빠짐 | 출고주문 상세(`/order/fulfillments`)의 수취인 수정 — 판정 «출고 3» | | |
 | 운송장 교착(멈춘 송장) | 출고주문 상세의 멈춘 송장 패널 → abandon(#1241) | | |
 | 셀메이트 상자 거절(409 `SHIPMENT_HANDED_OVER_TO_SELLMATE`) | 거절 문구를 작업자가 읽고 다음 할 일을 아는가(§6) | | |
