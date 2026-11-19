@@ -39,6 +39,7 @@ const LOGISTICS = ['logistics_worker', 'logistics_manager'] as const;
 const LOGISTICS_MANAGER = ['logistics_manager'] as const;
 const ADMIN_LOGISTICS = ['admin', ...LOGISTICS] as const;
 const ADMIN_LOGISTICS_MANAGER = ['admin', ...LOGISTICS_MANAGER] as const;
+const ADMIN_INTERN_LOGISTICS_MANAGER = [...ADMIN_INTERN, ...LOGISTICS_MANAGER] as const;
 const DANGEROUS = { dangerous: true } as const;
 
 export const PERMISSION_CATALOG = [
@@ -141,7 +142,7 @@ export const PERMISSION_CATALOG = [
   permission('order.order.read', '주문 조회', '주문 목록·상세·정체 보드를 본다', {
     owners: ['core', 'ugc-service', 'admin-web'],
     // 물류 관리자: 매칭 화면·정체 보드의 주문 링크(셀메이트 컷오버 #1251 런북 §11-2)
-    grant: ['admin', 'intern', ...LOGISTICS_MANAGER],
+    grant: ADMIN_INTERN_LOGISTICS_MANAGER,
   }),
   permission('order.order.write', '주문 입력·수정', '주문을 수동 입력하고 상태를 바꾼다', {
     owners: ['core', 'admin-web'],
