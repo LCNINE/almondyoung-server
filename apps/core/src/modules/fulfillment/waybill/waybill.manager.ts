@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { BadRequestError, ConflictError, NotFoundError } from '@app/shared';
 import { DbService, InjectTypedDb } from '@app/db';
 import { DbTx, inventorySchema, inventoryTables } from '../../inventory/schema/inventory.schema';
@@ -16,6 +16,8 @@ import { WAYBILL, WAYBILL_DISPATCHABLE_STATUSES } from './waybill.constants';
 import type { BatchResultItem, WaybillRow } from './waybill.types';
 import { warehouseIdOf } from '../shipment/shipment-owner';
 import { resolveOperationReason } from '../shipment/shipment-operation-reasons';
+import { transitionShipments } from '../shipment/shipment-lifecycle';
+import { ACTIVE_WORK_ITEM_STATUSES } from '../services/work-item-status';
 
 /** 사유 없이 온 재발급(옛 화면)의 작업 기록 문구 */
 const REISSUE_DEFAULT_REASON = '송장 재발급';
@@ -332,6 +334,12 @@ export class WaybillManager {
         canonicalRequest: { actorId: actor.id, shipmentId, ...dto },
       },
       async (trx) => {
+        // 송장 무효화 뒤 draft 로 내리는 정리(returnIdleToDraft)와 겹치지 않게 상자부터 잠근다
+        await trx
+          .select({ id: inventoryTables.shipments.id })
+          .from(inventoryTables.shipments)
+          .where(eq(inventoryTables.shipments.id, shipmentId))
+          .for('update');
         const ctx = await this.reader.loadIssueContext(trx, shipmentId);
         if (ctx.status !== 'planned') {
           throw new ConflictError(`${WAYBILL.ERROR.NOT_DISPATCHABLE}: shipment ${ctx.status}`);
@@ -592,6 +600,56 @@ export class WaybillManager {
   async getActiveWaybill(shipmentId: string, tx?: DbTx): Promise<WaybillRow | null> {
     const wb = await this.dbService.run((trx) => this.reader.getActiveWaybill(trx, shipmentId), tx);
     return wb ?? null;
+  }
+
+  // 송장을 잃고 배치에도 없는 planned 상자는 계획부터 다시 해야 한다 — 이어서 처리에 남기지 않고 출고 가능으로 돌린다
+  // voidedAt 보다 뒤에 다시 계획된 상자는 건드리지 않는다 — 같은 무효화 명령이 재생돼도 새 계획을 되돌리지 않게
+  async returnIdleToDraft(shipmentId: string, voidedAt: Date, tx?: DbTx): Promise<boolean> {
+    return this.dbService.run(async (trx) => {
+      const [shipment] = await trx
+        .select({
+          status: inventoryTables.shipments.status,
+          manifestVersion: inventoryTables.shipments.manifestVersion,
+          plannedAt: inventoryTables.shipments.plannedAt,
+        })
+        .from(inventoryTables.shipments)
+        .where(eq(inventoryTables.shipments.id, shipmentId))
+        .limit(1)
+        .for('update');
+
+      if (
+        shipment?.status !== 'planned' ||
+        (shipment.plannedAt && shipment.plannedAt > voidedAt) ||
+        (await this.reader.getActiveWaybill(trx, shipmentId))
+      ) {
+        return false;
+      }
+
+      const [workItem] = await trx
+        .select({ id: inventoryTables.outboundBatchWorkItems.id })
+        .from(inventoryTables.outboundBatchWorkItems)
+        .where(
+          and(
+            eq(inventoryTables.outboundBatchWorkItems.shipmentId, shipmentId),
+            inArray(inventoryTables.outboundBatchWorkItems.status, [...ACTIVE_WORK_ITEM_STATUSES]),
+          ),
+        )
+        .limit(1);
+
+      if (workItem) {
+        return false;
+      }
+
+      const drafted = await transitionShipments(trx, {
+        shipmentIds: [shipmentId],
+        from: ['planned'],
+        to: 'draft',
+        expect: { manifestVersion: shipment.manifestVersion },
+        stale: 'ignore',
+      });
+
+      return drafted.length > 0;
+    }, tx);
   }
 }
 

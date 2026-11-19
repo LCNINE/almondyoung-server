@@ -72,7 +72,7 @@ export class WaybillService {
 
     // 외부 tx는 아직 커밋 전이다. 운영자 취소가 커밋된 뒤에만 별도 트랜잭션으로 재개한다.
     if (!tx) {
-      await this.resumeAfterVoid(row.shipmentId);
+      await this.afterVoid(row);
     }
 
     return toView(row);
@@ -103,16 +103,33 @@ export class WaybillService {
     }
   }
 
-  private async resumeAfterVoid(shipmentId: string): Promise<void> {
+  private async afterVoid({ shipmentId, voidedAt }: WaybillRow): Promise<void> {
+    if ((await this.resumeAfterVoid(shipmentId)) || !voidedAt) {
+      return;
+    }
+
+    try {
+      await this.manager.returnIdleToDraft(shipmentId, voidedAt);
+    } catch (error) {
+      this.logger.warn(`Failed to return shipment to draft after waybill void: shipmentId=${shipmentId}`, error);
+    }
+  }
+
+  // 무효화를 기다리던 합포장·취소가 있었는지. 있으면 상자 상태는 그쪽이 정한다
+  private async resumeAfterVoid(shipmentId: string): Promise<boolean> {
+    let pending = false;
+
     try {
       const { ConsolidationService } = await import('../services/consolidation.service');
       const consolidation = this.moduleRef.get(ConsolidationService, { strict: false });
       const operationId = await consolidation.findPendingOperationIdForSource(shipmentId);
 
       if (operationId) {
+        pending = true;
         await consolidation.tryResumePending(operationId);
       }
     } catch (error) {
+      pending = true;
       this.logger.warn(`Failed to resume consolidation after waybill void: shipmentId=${shipmentId}`, error);
     }
 
@@ -122,11 +139,15 @@ export class WaybillService {
       const operationId = await planning.findPendingCancellationOperationId(shipmentId);
 
       if (operationId) {
+        pending = true;
         await planning.tryResumePendingCancellation(operationId);
       }
     } catch (error) {
+      pending = true;
       this.logger.warn(`Failed to resume cancellation after waybill void: shipmentId=${shipmentId}`, error);
     }
+
+    return pending;
   }
 
   async voidForRecall(
@@ -160,7 +181,7 @@ export class WaybillService {
       type: 'waybill_void',
       ...dto,
     });
-    await this.resumeAfterVoid(row.shipmentId);
+    await this.afterVoid(row);
     return toView(row);
   }
 
