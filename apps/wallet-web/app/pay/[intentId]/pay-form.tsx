@@ -6,6 +6,7 @@ import {
   confirmPaymentIntent,
   cancelPaymentIntent,
   abandonPaymentIntent,
+  type CheckoutFailure,
   saveMyBusinessNumber,
 } from '@/lib/wallet-api';
 import { isWalletSessionExpiredError, redirectToWalletLogin } from '@/lib/auth-expired';
@@ -313,7 +314,9 @@ export function PayForm({
         router.replace(buildPayPath(intent.id, region));
       }
     } catch (err) {
-      if (tossActionStarted) await abandonPaymentIntent(intent.id).catch(() => undefined);
+      if (tossActionStarted) {
+        await abandonPaymentIntent(intent.id, checkoutFailureOf(err)).catch(() => undefined);
+      }
       if (isWalletSessionExpiredError(err)) {
         redirectToWalletLogin();
         return;
@@ -504,4 +507,13 @@ export function PayForm({
       </div>
     </CheckoutFrame>
   );
+}
+
+function checkoutFailureOf(err: unknown): CheckoutFailure {
+  if (!err || typeof err !== 'object') return { code: null, message: null };
+
+  return {
+    code: 'code' in err ? String(err.code) : null,
+    message: 'message' in err ? String(err.message) : null,
+  };
 }
