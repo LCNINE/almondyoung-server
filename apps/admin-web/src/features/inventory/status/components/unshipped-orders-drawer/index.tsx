@@ -89,122 +89,126 @@ export function UnshippedOrdersDrawer({ row, open, onOpenChange }: Props) {
           </span>
         </SheetHeader>
 
-        <div className="mt-4 grid grid-cols-4 gap-2">
-          {cards.map((card) => (
-            <div
-              key={card.label}
-              className={cn(
-                'rounded-md border px-3 py-2',
-                card.strong && 'border-foreground'
-              )}
-            >
+        <div className="px-4 pb-6">
+          <div className="mt-4 grid grid-cols-4 gap-2">
+            {cards.map((card) => (
               <div
+                key={card.label}
                 className={cn(
-                  'text-xs text-muted-foreground',
-                  card.strong && 'font-semibold text-foreground'
+                  'rounded-md border px-3 py-2',
+                  card.strong && 'border-foreground'
                 )}
               >
-                {card.label}
-              </div>
-              <div className="text-xl font-bold tabular-nums">{card.value}</div>
-            </div>
-          ))}
-        </div>
-
-        <div className="mt-4 flex gap-1.5">
-          {filters.map((item) => (
-            <Button
-              key={item.value}
-              type="button"
-              size="sm"
-              variant={filter === item.value ? 'default' : 'outline'}
-              className="h-7 rounded-full text-xs"
-              onClick={() => setFilter(item.value)}
-            >
-              {item.label}
-            </Button>
-          ))}
-        </div>
-
-        <div className="mt-3 overflow-x-auto">
-          <table className="w-full border-collapse text-sm">
-            <thead>
-              <tr className="border-b bg-muted/40 text-left text-xs text-muted-foreground">
-                <th className="px-2 py-2 font-medium">주문일</th>
-                <th className="px-2 py-2 font-medium">주문번호</th>
-                <th className="px-2 py-2 font-medium">주문자</th>
-                <th className="px-2 py-2 font-medium">진행</th>
-                <th className="px-2 py-2 font-medium">출고</th>
-                <th className="px-2 py-2 text-right font-medium">수량</th>
-              </tr>
-            </thead>
-            <tbody>
-              {isLoading && (
-                <tr>
-                  <td
-                    colSpan={6}
-                    className="px-2 py-8 text-center text-muted-foreground"
-                  >
-                    불러오는 중…
-                  </td>
-                </tr>
-              )}
-              {!isLoading && visible.length === 0 && (
-                <tr>
-                  <td
-                    colSpan={6}
-                    className="px-2 py-8 text-center text-muted-foreground"
-                  >
-                    미발송 주문이 없습니다.
-                  </td>
-                </tr>
-              )}
-              {visible.map((item) => (
-                <tr
-                  key={item.fulfillmentOrderItemId}
-                  className={cn('border-b', !item.canShip && 'bg-muted/30')}
+                <div
+                  className={cn(
+                    'text-xs text-muted-foreground',
+                    card.strong && 'font-semibold text-foreground'
+                  )}
                 >
-                  <td className="whitespace-nowrap px-2 py-2">
-                    {KST_DAY.format(new Date(item.orderedAt))}
-                    {item.delayDays > 0 && (
-                      <span className="ml-1 text-xs text-muted-foreground">
-                        ({item.delayDays}일 지연)
-                      </span>
-                    )}
-                  </td>
-                  <td className="whitespace-nowrap px-2 py-2">
-                    {item.orderNo ?? '-'}
-                    {item.channelName && (
-                      <div className="text-xs text-muted-foreground">
-                        {item.channelName}
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-2 py-2">{item.customerName ?? '-'}</td>
-                  <td className="whitespace-nowrap px-2 py-2">
-                    {PROGRESS_LABELS[item.progress]}
-                  </td>
-                  <td
-                    className={cn(
-                      'whitespace-nowrap px-2 py-2',
-                      item.canShip ? 'font-semibold' : 'font-bold'
-                    )}
-                  >
-                    {item.canShip ? '출고 가능' : '재고 부족'}
-                  </td>
-                  <td className="px-2 py-2 text-right tabular-nums">
-                    {item.remainingQuantity}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                  {card.label}
+                </div>
+                <div className="text-xl font-bold tabular-nums">
+                  {card.value}
+                </div>
+              </div>
+            ))}
+          </div>
 
-        <p className="mt-3 text-xs text-muted-foreground">
-          주문일이 빠른 순서입니다. 재고 부족은 아직 재고가 잡히지 않은
-          주문입니다.
-        </p>
+          <div className="mt-4 flex gap-1.5">
+            {filters.map((item) => (
+              <Button
+                key={item.value}
+                type="button"
+                size="sm"
+                variant={filter === item.value ? 'default' : 'outline'}
+                className="h-7 rounded-full text-xs"
+                onClick={() => setFilter(item.value)}
+              >
+                {item.label}
+              </Button>
+            ))}
+          </div>
+
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr className="border-b bg-muted/40 text-left text-xs text-muted-foreground">
+                  <th className="px-2 py-2 font-medium">주문일</th>
+                  <th className="px-2 py-2 font-medium">주문번호</th>
+                  <th className="px-2 py-2 font-medium">주문자</th>
+                  <th className="px-2 py-2 font-medium">진행</th>
+                  <th className="px-2 py-2 font-medium">출고</th>
+                  <th className="px-2 py-2 text-right font-medium">수량</th>
+                </tr>
+              </thead>
+              <tbody>
+                {isLoading && (
+                  <tr>
+                    <td
+                      colSpan={6}
+                      className="px-2 py-8 text-center text-muted-foreground"
+                    >
+                      불러오는 중…
+                    </td>
+                  </tr>
+                )}
+                {!isLoading && visible.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={6}
+                      className="px-2 py-8 text-center text-muted-foreground"
+                    >
+                      미발송 주문이 없습니다.
+                    </td>
+                  </tr>
+                )}
+                {visible.map((item) => (
+                  <tr
+                    key={item.fulfillmentOrderItemId}
+                    className={cn('border-b', !item.canShip && 'bg-muted/30')}
+                  >
+                    <td className="whitespace-nowrap px-2 py-2">
+                      {KST_DAY.format(new Date(item.orderedAt))}
+                      {item.delayDays > 0 && (
+                        <span className="ml-1 text-xs text-muted-foreground">
+                          ({item.delayDays}일 지연)
+                        </span>
+                      )}
+                    </td>
+                    <td className="whitespace-nowrap px-2 py-2">
+                      {item.orderNo ?? '-'}
+                      {item.channelName && (
+                        <div className="text-xs text-muted-foreground">
+                          {item.channelName}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-2 py-2">{item.customerName ?? '-'}</td>
+                    <td className="whitespace-nowrap px-2 py-2">
+                      {PROGRESS_LABELS[item.progress]}
+                    </td>
+                    <td
+                      className={cn(
+                        'whitespace-nowrap px-2 py-2',
+                        item.canShip ? 'font-semibold' : 'font-bold'
+                      )}
+                    >
+                      {item.canShip ? '출고 가능' : '재고 부족'}
+                    </td>
+                    <td className="px-2 py-2 text-right tabular-nums">
+                      {item.remainingQuantity}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <p className="mt-3 text-xs text-muted-foreground">
+            주문일이 빠른 순서입니다. 재고 부족은 아직 재고가 잡히지 않은
+            주문입니다.
+          </p>
+        </div>
       </SheetContent>
     </Sheet>
   );

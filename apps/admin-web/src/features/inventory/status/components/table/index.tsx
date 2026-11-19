@@ -19,12 +19,16 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { SimplePagination } from '@/components/simple-pagination';
 import { cn } from '@/lib/utils';
-import { resolvePublicFileUrl } from '@/lib/utils/file-url';
 import { StockHistoryDrawer } from '../stock-history-drawer';
 import { AdjustStockDialog } from '../adjust-stock-dialog';
 import { UnshippedOrdersDrawer } from '../unshipped-orders-drawer';
 
 const PAGE_SIZE = 20;
+
+// 상품 대표 이미지는 공개 파일이라 프록시 없이 file-service 공개 주소로 바로 받는다(타임세일 이미지와 같은 방식).
+const PUBLIC_FILE_BASE = (
+  process.env.NEXT_PUBLIC_FILE_PUBLIC_URL ?? 'https://file.almondyoung.com'
+).replace(/\/$/, '');
 
 const QUEUES: { value: StockQueue; label: string }[] = [
   { value: 'out_of_stock', label: '가용재고 없음' },
@@ -135,7 +139,7 @@ export function InventoryStatusTable() {
         <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
           창고
           <select
-            className="h-7 rounded-md border bg-background px-2 text-xs text-foreground"
+            className="h-7 w-40 rounded-md border bg-background px-2 text-xs text-foreground"
             value={warehouseId}
             onChange={(e) => setParams({ warehouseId: e.target.value })}
           >
@@ -151,7 +155,7 @@ export function InventoryStatusTable() {
         <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
           공급처
           <select
-            className="h-7 rounded-md border bg-background px-2 text-xs text-foreground"
+            className="h-7 w-40 rounded-md border bg-background px-2 text-xs text-foreground"
             value={supplierId}
             onChange={(e) => setParams({ supplierId: e.target.value })}
           >
@@ -182,7 +186,7 @@ export function InventoryStatusTable() {
       <div className={cn('overflow-x-auto', isFetching && 'opacity-70')}>
         <table className="w-full border-collapse text-sm">
           <thead>
-            <tr className="border-b bg-muted/40 text-left text-xs text-muted-foreground">
+            <tr className="whitespace-nowrap border-b bg-muted/40 text-left text-xs text-muted-foreground">
               <th className="w-[30%] px-3 py-2 font-medium">상품정보</th>
               <th className="px-3 py-2 font-medium">옵션</th>
               <th className="px-3 py-2 font-medium">위치</th>
@@ -233,10 +237,7 @@ export function InventoryStatusTable() {
                       <div className="flex gap-3">
                         {group.imageFileId ? (
                           <img
-                            src={
-                              resolvePublicFileUrl(group.imageFileId) ??
-                              undefined
-                            }
+                            src={`${PUBLIC_FILE_BASE}/files/public/${group.imageFileId}`}
                             alt=""
                             className="size-14 flex-none rounded-md object-cover"
                           />
