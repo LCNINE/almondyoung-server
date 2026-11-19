@@ -489,8 +489,8 @@ npx tsx scripts/ops/emergency-outbound/index.ts prepare --stage live --warehouse
 
 ### 11-3. 비상 출고 경로 한 번 (라이브 창고)
 
-- [ ] §10-1 사전 준비 네 개(공유 프린터·권한·낱개 피킹·창고 id)
-- [ ] `prepare --stage live --warehouse <창고 id>` **dry-run** — 사전 점검 통과, 대상과 뺀 사유가 보인다
+- [ ] §10-1 사전 준비 네 개(공유 프린터·권한·낱개 피킹·창고 id) — 11-19: 권한(운영자 계정)·낱개 피킹(판정 «출고 1»)·창고 id 끝. **남음: 공유 프린터**
+- [x] `prepare --stage live --warehouse <창고 id>` **dry-run** — 사전 점검 통과, 대상과 뺀 사유가 보인다 — 11-19 라이브(운영자 본인 계정, 별도 터미널 — Claude Code 의 `!` 셸은 숨김 입력을 못 받는다): «사전 점검 통과», 실행 id 자동(`yyyyMMdd-HHmm`), 대상·뺀 상자가 상자마다 찍혔다. 3분 10초(아이디·비밀번호 입력 포함). 뺀 사유 중 «일부만 낼 수 있음»·«재고 없음» 이 `partial:`·`unavailable:` 처럼 영어 버킷 이름과 빈 사유로 찍혔다 — core 가 그 버킷엔 사유를 비워 보낸다 → 스크립트가 버킷 뜻을 한국어로 찍게 고쳤다(`select.ts`)
 - [ ] 송장 프린터 공유로 `copy /b` 시험 출력
 - `dispatch` 는 돌리지 않는다 — `prepare --apply` 가 남긴 `run.json` 이 있어야 돈다.
 
