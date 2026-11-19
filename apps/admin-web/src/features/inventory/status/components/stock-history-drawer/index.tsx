@@ -56,6 +56,22 @@ function deltaForWarehouse(
   return 0;
 }
 
+// 취소 이벤트의 사유는 서버가 'REVERSAL of <원래 이벤트 id>: <사유>' 로 남긴다
+function reasonText(item: StockHistoryDto, items: StockHistoryDto[]) {
+  if (!item.reversalOfEventId) return item.reason ?? '';
+
+  const original = items.find((i) => i.id === item.reversalOfEventId);
+  const target = original
+    ? `${TRANSITION_TYPE_LABELS[original.transitionType] ?? original.transitionType} ${original.quantity.toLocaleString('ko-KR')}개 (${new Date(original.occurredAt).toLocaleString('ko-KR')})`
+    : '이전 기록';
+  const userReason = (item.reason ?? '').replace(
+    /^REVERSAL of [0-9a-f-]+:?\s*/i,
+    ''
+  );
+
+  return `${target} 취소${userReason ? ` · ${userReason}` : ''}`;
+}
+
 export function StockHistoryDrawer({ row, open, onOpenChange }: Props) {
   const { data: history, isLoading } = useStockHistory({
     skuId: row?.skuId ?? '',
@@ -133,9 +149,9 @@ export function StockHistoryDrawer({ row, open, onOpenChange }: Props) {
                           {delta === 0 && ' (창고 내 전환)'}
                         </span>
                       </p>
-                      {item.reason && (
+                      {reasonText(item, items) && (
                         <p className="text-xs text-muted-foreground">
-                          {item.reason}
+                          {reasonText(item, items)}
                         </p>
                       )}
                       <p className="text-xs text-muted-foreground">
