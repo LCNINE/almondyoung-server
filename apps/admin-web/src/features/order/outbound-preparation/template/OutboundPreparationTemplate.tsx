@@ -46,6 +46,7 @@ import {
 } from '@/lib/utils/picking-method';
 import {
   bulkSelectableShipments,
+  SELECTABLE_BUCKETS,
   locatePreparationTarget,
   PREPARATION_BATCH_LIMIT,
   preparationAddress,
@@ -245,10 +246,17 @@ function PreparationWarehouse({
       [];
     const selected = selections[key];
 
+    if (!SELECTABLE_BUCKETS.has(key)) {
+      return [];
+    }
+
+    // 합칠 주문은 합치는 게 목적이라, 따로 보낼 상자는 사람이 하나씩 고른다
     return selected === undefined
-      ? bulkSelectableShipments(shipments).map(
-          (shipment) => shipment.shipmentId
-        )
+      ? key === 'mergeable'
+        ? []
+        : bulkSelectableShipments(shipments).map(
+            (shipment) => shipment.shipmentId
+          )
       : shipments
           .filter((shipment) => selected.includes(shipment.shipmentId))
           .map((shipment) => shipment.shipmentId);
@@ -592,6 +600,7 @@ function PreparationWarehouse({
             {bucket && (
               <BucketList
                 bucket={bucket}
+                warehouseId={warehouseId}
                 selectedIds={selectedIds(bucket.bucket)}
                 busy={busy}
                 onToggle={toggle}

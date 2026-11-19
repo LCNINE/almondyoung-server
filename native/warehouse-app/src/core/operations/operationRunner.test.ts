@@ -9,6 +9,7 @@ import {
   type ApiClient,
 } from '../data/httpClient';
 import { workStatus } from './workStatus';
+import { isBoxCheck } from './boxChecks';
 import { unsentCount } from '../../station/status/statusBarItems';
 import { errorMessage } from '../data/errorMessage';
 
@@ -1027,7 +1028,9 @@ describe('출고 판정이 거절한 스캔', () => {
       },
     });
     await runner.restore();
-    expect(workStatus(runner.getSnapshot(), Date.now()).blocksWork).toBe(true);
+    // 박스에 묶인 결과 모름은 기기 전체를 막지 않고 확인할 일로 남는다
+    expect(workStatus(runner.getSnapshot(), Date.now()).blocksWork).toBe(false);
+    expect(runner.getSnapshot().filter(isBoxCheck)).toHaveLength(1);
 
     await runner.retryPending();
 
@@ -1038,5 +1041,222 @@ describe('출고 판정이 거절한 스캔', () => {
     });
     expect(runner.getSnapshot()).toEqual([]);
     expect(workStatus(runner.getSnapshot(), Date.now()).blocksWork).toBe(false);
+  });
+});
+
+describe('출고 저장 경로에서 목록에 없는 코드로 거절된 작업', () => {
+  const path = '/shipments/s1/simple-outbound-scans';
+  const refuse = () => {
+    throw new ConflictError(
+      'Shipment cannot dispatch while a tote assignment is active',
+      'SHIPMENT_TOTE_NOT_RELEASED',
+      undefined,
+      undefined,
+      path
+    );
+  };
+
+  it('거절로 끝나 미전송을 남기지 않고, 기다리던 화면도 거절과 문구를 받는다', async () => {
+    const store = createOperationStore(crypto.randomUUID());
+    const runner = createOperationRunner({
+      store,
+      getScope: async () => 'a',
+      wait: async () => {},
+      api: { request: async () => refuse() },
+    });
+
+    const error = await runner
+      .request({
+        method: 'POST',
+        path,
+        body: { barcode: 'b', quantity: 1 },
+        idempotencyKey: 'k1',
+      })
+      .catch((e) => e);
+
+    expect(error).toMatchObject({ outcome: 'rejected', notApplied: true });
+    expect(errorMessage(error, 'outbound')).toBe(
+      '바구니 배정이 남아 있어 출고하지 못했어요. 관리자에게 바구니 배정을 풀어 달라고 해 주세요.'
+    );
+    expect(await store.get('k1')).toMatchObject({
+      status: 'rejected',
+      errorCode: 'SHIPMENT_TOTE_NOT_RELEASED',
+    });
+    await vi.waitFor(() => expect(runner.getSnapshot()).toEqual([]));
+    expect(workStatus(runner.getSnapshot(), Date.now()).blocksWork).toBe(false);
+  });
+
+  it('같은 키로 다시 부르면 서버에 보내지 않고 같은 거절과 문구를 돌려준다', async () => {
+    const store = createOperationStore(crypto.randomUUID());
+    let sent = 0;
+    const runner = createOperationRunner({
+      store,
+      getScope: async () => 'a',
+      wait: async () => {},
+      api: {
+        request: async () => {
+          sent += 1;
+          return refuse();
+        },
+      },
+    });
+    const scan = {
+      method: 'POST',
+      path,
+      body: { barcode: 'b', quantity: 1 },
+      idempotencyKey: 'k1',
+    };
+    await runner.request(scan).catch(() => {});
+
+    const again = await runner.request(scan).catch((e) => e);
+
+    expect(sent).toBe(1);
+    expect(again).toMatchObject({ outcome: 'rejected', notApplied: true });
+    expect(errorMessage(again, 'outbound')).toBe(
+      '바구니 배정이 남아 있어 출고하지 못했어요. 관리자에게 바구니 배정을 풀어 달라고 해 주세요.'
+    );
+  });
+
+  it('예전에 결과 모름으로 남은 같은 작업은 처리 내역 확인으로 정리된다', async () => {
+    const store = createOperationStore(crypto.randomUUID());
+    await store.begin({
+      id: 'old',
+      scope: 'a',
+      resource: '/shipments/s1',
+      method: 'POST',
+      path,
+      bodyJson: JSON.stringify({ barcode: 'b', quantity: 1 }),
+      createdAt: Date.now(),
+    });
+    await store.finish('old', 'sending');
+    await store.finish(
+      'old',
+      'uncertain',
+      undefined,
+      'SHIPMENT_TOTE_NOT_RELEASED'
+    );
+    const keys: string[] = [];
+    const runner = createOperationRunner({
+      store,
+      getScope: async () => 'a',
+      wait: async () => {},
+      api: {
+        request: async (o) => {
+          keys.push(o.idempotencyKey!);
+          return refuse();
+        },
+      },
+    });
+    await runner.restore();
+    // 박스에 묶인 결과 모름은 기기 전체를 막지 않고 확인할 일로 남는다
+    expect(workStatus(runner.getSnapshot(), Date.now()).blocksWork).toBe(false);
+    expect(runner.getSnapshot().filter(isBoxCheck)).toHaveLength(1);
+
+    await runner.retryPending();
+
+    expect(keys).toEqual(['old']);
+    expect(await store.get('old')).toMatchObject({ status: 'rejected' });
+    expect(workStatus(runner.getSnapshot(), Date.now()).blocksWork).toBe(false);
+  });
+});
+
+describe('고른 작업만 다시 확인', () => {
+  it('확인할 일에서 고른 작업만 같은 키로 다시 보내고 끝난 기록을 돌려준다', async () => {
+    const store = createOperationStore(crypto.randomUUID());
+    for (const id of ['box-a', 'box-b']) {
+      await store.begin({
+        id,
+        scope: 'a',
+        resource: `/shipments/${id}`,
+        method: 'POST',
+        path: `/shipments/${id}/simple-outbound-scans`,
+        bodyJson: JSON.stringify({ barcode: 'b', quantity: 1 }),
+        createdAt: Date.now(),
+      });
+      await store.finish(id, 'sending');
+      await store.finish(id, 'uncertain');
+    }
+    const keys: string[] = [];
+    const runner = createOperationRunner({
+      store,
+      getScope: async () => 'a',
+      wait: async () => {},
+      api: {
+        request: async <T>(o: { idempotencyKey?: string }) => {
+          keys.push(o.idempotencyKey!);
+          return {
+            shipmentId: 'x',
+            status: 'in_progress',
+            lines: [],
+            workItemStatus: 'picking',
+          } as T;
+        },
+      },
+    });
+    await runner.restore();
+    const after = await runner.recheck(['box-a']);
+    expect(keys).toEqual(['box-a']);
+    expect(after.map((op) => [op.id, op.status])).toEqual([
+      ['box-a', 'confirmed'],
+    ]);
+    expect((await store.get('box-b'))?.status).toBe('uncertain');
+    expect(runner.getSnapshot().map((op) => op.id)).toEqual(['box-b']);
+  });
+});
+
+describe('다시 보내 확정된 단순출고 스캔', () => {
+  it('그 박스의 저장된 스캔에서 빠진다 — 박스를 다시 열 때 옛 응답을 재생하지 않는다', async () => {
+    const store = createOperationStore(crypto.randomUUID());
+    await store.begin({
+      id: 'lost',
+      scope: 'a',
+      resource: '/shipments/s1',
+      method: 'POST',
+      path: '/shipments/s1/simple-outbound-scans',
+      bodyJson: JSON.stringify({ barcode: 'b', quantity: 1 }),
+      createdAt: Date.now(),
+    });
+    await store.finish('lost', 'sending');
+    await store.finish('lost', 'uncertain');
+    await store.draft('a:scan:outbound:s1', () => [
+      { id: 'lost', data: { barcode: 'b', quantity: 1 } },
+      { id: 'next', data: { barcode: 'c', quantity: 1 } },
+    ]);
+    const runner = createOperationRunner({
+      store,
+      getScope: async () => 'a',
+      wait: async () => {},
+      api: {
+        request: async <T>() =>
+          ({
+            shipmentId: 's1',
+            status: 'in_progress',
+            lines: [],
+          }) as T,
+      },
+    });
+    await runner.retryPending();
+    expect((await store.get('lost'))?.status).toBe('confirmed');
+    expect(await store.draft('a:scan:outbound:s1')).toEqual([
+      { id: 'next', data: { barcode: 'c', quantity: 1 } },
+    ]);
+  });
+
+  it('다시 보내는 중인 박스 작업도 확인할 일로 센다 — 확인하는 동안 기기를 막지 않는다', () => {
+    const op = {
+      id: 'x',
+      scope: 'a',
+      resource: '/shipments/s1',
+      method: 'POST',
+      path: '/shipments/s1/simple-outbound-scans',
+      bodyJson: '{}',
+      createdAt: Date.now(),
+    };
+    expect(isBoxCheck({ ...op, status: 'sending', attempts: 1 })).toBe(false);
+    expect(isBoxCheck({ ...op, status: 'sending', attempts: 5 })).toBe(true);
+    expect(
+      workStatus([{ ...op, status: 'sending', attempts: 5 }], Date.now() + 5000)
+        .blocksWork
+    ).toBe(false);
   });
 });

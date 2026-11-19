@@ -78,7 +78,7 @@ launch() {
     return 0
   fi
   case "$kind" in
-    nest)          "${pre[@]}" npx dotenv -e "$dest" -- node "dist/apps/$target/main.js" > "logs/$name.log" 2>&1 & ;;
+    nest)          ${pre[@]+"${pre[@]}"} npx dotenv -e "$dest" -- node "dist/apps/$target/main.js" > "logs/$name.log" 2>&1 & ;;
     web|medusa)    (cd "$target" && npm run dev) > "logs/$name.log" 2>&1 & ;;
   esac
   pids+=($!)

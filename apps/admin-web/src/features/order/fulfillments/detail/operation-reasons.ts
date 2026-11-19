@@ -60,6 +60,11 @@ export const OPERATION_REASONS: Record<
       label: '한 상자에 다 들어가지 않음',
       customerRequest: false,
     },
+    {
+      code: 'profile_mismatch',
+      label: '배송 프로필이 달라 나눔',
+      customerRequest: false,
+    },
     { code: 'other', label: '기타', customerRequest: false },
   ],
   recipient_revision: [

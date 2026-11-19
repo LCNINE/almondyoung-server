@@ -10,6 +10,14 @@ import type {
 // 한 번에 출고 준비하는 상자 수 상한. 서버 BulkShipmentIdsDto 의 ArrayMaxSize(100) 과 같아야 한다.
 export const PREPARATION_BATCH_LIMIT = 100;
 
+// 고른 상자로 할 일이 있는 분류. 출고불가·정보 부족은 고칠 곳으로 보낼 뿐 고를 것이 없다.
+export const SELECTABLE_BUCKETS: ReadonlySet<PreparationBucket> = new Set([
+  'ready',
+  'partial',
+  'resume',
+  'mergeable',
+]);
+
 // 한꺼번에 고를 상자. 결품으로 돌아온 상자는 자리 수량을 확인한 뒤 하나씩 고른다.
 export function bulkSelectableShipments(
   shipments: PreparationShipmentDto[]
@@ -57,6 +65,17 @@ export function shipmentGroupOf(
   }
 
   return shipment.batchReturn ? 'batch_return' : 'other';
+}
+
+// 상자 상세로 가 볼 까닭이 있는 행. 고칠 것이 있거나, 송장 오류가 있거나, 배치에서 돌아와
+// 무엇을 뺐는지·무엇이 남았는지를 상세의 작업 기록으로 확인하는 상자다.
+export function showsShipmentDetailLink(
+  bucket: PreparationBucket,
+  shipment: Pick<PreparationShipmentDto, 'shortPick' | 'batchReturn' | 'reason'>
+): boolean {
+  if (bucket === 'needs_info') return true;
+  if (bucket === 'resume' && shipment.reason) return true;
+  return shipmentGroupOf(shipment) !== 'other';
 }
 
 // 언제·어느 배치에서·어디서 뺐는지. 사유는 따로 보인다.

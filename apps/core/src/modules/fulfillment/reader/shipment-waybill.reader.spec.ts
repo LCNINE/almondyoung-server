@@ -1,4 +1,5 @@
-import { readDeliveryNote, readPendingCancellationLines } from './shipment-waybill.reader';
+import { readPendingCancellationLines } from './pending-cancellations';
+import { readDeliveryNote } from './shipment-waybill.reader';
 
 describe('readDeliveryNote', () => {
   it.each([

@@ -1,6 +1,7 @@
 import type { SystemPrincipal } from '@app/authorization';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
+import { NeedsInfoIssueDto } from './outbound-preparation.dto';
 import {
   ArrayMinSize,
   IsArray,
@@ -175,6 +176,14 @@ export class ShipmentLineReservationResponseDto {
   status: string;
 }
 
+export class ShipmentLineDeliveryProfileResponseDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty()
+  name: string;
+}
+
 export class ShipmentLineDetailResponseDto {
   @ApiProperty()
   id: string;
@@ -190,6 +199,16 @@ export class ShipmentLineDetailResponseDto {
 
   @ApiProperty({ nullable: true, description: '상품명(옵션 포함)' })
   skuName: string | null;
+
+  @ApiProperty({ nullable: true })
+  skuCode: string | null;
+
+  @ApiProperty({
+    type: ShipmentLineDeliveryProfileResponseDto,
+    nullable: true,
+    description: 'SKU 에 지금 지정된 배송 프로필. 상자 확정은 담긴 SKU 가 모두 같은 프로필이어야 받는다',
+  })
+  deliveryProfile: ShipmentLineDeliveryProfileResponseDto | null;
 
   @ApiProperty()
   qty: number;
@@ -360,6 +379,29 @@ export class ShipmentSummaryResponseDto {
   recoveryCode: string | null;
 }
 
+export class PendingCancellationItemResponseDto {
+  @ApiProperty()
+  shipmentLineId: string;
+
+  @ApiProperty({ nullable: true, type: String })
+  salesOrderLineId: string | null;
+
+  @ApiProperty()
+  skuName: string;
+
+  @ApiProperty({ description: '이 줄에서 취소될 수량' })
+  qty: number;
+}
+
+/** 상자가 현장에서 빠지기를 기다리는 취소 */
+export class PendingCancellationResponseDto {
+  @ApiProperty()
+  operationId: string;
+
+  @ApiProperty({ type: [PendingCancellationItemResponseDto] })
+  lines: PendingCancellationItemResponseDto[];
+}
+
 export class ShipmentDetailResponseDto {
   @ApiProperty()
   id: string;
@@ -398,6 +440,15 @@ export class ShipmentDetailResponseDto {
 
   @ApiProperty({ type: [ShipmentOperationHistoryResponseDto] })
   operations: ShipmentOperationHistoryResponseDto[];
+
+  @ApiProperty({ type: PendingCancellationResponseDto, nullable: true })
+  pendingCancellation: PendingCancellationResponseDto | null;
+
+  @ApiProperty({
+    type: [NeedsInfoIssueDto],
+    description: '준비 전 상자가 상자 확정에서 거절될 정보 부족 문제. 없으면 빈 배열',
+  })
+  needsInfo: NeedsInfoIssueDto[];
 }
 
 export class FulfillmentOperationResponseDto {

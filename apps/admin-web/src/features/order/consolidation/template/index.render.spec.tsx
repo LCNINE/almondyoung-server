@@ -19,19 +19,34 @@ const mockMutateAsync = jest.fn<
 const mockRefetch = jest.fn<Promise<unknown>, []>();
 let mockGroups: ConsolidationBoardGroup[] = [];
 
+let mockParams = new URLSearchParams();
+const mockBoardWarehouse = jest.fn<void, [string]>();
+
+jest.mock('next/navigation', () => ({
+  useSearchParams: () => mockParams,
+}));
+
 jest.mock('@/lib/services/inventory/queries', () => ({
-  useWarehouses: () => ({ data: [{ id: 'wh-1', name: '부천' }] }),
+  useWarehouses: () => ({
+    data: [
+      { id: 'wh-1', name: '부천' },
+      { id: 'wh-2', name: '중국' },
+    ],
+  }),
 }));
 
 jest.mock('@/lib/services/orders', () => ({
   getServerDenyMessage: (_error: unknown, fallback: string) => fallback,
-  useConsolidationBoard: () => ({
-    data: { groups: mockGroups },
-    isLoading: false,
-    isError: false,
-    error: null,
-    refetch: mockRefetch,
-  }),
+  useConsolidationBoard: (warehouseId: string) => (
+    mockBoardWarehouse(warehouseId),
+    {
+      data: { groups: mockGroups },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: mockRefetch,
+    }
+  ),
   useCreateShipmentConsolidation: () => ({
     mutateAsync: mockMutateAsync,
     isPending: false,
@@ -278,5 +293,31 @@ describe('합포장 결과에서 출고 준비로', () => {
         warehouseId: 'wh-1',
       })
     );
+  });
+});
+
+describe('들어온 창고', () => {
+  afterEach(() => {
+    mockParams = new URLSearchParams();
+  });
+
+  it('주소의 창고로 합칠 주문을 연다', () => {
+    mockParams = new URLSearchParams('warehouseId=wh-2');
+    render(<ConsolidationTemplate />);
+
+    expect(mockBoardWarehouse).toHaveBeenLastCalledWith('wh-2');
+  });
+
+  it('없는 창고를 받으면 기본 창고로 연다', () => {
+    mockParams = new URLSearchParams('warehouseId=gone');
+    render(<ConsolidationTemplate />);
+
+    expect(mockBoardWarehouse).toHaveBeenLastCalledWith('wh-1');
+  });
+
+  it('주소에 창고가 없으면 기본 창고로 연다', () => {
+    render(<ConsolidationTemplate />);
+
+    expect(mockBoardWarehouse).toHaveBeenLastCalledWith('wh-1');
   });
 });

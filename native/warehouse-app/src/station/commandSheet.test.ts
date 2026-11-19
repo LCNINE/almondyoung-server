@@ -14,6 +14,8 @@ describe('명령 바코드 시트', () => {
     expect(COMMAND_SHEET_SECTIONS[1].title).toBe('출고 검수');
     expect(COMMAND_SHEET_SECTIONS[1].actions.map((a) => a.key)).toEqual(['F8', 'F9', 'F10', 'F11', 'F12', 'Escape']);
     expect(COMMAND_SHEET_SECTIONS[1].actions).toContainEqual(expect.objectContaining({ key: 'F10', label: '강제출고' }));
+    // 송장 대기의 F8(확인할 일)은 박스를 든 동안의 F8 과 같은 바코드 — 한 칸에 두 이름
+    expect(COMMAND_SHEET_SECTIONS[1].actions).toContainEqual({ key: 'F8', label: '이 상품 전량 · 확인할 일' });
   });
 
   it('셋째 절은 반품 — 화면 선언 상수에서 검색·확정·목록, 같은 키의 두 확정은 한 바코드에 두 이름으로', () => {

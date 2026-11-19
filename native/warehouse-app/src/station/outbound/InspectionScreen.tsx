@@ -7,6 +7,8 @@ import { localStoragePrefs, type DevicePrefs } from '../../core/data/devicePrefs
 import { errorMessage } from '../../core/data/errorMessage';
 import { NetworkError } from '../../core/data/httpClient';
 import { printRaw, readLabelPrinter, type PrintRaw } from '../../core/hardware/print/labelPrinter';
+import { requestBoxChecksOpen } from '../../core/operations/boxChecks';
+import { useBoxChecks } from '../../core/operations/workArea';
 import { useHumanKeys, useScanEmit, useScanner } from '../../core/hardware/scan/useScanner';
 import { batchProgressOf, useBatchWorkItems } from '../../domains/outbound/batchStatus';
 import { classifyInspectScan, inspectionGateOf, isNotFound } from '../../domains/outbound/inspection';
@@ -160,15 +162,19 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
   };
 
   /**
-   * 든 박스의 앞 스캔을 다 보낸다. 확인 못 한 스캔이 있으면 거절 — 내려놓으면 그 스캔이 재생될 길이 없다.
+   * 든 박스의 앞 스캔을 다 보낸다. 결과를 모르는 스캔이 남으면 그 박스는 확인할 일로 넘기고 내려놓는다 — 스캔은 저장돼 있어
+   * 박스를 다시 열거나 상태바 «확인할 일» 에서 같은 키로 다시 맞춘다. 저장하지 못한 스캔·연결 대기는 거절한다.
    * 상품과 달리 workFor 로 거르지 않는다 — 걸린 손잡이가 옛 박스 것이면 그 박스의 큐를 비우는 것이 맞다(새 박스의 큐는 아직 비었다)
    */
   const settleWork = async () => {
+    const current = viewRef.current;
+    let outcome: Awaited<ReturnType<BoxWorkHandle['settle']>>;
     try {
-      await work.current?.settle();
+      outcome = await work.current?.settle();
     } catch (error) {
       throw new Refusal(error instanceof ScanWaitingError ? error.message : UNCERTAIN_SCAN_MESSAGE);
     }
+    if (outcome === 'checking' && current.kind === 'inspect') note({ kind: 'check', text: current.box.trackingNo });
   };
 
   /** 조회 결과로 화면을 정한다(스펙 §6.2). quiet 는 하던 박스 복구 — 거절이면 조용히 대기로 */
@@ -560,6 +566,7 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
 
   const putDownAction: StationAction = { ...INSPECTION_ACTIONS.putDown, enabled: true, run: () => void putDown() };
   const returnBin = useMyReturnBin(warehouseId, view.kind === 'withdrawn' ? view.seq : null);
+  const boxCheckCount = useBoxChecks().length;
   const toReturnPutaway: StationAction = {
     ...RETURN_PUTAWAY_ACTION,
     enabled: true,
@@ -582,13 +589,20 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
           ? needsReturnPutaway(returnBin)
             ? [toReturnPutaway, putDownAction]
             : [putDownAction]
-        : view.kind === 'waiting' && last?.kind === 'refilled'
+        : view.kind === 'waiting'
           ? [
-              {
-                ...INSPECTION_ACTIONS.reprint,
-                enabled: canPrint && last.print.kind !== 'printing',
-                run: () => void reprintLast(),
-              },
+              ...(boxCheckCount > 0
+                ? [{ ...INSPECTION_ACTIONS.boxChecks, enabled: true, run: requestBoxChecksOpen }]
+                : []),
+              ...(last?.kind === 'refilled'
+                ? [
+                    {
+                      ...INSPECTION_ACTIONS.reprint,
+                      enabled: canPrint && last.print.kind !== 'printing',
+                      run: () => void reprintLast(),
+                    },
+                  ]
+                : []),
             ]
           : [];
   useStationActions(actions);

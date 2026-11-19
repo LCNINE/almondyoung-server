@@ -69,6 +69,11 @@ export type OrderLineRow = {
   imageUrl?: string;
   skuId?: string;
 
+  /** 현장에서 상자가 빠지기를 기다리는 이 줄의 취소 수량. 옛 core 응답은 0 */
+  warehouseCancelPendingQty: number;
+  /** 이 주문의 출고주문. 상세를 못 읽었거나 아직 없으면 undefined */
+  fulfillmentOrderId?: string;
+
   // 매칭 상태
   isMatched: boolean;
   isDirect: boolean;
@@ -332,6 +337,8 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
           productName: line.productName ?? variant?.masterName ?? line.variantId,
           optionName: optionName ?? undefined,
           quantity: Number(line.quantity ?? 1),
+          warehouseCancelPendingQty: Number(line.warehouseCancelPendingQty ?? 0),
+          fulfillmentOrderId: detail?.fulfillmentOrder?.id ?? undefined,
           unitPrice: line.unitPrice ?? undefined,
           totalPrice: line.totalPrice ?? undefined,
           // 주문 라인에는 이미지가 없어 PIM Variant(마스터 썸네일)에서 가져온다. (products-list 와 동일 소스)
@@ -399,6 +406,7 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
           variantId: '',
           productName: '(상품 정보 없음)',
           quantity: 0,
+          warehouseCancelPendingQty: 0,
           isMatched: false,
           isDirect: false,
           shipmentPhase: toShipmentPhase(detail?.shipmentPhase ?? listItem.shipmentPhase),
@@ -426,6 +434,13 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
     pageCount: (listQuery.data as any)?.totalPages ?? 0,
     // 최초 목록 로딩만 스켈레톤 대상 (페이지 재조회는 이전 데이터 유지하므로 제외)
     isInitialLoading: listQuery.isLoading,
+    // 마지막으로 끝난 목록 조회가 실패했는지. 다시 시도하는 동안에도 실패 안내가 깜빡이지 않게 시각으로 본다.
+    listFailed:
+      listQuery.isError || listQuery.errorUpdatedAt > listQuery.dataUpdatedAt,
+    listRetrying: listQuery.isFetching,
+    // 지금 조건의 목록을 다 받았는지(앞 조건의 목록을 잠시 보여 주는 중이 아님)
+    listSettled: !listQuery.isFetching && !listQuery.isPlaceholderData,
+    refetchList: () => listQuery.refetch(),
     isLoading:
       listQuery.isLoading ||
       detailQueries.isLoading ||

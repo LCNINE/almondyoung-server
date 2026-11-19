@@ -1,5 +1,7 @@
 import { BarcodeInput } from '../../core/hardware/scan/BarcodeInput';
 import { WorkArea } from '../../core/operations/WorkBoundary';
+import { useBoxChecks } from '../../core/operations/workArea';
+import { BoxCheckingExit } from './BoxCheckingExit';
 import { useRef, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import {
@@ -86,12 +88,22 @@ function SimpleOutboundScreenContent({
           throw error;
       }
     },
-    `outbound:${shipmentId}`
+    `outbound:${shipmentId}`,
+    () => checkingRef.current
   );
+  const checkingRef = useRef(false);
+  checkingRef.current = useBoxChecks(shipmentId).length > 0;
   function acceptBarcode(code: string) {
     if (!shipment || shipment.outboundContract === 'location') return;
     if (forceOpen || force.isPending) {
       setNotice('현재 작업을 마친 뒤 다시 찍어 주세요.');
+      return;
+    }
+    // 앞 스캔의 결과를 모르는 박스 — 뒤에 줄 세우지 않는다(확인이 끝난 뒤 다시 찍는다)
+    if (checkingRef.current) {
+      setNotice(
+        '이 박스의 처리 여부를 확인하고 있어요. 확인이 끝난 뒤 다시 찍어 주세요.'
+      );
       return;
     }
     const scanQuantity = Math.max(1, quantityRef.current);
@@ -235,8 +247,15 @@ export function SimpleOutboundScreen(
   props: Parameters<typeof SimpleOutboundScreenContent>[0]
 ) {
   return (
-    <WorkArea kind="outbound">
-      <SimpleOutboundScreenContent {...props} />
-    </WorkArea>
+    <>
+      <BoxCheckingExit
+        shipmentId={props.shipmentId}
+        trackingNo={props.shipment?.trackingNo}
+        lines={props.shipment?.lines}
+      />
+      <WorkArea kind="outbound" shipmentId={props.shipmentId}>
+        <SimpleOutboundScreenContent {...props} />
+      </WorkArea>
+    </>
   );
 }

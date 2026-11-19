@@ -40,6 +40,14 @@ describe('resolveOperationReason', () => {
     });
   });
 
+  it('배송 프로필이 달라 나누는 분할 사유를 받는다', () => {
+    expect(resolveOperationReason('split', { reason: 'x', reasonCode: 'profile_mismatch' })).toEqual({
+      reason: '배송 프로필이 달라 나눔',
+      reasonCode: 'profile_mismatch',
+      requestChannel: null,
+    });
+  });
+
   it('기타는 글이 있어야 한다', () => {
     expect(() => resolveOperationReason('split', { reason: '  ', reasonCode: 'other' })).toThrow(BadRequestError);
     expect(resolveOperationReason('split', { reason: '박스 파손', reasonCode: 'other' })).toEqual({
@@ -115,6 +123,7 @@ describe('resolveOperationReason', () => {
 describe('classifyOperationReason', () => {
   it('저장된 코드가 있으면 그대로 돌려준다', () => {
     expect(classifyOperationReason('split', { reasonCode: 'does_not_fit', reason: 'x' })).toBe('does_not_fit');
+    expect(classifyOperationReason('split', { reasonCode: 'profile_mismatch', reason: 'x' })).toBe('profile_mismatch');
   });
 
   it('옛 기록의 고정 문자열을 코드로 분류한다', () => {

@@ -1,9 +1,10 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import {
   DEFAULT_PRODUCT_DESCRIPTION_PROMPT,
+  appendUnusedImages,
   buildSystemPrompt,
+  createProductImageDirective,
   type ExtractResult,
-  toComposeImages,
 } from '@packages/product-description';
 import { MODEL, logUsage, toAnthropicErrorResponse } from './anthropic';
 import { urlEnv } from '../../platform/env';
@@ -70,13 +71,18 @@ export async function composeProductDescription(
 ): Promise<Response> {
   const { authHeaders = {}, signal } = ctx;
   const result = body.result;
-  const images = toComposeImages(result?.images);
-  if (images.length === 0) {
+  if (!result || !Array.isArray(result.images) || result.images.length === 0) {
     return Response.json({ message: '이미지 분석 결과가 없습니다.' }, { status: 400 });
   }
 
+  // directive 는 서버가 만든다 — 클라이언트가 보낸 문자열을 그대로 본문에 넣으면
+  // 어떤 fileId 든 상세설명에 심을 수 있다.
   const analysis = {
-    images,
+    images: result.images.map((image) => ({
+      kind: image.kind,
+      content: image.content,
+      directive: createProductImageDirective({ fileId: image.fileId, alt: '' }),
+    })),
     facts: result.facts,
     features: result.features,
     usageSteps: result.usageSteps,
@@ -97,7 +103,9 @@ export async function composeProductDescription(
       {
         model: MODEL,
         max_tokens: 16000,
-        output_config: { effort: 'medium' },
+        // 'medium' 은 이미지 19장에서 사고 토큰이 3.7k 붙어 73초가 걸렸다 — 어드민 Lambda·CloudFront 의
+        // 60초 벽을 넘는다. 'low' 는 같은 입력에서 26초, 본문 길이는 같았다.
+        output_config: { effort: 'low' },
         system: buildSystemPrompt(editablePrompt),
         messages: [
           {
@@ -121,7 +129,7 @@ export async function composeProductDescription(
       { signal },
     );
 
-    logUsage('compose', message.usage, { images: images.length });
+    logUsage('compose', message.usage, { images: result.images.length });
 
     if (message.stop_reason === 'refusal') {
       return Response.json(
@@ -132,15 +140,22 @@ export async function composeProductDescription(
       );
     }
 
-    const markdown = message.content
+    // 확인 필요 같은 메모 주석은 프롬프트로 막아도 남을 수 있어 지운다 — 어드민이 그대로 저장하면 본문에 남는다.
+    const written = message.content
       .filter((block) => block.type === 'text')
       .map((block) => block.text)
       .join('\n')
+      .replace(/<!--[\s\S]*?-->/g, '')
       .trim();
 
-    if (!markdown) {
+    if (!written) {
       return Response.json({ message: '생성된 내용이 없습니다.' }, { status: 502 });
     }
+
+    const markdown = appendUnusedImages(
+      written,
+      result.images.map((image) => image.fileId),
+    );
 
     return Response.json({
       markdown,

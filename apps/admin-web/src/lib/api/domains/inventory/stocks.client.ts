@@ -15,6 +15,9 @@ import type {
   StockQuery,
   StockSummaryQuery,
   StockHistoryQuery,
+  StockSummaryByGroupQuery,
+  StockSummaryByGroupResponseDto,
+  UnshippedOrdersResponseDto,
 } from '../../../types/dto/inventory';
 
 function buildQueryString(query: Record<string, unknown>): string {
@@ -40,6 +43,25 @@ export const stocksClient = {
   ): Promise<StockSummariesResponseDto> => {
     const response = await client.get(
       `${ALMONDYOUNG_API_BASE_URL}/inventory/stocks/summary?${buildQueryString(query as Record<string, unknown>)}`
+    );
+    return response.data;
+  },
+
+  getStockSummaryByGroup: async (
+    query: StockSummaryByGroupQuery = {}
+  ): Promise<StockSummaryByGroupResponseDto> => {
+    const response = await client.get(
+      `${ALMONDYOUNG_API_BASE_URL}/inventory/stocks/summary/by-group?${buildQueryString(query as Record<string, unknown>)}`
+    );
+    return response.data;
+  },
+
+  getUnshippedOrders: async (
+    skuId: string,
+    warehouseId: string
+  ): Promise<UnshippedOrdersResponseDto> => {
+    const response = await client.get(
+      `${ALMONDYOUNG_API_BASE_URL}/inventory/stocks/sku/${encodeURIComponent(skuId)}/warehouse/${encodeURIComponent(warehouseId)}/unshipped-orders`
     );
     return response.data;
   },
@@ -72,14 +94,6 @@ export const stocksClient = {
       `${ALMONDYOUNG_API_BASE_URL}/inventory/stocks/history?${buildQueryString(query as unknown as Record<string, unknown>)}`
     );
     return response.data;
-  },
-
-  rebuildStockSummary: async (skuId: string, warehouseId: string): Promise<void> => {
-    await client.post(
-      `${ALMONDYOUNG_API_BASE_URL}/inventory/stocks/summary/${encodeURIComponent(
-        skuId
-      )}/${encodeURIComponent(warehouseId)}/rebuild`
-    );
   },
 
   cancelStockEvent: async (eventId: string): Promise<void> => {

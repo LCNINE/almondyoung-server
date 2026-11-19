@@ -99,6 +99,120 @@ describeIfDb('SkuFieldCaptureReader (DB integration)', () => {
     });
   });
 
+  /** 실제 선반(standard) 로케이션 하나와 그 창고의 zone 로케이션. 코드는 스펙끼리 안 겹치게 무작위 열 이름. */
+  async function shelfWorld(trx: DbTx) {
+    const wh = await seedWarehouseWithZone(trx);
+    const column = `L${randomUUID().slice(0, 6).toUpperCase()}`;
+    const [col] = await trx
+      .insert(wmsTables.locationColumns)
+      .values({ warehouseId: wh.warehouseId, columnName: column })
+      .returning();
+    const [rack] = await trx.insert(wmsTables.locationRacks).values({ columnId: col.id, rackNumber: 1 }).returning();
+    const shelf = async (bin: string) => {
+      const code = `${column}-01-${bin}`;
+      const [loc] = await trx
+        .insert(wmsTables.locations)
+        .values({ warehouseId: wh.warehouseId, code, locationType: 'standard', rackId: rack.id, binIdentifier: bin })
+        .returning();
+      return { locationId: loc.id, code };
+    };
+    const receive = (skuId: string, locationId: string, quantity = 3) =>
+      receiveStock(wired.command, trx, { skuId, warehouseId: wh.warehouseId, locationId, quantity });
+    return { zoneLocationId: wh.locationId, shelf, receive };
+  }
+
+  it('원장 실제 로케이션에 재고가 있는 SKU 는 셀메이트 위치가 없어도 그 코드로 나온다', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const { reader } = build(trx);
+      const w = await shelfWorld(trx);
+      const s1 = await w.shelf('01');
+      const a = await seed(trx);
+      await w.receive(a, s1.locationId);
+      const found = await reader.findByPosition(` ${s1.code.toLowerCase()} `, trx);
+      expect(found.positionCode).toBe(s1.code);
+      expect(found.skus.map((s) => s.skuId)).toEqual([a]);
+      expect(found.skus[0]?.imageUrl).toBeNull();
+    });
+  });
+
+  it('같은 SKU 가 양쪽에 있으면 원장 로케이션이 이긴다 — 옛 셀메이트 위치에서는 빠진다', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const { reader } = build(trx);
+      const w = await shelfWorld(trx);
+      const s1 = await w.shelf('01');
+      const s2 = await w.shelf('02');
+      const oldCode = `${s1.code}-OLD`;
+      const moved = await seed(trx);
+      const stayed = await seed(trx);
+      await trx.insert(wmsTables.skuShelfPositions).values([
+        { skuId: moved, positionCode: oldCode, imageUrl: 'https://img.example/moved.jpg' },
+        { skuId: stayed, positionCode: oldCode },
+      ]);
+      await w.receive(moved, s1.locationId);
+      await w.receive(moved, s2.locationId);
+
+      expect((await reader.findByPosition(oldCode, trx)).skus.map((s) => s.skuId)).toEqual([stayed]);
+      for (const code of [s1.code, s2.code]) {
+        const found = await reader.findByPosition(code, trx);
+        expect(found.skus.map((s) => s.skuId)).toEqual([moved]);
+        expect(found.skus[0]?.imageUrl).toBe('https://img.example/moved.jpg');
+      }
+      expect((await reader.getDetail(moved, trx)).positionCode).toBe(s1.code);
+      expect((await reader.getDetail(stayed, trx)).positionCode).toBe(oldCode);
+    });
+  });
+
+  it('원장 재고가 시스템·zone 로케이션뿐이거나 선반 수량이 0 이면 셀메이트 위치를 쓴다', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const { reader } = build(trx);
+      const w = await shelfWorld(trx);
+      const s1 = await w.shelf('01');
+      const oldCode = `${s1.code}-OLD`;
+      const inZone = await seed(trx);
+      const emptied = await seed(trx);
+      await trx.insert(wmsTables.skuShelfPositions).values([
+        { skuId: inZone, positionCode: oldCode },
+        { skuId: emptied, positionCode: oldCode },
+      ]);
+      await w.receive(inZone, w.zoneLocationId);
+      await w.receive(emptied, s1.locationId);
+      await trx
+        .update(wmsTables.stockLedgers)
+        .set({ qty: 0 })
+        .where(and(eq(wmsTables.stockLedgers.skuId, emptied), eq(wmsTables.stockLedgers.locationId, s1.locationId)));
+
+      expect((await reader.findByPosition(oldCode, trx)).skus.map((s) => s.skuId).sort()).toEqual(
+        [inZone, emptied].sort(),
+      );
+      expect((await reader.findByPosition(s1.code, trx)).skus).toEqual([]);
+      expect((await reader.getDetail(emptied, trx)).positionCode).toBe(oldCode);
+    });
+  });
+
+  it('작업 기록·사진 목록도 원장 위치를 보여 주고 그 코드로 검색된다', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const { reader, manager } = build(trx);
+      const w = await shelfWorld(trx);
+      const s1 = await w.shelf('01');
+      const s2 = await w.shelf('02');
+      const a = await seed(trx);
+      await trx.insert(wmsTables.skuShelfPositions).values({ skuId: a, positionCode: `${s1.code}-OLD` });
+      await w.receive(a, s1.locationId);
+      await w.receive(a, s2.locationId);
+      await complete(manager, a, trx);
+
+      const items = await reader.listItems({ who: 'mine', q: s2.code.toLowerCase() }, w1.workerId, trx);
+      expect(items.filter((i) => i.skuId === a).map((i) => i.positionCode)).toEqual([s1.code]);
+      expect(
+        (await reader.listItems({ who: 'all', q: `${s1.code}-OLD` }, w1.workerId, trx)).filter((i) => i.skuId === a),
+      ).toEqual([]);
+
+      const photos = (await reader.listPhotos({ q: s2.code }, trx)).photos.filter((p) => p.skuId === a);
+      expect(photos.length).toBe(3);
+      expect(photos.every((p) => p.positionCode === s1.code)).toBe(true);
+    });
+  });
+
   it('삭제된 SKU 는 선반 조회에서 빠진다', async () => {
     await inRollbackTx(db, async (trx) => {
       const { reader } = build(trx);

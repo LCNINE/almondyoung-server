@@ -14,6 +14,7 @@ import { ProductMatchingModule } from '../product-matching/product-matching.modu
 import { SalesOrderModule } from '../sales-order/sales-order.module';
 import { ProductSellableQuantityModule } from '../inventory/product-sellable-quantity/product-sellable-quantity.module';
 import { WarehouseModule } from '../inventory/warehouse/warehouse.module';
+import { StockProjectionModule } from '../inventory/stock-projection/stock-projection.module';
 import { FulfillmentOrderCreationBacklogModule } from './backlog/fulfillment-order-creation-backlog.module';
 import { FulfillmentCommandModule } from './fulfillment-command.module';
 import { WaybillModule } from './waybill/waybill.module';
@@ -131,6 +132,8 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     ProductSellableQuantityModule,
 
     WarehouseModule,
+    // 출고불가 상자의 들어올 예정 — 보충 제안과 같은 공급 파이프라인
+    StockProjectionModule,
     FulfillmentOrderCreationBacklogModule,
 
     // FulfillmentCommandService(fulfillment/waybill 양쪽 공유)

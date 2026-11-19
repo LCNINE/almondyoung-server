@@ -1,15 +1,7 @@
 import type Anthropic from '@anthropic-ai/sdk';
-import {
-  EXTRACT_PROMPT,
-  EXTRACT_SCHEMA,
-  type ExtractedImage,
-  type ExtractResult,
-  normalizeRegions,
-  type PixelRegion,
-} from '@packages/product-description';
+import { EXTRACT_PROMPT, EXTRACT_SCHEMA, type ExtractResult } from '@packages/product-description';
 import { MODEL, logUsage, toAnthropicErrorResponse } from './anthropic';
 import { IMAGES_PER_CHUNK, type LoadedImage, loadImageChunk, toImageBlocks } from './images';
-import { locateRegions } from './locate-regions';
 
 export async function extractProductFacts(
   client: Anthropic,
@@ -44,12 +36,7 @@ export async function extractProductFacts(
     );
   }
 
-  const fileIdGuide = images
-    .map((image, index) => {
-      const size = image.size ? ` (${image.size.width}×${image.size.height}px)` : '';
-      return `${index + 1}번 이미지 → fileId: ${image.fileId}${size}`;
-    })
-    .join('\n');
+  const fileIdGuide = images.map((image, index) => `${index + 1}번 이미지 → fileId: ${image.fileId}`).join('\n');
 
   try {
     const message = await client.messages.create(
@@ -100,9 +87,9 @@ export async function extractProductFacts(
     }
 
     // 구조화 출력이라 형식은 보장되지만, max_tokens 로 잘리면 JSON 이 미완성으로 온다.
-    let parsed: RawExtractResult;
+    let result: ExtractResult;
     try {
-      parsed = JSON.parse(raw) as RawExtractResult;
+      result = JSON.parse(raw) as ExtractResult;
     } catch {
       console.error('[ai/product-description] 추출 JSON 파싱 실패', {
         stopReason: message.stop_reason,
@@ -116,19 +103,6 @@ export async function extractProductFacts(
       );
     }
 
-    const loaded = new Map(images.map((image) => [image.fileId, image]));
-    const result: ExtractResult = {
-      ...parsed,
-      images: await Promise.all(
-        parsed.images.map(async ({ regions, ...image }) => {
-          const source = loaded.get(image.fileId);
-          const located = source ? await locateRegions(client, source, regions ?? [], signal) : [];
-
-          return { ...image, size: source?.size, regions: normalizeRegions(located, source?.size) };
-        }),
-      ),
-    };
-
     return Response.json({ result });
   } catch (err) {
     const mapped = toAnthropicErrorResponse(err);
@@ -136,8 +110,3 @@ export async function extractProductFacts(
     throw err;
   }
 }
-
-/** 구조화 출력 그대로의 모양. 영역 좌표가 아직 픽셀이다. */
-type RawExtractResult = Omit<ExtractResult, 'images'> & {
-  images: (Omit<ExtractedImage, 'regions'> & { regions?: PixelRegion[] })[];
-};

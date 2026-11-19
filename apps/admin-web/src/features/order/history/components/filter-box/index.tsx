@@ -34,8 +34,14 @@ const TYPE_OPTIONS: { value: OrderTypeFilter; label: string }[] = [
 ];
 
 export default function FilterBox() {
-    const { filter, setFilter, triggerSearch } = useOrderHistoryFilter();
+    const { filter, setFilter, triggerSearch, urlVersion } = useOrderHistoryFilter();
     const [local, setLocal] = useState(filter);
+    // 주소가 바뀌어 조건이 다시 정해졌을 때만 입력칸을 그 조건으로 맞춘다(검색 전 입력은 지키고)
+    const [shownVersion, setShownVersion] = useState(urlVersion);
+    if (shownVersion !== urlVersion) {
+        setShownVersion(urlVersion);
+        setLocal(filter);
+    }
 
     const applyQuickDate = (opt: (typeof QUICK_DATE_OPTIONS)[number]) => {
         if (opt.key === 'custom') {
@@ -59,7 +65,7 @@ export default function FilterBox() {
     return (
         <div className="rounded-xl border bg-white p-4 mb-4 space-y-3">
             {/* 판매처 */}
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
                 <span className="text-sm font-medium text-gray-700 w-14 shrink-0">판매처</span>
                 <select
                     className="border rounded h-9 px-2 text-sm min-w-[140px]"
@@ -123,7 +129,7 @@ export default function FilterBox() {
             </div>
 
             {/* 키워드 */}
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
                 <span className="text-sm font-medium text-gray-700 w-14 shrink-0">키워드</span>
                 <select
                     className="border rounded h-9 px-2 text-sm min-w-[100px]"

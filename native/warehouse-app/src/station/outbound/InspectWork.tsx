@@ -5,7 +5,7 @@ import { useHumanKeys } from '../../core/hardware/scan/useScanner';
 import { useWorkPermissions } from '../../core/operations/useWorkCapabilities';
 import { excludeFromBatch } from '../../domains/outbound/batchRemove';
 import { CANCEL_WAITING_SCAN_MESSAGE, cancelWaitingOf } from '../../domains/outbound/cancelWaiting';
-import { inspectionRows, inspectionTotals, remainingOf } from '../../domains/outbound/inspection';
+import { inspectionRows, inspectionTotals, lineOfBarcode, remainingOf } from '../../domains/outbound/inspection';
 import { fetchShipmentByWaybill } from '../../domains/outbound/queries';
 import {
   buildShortPickRequest,
@@ -23,7 +23,7 @@ import type { StationAction } from '../actions';
 import { modalOpen } from '../useStationKeys';
 import { INSPECTION_ACTIONS } from './inspectionActions';
 import type { Alert, BoxWorkHandle } from './model';
-import { BigPanel, BoxCard, LineTable, QueueTrouble, RecentList, ScanWaiting, WorkGrid, type BigPanelContent } from './panels';
+import { BigPanel, BoxCard, LineTable, QueueTrouble, RecentList, ScanChecking, ScanWaiting, WorkGrid, type BigPanelContent } from './panels';
 import type { RecentEntry } from './recent';
 import { ShortPickDialog } from './ShortPickDialog';
 import { INTAKE_BLOCKED_MESSAGE, STATION_WITHDRAW_REASON, useInspectionBox } from './useInspectionBox';
@@ -100,11 +100,15 @@ export function InspectWork({
 }) {
   const api = useApiClient();
   const permissions = useWorkPermissions();
-  const nameOf = (lineId: string | null) => box.lines.find((line) => line.shipmentLineId === lineId)?.skuName ?? '';
+  // 오른 줄을 못 찾으면(다시 연 박스의 저장된 스캔) 바코드로 알아보고, 그래도 모르면 바코드를 그대로 적는다
+  const nameOf = (lineId: string | null, barcode: string) =>
+    box.lines.find((line) => line.shipmentLineId === lineId)?.skuName ??
+    lineOfBarcode(box.lines, barcode)?.skuName ??
+    `상품 바코드 ${barcode}`;
   // 부분 취소를 기다리는 박스 — 검수하지 않고 박스 빼기로 보낸다
   const cancelWaiting = cancelWaitingOf(box);
   const work = useInspectionBox(box, {
-    onAccepted: (lineId, quantity) => onScanned(nameOf(lineId), quantity),
+    onAccepted: (lineId, quantity, barcode) => onScanned(nameOf(lineId, barcode), quantity),
     onShipped: () => onShipped(box),
     onRejected: (message, barcode) => onAlert(message, barcode ?? undefined),
     onWithdrawn: (barcode) => onWithdrawn(box, barcode),
@@ -339,7 +343,14 @@ export function InspectWork({
           <>
             <BoxCard trackingNo={box.trackingNo} recipient={box.recipientMasked} deliveryNote={box.deliveryNote} ownerName={box.ownerName} />
             <BigPanel content={big} />
-            {work.queueError ? (
+            {work.checking.length > 0 ? (
+              <ScanChecking
+                scans={work.checking.map((scan) => ({
+                  name: scan.name ?? (scan.barcode ? `상품 바코드 ${scan.barcode}` : '강제출고'),
+                  quantity: scan.quantity,
+                }))}
+              />
+            ) : work.queueError ? (
               <QueueTrouble storage={!!work.storageError} onRetry={() => void work.retryHead().catch(() => {})} />
             ) : work.waitingForNetwork > 0 ? (
               <ScanWaiting count={work.waitingForNetwork} />

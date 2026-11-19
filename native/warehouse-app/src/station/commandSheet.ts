@@ -27,7 +27,7 @@ function mergeByKey(actions: readonly Pick<ActionSpec, 'key' | 'label'>[]): Pick
 export const COMMAND_SHEET_SECTIONS: readonly CommandSheetSection[] = [
   { title: '탭', actions: STATION_TABS.map((tab) => ({ key: tab.key, label: tab.label })) },
   // 화면 선언과 같은 상수 — 시트와 기능키 바가 갈리지 않는다(PR B 계약 메모)
-  { title: '출고 검수', actions: Object.values(INSPECTION_ACTIONS) },
+  { title: '출고 검수', actions: mergeByKey(Object.values(INSPECTION_ACTIONS)) },
   // Esc 는 «목록»(소포 세기·검수에서 나가기)으로만 적는다 — 목록 화면에서는 같은 Esc 가 «검색 지우기»다
   {
     title: '반품',

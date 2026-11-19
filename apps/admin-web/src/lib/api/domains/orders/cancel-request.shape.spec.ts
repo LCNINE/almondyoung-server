@@ -1,5 +1,6 @@
 import {
   cancelActionOf,
+  cancelRequestOnLine,
   cancelRequestFromAmendment,
   cancelRequestLine,
   cancelRequestToast,
@@ -18,6 +19,7 @@ import {
   manualRefundTodo,
   settlementAlert,
 } from './cancel-request.shape';
+import { pendingCancellationItems } from './pending-cancellation.shape';
 
 const view = (over: Record<string, unknown> = {}) => ({
   id: 'r1',
@@ -29,6 +31,7 @@ const view = (over: Record<string, unknown> = {}) => ({
   outcome: null,
   settlement: null,
   refundMode: null,
+  lines: [],
   ...over,
 });
 
@@ -361,5 +364,49 @@ describe('계좌 송금으로 바꾼 정산 — 남은 할 일', () => {
     expect(settlementAlert(manual({ mode: 'auto', phase: 'in_progress' }))).toBe(false);
     expect(manualRefundTodo(auto)).toBeNull();
     expect(manualRefundTodo(null)).toBeNull();
+  });
+});
+
+describe('취소 요청이 걸린 주문 줄', () => {
+  const requestWith = (lines: unknown) =>
+    toCancelRequestView({ id: 'r1', status: 'settling', scope: 'partial', lines });
+
+  it('요청한 줄에만 걸리고, 수량을 싣고, 정산 버튼은 첫 요청 줄에 둔다', () => {
+    const request = requestWith([
+      { salesOrderLineId: 'l2', quantity: 1 },
+      { salesOrderLineId: 'l3', quantity: 2 },
+    ]);
+    expect(cancelRequestOnLine(request, 'l1', true)).toBeNull();
+    expect(cancelRequestOnLine(request, 'l2', false)).toEqual({ quantity: 1, first: true });
+    expect(cancelRequestOnLine(request, 'l3', false)).toEqual({ quantity: 2, first: false });
+  });
+
+  it('줄을 모르는 옛 응답은 모든 줄에 걸고 정산 버튼은 주문 첫 줄에 둔다', () => {
+    const request = requestWith(undefined);
+    expect(request?.lines).toEqual([]);
+    expect(cancelRequestOnLine(request, 'l1', true)).toEqual({ quantity: null, first: true });
+    expect(cancelRequestOnLine(request, 'l2', false)).toEqual({ quantity: null, first: false });
+  });
+
+  it('모양이 어긋난 줄은 버린다', () => {
+    expect(requestWith([{ salesOrderLineId: 'l1', quantity: 0 }, { quantity: 1 }])?.lines).toEqual([]);
+  });
+
+  it('요청이 없으면 걸리지 않는다', () => {
+    expect(cancelRequestOnLine(null, 'l1', true)).toBeNull();
+  });
+});
+
+describe('기다리는 취소 문구', () => {
+  it('상품명과 수량을 잇고, 이름을 모르면 «상품»', () => {
+    expect(
+      pendingCancellationItems({
+        operationId: 'op',
+        lines: [
+          { shipmentLineId: 'a', salesOrderLineId: null, skuName: '상품 A', qty: 1 },
+          { shipmentLineId: 'b', salesOrderLineId: null, skuName: '', qty: 2 },
+        ],
+      })
+    ).toBe('상품 A 1개, 상품 2개');
   });
 });

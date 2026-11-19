@@ -49,8 +49,6 @@ export function ProductDetailInfo({
 }: Props) {
   const t = useTranslations("productDetail.info")
   const [isExpanded, setIsExpanded] = useState(false)
-  const markdownDescription = description?.trim() ? description : ""
-
   // React 19 는 {__html} 객체가 새로 만들어지면 같은 문자열이어도 innerHTML 을 다시 써서 이미지가 접혔다 펴진다
   const descriptionHtmlProps = useMemo(
     () => ({
@@ -135,23 +133,16 @@ export function ProductDetailInfo({
           ref={contentRef}
           className={cn(
             "overflow-hidden transition-all duration-300",
-            !isExpanded && "max-h-[500px]",
-            // 마크다운 상세는 이미지를 화면(모바일)·상세 칸(PC) 폭까지 꽉 채운다.
-            // -15px 는 페이지 컨테이너의 모바일 좌우 여백(px-[15px]), md 는 이 섹션의 md:px-6 이다.
-            markdownDescription && "-mx-[15px] md:-mx-6"
+            !isExpanded && "max-h-[500px]"
           )}
           style={isExpanded ? undefined : { maxHeight: COLLAPSED_HEIGHT }}
         >
-          {markdownDescription && extra ? (
-            <div className="px-[15px] md:px-6">{extra}</div>
-          ) : (
-            extra
-          )}
-          {markdownDescription ? (
+          {extra}
+          {description?.trim() ? (
             <section>
               <h4 className="sr-only">{t("detailSrTitle")}</h4>
               <ProductDescriptionMarkdown
-                markdown={markdownDescription}
+                markdown={description}
                 imageAltFallback={productName}
               />
             </section>

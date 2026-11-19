@@ -39,7 +39,7 @@ export async function checkOutbound(tx: Sql, r: Report): Promise<void> {
   else
     r.bad(
       '완전한 배송 프로필이 없다 → 모든 상자가 SHIPMENT_PROFILE_INCOMPATIBLE/CONFIGURATION_INCOMPLETE 로 draft 에 갇힌다',
-      '배송 프로필 생성 경로가 코드에 없다(API·화면 0). 생성 수단 + 한진 실계약번호(carrier_account_ref) 필요 (#1233)',
+      'admin-web «배송 프로필»(/inventory/delivery-profiles)에서 만든다 — 보내는 분·출고지·반품지·한진 실계약번호(carrier_account_ref) (#1233)',
     );
 
   // 열린 상자의 SKU 가 프로필을 갖고 있나. 한 상자의 SKU 는 전부 같은 프로필이어야 한다.
@@ -71,13 +71,14 @@ export async function checkOutbound(tx: Sql, r: Report): Promise<void> {
 
   r.section('출고 3. 상자 상태·수취인');
   r.table(await tx`select status, count(*)::int from shipments group by 1 order by 2 desc`);
-  // shipment-planning.service.ts assertRecipientComplete 의 5개 필드
+  // shipment-planning.service.ts assertRecipientComplete → recipient-completeness.ts missingRecipientFields.
+  // 필드 목록의 정본은 waybill-request.assembler.ts REQUIRED_RECIPIENT_FIELDS(4개 — 상세주소는 필수가 아니다)
   const [recipient] = await tx`
     select count(*)::int as n from shipments s
     where ${tx.unsafe(OPEN_SHIPMENT)} and exists (
-      select 1 from unnest(array['recipientName','phone','postalCode','roadAddress','detailAddress']) k
+      select 1 from unnest(array['recipientName','phone','postalCode','roadAddress']) k
       where coalesce(btrim(s.recipient_snapshot ->> k), '') = '')`;
-  if (recipient.n === 0) r.ok('열린 상자의 수취인 5필드 전부 채워짐');
+  if (recipient.n === 0) r.ok('열린 상자의 수취인 필수 4필드 전부 채워짐');
   else
     r.bad(
       `수취인 필드가 빈 열린 상자 ${recipient.n}개 → SHIPMENT_RECIPIENT_INCOMPLETE`,

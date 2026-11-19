@@ -25,6 +25,7 @@ function list(bucket: PreparationBucketDto) {
   return (
     <BucketList
       bucket={bucket}
+      warehouseId="w1"
       selectedIds={[]}
       busy={false}
       onToggle={jest.fn()}
@@ -158,4 +159,153 @@ it('돌아온 상자가 앞 쪽에서 끝난 쪽은 첫 줄에 «그 밖의 상�
   );
 
   expect(rows[0]).toBe('그 밖의 상자');
+});
+
+it('출고불가 내역은 고를 칸 없이 상품별 재고·모자람과 들어올 예정, 입고 화면 링크를 보인다', () => {
+  render(
+    list({
+      bucket: 'unavailable',
+      count: 1,
+      singleCount: 0,
+      multiCount: 1,
+      shipments: [
+        {
+          ...shipment('s1', null),
+          lines: [
+            {
+              name: '상품 A',
+              qty: 5,
+              reservedQty: 0,
+              stock: {
+                onHand: 2,
+                reservedByOthers: 2,
+                incoming: {
+                  inTransit: 3,
+                  inTransitEta: '2026-01-05',
+                  ordered: 0,
+                  inboundShipment: 0,
+                  inboundShipmentEta: null,
+                },
+                elsewhere: { onHand: 0, ordered: 0, orderedEta: null },
+              },
+            },
+            {
+              name: '상품 B',
+              qty: 1,
+              reservedQty: 0,
+              stock: {
+                onHand: 0,
+                reservedByOthers: 0,
+                incoming: {
+                  inTransit: 0,
+                  inTransitEta: null,
+                  ordered: 0,
+                  inboundShipment: 0,
+                  inboundShipmentEta: null,
+                },
+                elsewhere: { onHand: 0, ordered: 0, orderedEta: null },
+              },
+            },
+          ],
+        },
+      ],
+    })
+  );
+
+  expect(screen.queryByRole('checkbox')).toBeNull();
+  expect(screen.getByRole('heading').textContent).toBe('출고불가 내역');
+  expect(
+    screen.getByText('주문 5 · 이 창고 재고 2 (다른 주문 몫 2) · 모자람 5')
+  ).toBeTruthy();
+  expect(
+    screen.getByText('이 창고로 올 것: 이동 중 3개(1월 5일 도착 예정)')
+  ).toBeTruthy();
+  expect(
+    screen.getByText(
+      '들어올 예정이 없어요 — 발주하거나 다른 창고에서 옮겨 와야 해요'
+    )
+  ).toBeTruthy();
+  expect(
+    screen.getByRole('link', { name: '입고 화면' }).getAttribute('href')
+  ).toBe('/inventory/inbound');
+});
+
+it('정보 부족 내역은 고를 칸 없이 고칠 것과 고치는 곳을 보이고 상품은 SKU 화면으로 잇는다', () => {
+  render(
+    list({
+      bucket: 'needs_info',
+      count: 1,
+      singleCount: 1,
+      multiCount: 0,
+      shipments: [
+        {
+          ...shipment('s1', '배송 프로필이 없는 상품이 있어요'),
+          needsInfo: [
+            {
+              kind: 'shipping_profile_missing',
+              skus: [{ name: '상품 A', code: 'A-01' }],
+            },
+            { kind: 'recipient_incomplete', fields: ['phone', 'postalCode'] },
+          ],
+        },
+      ],
+    })
+  );
+
+  expect(screen.queryByRole('checkbox')).toBeNull();
+  expect(
+    screen.getByRole('link', { name: '상품 A' }).getAttribute('href')
+  ).toBe('/inventory/skus?code=A-01');
+  expect(
+    screen.getByText('수령인 정보의 연락처·우편번호 칸이 비어 있어요')
+  ).toBeTruthy();
+  expect(
+    screen.getByText('상자 상세에서 «수령인 변경»으로 채워 주세요')
+  ).toBeTruthy();
+  expect(
+    screen.getByText('모두 고치면 이 상자는 정보 부족에서 빠져요')
+  ).toBeTruthy();
+  expect(screen.queryByText('배송 프로필이 없는 상품이 있어요')).toBeNull();
+  expect(
+    screen.getByRole('link', { name: '상자 상세' }).getAttribute('href')
+  ).toBe('/order/fulfillments?shipmentId=s1');
+});
+
+it('배치에서 돌아온 상자와 결품 상자는 사유가 없어도 상자 상세로 잇는다', () => {
+  render(
+    list({
+      bucket: 'ready',
+      count: 3,
+      singleCount: 3,
+      multiCount: 0,
+      shortPickCount: 1,
+      batchReturnCount: 1,
+      shipments: [
+        {
+          ...shipment('short', null),
+          shortPick: [{ name: '상품', locationCode: 'A-01-01', shortQty: 1 }],
+        },
+        {
+          ...shipment('returned', null),
+          batchReturn: {
+            batchNumber: 'OB-1',
+            exitedAt: '2026-01-02T01:05:00Z',
+            place: '관리자 출고 배치',
+            reason: '잘못 넣은 상자',
+            needsNewWaybill: false,
+          },
+        },
+        shipment('plain', null),
+      ],
+    })
+  );
+
+  expect(
+    screen
+      .getAllByRole('link', { name: '상자 상세' })
+      .map((link) => link.getAttribute('href'))
+  ).toEqual([
+    '/order/fulfillments?shipmentId=short',
+    '/order/fulfillments?shipmentId=returned',
+  ]);
 });

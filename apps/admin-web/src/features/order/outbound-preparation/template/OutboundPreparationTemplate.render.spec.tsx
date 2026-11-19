@@ -464,6 +464,58 @@ describe('OutboundPreparationTemplate', () => {
     expect(screen.getByRole('button', { name: '다시 시도' })).toBeTruthy();
   });
 
+  it('셀메이트가 내보내는 상자는 다시 시도를 두지 않는다', async () => {
+    mockRun.mockResolvedValueOnce(
+      result({
+        waybilled: 35,
+        joined: 34,
+        failures: [
+          {
+            shipmentId: 'ready-1',
+            stage: 'join',
+            message:
+              '셀메이트가 내보내는 주문이에요. 이 상자는 두고 넘어가 주세요',
+            retryable: false,
+            code: 'SHIPMENT_HANDED_OVER_TO_SELLMATE',
+          },
+        ],
+      })
+    );
+    render(<OutboundPreparationTemplate />);
+    await start();
+
+    expect(
+      await screen.findByText(
+        '셀메이트가 내보내는 주문이에요. 이 상자는 두고 넘어가 주세요'
+      )
+    ).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '다시 시도' })).toBeNull();
+  });
+
+  it('배치를 만들었어도 담긴 상자가 없으면 실패로 보이고 배치 열기를 숨긴다', async () => {
+    mockRun.mockResolvedValueOnce(
+      result({
+        joined: 0,
+        failures: Array.from({ length: 35 }, (_, index) => ({
+          shipmentId: `ready-${index + 1}`,
+          stage: 'join' as const,
+          message:
+            '셀메이트가 내보내는 주문이에요. 이 상자는 두고 넘어가 주세요',
+          retryable: false,
+          code: 'SHIPMENT_HANDED_OVER_TO_SELLMATE',
+        })),
+      })
+    );
+    mockLoadBatch.mockResolvedValue(batchData({}, []));
+    render(<OutboundPreparationTemplate />);
+    await start();
+
+    expect(await screen.findByText('35상자를 준비하지 못했어요')).toBeTruthy();
+    expect(screen.queryByRole('link', { name: '출고 배치 열기' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '다시 시도' })).toBeNull();
+    expect(screen.getByRole('button', { name: '닫기' })).toBeTruthy();
+  });
+
   it('권한이 없으면 쓰기 버튼을 보여 주지 않는다', () => {
     mockAllowed = false;
     render(<OutboundPreparationTemplate />);
@@ -792,9 +844,13 @@ describe('OutboundPreparationTemplate', () => {
     await userEvent.click(
       row('합칠 주문 있음').getByRole('button', { name: '내역보기' })
     );
-    await userEvent.click(screen.getByLabelText('#AY-mergeable-1 선택'));
+    for (const no of [2, 3, 4]) {
+      await userEvent.click(screen.getByLabelText(`#AY-mergeable-${no} 선택`));
+    }
     expect(screen.queryByRole('button', { name: '합치기' })).toBeNull();
-    await userEvent.click(screen.getByRole('button', { name: '따로 보내기' }));
+    await userEvent.click(
+      screen.getByRole('button', { name: '고른 3건 따로 보내기' })
+    );
 
     expect(
       screen.getByText('합칠 수 있는 3건을 따로 출고 준비할까요?')
@@ -852,7 +908,10 @@ describe('OutboundPreparationTemplate', () => {
     expect(screen.getByText('나눈 상자 1/2 · 주문 2개 중 1개')).toBeTruthy();
     expect(screen.getByText('나눈 상자 2/2 · 주문 2개 중 1개')).toBeTruthy();
 
-    await userEvent.click(screen.getByRole('button', { name: '따로 보내기' }));
+    await userEvent.click(screen.getByLabelText('전체 선택'));
+    await userEvent.click(
+      screen.getByRole('button', { name: '고른 2건 따로 보내기' })
+    );
     await userEvent.click(screen.getByRole('button', { name: '시작' }));
 
     const failure = (await screen.findByText('한진 주소 확인 불가'))
@@ -868,8 +927,37 @@ describe('OutboundPreparationTemplate', () => {
       row('합칠 주문 있음').getByRole('button', { name: '내역보기' })
     );
 
-    expect(screen.queryByRole('button', { name: '따로 보내기' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /따로 보내기/ })).toBeNull();
     expect(mockRun).not.toHaveBeenCalled();
+  });
+
+  it('합칠 주문 있음은 아무것도 고르지 않은 채 열고, 합치러 가기를 먼저 둔다', async () => {
+    render(<OutboundPreparationTemplate />);
+    await userEvent.click(
+      row('합칠 주문 있음').getByRole('button', { name: '내역보기' })
+    );
+
+    expect(screen.getByText('합칠 주문 있음 내역 · 0건 선택')).toBeTruthy();
+    expect(
+      screen.getByLabelText('#AY-mergeable-1 선택').getAttribute('aria-checked')
+    ).toBe('false');
+    expect(
+      screen.getByRole('link', { name: '합치러 가기' }).getAttribute('href')
+    ).toBe('/order/consolidation?warehouseId=w1');
+    const separately = screen.getByRole('button', {
+      name: '고른 0건 따로 보내기',
+    });
+    expect((separately as HTMLButtonElement).disabled).toBe(true);
+
+    await userEvent.click(screen.getByLabelText('#AY-mergeable-2 선택'));
+
+    expect(
+      (
+        screen.getByRole('button', {
+          name: '고른 1건 따로 보내기',
+        }) as HTMLButtonElement
+      ).disabled
+    ).toBe(false);
   });
 
   it('합칠 주문의 각 줄에서 합포장 시트를 연다', async () => {
@@ -1458,7 +1546,11 @@ describe('현장에 넘길 배치', () => {
     expect(await screen.findByText('35상자 출고 준비를 마쳤어요')).toBeTruthy();
     expect(screen.getByText(/출고 배치에 담기 35\/35/)).toBeTruthy();
     expect(steps(await handoff())).toHaveLength(4);
-    expect(screen.queryByText('출고 배치에 담은 상자가 없어요.')).toBeNull();
+    expect(
+      screen.queryByText(
+        '출고 배치에 담긴 상자가 없어요. 현장에 넘길 것이 없어요.'
+      )
+    ).toBeNull();
   });
 
   it('배치를 확인하기 전에는 담기 실패를 단정하지 않고 순서도 보이지 않는다', async () => {
@@ -1647,7 +1739,9 @@ describe('현장에 넘길 배치', () => {
     await start();
 
     expect(
-      await screen.findByText('출고 배치에 담은 상자가 없어요.')
+      await screen.findByText(
+        '출고 배치에 담긴 상자가 없어요. 현장에 넘길 것이 없어요.'
+      )
     ).toBeTruthy();
     expect(
       screen.queryByRole('region', { name: '현장에 넘길 배치' })

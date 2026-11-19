@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { Check, Package, Printer, ScanLine, X } from 'lucide-react';
+import { Check, CircleHelp, Package, Printer, ScanLine, X } from 'lucide-react';
 import { Button } from '../../core/design/Button';
 import { cn } from '../../core/design/cn';
 import { SCAN_STORAGE_MESSAGE } from '../../core/hardware/scan/useWorkScanQueue';
@@ -247,6 +247,7 @@ const RECENT_ICON: Record<RecentKind, typeof Check> = {
   shipped: Package,
   printed: Printer,
   error: X,
+  check: CircleHelp,
 };
 const RECENT_TONE: Record<RecentKind, string> = {
   waybill: 'text-[#1D5BD8]',
@@ -254,12 +255,14 @@ const RECENT_TONE: Record<RecentKind, string> = {
   shipped: 'text-[#1E7A46]',
   printed: 'text-[#7A4B00]',
   error: 'text-[#9E1320]',
+  check: 'text-[#7A4B00]',
 };
 
 function recentText(entry: RecentEntry): string {
   if (entry.kind === 'shipped') return `${formatTrackingNo(entry.text)} 출고 완료`;
   if (entry.kind === 'printed') return `${formatTrackingNo(entry.text)} 새 송장 출력`;
   if (entry.kind === 'waybill') return formatTrackingNo(entry.text);
+  if (entry.kind === 'check') return `${formatTrackingNo(entry.text)} 처리 여부 확인 중 — 아래 «확인할 일»`;
   return entry.text;
 }
 
@@ -384,6 +387,23 @@ export function ScanWaiting({ count }: { count: number }) {
     <p role="status" className="shrink-0 rounded-[10px] border-2 border-[#D99A00] bg-[#FFF1C7] p-3 font-semibold text-[#5E3B00]">
       연결이 끊겨 상품 스캔 {count}개를 보내지 못하고 있어요. 연결되면 자동으로 보내요. 같은 상품은 다시 찍지 마세요.
     </p>
+  );
+}
+
+/** 다시 연 박스에 남은 결과 모름 — 무엇을 확인하고 있는지 보여 같은 상품을 또 찍지 않게 한다 */
+export function ScanChecking({ scans }: { scans: ReadonlyArray<{ name: string; quantity: number }> }) {
+  return (
+    <div role="status" className="shrink-0 space-y-1 rounded-[10px] border-2 border-[#D99A00] bg-[#FFF1C7] p-3 text-[#5E3B00]">
+      <p className="font-semibold">처리 여부를 확인하고 있어요. 이 상품은 다시 찍지 마세요.</p>
+      <ul className="list-none">
+        {scans.map((scan, i) => (
+          <li key={i} className="font-mono font-semibold">
+            {scan.name} ×{scan.quantity}
+          </li>
+        ))}
+      </ul>
+      <p className="text-sm">결과는 아래 상태바 «확인할 일»에서 다시 확인할 수 있어요. 다른 박스는 그대로 찍어도 돼요.</p>
+    </div>
   );
 }
 

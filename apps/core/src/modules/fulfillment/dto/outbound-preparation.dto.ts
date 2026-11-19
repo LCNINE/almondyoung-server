@@ -36,11 +36,56 @@ export class BulkShipmentIdsDto {
   shipmentIds: string[];
 }
 
+export class PreparationIncomingDto {
+  // 이 창고로 오는 이동 지시 잔량과 가장 이른 도착 예정일(YYYY-MM-DD)
+  inTransit: number;
+  inTransitEta: string | null;
+  // 이 창고로 바로 들어오는 발주 잔량
+  ordered: number;
+  // 이 창고로 오는 선적 잔량과 가장 이른 도착 예정일
+  inboundShipment: number;
+  inboundShipmentEta: string | null;
+}
+
+export class PreparationElsewhereDto {
+  // 판매하지 않는 창고에 있고 아직 옮기지 않은 수량
+  onHand: number;
+  // 그쪽으로 들어올 발주 잔량과 가장 이른 예정일
+  ordered: number;
+  orderedEta: string | null;
+}
+
+export class PreparationLineStockDto {
+  // 이 창고 재고(ON_HAND)와 그중 다른 상자가 잡은 수량
+  onHand: number;
+  reservedByOthers: number;
+  // 판매 창고가 이 창고 하나일 때만 안다. 모르면 null
+  incoming: PreparationIncomingDto | null;
+  elsewhere: PreparationElsewhereDto | null;
+}
+
 export class PreparationLineDto {
   name: string;
   qty: number;
   // 이 줄에 잡힌 예약 수량(주문 수량을 넘지 않는다). 주문 수량과의 차이가 «있는 것만 먼저 보내기»에서 기다릴 몫이다.
   reservedQty: number;
+  // 출고불가 상자만: 재고가 어디에 얼마나 있고 언제 들어오는지
+  stock?: PreparationLineStockDto;
+}
+
+export class NeedsInfoSkuDto {
+  name: string;
+  code: string;
+  // 배송 프로필이 상품마다 다를 때만
+  profileName?: string;
+}
+
+export class NeedsInfoIssueDto {
+  kind: 'shipping_profile_missing' | 'shipping_profile_mixed' | 'recipient_incomplete' | 'channel_item_unknown';
+  // 배송 프로필·쇼핑몰 품목 번호 문제의 상품
+  skus?: NeedsInfoSkuDto[];
+  // 수령인 정보에서 비어 있는 칸(recipientName·phone·postalCode·roadAddress)
+  fields?: string[];
 }
 
 export class PreparationShortPickLineDto {
@@ -74,6 +119,8 @@ export class PreparationShipmentDto {
   batchReturn: PreparationBatchReturnDto | null;
   // 위탁 업체(3pl) 상자면 그 화주. 자사 상자는 null
   owner: PreparationOwnerDto | null;
+  // 정보 부족 상자만: 고쳐야 할 것 전부(첫 항목이 사유)
+  needsInfo?: NeedsInfoIssueDto[];
 }
 
 export class PreparationOwnerDto {

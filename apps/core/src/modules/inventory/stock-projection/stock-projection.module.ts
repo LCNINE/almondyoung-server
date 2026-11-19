@@ -21,6 +21,7 @@ import { ExpectedArrivalsReader } from './services/expected-arrivals.reader';
     InboundPipelineReader,
     ExpectedArrivalsReader,
   ],
-  exports: [StockProjectionService],
+  // 출고 준비가 출고불가 상자의 들어올 예정을 같은 파이프라인으로 읽는다
+  exports: [StockProjectionService, InboundPipelineReader],
 })
 export class StockProjectionModule {}

@@ -195,7 +195,7 @@ describeIfDb('readLineQuantities — SKU 층 청구 사실 (K6 PR3a)', () => {
             nested as unknown as DbTx,
           ),
         ),
-      ).rejects.toThrow('includes shipped or already canceled quantity');
+      ).rejects.toThrow('이미 출고됐거나 취소된 수량이 있어');
       await recordSalesOrderCancellation(
         tx,
         {
