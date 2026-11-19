@@ -180,7 +180,12 @@ describeIfDb('stock summary by group (DB integration, rollback-only)', () => {
 
       await demandFor(tx, demand.id, warehouse.id);
 
-      const queues: GetStockSummaryByGroupQueryDto['queue'][] = ['unshipped', 'below_safety_stock', 'out_of_stock'];
+      const queues: GetStockSummaryByGroupQueryDto['queue'][] = [
+        'unshipped',
+        'shortage',
+        'below_safety_stock',
+        'out_of_stock',
+      ];
 
       for (const queue of queues) {
         const result = await reader.listStockSummariesByGroup({ warehouseId: warehouse.id, queue }, tx);
@@ -189,29 +194,12 @@ describeIfDb('stock summary by group (DB integration, rollback-only)', () => {
         expect(result.data[0].skus).toHaveLength(2);
       }
 
-      const inbound = await reader.listStockSummariesByGroup(
-        { warehouseId: warehouse.id, queue: 'inbound_pending' },
-        tx,
-      );
+      // 부족 = 미발송이 정상 재고보다 많은 옵션 — 이 시드의 수요 SKU 는 재고 0 에 미발송이 있다.
+      const shortage = await reader.listStockSummariesByGroup({ warehouseId: warehouse.id, queue: 'shortage' }, tx);
 
-      expect(inbound).toMatchObject({ data: [], total: 0 });
-
-      const [po] = await tx
-        .insert(wmsTables.purchaseOrders)
-        .values({ type: 'domestic', sourceWarehouseId: warehouse.id, destinationWarehouseId: warehouse.id })
-        .returning();
-
-      await tx
-        .insert(wmsTables.purchaseOrderLines)
-        .values({ poId: po.id, skuId: demand.id, quantity: 5, orderedQty: 5, status: 'ordered' });
-
-      const pending = await reader.listStockSummariesByGroup(
-        { warehouseId: warehouse.id, queue: 'inbound_pending' },
-        tx,
-      );
-
-      expect(pending.total).toBe(1);
-      expect(pending.data[0].skus).toHaveLength(2);
+      expect(shortage.total).toBe(1);
+      expect(shortage.data[0].skus).toHaveLength(2);
+      expect(shortage.summary.shortageOptions).toBeGreaterThan(0);
     });
   });
 

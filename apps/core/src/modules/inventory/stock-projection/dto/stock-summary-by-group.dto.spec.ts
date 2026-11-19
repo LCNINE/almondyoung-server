@@ -21,7 +21,7 @@ describe('GetStockSummaryByGroupQueryDto', () => {
     ).toEqual([]);
   });
 
-  it.each(['unshipped', 'below_safety_stock', 'out_of_stock', 'inbound_pending'])('accepts queue %s', async (queue) => {
+  it.each(['unshipped', 'shortage', 'below_safety_stock', 'out_of_stock'])('accepts queue %s', async (queue) => {
     expect(await invalidFields({ queue })).toEqual([]);
   });
 

@@ -54,7 +54,7 @@ export function UnshippedOrdersDrawer({ row, open, onOpenChange }: Props) {
   });
 
   const cards = [
-    { label: '재고', value: row?.currentQuantity ?? 0 },
+    { label: '재고', value: row?.onHandQuantity ?? 0 },
     { label: '미발송', value: row?.unshippedQuantity ?? 0 },
     {
       label: '만들어야 할 수량',

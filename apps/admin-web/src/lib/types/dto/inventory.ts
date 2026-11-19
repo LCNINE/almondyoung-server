@@ -803,9 +803,9 @@ export interface StockQuery {
 
 export type StockQueue =
   | 'unshipped'
+  | 'shortage'
   | 'below_safety_stock'
-  | 'out_of_stock'
-  | 'inbound_pending';
+  | 'out_of_stock';
 
 export interface StockSummaryByGroupQuery {
   warehouseId?: string;
@@ -824,6 +824,9 @@ export interface StockSummaryGroupSkuDto {
   warehouseName: string;
   shelfPosition: string | null;
   currentQuantity: number;
+  /** 정상 재고 — 부족·가용 계산의 기준 */
+  onHandQuantity: number;
+  /** 정상 재고 − 미발송 (셀메이트와 같은 식, 음수 가능) */
   availableQuantity: number;
   unshippedQuantity: number;
   shortageQuantity: number;
@@ -840,11 +843,20 @@ export interface StockSummaryGroupDto {
   skus: StockSummaryGroupSkuDto[];
 }
 
+export interface StockSummaryCountsDto {
+  unshippedProducts: number;
+  shortageQuantity: number;
+  shortageOptions: number;
+  belowSafetyOptions: number;
+  emptyOptions: number;
+}
+
 export interface StockSummaryByGroupResponseDto {
   data: StockSummaryGroupDto[];
   total: number;
   page: number;
   limit: number;
+  summary: StockSummaryCountsDto;
 }
 
 export type UnshippedOrderProgress =

@@ -12,7 +12,7 @@ import { PaginatedResponseDto } from '../../shared/dto';
 import { LocationContentsDto } from '../dto/location-contents.dto';
 import { readLocationStockAvailability } from '../../shared/availability/location-stock-availability';
 import { physicalQuantity } from './physical-quantity';
-import { GetStockSummaryByGroupQueryDto, StockSummaryGroupDto } from '../dto/stock-summary-by-group.dto';
+import { GetStockSummaryByGroupQueryDto, StockSummaryByGroupResponseDto } from '../dto/stock-summary-by-group.dto';
 import { groupStockSummaries } from './group-stock-summaries';
 import {
   productImages,
@@ -161,7 +161,7 @@ export class StockProjectionReader {
   async listStockSummariesByGroup(
     query: GetStockSummaryByGroupQueryDto,
     tx?: DbTx,
-  ): Promise<PaginatedResponseDto<StockSummaryGroupDto>> {
+  ): Promise<StockSummaryByGroupResponseDto> {
     const { warehouseId, supplierId, search, queue, page = 1, limit = 20 } = query;
 
     return this.dbService.run(async (trx) => {
@@ -231,8 +231,10 @@ export class StockProjectionReader {
             defectiveQty: v.defectiveQty,
             inTransferQty: v.inTransferQty,
             returnedQty: v.returnedQty,
-            availableQuantity: v.availableQty,
-            inboundPendingQuantity: v.inboundPendingQty,
+            // 셀메이트와 같은 가용 = 정상 재고 − 미발송. 예약은 가용만큼만 잡혀 재고 0 에 걸린 주문을 못 센다.
+            availableQuantity: sql<number>`${v.onHandQty} - ${unshippedQuantity}`
+              .mapWith(Number)
+              .as('available_quantity'),
             unshippedQuantity: unshippedQuantity.as('unshipped_quantity'),
             safetyStock: replenishmentSkuOverrides.safetyStock,
             matchesFilters: sql<boolean>`${and(...matches) ?? sql`true`}`.as('matches_filters'),
@@ -261,12 +263,14 @@ export class StockProjectionReader {
       );
       let queueMatch: SQL | undefined;
 
+      const isShort = sql`${rows.unshippedQuantity} > ${rows.onHandQty}`;
+      const isBelowSafety = and(isNotNull(rows.safetyStock), lt(rows.availableQuantity, rows.safetyStock));
+      const isEmpty = lte(rows.availableQuantity, 0);
+
       if (queue === 'unshipped') queueMatch = gt(rows.unshippedQuantity, 0);
-      if (queue === 'below_safety_stock') {
-        queueMatch = and(isNotNull(rows.safetyStock), lt(rows.availableQuantity, rows.safetyStock));
-      }
-      if (queue === 'out_of_stock') queueMatch = lte(rows.availableQuantity, 0);
-      if (queue === 'inbound_pending') queueMatch = gt(rows.inboundPendingQuantity, 0);
+      if (queue === 'shortage') queueMatch = isShort;
+      if (queue === 'below_safety_stock') queueMatch = isBelowSafety;
+      if (queue === 'out_of_stock') queueMatch = isEmpty;
 
       const groups = trx.$with('stock_groups').as(
         trx
@@ -285,6 +289,20 @@ export class StockProjectionReader {
           .having(and(sql`bool_or(${rows.matchesFilters})`, queueMatch ? sql`bool_or(${queueMatch})` : undefined)),
       );
       const [countResult] = await trx.with(unshipped, rows, groups).select({ total: count() }).from(groups);
+      // 요약 카드 — 큐와 상관없이 창고·공급처·검색 조건 안의 전체 숫자.
+      const [summary] = await trx
+        .with(unshipped, rows)
+        .select({
+          unshippedProducts:
+            sql<number>`count(distinct ${rows.groupKey}) filter (where ${rows.unshippedQuantity} > 0)`.mapWith(Number),
+          shortageQuantity:
+            sql<number>`coalesce(sum(greatest(${rows.unshippedQuantity} - ${rows.onHandQty}, 0)), 0)`.mapWith(Number),
+          shortageOptions: sql<number>`count(*) filter (where ${isShort})`.mapWith(Number),
+          belowSafetyOptions: sql<number>`count(*) filter (where ${isBelowSafety})`.mapWith(Number),
+          emptyOptions: sql<number>`count(*) filter (where ${isEmpty})`.mapWith(Number),
+        })
+        .from(rows)
+        .where(sql`${rows.matchesFilters}`);
       // CTE 끼리 조인하면 drizzle 가 별칭 칸을 테이블 없이 써서("group_key" = "group_key") 모호해진다 — 두 번에 나눠 읽는다.
       const pageGroups = await trx
         .with(unshipped, rows, groups)
@@ -338,6 +356,13 @@ export class StockProjectionReader {
         total: countResult?.total ?? 0,
         page,
         limit,
+        summary: summary ?? {
+          unshippedProducts: 0,
+          shortageQuantity: 0,
+          shortageOptions: 0,
+          belowSafetyOptions: 0,
+          emptyOptions: 0,
+        },
       };
     }, tx);
   }

@@ -3,7 +3,7 @@ import { physicalQuantity } from './physical-quantity';
 
 export interface GroupStockSummaryRow extends Omit<
   StockSummaryGroupSkuDto,
-  'currentQuantity' | 'shortageQuantity' | 'belowSafetyStock'
+  'currentQuantity' | 'onHandQuantity' | 'shortageQuantity' | 'belowSafetyStock'
 > {
   groupId: string | null;
   groupName: string;
@@ -48,6 +48,7 @@ export function groupStockSummaries(
       warehouseName: row.warehouseName,
       shelfPosition: row.shelfPosition,
       currentQuantity,
+      onHandQuantity: row.onHandQty,
       availableQuantity: row.availableQuantity,
       unshippedQuantity: row.unshippedQuantity,
       shortageQuantity: Math.max(row.unshippedQuantity - row.onHandQty, 0),
