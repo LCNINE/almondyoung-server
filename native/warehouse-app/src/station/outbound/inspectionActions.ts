@@ -12,6 +12,8 @@ export const INSPECTION_ACTIONS = {
   withdraw: { id: 'inspect-withdraw', key: 'F11', label: '박스 빼기' },
   reprint: { id: 'inspect-reprint', key: 'F12', label: '송장 재출력' },
   putDown: { id: 'inspect-put-down', key: 'Escape', label: '내려놓기' },
+  /** 송장 대기에서만 — 박스를 든 동안 F8 은 «이 상품 전량» 이다 */
+  boxChecks: { id: 'inspect-box-checks', key: 'F8', label: '확인할 일' },
 } as const satisfies Record<string, ActionSpec>;
 
 /** 빠진 상자 화면에서만 — 탭 이동(F4 적치·이동)을 덮어 꺼낸 상품의 되돌림 적치로 바로 간다 */

@@ -179,7 +179,7 @@ describe('useInspectionBox — 박스 하나의 스캔 큐(스펙 §6.3·§10.1)
       box.accept('A', 1);
     });
     await waitFor(() => expect(progress()).toBe('l-1:1/2,l-2:0/2'));
-    expect(events.onAccepted).toHaveBeenCalledWith('l-1', 1);
+    expect(events.onAccepted).toHaveBeenCalledWith('l-1', 1, 'A');
     expect(box.lastScan).toEqual({ barcode: 'A', shipmentLineId: 'l-1' });
   });
 
@@ -250,11 +250,11 @@ describe('useInspectionBox — 박스 하나의 스캔 큐(스펙 §6.3·§10.1)
     await waitFor(() => expect(box.intakeBlocked).toBe(true));
     expect(box.accept('A', 1)).toBe(false);
     await expect(box.settle()).resolves.toBe('checking');
-    expect(box.checking).toEqual([{ barcode: 'A', quantity: 1 }]);
+    expect(box.checking).toEqual([{ barcode: 'A', quantity: 1, name: '컬러크림' }]);
     // 내려놓아도 스캔은 저장돼 있다 — 다시 열면 같은 키로 맞춘다
     expect((await saved())?.map((e) => e.data.barcode)).toEqual(['A']);
     await waitFor(async () =>
-      expect(await runtime.store.draft('scope:box-check-labels')).toEqual({ 's-1': { trackingNo: '4210-3388-1907' } })
+      expect(await runtime.store.draft('scope:box-check-labels')).toEqual({ 's-1': { trackingNo: '4210-3388-1907', items: { A: '컬러크림' } } })
     );
   });
 

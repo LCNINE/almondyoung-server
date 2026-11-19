@@ -7,6 +7,8 @@ import { localStoragePrefs, type DevicePrefs } from '../../core/data/devicePrefs
 import { errorMessage } from '../../core/data/errorMessage';
 import { NetworkError } from '../../core/data/httpClient';
 import { printRaw, readLabelPrinter, type PrintRaw } from '../../core/hardware/print/labelPrinter';
+import { requestBoxChecksOpen } from '../../core/operations/boxChecks';
+import { useBoxChecks } from '../../core/operations/workArea';
 import { useHumanKeys, useScanEmit, useScanner } from '../../core/hardware/scan/useScanner';
 import { batchProgressOf, useBatchWorkItems } from '../../domains/outbound/batchStatus';
 import { classifyInspectScan, inspectionGateOf, isNotFound } from '../../domains/outbound/inspection';
@@ -564,6 +566,7 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
 
   const putDownAction: StationAction = { ...INSPECTION_ACTIONS.putDown, enabled: true, run: () => void putDown() };
   const returnBin = useMyReturnBin(warehouseId, view.kind === 'withdrawn' ? view.seq : null);
+  const boxCheckCount = useBoxChecks().length;
   const toReturnPutaway: StationAction = {
     ...RETURN_PUTAWAY_ACTION,
     enabled: true,
@@ -586,13 +589,20 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
           ? needsReturnPutaway(returnBin)
             ? [toReturnPutaway, putDownAction]
             : [putDownAction]
-        : view.kind === 'waiting' && last?.kind === 'refilled'
+        : view.kind === 'waiting'
           ? [
-              {
-                ...INSPECTION_ACTIONS.reprint,
-                enabled: canPrint && last.print.kind !== 'printing',
-                run: () => void reprintLast(),
-              },
+              ...(boxCheckCount > 0
+                ? [{ ...INSPECTION_ACTIONS.boxChecks, enabled: true, run: requestBoxChecksOpen }]
+                : []),
+              ...(last?.kind === 'refilled'
+                ? [
+                    {
+                      ...INSPECTION_ACTIONS.reprint,
+                      enabled: canPrint && last.print.kind !== 'printing',
+                      run: () => void reprintLast(),
+                    },
+                  ]
+                : []),
             ]
           : [];
   useStationActions(actions);

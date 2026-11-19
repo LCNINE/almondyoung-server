@@ -7,7 +7,7 @@ import { useWorkAreaBlocked } from '../../core/operations/WorkBoundary';
 import { rememberBoxLabel } from '../../core/operations/boxChecks';
 import { useWorkRuntime } from '../../core/operations/OperationContext';
 import { useBoxChecks } from '../../core/operations/workArea';
-import { formatTrackingNo, progressOf, scannedLineOf } from '../../domains/outbound/inspection';
+import { formatTrackingNo, lineOfBarcode, progressOf, scanNamesOf, scannedLineOf } from '../../domains/outbound/inspection';
 import { useForceSimpleOutbound, useSimpleOutboundScan } from '../../domains/outbound/mutations';
 import type { ShipmentByWaybill, SimpleOutboundLineProgress, SimpleOutboundState } from '../../domains/outbound/types';
 
@@ -31,8 +31,11 @@ export class ScanWaitingError extends Error {
 export type SettleOutcome = 'settled' | 'checking';
 
 export interface InspectionBoxEvents {
-  /** 서버가 반영한 스캔 — 오른 줄(못 찾으면 null)과 수량 */
-  onAccepted(shipmentLineId: string | null, quantity: number): void;
+  /**
+   * 서버가 반영한 스캔 — 오른 줄과 수량, 찍은 바코드. 다시 연 박스의 저장된 스캔은 조회한 진행에 이미 들어 있어 오른 줄을 못 찾는다(null) —
+   * 그때는 바코드로 상품을 알아본다
+   */
+  onAccepted(shipmentLineId: string | null, quantity: number, barcode: string): void;
   /** 마지막 스캔(또는 강제출고)으로 출고됐다 */
   onShipped(): void;
   /** 서버가 거절했거나 결과를 모른다 — 화면이 오류로 알린다 */
@@ -81,7 +84,7 @@ export function useInspectionBox(box: ShipmentByWaybill, events: InspectionBoxEv
       if (queue.detached()) return;
       const line = scannedLineOf(progressRef.current, state.lines);
       if (line) setLastScan({ barcode: input.barcode, shipmentLineId: line });
-      if (!apply(state)) eventsRef.current.onAccepted(line, input.quantity);
+      if (!apply(state)) eventsRef.current.onAccepted(line, input.quantity, input.barcode);
     } catch (error) {
       const rejected = error instanceof ApiError && error.outcome === 'rejected';
       if (queue.detached()) {
@@ -112,10 +115,16 @@ export function useInspectionBox(box: ShipmentByWaybill, events: InspectionBoxEv
   const leavable = (): boolean => checkingRef.current && !shipped.current && !queue.storageError() && !queue.unsaved();
   const runtime = useWorkRuntime();
   const checkScope = checks[0]?.scope;
+  const checkingScans = checks.map((op) => scanOf(op.bodyJson));
+  // 결과 모름이 된 상품의 이름도 함께 남긴다 — «확인할 일» 목록은 박스를 열지 않아 줄을 모른다
+  const checkingBarcodes = [...new Set(checkingScans.map((scan) => scan.barcode).filter(Boolean))].join('\n');
   useEffect(() => {
     if (!runtime || !checkScope) return;
-    void rememberBoxLabel(runtime.store, checkScope, box.shipmentId, { trackingNo: formatTrackingNo(box.trackingNo) }).catch(() => {});
-  }, [runtime, checkScope, box.shipmentId, box.trackingNo]);
+    void rememberBoxLabel(runtime.store, checkScope, box.shipmentId, {
+      trackingNo: formatTrackingNo(box.trackingNo),
+      items: scanNamesOf(box.lines, checkingBarcodes ? checkingBarcodes.split('\n') : []),
+    }).catch(() => {});
+  }, [runtime, checkScope, box.shipmentId, box.trackingNo, box.lines, checkingBarcodes]);
 
   // settle 을 기다리는 쪽(내려놓기·전환). 결과를 모르는 단순출고 스캔은 실행기의 약속이 풀리지 않은 채 머물러
   // 큐의 drain 이 끝나지 않는다 — 그래서 «비었다» 와 «확인 못 한 것이 생겼다» 를 렌더마다 직접 본다.
@@ -147,8 +156,11 @@ export function useInspectionBox(box: ShipmentByWaybill, events: InspectionBoxEv
     waitingForNetwork,
     waitingNow,
     storageError: queue.storageError(),
-    /** 이 박스에서 처리 여부를 확인하고 있는 스캔(바코드·수량) — 다시 열었을 때 같은 상품을 또 찍지 않게 */
-    checking: checks.map((op) => scanOf(op.bodyJson)),
+    /** 이 박스에서 처리 여부를 확인하고 있는 스캔(바코드·상품 이름·수량) — 다시 열었을 때 같은 상품을 또 찍지 않게 */
+    checking: checkingScans.map((scan) => ({
+      ...scan,
+      name: scan.barcode ? (lineOfBarcode(box.lines, scan.barcode)?.skuName ?? null) : null,
+    })),
     /** 상품 하나(수량 n). 받을 수 없으면 false — 화면이 오류로 알린다 */
     accept(barcode: string, quantity: number): boolean {
       if (intakeBlocked || shipped.current) return false;

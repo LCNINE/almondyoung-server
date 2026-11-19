@@ -29,6 +29,8 @@ export interface ShipmentByWaybillLine {
   skuId: string;
   skuCode: string;
   skuName: string;
+  /** 이 SKU 에 등록된 바코드 — 기기가 찍은 바코드가 어느 줄인지 응답 없이도 알아보게(이름 표시용) */
+  barcodes: string[];
   qty: number;
   pickedQty: number;
   inspectedQty: number;
@@ -329,8 +331,8 @@ export class ShipmentWaybillReader {
     return row?.name ?? null;
   }
 
-  private loadLines(trx: DbTx, shipmentId: string) {
-    return trx
+  private async loadLines(trx: DbTx, shipmentId: string) {
+    const lines = await trx
       .select({
         shipmentLineId: wmsTables.shipmentLines.id,
         skuId: wmsTables.shipmentLines.skuId,
@@ -344,6 +346,17 @@ export class ShipmentWaybillReader {
       .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, wmsTables.shipmentLines.skuId))
       .where(eq(wmsTables.shipmentLines.shipmentId, shipmentId))
       .orderBy(asc(wmsTables.shipmentLines.id));
+    const skuIds = [...new Set(lines.map((line) => line.skuId))];
+    const registered = skuIds.length
+      ? await trx
+          .select({ skuId: wmsTables.skuBarcodes.skuId, barcode: wmsTables.skuBarcodes.barcode })
+          .from(wmsTables.skuBarcodes)
+          .where(inArray(wmsTables.skuBarcodes.skuId, skuIds))
+          .orderBy(asc(wmsTables.skuBarcodes.createdAt), asc(wmsTables.skuBarcodes.barcode))
+      : [];
+    const barcodesBySku = new Map<string, string[]>();
+    for (const row of registered) barcodesBySku.set(row.skuId, [...(barcodesBySku.get(row.skuId) ?? []), row.barcode]);
+    return lines.map((line) => ({ ...line, barcodes: barcodesBySku.get(line.skuId) ?? [] }));
   }
 
   /**

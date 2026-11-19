@@ -322,3 +322,34 @@ describe('사람 키 채널(스펙 §5.6)', () => {
     expect(onKey.mock.calls).toEqual([['Escape']]);
   });
 });
+
+describe('사람 키 독점(열린 창)', () => {
+  function Exclusive({ onKey }: { onKey: (key: string) => void }) {
+    useHumanKeys(onKey, { exclusive: true });
+    return null;
+  }
+
+  it('독점 구독이 있는 동안 다른 구독자는 키를 받지 않고, 풀리면 다시 받는다', () => {
+    const behind = vi.fn();
+    const dialog = vi.fn();
+    let setOpen: (v: boolean) => void = () => {};
+    function Toggle() {
+      const [open, set] = useState(true);
+      setOpen = set;
+      return open ? <Exclusive onKey={dialog} /> : null;
+    }
+    render(
+      <ScanProvider>
+        <KeysProbe onKey={behind} />
+        <Toggle />
+      </ScanProvider>
+    );
+    fireKey('Escape');
+    expect(dialog.mock.calls).toEqual([['Escape']]);
+    expect(behind).not.toHaveBeenCalled();
+    act(() => setOpen(false));
+    fireKey('Escape');
+    expect(behind.mock.calls).toEqual([['Escape']]);
+    expect(dialog).toHaveBeenCalledTimes(1);
+  });
+});

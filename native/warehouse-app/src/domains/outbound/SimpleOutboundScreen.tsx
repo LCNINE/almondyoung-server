@@ -251,6 +251,7 @@ export function SimpleOutboundScreen(
       <BoxCheckingExit
         shipmentId={props.shipmentId}
         trackingNo={props.shipment?.trackingNo}
+        lines={props.shipment?.lines}
       />
       <WorkArea kind="outbound" shipmentId={props.shipmentId}>
         <SimpleOutboundScreenContent {...props} />

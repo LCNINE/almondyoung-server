@@ -13,6 +13,8 @@ import {
   progressOf,
   remainingOf,
   scannedLineOf,
+  lineOfBarcode,
+  scanNamesOf,
 } from './inspection';
 import type { ShipmentByWaybill, ShipmentByWaybillLine } from './types';
 
@@ -167,5 +169,44 @@ describe('품목 표', () => {
   it('12자리 송장번호는 4-4-4 로 끊어 보인다', () => {
     expect(formatTrackingNo('421033881907')).toBe('4210-3388-1907');
     expect(formatTrackingNo('T-1')).toBe('T-1');
+  });
+});
+
+describe('lineOfBarcode — 찍은 바코드가 어느 줄인가(이름 표시용)', () => {
+  const ID_A = '019f1004-aaaa-7aaa-8aaa-aaaaaaaaaaaa';
+  const ID_B = '019f1004-bbbb-7bbb-8bbb-bbbbbbbbbbbb';
+  const lines = [
+    { skuId: ID_A, skuCode: 'CODE-A', skuName: '컬러크림', barcodes: ['8801001', '8801001-BOX'] },
+    { skuId: ID_B, skuCode: 'CODE-B', skuName: '헤어클립', barcodes: [] },
+  ];
+
+  it.each([
+    ['등록 바코드', '8801001-BOX', '컬러크림'],
+    ['앞뒤 공백은 서버처럼 다듬는다', ' 8801001 ', '컬러크림'],
+    ['SKU-<id> 바코드(대소문자 무관)', `sku-${ID_B.toUpperCase()}`, '헤어클립'],
+    ['id 그대로', ID_B, '헤어클립'],
+    ['SKU 코드', 'CODE-B', '헤어클립'],
+  ])('%s', (_name, barcode, expected) => {
+    expect(lineOfBarcode(lines, barcode)?.skuName).toBe(expected);
+  });
+
+  it('등록 바코드가 SKU 코드보다 먼저다 — 서버의 해석 순서와 같다', () => {
+    const tricky = [
+      { skuId: ID_A, skuCode: '8801009', skuName: '코드가 같은 상품' },
+      { skuId: ID_B, skuCode: 'CODE-B', skuName: '바코드가 등록된 상품', barcodes: ['8801009'] },
+    ];
+    expect(lineOfBarcode(tricky, '8801009')?.skuName).toBe('바코드가 등록된 상품');
+  });
+
+  it('박스에 없는 바코드·빈 바코드는 null, 등록 바코드를 싣지 않는 옛 응답이면 SKU 코드만 본다', () => {
+    expect(lineOfBarcode(lines, '9999999')).toBeNull();
+    expect(lineOfBarcode(lines, '  ')).toBeNull();
+    const legacy = lines.map(({ barcodes: _b, ...rest }) => rest);
+    expect(lineOfBarcode(legacy, '8801001')).toBeNull();
+    expect(lineOfBarcode(legacy, 'CODE-A')?.skuName).toBe('컬러크림');
+  });
+
+  it('scanNamesOf 는 아는 바코드만 이름으로 남긴다', () => {
+    expect(scanNamesOf(lines, ['8801001', '9999999'])).toEqual({ '8801001': '컬러크림' });
   });
 });

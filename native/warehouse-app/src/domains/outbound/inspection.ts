@@ -126,6 +126,36 @@ export function scannedLineOf(
   return after.find((p) => p.pickedQty > (previous.get(p.shipmentLineId) ?? 0))?.shipmentLineId ?? null;
 }
 
+/**
+ * 찍은 바코드가 이 박스의 어느 줄인가 — 이름을 보이는 데만 쓴다(반영 여부는 서버가 정한다). 서버의 바코드 해석과 같은 순서:
+ * 등록 바코드 → `SKU-<id>` → id 그대로 → SKU 코드. 등록 바코드를 싣지 않는 옛 core 면 뒤 셋만 본다
+ */
+export function lineOfBarcode<L extends Pick<ShipmentByWaybillLine, 'skuId' | 'skuCode' | 'barcodes'>>(
+  lines: readonly L[],
+  barcode: string
+): L | null {
+  const code = barcode.trim();
+  if (!code) return null;
+  const registered = lines.find((line) => line.barcodes?.includes(code));
+  if (registered) return registered;
+  const upper = code.toUpperCase();
+  const id = upper.startsWith('SKU-') ? upper.slice(4) : upper;
+  return lines.find((line) => line.skuId.toUpperCase() === id) ?? lines.find((line) => line.skuCode === code) ?? null;
+}
+
+/** 찍은 바코드들의 상품 이름(모르는 바코드는 뺀다) — «확인할 일» 목록이 박스를 열지 않고도 이름을 보이게 남긴다 */
+export function scanNamesOf(
+  lines: readonly Pick<ShipmentByWaybillLine, 'skuId' | 'skuCode' | 'skuName' | 'barcodes'>[],
+  barcodes: readonly string[]
+): Record<string, string> {
+  const names: Record<string, string> = {};
+  for (const barcode of barcodes) {
+    const name = lineOfBarcode(lines, barcode)?.skuName;
+    if (name) names[barcode] = name;
+  }
+  return names;
+}
+
 export function remainingOf(progress: readonly SimpleOutboundLineProgress[], shipmentLineId: string): number {
   const line = progress.find((p) => p.shipmentLineId === shipmentLineId);
   return line ? Math.max(0, line.qty - line.pickedQty) : 0;

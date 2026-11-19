@@ -159,7 +159,7 @@ function WithdrawBoxContent({
 export function WithdrawBoxScreen(props: Parameters<typeof WithdrawBoxContent>[0]) {
   return (
     <>
-      <BoxCheckingExit shipmentId={props.shipmentId} trackingNo={props.shipment?.trackingNo} />
+      <BoxCheckingExit shipmentId={props.shipmentId} trackingNo={props.shipment?.trackingNo} lines={props.shipment?.lines} />
       <WorkArea kind="outbound" shipmentId={props.shipmentId}>
         <WithdrawBoxContent {...props} />
       </WorkArea>

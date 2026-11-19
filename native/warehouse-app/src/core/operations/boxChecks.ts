@@ -27,9 +27,11 @@ export const isBoxCheck = (o: StoredOperation) =>
 
 export interface BoxCheckLabel {
   trackingNo: string;
+  /** 찍은 바코드 → 상품 이름. 작업 기록 본문에는 바코드만 있다 */
+  items?: Record<string, string>;
 }
 
-/** 박스 화면이 남기는 표시용 이름(송장) — 작업 기록 본문에는 박스 id 만 있다 */
+/** 박스 화면이 남기는 표시용 이름(송장·상품) — 작업 기록 본문에는 박스 id 와 바코드만 있다 */
 export const boxCheckLabelsKey = (scope: string) => `${scope}:box-check-labels`;
 
 export async function rememberBoxLabel(
@@ -40,10 +42,25 @@ export async function rememberBoxLabel(
 ) {
   await store.draft<Record<string, BoxCheckLabel>>(
     boxCheckLabelsKey(scope),
-    (labels) =>
-      labels?.[shipmentId]?.trackingNo === label.trackingNo
-        ? labels
-        : { ...labels, [shipmentId]: label }
+    (labels) => {
+      const saved = labels?.[shipmentId];
+      const items = {
+        ...(saved?.trackingNo === label.trackingNo ? saved.items : undefined),
+        ...label.items,
+      };
+      const unchanged =
+        saved?.trackingNo === label.trackingNo &&
+        Object.entries(items).every(
+          ([code, name]) => saved.items?.[code] === name
+        );
+      if (unchanged && labels) return labels;
+      return {
+        ...labels,
+        [shipmentId]: Object.keys(items).length
+          ? { trackingNo: label.trackingNo, items }
+          : { trackingNo: label.trackingNo },
+      };
+    }
   );
 }
 
@@ -88,4 +105,18 @@ export function useBoxChecksHosted(): boolean {
     },
     () => hosts > 0
   );
+}
+
+// «확인할 일» 을 여는 요청 — 기능키(스테이션 송장 대기 F8)가 상태바의 목록을 연다
+const openListeners = new Set<() => void>();
+export function requestBoxChecksOpen() {
+  openListeners.forEach((fn) => fn());
+}
+export function useBoxChecksOpenRequests(onOpen: () => void) {
+  useEffect(() => {
+    openListeners.add(onOpen);
+    return () => {
+      openListeners.delete(onOpen);
+    };
+  }, [onOpen]);
 }

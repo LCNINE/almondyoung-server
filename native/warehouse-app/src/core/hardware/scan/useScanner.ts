@@ -25,14 +25,19 @@ export function useCommandScans(handler: (code: string) => void): void {
 /**
  * 사람이 친 키(스펙 §5.6) — 스캐너 묶음과 그 끝 Enter 는 오지 않는다. 입력칸에 포커스가 있으면 입력칸이 받는다.
  * null 이면 구독하지 않는다. 핸들러는 렌더마다 새 함수여도 된다 — 다시 구독하지 않고 마지막 것을 부른다.
+ * `exclusive` 면 구독하는 동안 다른 구독자는 키를 받지 않는다(열린 창이 뒤 화면과 숫자를 나눠 받지 않게).
  */
-export function useHumanKeys(handler: ((key: string) => void) | null): void {
+export function useHumanKeys(
+  handler: ((key: string) => void) | null,
+  options?: { exclusive?: boolean }
+): void {
   const bus = useScanBus();
   const latest = useRef(handler);
   latest.current = handler;
   const active = handler !== null;
+  const exclusive = options?.exclusive === true;
   useEffect(() => {
     if (!active) return;
-    return bus.subscribeKeys((key) => latest.current?.(key));
-  }, [bus, active]);
+    return bus.subscribeKeys((key) => latest.current?.(key), exclusive);
+  }, [bus, active, exclusive]);
 }

@@ -72,6 +72,7 @@ const shipment = {
       skuId: 'sku',
       skuCode: 'S',
       skuName: '셔츠',
+      barcodes: ['A'],
       qty: 3,
       pickedQty: 0,
       inspectedQty: 0,
@@ -371,7 +372,7 @@ it('응답을 잃은 박스는 그 박스만 막고, 다른 박스로 나갈 길
   expect(exit.closest('[inert]')).toBeNull();
   await waitFor(async () =>
     expect(await f.store.draft('scope:box-check-labels')).toEqual({
-      s: { trackingNo: 'T' },
+      s: { trackingNo: 'T', items: { A: '셔츠' } },
     })
   );
 });

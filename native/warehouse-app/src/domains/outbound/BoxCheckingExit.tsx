@@ -7,7 +7,8 @@ import {
   useBoxChecks,
   useUnresolvedWork,
 } from '../../core/operations/workArea';
-import { formatTrackingNo } from './inspection';
+import { formatTrackingNo, scanNamesOf } from './inspection';
+import type { ShipmentByWaybillLine } from './types';
 
 /**
  * 이 박스에 결과를 모르는 작업이 남았다 — 박스 화면은 막히지만 기기는 막지 않는다. 남은 작업은 저장돼 있어
@@ -16,20 +17,30 @@ import { formatTrackingNo } from './inspection';
 export function BoxCheckingExit({
   shipmentId,
   trackingNo,
+  lines,
 }: {
   shipmentId: string;
   /** «확인할 일» 목록이 이 박스를 송장으로 보이게 남긴다 */
   trackingNo?: string;
+  /** 목록이 찍은 바코드를 상품 이름으로 보이게 남긴다 */
+  lines?: readonly ShipmentByWaybillLine[];
 }) {
   const checks = useBoxChecks(shipmentId);
   const runtime = useWorkRuntime();
   const scope = checks[0]?.scope;
+  const barcodes = [...new Set(checks.map(barcodeOf).filter(Boolean))].join(
+    '\n'
+  );
   useEffect(() => {
     if (!runtime || !scope || !trackingNo) return;
     void rememberBoxLabel(runtime.store, scope, shipmentId, {
       trackingNo: formatTrackingNo(trackingNo),
+      items:
+        lines && barcodes
+          ? scanNamesOf(lines, barcodes.split('\n'))
+          : undefined,
     }).catch(() => {});
-  }, [runtime, scope, shipmentId, trackingNo]);
+  }, [runtime, scope, shipmentId, trackingNo, lines, barcodes]);
   const { recheck } = useUnresolvedWork();
   const [checking, setChecking] = useState(false);
   if (checks.length === 0) return null;
@@ -65,4 +76,13 @@ export function BoxCheckingExit({
       </div>
     </section>
   );
+}
+
+function barcodeOf(op: { bodyJson: string }): string {
+  try {
+    const body = JSON.parse(op.bodyJson) as { barcode?: unknown };
+    return typeof body.barcode === 'string' ? body.barcode : '';
+  } catch {
+    return '';
+  }
 }
