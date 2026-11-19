@@ -28,6 +28,11 @@
 리허설(§11)에서는 첫째 줄을 언제나 `DRY_RUN=1` 로, 셋째 줄은 돌리지 않는다.
 
 빈칸: `<T>` 는 컷오버 시각(KST 오프셋을 붙인 ISO, 예 `2026-12-01T09:00:00+09:00`), `<T-날짜>` 는 그날 날짜, `<창고 id>`·`<공유 이름>`·`<실행 id>` 는 리허설에서 정해 적는다.
+- `<재고 CSV>` = `apps/core/tmp/<T-날짜>/stk_stockList_YYYYMMDD_HHMMSS.xls` — 셀메이트가 붙인 **파일 이름을 바꾸지 않는다**(스크립트가 이름에서 시각을 읽는다).
+- `<positions-since>` 도 `<T>` 처럼 `+09:00` 을 붙인 ISO 로 적는다.
+- `--set N=` 의 주문번호는 `#` 을 뺀 숫자만. `--own-mall-channel` 의 판매처 이름에 공백·괄호가 있으면 따옴표로 감싼다.
+
+**명령은 저장소 루트에서 붙여 넣는다.** `deployments/lcnine/*` 로 들어가야 하는 명령은 `( … )` 로 감싸 두었다 — 끝나면 저장소 루트로 돌아온다.
 
 **T 는 하나다.** 같은 값을 `set-reservation-cutover --at`, `evening-reconcile init --cutover-at`, 판정의 `--after-cutover`, 그리고 KST 로 `clear-reservations --before` 에 쓴다. 정하는 법은 §3(`collect-cellmate` 마지막 실행 시각).
 
@@ -37,8 +42,8 @@
 
 ```bash
 # 터널이 떠 있어야 한다(§2). AWS_PROFILE 은 export 하지 않는다
-cd deployments/lcnine/services && npx sst shell --stage live -- npx tsx ../../../scripts/ops/cutover-preflight/index.ts
-cd deployments/lcnine/auth     && npx sst shell --stage live -- npx tsx ../../../scripts/ops/cutover-preflight/index.ts
+(cd deployments/lcnine/services && npx sst shell --stage live -- npx tsx ../../../scripts/ops/cutover-preflight/index.ts)
+(cd deployments/lcnine/auth     && npx sst shell --stage live -- npx tsx ../../../scripts/ops/cutover-preflight/index.ts)
 # T 뒤에는 둘 다 끝에 --after-cutover=<T>
 ```
 
@@ -53,7 +58,9 @@ cd deployments/lcnine/auth     && npx sst shell --stage live -- npx tsx ../../..
 |---|---|
 | 개발자(운영자) | 터널·스크립트·판정. 저녁 맞추기도 개발자가 돌린다(설계 결정) |
 | 매일 셀메이트 스크립트를 돌리던 사람 | `collect-cellmate`·`mark-*` 의 마지막 실행(늘 하던 방식으로). **T 당일 창고에 있다** — §3 1번의 두 값(마지막 실행 시각·가장 큰 주문번호)을 개발자에게 알린다. 개발자가 현장에 없을 수 있으니 이 사람이 T 를 만든다 |
-| 물류팀 | 셀메이트 데이터 받기·업로드, 맞추는 동안 셀메이트 작업 멈춤, 스테이션 출고 |
+| 물류팀 | 맞추는 동안 셀메이트 작업 멈춤, 스테이션 출고, 송장 프린터 시험(§10-1) |
+
+셀메이트 파일 받기(§3·§8)와 «재고 수정» 업로드(§8)는 **개발자가 자기 PC 브라우저에서 직접** 한다(11-19 리허설 방식 — 셀메이트 계정 필요). 물류팀이 받아 넘기면 사내 메신저로 받고, 미발송 주문 파일의 비밀번호는 같은 채널에 함께 보내지 않는다. §10 비상 출고는 개발자가 자기 PC 에서 돌리고 `labels.zpl`·`pick-list.html` 을 스테이션 PC 로 옮긴다(실행 폴더는 그 개발자 PC 에 남긴다).
 
 ---
 
@@ -63,7 +70,8 @@ cd deployments/lcnine/auth     && npx sst shell --stage live -- npx tsx ../../..
 
 아래는 판정이 다 못 보는 사람 일이다.
 
-- [ ] **T 전에 라이브여야 하는 변경이 라이브인지** — 판정 «Medusa 0. 예약 투영»(#1247), 드레인 중 셀메이트 상자 거절(#1412, core), 저녁 맞추기 테이블(#1304, live `db:migrate` 만), 멈춘 송장 abandon 화면(#1241), 라벨 출력(#1281). 배포 기록은 `deploy/live/*` 태그로 본다(`npm run deploy:preflight -- --stage live` 의 대기 마이그 0).
+- [ ] **T 전에 라이브여야 하는 변경이 라이브인지** — 판정 «Medusa 0. 예약 투영»(#1247), 드레인 중 셀메이트 상자 거절(#1412, core), 저녁 맞추기 테이블(#1304, live `db:migrate` 만), 멈춘 송장 abandon 화면(#1241), 라벨 출력(#1281). 배포 기록은 `deploy/live/*` 태그로 본다(`npm run deploy:preflight -- --stage live` 의 대기 마이그 0). 라이브가 아니면 전날 배포한다 — 배포는 develop 전체를 싣고 남의 머지분 마이그도 함께 실린다. `deploy:preflight` 가 expand(migrate→deploy)·contract(deploy→migrate) 순서와 배포 명령을 알려 준다(CLAUDE.md «배포는 여러 PR 을 모아 한 번에»).
+- [ ] **물류 관리자(§11-2 «누가 맡나»)** — `logistics_manager` 역할 행(참조 시드), 카탈로그의 `order.order.read`·`order.matching.write` 를 이 역할에도(코드 + auth 배포, 못 하면 그때까지 어드민 «역할 관리»에서 직접 붙인다), 물류팀장 계정에 부여. 판정 «사람 1»·«사람 2» 의 `logistics_manager` 줄이 초록이면 끝(#1248 은 11-19 라이브).
 - [ ] **저녁 맞추기 «첫 live `--apply` 전에 사람이 확인할 것»**(#1304, `scripts/sellmate/README.md` 같은 절) 네 개:
   - [x] 재고 수정 업로드가 바코드번호 1~3·글로벌바코드 중 무엇과 맞추는지 — 시험 상품 1개 값을 바꿔 올리고 되돌려 본다. 결과대로 `COL_*` 를 정한다 — 11-19 라이브: 재고관리 > 재고 조사 > **재고 수정**(`/stock/stk_xls_modify.asp`, 창고 «(기본)부천 물류창고», 바코드 A열·수량 B열이 기본). 재고 0·연동안함·자사 공급처 시험 상품 하나로: 바코드번호2 값은 «바코드번호를 찾을 수 없습니다»(안 바뀜), **바코드번호(숫자, `(서식)` 열 값)는 «입력성공»** → 1 로 올렸다가 0 으로 되돌렸다(입출고목록에 «엑셀, 재고수정» 두 줄이 남는다). 업로드 CSV 는 짝 표의 바코드 = 재고 CSV `바코드번호(서식)` 를 쓰므로 `COL_*` 는 그대로 둔다. 바코드번호3·글로벌바코드는 시험할 상품이 없어 못 봤다
   - [x] 마켓에 보내는 숫자에 안정재고가 끼는지 — 끼면 `U` 정의를 고친 뒤 간다 — 11-19 운영자 확인: **끼지 않는다.** 셀메이트 «안정재고» 는 재고가 일정 아래로 떨어진 상품을 걸러 발주하기 위한 셀메이트 안의 편의 값이다(다른 연동 도구의 «안전재고» 처럼 마켓 전송 숫자에서 빼는 완충값이 아니다). `U` 는 그대로
@@ -93,25 +101,27 @@ cd deployments/lcnine/auth     && npx sst shell --stage live -- npx tsx ../../..
 - [ ] **터널(별도 창, 유지):** `cd deployments/lcnine/services && npx sst tunnel --stage live` (sudo). 사람이 띄운다. 「Tunnel listening…」 을 본다.
 - [ ] **판정 한 번:** §0-2 두 셸. 어제 초록이 오늘도 초록인지.
 - [ ] **막혔을 때:** 「이 상자가 왜 안 열리나」는 먼저 어드민 «출고 정체 보드»(`/order/stall-board`)와 출고주문 상세(`/order/fulfillments`)로 본다. 거기서 안 풀리면 개발자가 Claude 에게 라이브 DB 를 읽게 한다 — 시작점은 §12.
-- [ ] **작업 폴더:** 오늘 받을 셀메이트 파일은 날짜 폴더(`apps/core/tmp/<T-날짜>/`)에 모은다. §4 의 명령은 폴더가 아니라 **재고 CSV 한 파일**(`<재고 CSV>`)을 가리킨다 — `import-products`·`sync-stock` 은 폴더를 주면 안의 `.csv/.xlsx/.xls` 를 전부 읽고, 필수 열이 없는 파일(상품목록·주문 파일, §5 가 남기는 `cutover-1236-kept-*.csv`)에서 멈춘다(11-19 라이브 리허설에서 찾았다).
+- [ ] **코드:** 작업 PC 의 저장소를 이 런북이 머지된 develop 최신으로 받는다(`git switch develop && git pull && npm ci`). 커밋 해시를 적는다 — §3·§4 의 스크립트 수정(`sql.ts`·`orders-two-columns.py`·init 파서)이 그 커밋에 있어야 한다.
+- [ ] **작업 폴더:** `mkdir -p apps/core/tmp/<T-날짜>` — 오늘 받을 셀메이트 파일은 이 날짜 폴더에 모은다. §4 의 명령은 폴더가 아니라 **재고 CSV 한 파일**(`<재고 CSV>`)을 가리킨다 — `import-products`·`sync-stock` 은 폴더를 주면 안의 `.csv/.xlsx/.xls` 를 전부 읽고, 필수 열이 없는 파일(상품목록·주문 파일, §5 가 남기는 `cutover-1236-kept-*.csv`)에서 멈춘다(11-19 라이브 리허설에서 찾았다).
 
 ---
 
 ## 3. 시각 T — 마지막 데이터 받기
 
 1. **`collect-cellmate` 마지막 실행.** 매일 돌리던 사람이 늘 하던 방식(`scripts/ops/cellmate-local/README.md`)으로 돌리고, 나온 파일을 셀메이트에 올린다. **이 뒤로는 돌리지 않는다.** 이 뒤에 들어온 자사몰 주문은 앱 몫이다.
-   - [ ] 돌린 사람이 **두 값을 적어 개발자에게 보낸다**: ① 실행을 시작한 시각(KST, 초까지 — 모르면 출력 파일 `cellmate-after-…xlsx` 가 생긴 시각), ② 출력의 `orders:` 줄에서 **가장 큰 주문번호**(`#…`). 이 스크립트는 «마지막으로 넘긴 주문번호(`LATEST_DISPLAY_ID`) 다음부터» 모으므로, 셀메이트로 간 주문은 시각보다 **번호로** 정확히 갈린다
+   - [ ] 돌린 사람이 **두 값을 적어 개발자에게 보낸다**: ① 실행을 시작한 시각(KST, 초까지 — 모르면 출력 파일 `cellmate-after-…xlsx` 가 생긴 시각), ② 출력의 `orders:`·`excluded:` 두 줄을 통틀어 **가장 큰 주문번호**(`#` 뺀 숫자). `excluded:` 줄의 주문 번호들도 함께 보낸다. 이 스크립트는 «마지막으로 넘긴 주문번호(`LATEST_DISPLAY_ID`) 다음부터» 모으므로, 셀메이트로 간 주문은 시각보다 **번호로** 정확히 갈린다
    - [ ] 개발자가 Medusa 에서 그 번호 앞뒤 주문의 생성 시각을 읽기 전용으로 본다(3번 판정):
      ```bash
-     cd deployments/lcnine/services && npx sst shell --stage live -- npx tsx ../../../scripts/ops/cutover-preflight/sql.ts --db medusa --set N=<②의 가장 큰 주문번호> ../../../scripts/ops/cutover-preflight/sql/collect-boundary.sql
+     (cd deployments/lcnine/services && npx sst shell --stage live -- npx tsx ../../../scripts/ops/cutover-preflight/sql.ts --db medusa --set N=<②의 가장 큰 주문번호> ../../../scripts/ops/cutover-preflight/sql/collect-boundary.sql)
      ```
+   - `excluded:` 주문(입금 대기·취소·환불 등)은 T 전에 생겼지만 셀메이트에 없다 — **앱 몫이다**(넘긴 주문이 아니다). 이 주문의 Medusa 예약은 4-1 이 지우고 투영은 T 이전 주문을 다시 잡지 않으므로, 나갈 때까지 스토어프론트 가용이 그만큼 많아 보인다. 번호를 적어 두고 입금되면 앱 출고 목록에 뜨는지 본다
 2. 셀메이트 화면에서 바로 이어서 받는다(`docs/runbooks/feature-admin-web-merge.md` §4-1, `scripts/sellmate/README.md` «입력 파일 받기»):
    - [ ] **재고 현황 CSV** — `상품코드(카페)`·`미발송주문수`·`상품위치` 열 포함. 이 파일이 마지막 `sync-stock`·`load-shelf-positions`·`init` 의 입력이다
      - 받는 법(11-19 라이브 리허설): 재고관리 > 재고 상품 관리 > 재고 현황 목록 → 조건 없이 «검색» → «엑셀 다운로드 > 검색결과 전체 다운로드» → 새 창에서 양식 **«개발팀 데이터 내보내기용»** → «다운로드» → 대기열에 올라간다. 대기열은 상단 «엑셀다운로드»(`/imp/Views/excel_api.asp`)에서 보고, «다운가능여부» 가 버튼이 되면 받는다. 1분마다 «새로고침» 을 누르라는 안내가 뜬다
      - ⏱ **생성에 약 20분**(11-19: 19:28 시작 → 19:47 완료), 파일 약 120MB(`.xls`, 실제로는 HTML). **파일명 시각은 «완료» 시각이다**(`stk_stockList_20261119_194756` = 19:47:56) — `clear-reservations` 가 이 시각을 기준 시각으로 읽는다
      - 이 양식에는 `바코드번호2`·`공급처`·`원가`·`바코드번호(서식)` 도 들어 있다 — 11-19 에 같은 파일로 `backfill-barcode2` dry-run 이 돌았다. 아래 «현재고 전체 CSV»·«상품목록 엑셀» 을 따로 받을 필요가 있는지는 그 스크립트들로 확인한다
-   - [ ] **현재고 전체 CSV** — 바코드번호2 가 든 양식(필요하면 백필을 한 번 더)
-   - [ ] **상품목록 엑셀**(상품관리 > 상품목록, `공급처`·`원가`·`바코드번호(서식)` 포함)
+   - (받지 않아도 된다) **현재고 전체 CSV** — 바코드번호2 백필은 §1 에서 끝낸다. 위 재고 CSV 양식에 `바코드번호2` 가 들어 있고, T 뒤 새 SKU 는 `import-products` 가 같은 규칙으로 보조 바코드를 넣는다
+   - (받지 않아도 된다) **상품목록 엑셀** — 공급처·공급가 백필용이고 당일 단계는 쓰지 않는다
    - [ ] **미발송 주문 목록** — `init --sellmate-orders` 의 입력. 판매처·주문번호 열
      - 받는 법(11-19 라이브 리허설): 주문관리 > 주문내역 목록 → 일자 «3개월» → 확장필터 → 진행상황 **«지정»** → 매칭 «매칭상관안함» · 송장 «송장입력상관안함» · 발송 «발송안됨» → «검색» → «엑셀다운로드 > 검색결과 전체 다운로드» → 양식 «셀메이트 기본 양식»(`판매처명`·`판매처주문번호` 열) → 대기열에서 받는다(생성 1분 안). 진행상황을 «지정» 으로 바꾸지 않으면 발송 조건이 안 걸려 전체 주문이 나온다
      - 🔒 개인정보가 든 파일이라 **비밀번호를 걸어야 받을 수 있다**(암호화된 `.xls`). init 은 암호 파일을 못 읽는다 — 판매처·주문번호 두 열만 뽑은 CSV 를 만들어 넘긴다(원본을 암호 없이 풀어 두지 않는다):
@@ -119,13 +129,13 @@ cd deployments/lcnine/auth     && npx sst shell --stage live -- npx tsx ../../..
        python3 scripts/sellmate/orders-two-columns.py <받은 ord_ordList_….xls> apps/core/tmp/<T-날짜>/sellmate-orders.csv   # 비밀번호는 숨김 입력
        ```
        출력 끝의 «판매처별 행 수» 에서 자사몰 판매처 이름을 그대로 4-4 의 `--own-mall-channel` 에 쓴다
-   - [ ] **주문이력** — 보충 제안 수요(`import-demand-history`)를 나중에 메울 원본
+   - (나중에) **주문이력** — 보충 제안 수요(`import-demand-history`)를 메울 원본. §9 에서 필요하면 받는다(`scripts/sellmate/README.md`)
 3. **T 를 정한다.** T = **1번 `collect-cellmate` 마지막 실행 시각**(셀메이트가 받는 자사몰 주문 집합이 굳는 때, 11-19 결정). 적어 둔다: `<T>`(오프셋 붙은 ISO)와 같은 시각의 KST `YYYY-MM-DD HH:mm:ss`(4-1 의 `--before`).
    - 왜 재고 CSV 파일명 시각이 아닌가: 재고 CSV 는 만드는 데 약 20분이 걸리고 파일명은 **완료** 시각이다. 1번 뒤 그 시각까지 들어온 자사몰 주문은 셀메이트에 없어 CSV 의 미발송에도 없는데, 파일명 시각으로 `clear-reservations` 를 돌리면 그 주문들의 Medusa 예약까지 지워진다. 투영(#1247)은 T 이전 주문을 다시 잡지 않으므로(`reservation-reconcile.service.ts` «T 이전 주문은 끝까지 건드리지 않는다») 출고될 때까지 스토어프론트 가용이 그만큼 많아 보인다. T 를 1번 시각으로 두면 그 주문들은 T 이후 주문 — 앱·투영의 몫이 된다
    - 그래서 재고 CSV 는 1번이 **끝난 뒤에** 받기 시작한다. 1번 전 주문은 셀메이트 미발송에 들어 있고, 1번 뒤 주문은 앱 몫이다
    - **판정:** 1번의 SQL 에서 `display_id ≤ <N>` 인 주문은 모두 `created_at < T`, `> <N>` 인 주문은 모두 `≥ T`. 어긋나면(번호 ≤ N 인데 T 뒤에 생긴 주문, 또는 N 다음 번호가 T 전에 생긴 주문) T 를 그 경계 사이로 옮긴다 — `<N>` 의 생성 시각보다 뒤, `<N>+1` 의 생성 시각 이하
 
-**판정:** 파일 다섯 개가 다 있고, 미발송 주문 목록에 자사몰 판매처 행이 있다.
+**판정:** 두 파일 — 재고 CSV(이름 그대로)와 `sellmate-orders.csv`(두 열) — 가 `apps/core/tmp/<T-날짜>/` 에 있고, `orders-two-columns.py` 의 «판매처별 행 수» 에 자사몰 판매처가 있다.
 
 **실패 시:** 셀메이트 export 가 실패하면 분기·월 단위로 쪼개 받는다(`scripts/sellmate/README.md`). 재고 CSV 를 못 받으면 §4 로 가지 않는다 — T 를 미룬다. 1번 이후 §4 까지 시간이 길어지면 그 사이 자사몰 주문이 셀메이트에도 앱에도 안 잡힌다 — §3 과 §4 는 붙여서 한다.
 
@@ -138,7 +148,7 @@ cd deployments/lcnine/auth     && npx sst shell --stage live -- npx tsx ../../..
 > 이 절의 `sync-stock` 이 **마지막**이고, 4-4 의 `init --apply` 뒤에는 스크립트가 스스로 거절한다(`init` 이 남기는 가드).
 > 4-4 전에 멈추면 아직 되돌릴 수 있다(다음 날 다시 시작). 4-4 뒤에 멈추면 앞으로만 간다.
 
-순서는 `selmate-stock-pipeline.md` «전체 그림» 그대로다: Ⓑ → Ⓐ → Ⓔ → Ⓕ. 모든 명령은 저장소 루트, 터널 필요.
+순서는 `selmate-stock-pipeline.md` «전체 그림» 그대로다: Ⓑ → Ⓐ → Ⓔ → Ⓕ. 모든 명령은 저장소 루트, 터널 필요. `run.sh` 의 `aws` 호출은 sst 와 같은 기본 프로필(로그인 세션)을 쓴다.
 
 ### 4-1. Ⓑ Medusa 예약 정리 → 투영 T 설정 (#1247)
 
@@ -147,19 +157,32 @@ DB_NAME=medusa bash scripts/sellmate/run.sh live clear-reservations --before '<T
 DB_NAME=medusa bash scripts/sellmate/run.sh live clear-reservations --before '<T 의 KST 시각>' --apply    # ✅ 마지막
 ```
 
-- 파일명 대신 `--before` 를 쓴다(§3 의 T 와 같은 시각, KST). 출력 첫 줄 `기준시각(KST)` 이 T 와 같은지 본다(11-19 라이브 dry-run 으로 이 꼴을 확인했다).
+- 파일명 대신 `--before` 를 쓴다(§3 의 T 와 같은 시각, KST). 출력의 `🕒 기준시각(KST)` 줄이 T 와 같은지 본다(11-19 라이브 dry-run 으로 이 꼴을 확인했다).
 
-판정: `selmate-stock-pipeline.md` Ⓑ «끝나고 반드시 확인한다» 의 두 쿼리(raw 드리프트 0, store API 값). 그 다음 바로 투영의 T 를 설정한다(channel_adapter DB):
+판정(`selmate-stock-pipeline.md` Ⓑ «끝나고 반드시 확인한다» — «완료» 로그는 증거가 아니다):
 
 ```bash
-cd deployments/lcnine/services && npx sst shell --stage live -- bash -c '
+# 1) raw 기준 드리프트 0
+(cd deployments/lcnine/services && npx sst shell --stage live -- npx tsx ../../../scripts/ops/cutover-preflight/sql.ts --db medusa -e "select count(*) from inventory_level where deleted_at is null and (raw_reserved_quantity->>'value')::numeric <> reserved_quantity")
+# 2) 화면이 보는 값 — clear-reservations 출력 «회복량 상위» 상품 하나를 스토어프론트에서 열어 재고가 음수·품절이 아닌지 본다
+```
+
+그 다음 바로 투영의 T 를 설정한다(channel_adapter DB):
+
+```bash
+# 🔍 지금 값·바꿀 값
+(cd deployments/lcnine/services && npx sst shell --stage live -- bash -c '
   export DATABASE_URL=$(node -e "const d=JSON.parse(process.env.SST_RESOURCE_Db);console.log(\`postgresql://\${d.username}:\${encodeURIComponent(d.password)}@\${d.host}:\${d.port}/channel_adapter?sslmode=require\`)")
-  npx tsx ../../../apps/channel-adapter/scripts/set-reservation-cutover.ts --at <T>'            # 🔍 지금 값·바꿀 값
-# ✅ 같은 명령 끝에 --apply --by <이름>
+  npx tsx ../../../apps/channel-adapter/scripts/set-reservation-cutover.ts --at <T>')
+
+# ✅ --apply 는 «따옴표 안» 에 넣는다 — 닫는 ' 뒤에 붙이면 bash -c 의 인자가 되어 조용히 dry-run 만 반복한다
+(cd deployments/lcnine/services && npx sst shell --stage live -- bash -c '
+  export DATABASE_URL=$(node -e "const d=JSON.parse(process.env.SST_RESOURCE_Db);console.log(\`postgresql://\${d.username}:\${encodeURIComponent(d.password)}@\${d.host}:\${d.port}/channel_adapter?sslmode=require\`)")
+  npx tsx ../../../apps/channel-adapter/scripts/set-reservation-cutover.ts --at <T> --apply --by <이름>')
 ```
 
 - `--at` 은 오프셋 없는 시각을 거절한다(9시간 어긋남 방지). 출력의 «바꿀 T» 는 UTC(`…Z`)로 찍힌다 — `09:00+09:00` 이 `00:00Z` 로 보이면 맞다.
-- dry-run 출력은 `현재 T: (비어 있음)` · `바꿀 T: …` · `dry-run — 쓰지 않았다` 세 줄이다(11-19 라이브, 몇 초).
+- dry-run 출력은 `현재 T: (비어 있음)` · `바꿀 T: …` · `dry-run — 쓰지 않았다` 세 줄이다(11-19 라이브, 몇 초). ✅ 뒤에는 `적용했다. T = …` 를 본다 — 이 줄이 없으면 쓰지 않은 것이다.
 - T 가 설정되면 `clear-reservations --apply` 는 스스로 거부한다.
 - 실패 시: 투영을 멈춰야 하면 `--clear --apply`(T 를 비움). T 를 잘못 넣었으면 바른 값으로 다시 `--apply`.
 
@@ -205,7 +228,7 @@ WITH_MEDUSA=1 bash scripts/sellmate/run.sh live evening-reconcile init <재고 C
 - 넘긴 자사몰 주문 0건으로 거절되면: 판매처 이름이 틀렸을 가능성이 먼저다. 정말 0건이면 `--no-handed-over-orders`.
 - 짝 못 지은 품목·사라진 품목·SKU 가 바뀐 품목이 있으면 쓰지 않고 1. 짝 표도 안 쓰므로 같은 CSV 로 `pair --apply` 를 돌려 판정이 보게 한 뒤 고친다.
 
-**판정:** 판정 «재고 1. 저녁 맞추기» 의 기준값이 생겼고 짝 못 지은 품목 0. `--after-cutover=<T>` 의 «출고 7» 은 «저녁 맞추기 init(…) 뒤 셀메이트 재고 sync 없음» — 4-2 의 마지막 sync 는 T 뒤에 찍히지만(T ≥ 스냅샷) 금지선은 init 이라 정상이다. init 전에 돌리면 «init 이 없다» ✗ 가 나온다(이 단계를 먼저 하라는 뜻). 이 뒤 `sync-stock` dry-run 이 거절하는지 본다(가드가 살아 있다는 증거, `DRY_RUN=1 bash scripts/sellmate/run.sh live sync-stock <재고 CSV>` — 열을 읽은 뒤 DB 를 보므로 «init 뒤 거절» 문구를 확인한다. 열 오류로 멈추면 가드를 본 것이 아니다).
+**판정:** 판정 «재고 1. 저녁 맞추기» 의 기준값이 생겼고 짝 못 지은 품목 0. `--after-cutover=<T>` 의 «출고 7» 은 «저녁 맞추기 init(…) 뒤 셀메이트 재고 sync 없음» — 4-2 의 마지막 sync 는 T 뒤에 찍히지만(T 는 `collect-cellmate` 시각이고 재고 CSV·sync 는 그 뒤다) 금지선은 init 이라 정상이다. init 전에 돌리면 «init 이 없다» ✗ 가 나온다(이 단계를 먼저 하라는 뜻). 이 뒤 `sync-stock` dry-run 이 거절하는지 본다(가드가 살아 있다는 증거, `DRY_RUN=1 bash scripts/sellmate/run.sh live sync-stock <재고 CSV>` — 열을 읽은 뒤 DB 를 보므로 «init 뒤 거절» 문구를 확인한다. 열 오류로 멈추면 가드를 본 것이 아니다).
 
 ### 4-5. 이 뒤로 다시 돌리지 않는 스크립트
 
@@ -228,12 +251,13 @@ WITH_MEDUSA=1 bash scripts/sellmate/run.sh live evening-reconcile init <재고 C
 
 ## 5. 재고를 선반으로 (#1236)
 
-**4-3 직후에 한 번만.** `sync-stock` 이 증가분을 입고기본존에 넣으므로 전날 옮기면 다시 갈린다. 며칠 뒤 다시 돌리지 않는다 — 묶이지 않은 앱 입고분까지 쓸어 간다.
+**4-4 뒤, §6(출고 열기) 전에 한 번만.** (재고를 창고 안에서만 옮기므로 4-4 의 부천 합계 비교와 상관없다.) apply 가 끝난 뒤 §6 을 연다 — 끝내지 못하면 아래 «실패 시» 대로 §6 을 연다. `sync-stock` 이 증가분을 입고기본존에 넣으므로 전날 옮기면 다시 갈린다. 며칠 뒤 다시 돌리지 않는다 — 묶이지 않은 앱 입고분까지 쓸어 간다.
 
 ```bash
 bash scripts/sellmate/run.sh live move-stock-to-shelf --positions-since=<positions-since> --include-rule=dash-position            # 🔍
 bash scripts/sellmate/run.sh live move-stock-to-shelf --positions-since=<positions-since> --include-rule=dash-position --apply    # ✅
 # 판매 창고가 둘 이상이면 --warehouse-id=<부천 창고 id>
+# 남긴 SKU 목록은 기본 apps/core/tmp/cutover-1236-kept-<시각>.csv — 보관한다
 ```
 
 - 고쳐 읽기 규칙은 `dash-position`(`O21-30-` → `O-21-30`)만 켠다 — 11-18 부천 현장 확인으로 정했다(기록은 PR #1424, 머지 전 — 결정은 머지와 무관하다). `zero-pad`·`custom-bin` 은 켜지 않는다.
@@ -259,7 +283,7 @@ bash scripts/sellmate/run.sh live move-stock-to-shelf --positions-since=<positio
 core DB 에서 읽기 전용으로 돌린다. 교환 상자까지 세어 넉넉히 센다(SQL 은 `scripts/ops/cutover-preflight/sql/sellmate-shipments-after-init.sql`).
 
 ```bash
-cd deployments/lcnine/services && npx sst shell --stage live -- npx tsx ../../../scripts/ops/cutover-preflight/sql.ts --db core ../../../scripts/ops/cutover-preflight/sql/sellmate-shipments-after-init.sql
+(cd deployments/lcnine/services && npx sst shell --stage live -- npx tsx ../../../scripts/ops/cutover-preflight/sql.ts --db core ../../../scripts/ops/cutover-preflight/sql/sellmate-shipments-after-init.sql)
 ```
 
 | 열 | 0 이 아니면 |
@@ -272,7 +296,12 @@ cd deployments/lcnine/services && npx sst shell --stage live -- npx tsx ../../..
 
 ### 6-3. 첫 1건 먼저
 
-T 이후 자사몰 주문 **1건만** 출고 준비 → 배치 → 스테이션 앱 출고로 낸다. 다음을 보고 나머지를 연다.
+T 이후 자사몰 주문 **1건만** 출고 준비 → 배치 → 스테이션 앱 출고로 낸다. 출고 준비 화면의 기본 선택(앞쪽 100건)을 모두 해제하고 그 1건만 체크한다. 다음을 보고 나머지를 연다.
+
+```bash
+# SHIP 이 찍혔나 — 방금 낸 1건의 SKU 가 보여야 한다
+(cd deployments/lcnine/services && npx sst shell --stage live -- npx tsx ../../../scripts/ops/cutover-preflight/sql.ts --db core -e "select sku_id, quantity, occurred_at from stock_events where transition_type = 'SHIP' and occurred_at > now() - interval '30 minutes' order by occurred_at desc")
+```
 
 - [ ] core `stock_events` 에 그 상자의 SHIP 이 찍혔다
 - [ ] Medusa 주문 `metadata.coreShipmentAttempts[].invoice.trackingNo` 가 상자 송장과 같다(최상위 `coreTrackingNumber` 는 보지 않는다 — 쓰는 코드가 없다)
@@ -290,11 +319,12 @@ T 이전 자사몰 주문(넘긴 주문)은 **셀메이트가 끝까지 내보�
 
 셀메이트 미발송 목록에서 자사몰 판매처 주문이 0 이 되면, 아래 순서로 한 번씩.
 
-1. **`mark-shipped-from-csv`** — 셀메이트 출고 주문 파일로 core 판매주문을 `shipped` 로.
+1. **`mark-shipped-from-csv`** — 셀메이트가 내보낸 주문으로 core 판매주문을 `shipped` 로.
+   - 입력: 주문내역 목록을 §3 의 미발송 받는 법과 같게 하되 발송 «**발송됨**» 으로 export → 암호 파일이므로 `python3 scripts/sellmate/orders-two-columns.py <받은 .xls> apps/core/tmp/<날짜>/sellmate-shipped.csv`. ⚠️ 암호 `.xls` 를 그대로 넘기면 주문번호를 하나도 못 읽고 **오류 없이 0건**이다 — dry-run 의 대상 건수가 0 이면 입력부터 본다
+   - 스크립트는 `pending` 인 주문만 바꾸므로 기간에 이미 끝난 주문이 섞여도 된다
    ```bash
-   cd deployments/lcnine/services
-   npx sst shell --stage live -- npx tsx ../../../scripts/sellmate/mark-shipped-from-csv.ts <주문 CSV|XLSX>            # 🔍
-   npx sst shell --stage live -- npx tsx ../../../scripts/sellmate/mark-shipped-from-csv.ts <주문 CSV|XLSX> --apply    # ✅ 마지막
+   (cd deployments/lcnine/services && npx sst shell --stage live -- npx tsx ../../../scripts/sellmate/mark-shipped-from-csv.ts ../../../apps/core/tmp/<날짜>/sellmate-shipped.csv)            # 🔍
+   (cd deployments/lcnine/services && npx sst shell --stage live -- npx tsx ../../../scripts/sellmate/mark-shipped-from-csv.ts ../../../apps/core/tmp/<날짜>/sellmate-shipped.csv --apply)    # ✅ 마지막
    ```
 2. **`mark-core-shipped` · `mark-medusa-shipped`** — 매일 돌리던 사람이 늘 하던 방식(`scripts/ops/cellmate-local/README.md`, 같은 sst shell 에 `DISPLAY_IDS=…`)으로 마지막 한 번. ⚠️ 이 둘은 **dry-run 이 없다** — 돌리면 바로 쓴다. `DISPLAY_IDS` 를 두 번 확인한다.
 3. **`close-sellmate-leftovers`** — 🔍 `bash scripts/sellmate/run.sh live close-sellmate-leftovers` → 출력의 «보고(닫지 않음)» 를 읽는다 → ✅ `--apply`.
@@ -332,7 +362,7 @@ T 이전 자사몰 주문(넘긴 주문)은 **셀메이트가 끝까지 내보�
 
 받기(1) → 업로드(3) → 다시 받기(4) 사이에 셀메이트 출고나 반품 입고가 일어나면 그 변화가 덮이거나 다음 회에 잘못 더해진다. 반품 입고는 닫기 확인에도 안 잡힌다(조용한 유실). 그래서:
 
-- [ ] 시작 전에 물류팀에 «지금부터 셀메이트 출고·반품 입고 멈춤» 을 알리고 답을 받는다
+- [ ] 시작 전에 물류팀에 «지금부터 셀메이트 출고·반품 입고 멈춤» 을 알리고 답을 받는다 — 재고 CSV 를 두 번 받는다(1·4번, 한 번에 약 20분) — **멈춤은 약 1시간**으로 공지한다
 - [ ] 셀메이트에서 재고를 손으로 고치지 않는다(언제든)
 - [ ] `close --apply` 가 끝나면 «재개» 를 알린다
 - 새 마켓 주문이 들어오는 것은 괜찮다(미발송만 바뀌어 다음 회에 바르게 잡힌다).
@@ -340,13 +370,15 @@ T 이전 자사몰 주문(넘긴 주문)은 **셀메이트가 끝까지 내보�
 ### 8-2. 절차
 
 ```bash
-# 1. 셀메이트 재고 현황 CSV 받기 → apps/core/tmp/
-bash scripts/sellmate/run.sh live evening-reconcile apply apps/core/tmp/<받은 CSV>            # 🔍 품목별 차이·올릴 값
-bash scripts/sellmate/run.sh live evening-reconcile apply apps/core/tmp/<받은 CSV> --apply    # ✅ 원장 반영 + 업로드 CSV
-# 3. <OUT_DIR>/sellmate-reconcile-<회차>-upload.csv 를 셀메이트 «재고 수정» 에 올린다
+# 1. 셀메이트 재고 현황 CSV 받기(§3 과 같은 법) → apps/core/tmp/<날짜>/  (mkdir -p)
+bash scripts/sellmate/run.sh live evening-reconcile apply apps/core/tmp/<날짜>/<받은 CSV>            # 🔍 품목별 차이·올릴 값
+bash scripts/sellmate/run.sh live evening-reconcile apply apps/core/tmp/<날짜>/<받은 CSV> --apply    # ✅ 원장 반영 + 업로드 CSV
+# 3. 출력에 찍힌 업로드 CSV(기본 apps/core/tmp/sellmate-reconcile-<회차>-upload.csv)를 셀메이트 «재고 수정»
+#    (재고관리 > 재고 조사 > 재고 수정, 창고 «(기본)부천 물류창고», 바코드 A열·수량 B열 — §1 의 확인 결과)에 올린다
+#    → 결과 창의 «입력성공 N건» 과 오류 줄을 본다
 # 4. 재고 현황 CSV 를 «다시» 받는다(새 파일)
-bash scripts/sellmate/run.sh live evening-reconcile close apps/core/tmp/<다시 받은 CSV>            # 🔍
-bash scripts/sellmate/run.sh live evening-reconcile close apps/core/tmp/<다시 받은 CSV> --apply    # ✅ 기준값 확정
+bash scripts/sellmate/run.sh live evening-reconcile close apps/core/tmp/<날짜>/<다시 받은 CSV>            # 🔍
+bash scripts/sellmate/run.sh live evening-reconcile close apps/core/tmp/<날짜>/<다시 받은 CSV> --apply    # ✅ 기준값 확정
 ```
 
 **판정:**
@@ -455,8 +487,8 @@ npx tsx scripts/ops/emergency-outbound/index.ts prepare --stage live --warehouse
 - [x] §0-2 판정을 두 셸에서 돌리고 출력 절 이름으로 이 문서의 «판정 …» 을 찾을 수 있다 — 11-19 라이브: services 7초·auth 3초. 이 문서가 부르는 절(로케이션 2·3, 출고 4·6·7, 재고 1, Medusa 0·1)이 다 있다. 워크트리에서도 `deployments/lcnine/*` 의 sst shell 이 돈다
 - [ ] §2 아침 준비(로그인·터널·판정)를 이 문서만 보고 했다
 - [ ] §3 셀메이트 파일 다섯 개를 받았다(받는 화면·양식 이름을 여기 고쳐 적는다)
-- [ ] §4 의 모든 🔍 를 **dry-run 으로만** 돌렸다. ⛔ `--apply` 는 리허설에서 돌리지 않는다(`sync-stock` 은 dry-run 도 `DATABASE_URL` 이 필요하다 — `run.sh` 가 넣는다) — 11-19 라이브(위 재고 CSV 한 파일): `clear-reservations` 8초 · `import-products` 10초 · `sync-stock` 13초 · `load-shelf-positions` 11초 · `build-location-master` 41초, 모두 종료 0. `sync-stock` dry-run 은 «core 에 없는 품목» 을 보여 주고 0 으로 끝난다(그날 셀메이트에 새로 등록된 품목 — 4-2 순서대로 `import-products` 가 먼저 돈다). `build-location-master` 는 «사람이 정할 예외» 를 목록으로 보여 준다. 4-4 `init` dry-run(11-19, 11~13초)은 처음 **두 곳에서 거절됐다:** ① 미발송 주문 파일의 자사몰 판매처 행 중 주문번호가 `셀-YYYYMMDD-NNNN-NN` 꼴인 행(셀메이트에서 만든 주문으로 보인다)을 «YYYYMMDD-숫자 꼴이 아니다» 로 세어 «추정하지 않는다». ② 재고 CSV(«개발팀 데이터 내보내기용»)에 상품마다 **`합계` 행**(첫 칸 `합계`, 재고 칸만 값)이 있어 «옵션정보일련번호가 비었는데 다른 값이 있다» 로 파일 전체를 거절한다(§1 ⚠️ 항목이 실제로 났다). `sync-stock`·`import-products`·`load-shelf-positions` 는 같은 파일을 받아들인다 — 저녁 맞추기 파서만 엄격하다. → ②는 파서가 첫 칸 `합계` 행만 건너뛰게 고쳤다(`reconcile/stock-csv.ts`, 스펙 포함). ①을 뺀 사본으로 다시 돌리니 파일 읽기를 지나 «짝 못 지은 품목» 으로 멈췄다 — §1 «짝 표»(`pair --apply`) 와 그날 새 품목의 `import-products` 가 아직 라이브에 없어서다(정상, 전날까지 할 일). **남음: ①(`셀-` 주문번호) 처리 결정**
-- [x] §4-1 `set-reservation-cutover` 를 sst shell 꼴 그대로 **dry-run** 으로 돌려 «지금 값»(비어 있음)이 찍힌다 — 라이브에서 처음 쓰는 명령 꼴이라 여기서 확인한다 — 11-19 라이브: 몇 초, `현재 T: (비어 있음)`. 오프셋 없는 `--at` 은 거절됐다
+- [ ] §4 의 모든 🔍 를 **dry-run 으로만** 돌렸다. ⛔ `--apply` 는 리허설에서 돌리지 않는다(`sync-stock` 은 dry-run 도 `DATABASE_URL` 이 필요하다 — `run.sh` 가 넣는다) — 11-19 라이브(위 재고 CSV 한 파일): `clear-reservations` 8초 · `import-products` 10초 · `sync-stock` 13초 · `load-shelf-positions` 11초 · `build-location-master` 41초, 모두 종료 0. `sync-stock` dry-run 은 «core 에 없는 품목» 을 보여 주고 0 으로 끝난다(그날 셀메이트에 새로 등록된 품목 — 4-2 순서대로 `import-products` 가 먼저 돈다). `build-location-master` 는 «사람이 정할 예외» 를 목록으로 보여 준다. 4-4 `init` dry-run(11-19, 11~13초)은 처음 **두 곳에서 거절됐다:** ① 미발송 주문 파일의 자사몰 판매처 행 중 주문번호가 `셀-YYYYMMDD-NNNN-NN` 꼴인 행(셀메이트에서 만든 주문으로 보인다)을 «YYYYMMDD-숫자 꼴이 아니다» 로 세어 «추정하지 않는다». ② 재고 CSV(«개발팀 데이터 내보내기용»)에 상품마다 **`합계` 행**(첫 칸 `합계`, 재고 칸만 값)이 있어 «옵션정보일련번호가 비었는데 다른 값이 있다» 로 파일 전체를 거절한다(§1 ⚠️ 항목이 실제로 났다). `sync-stock`·`import-products`·`load-shelf-positions` 는 같은 파일을 받아들인다 — 저녁 맞추기 파서만 엄격하다. → ②는 파서가 첫 칸 `합계` 행만 건너뛰게 고쳤다(`reconcile/stock-csv.ts`, 스펙 포함). ①을 뺀 사본으로 다시 돌리니 파일 읽기를 지나 «짝 못 지은 품목» 으로 멈췄다 — §1 «짝 표»(`pair --apply`) 와 그날 새 품목의 `import-products` 가 아직 라이브에 없어서다(정상, 전날까지 할 일). ①은 원 주문 번호로 읽게 고쳤다(`reconcile/orders-csv.ts`, 11-19) — 고친 뒤 init dry-run 은 짝 표에서만 멈춘다
+- [x] §4-1 `set-reservation-cutover` 를 sst shell 꼴 그대로 **dry-run** 으로 돌려 «지금 값»(비어 있음)이 찍힌다 — 라이브에서 처음 쓰는 명령 꼴이라 여기서 확인한다 — 11-19 라이브: 몇 초, `현재 T: (비어 있음)`. 오프셋 없는 `--at` 은 거절됐다. 처음보는 사람 검토(11-19)에서 ✅ 안내 «같은 명령 끝에 `--apply`» 대로 닫는 따옴표 뒤에 붙이면 `bash -c` 의 인자가 되어 **오류 없이 dry-run 만** 도는 것을 찾았다(라이브에서 `--clear` 로 확인) → ✅ 명령을 따로, 따옴표 안에 적었다
 - [x] §5 `move-stock-to-shelf` dry-run 의 대상 수가 0 이 아니고, 걸린 시간을 적었다(apply 는 그 몇 배) — 11-19 라이브(`--include-rule=dash-position`, 동시 4): **약 5분**, 대상·옮길 것 모두 0 아님, 터널 안 죽음. 남김 사유에 `stale` 이 있었다 — `--positions-since` 보다 먼저 적재된 위치 행이다. T 당일엔 `load-shelf-positions` 직전 시각을 쓰므로 그 SKU 는 실사 대상으로 남는다
 - [x] §6-2 SQL 을 읽기 전용으로 돌렸다(init 전이라 0 이 정상 — 쿼리가 도는지만) — 11-19 라이브: READ ONLY 트랜잭션(§12-1 의 `readOnly`), 1초 미만, 세 값 0
 - [x] §7-1 `close-sellmate-leftovers` dry-run 이 «넘긴 주문 집합 없음(init 전)» 을 찍는다 — 11-19 라이브: 17초. dry-run 은 실제로 닫는 문장을 한 트랜잭션에서 돌린 뒤 롤백한다(그동안 대상 행이 잠긴다 — 짧지만 물류팀 작업이 적은 때에 돌린다). 돌린 뒤 판정 «출고 6» 의 ◆ 건수가 그대로인 것으로 롤백을 확인했다
