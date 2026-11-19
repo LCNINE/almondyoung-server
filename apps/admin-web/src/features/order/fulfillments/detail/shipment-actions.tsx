@@ -82,6 +82,13 @@ import {
   splitPreview,
 } from './shipment-split-model';
 import {
+  defaultSplitGroupKey,
+  planProfileState,
+  profileSplitMoves,
+} from './plan-profile';
+import { PlanProfileNotice } from './plan-profile-notice';
+import { ProfileSplitFields } from './profile-split-fields';
+import {
   recallConfirmText,
   shipmentActionsFor,
   type ShipmentAction,
@@ -101,6 +108,9 @@ type ActionDraft = {
   shipmentId: string;
   lineId: string;
   qty: string;
+  // 배송 프로필이 섞인 상자는 프로필 묶음째 나누는 것이 기본이다
+  splitMode: 'profile' | 'line';
+  splitGroupKey: string;
   shippingProfileId: string;
   reasonValue: OperationReasonValue;
   note: string;
@@ -139,10 +149,15 @@ function blankRecipient(snapshot: unknown): RecipientForm {
 }
 
 function freshDraft(shipment: ShipmentAdminDetail): ActionDraft {
+  const profile = planProfileState(shipment.lines);
+  const groups = profile.kind === 'blocked' ? profile.groups : [];
+
   return {
     shipmentId: shipment.id,
     lineId: shipment.lines[0]?.id ?? '',
     qty: '1',
+    splitMode: groups.length > 1 ? 'profile' : 'line',
+    splitGroupKey: defaultSplitGroupKey(groups),
     shippingProfileId: shipment.shippingProfileId ?? '',
     reasonValue: EMPTY_REASON,
     note: '',
@@ -169,6 +184,8 @@ export function ShipmentActions({
   const {
     lineId,
     qty,
+    splitMode,
+    splitGroupKey,
     shippingProfileId,
     reasonValue,
     note,
@@ -180,10 +197,17 @@ export function ShipmentActions({
   const edit = <K extends keyof ActionDraft>(key: K, value: ActionDraft[K]) =>
     setDraft((current) => ({ ...current, [key]: value }));
   const profiles = useDeliveryProfiles();
-  // 프로필이 하나뿐이면 고를 것이 없다
+  // 창이 열린 동안 상자가 새로 고쳐져도 지금 줄로 판단한다
+  const profileState = useMemo(
+    () => planProfileState(shipment.lines),
+    [shipment.lines]
+  );
+  // 상자 확정은 담긴 상품의 프로필만 받는다 — 알면 고를 것이 없다. 프로필이 하나뿐이어도 그렇다
   const chosenProfileId =
-    shippingProfileId ||
-    (profiles.data?.length === 1 ? profiles.data[0].id : '');
+    profileState.kind === 'single'
+      ? profileState.profile.id
+      : shippingProfileId ||
+        (profiles.data?.length === 1 ? profiles.data[0].id : '');
   const [showReasonErrors, setShowReasonErrors] = useState(false);
   const [retry, setRetry] = useState<RetryState | null>(null);
   const operation = useFulfillmentOperation(retry?.operationId ?? '');
@@ -192,6 +216,15 @@ export function ShipmentActions({
     (request) => request.idempotencyKey !== retry?.idempotencyKey
   );
 
+  const profileGroups =
+    profileState.kind === 'blocked' ? profileState.groups : [];
+  // 프로필별로 나누던 중 상자가 새로 고쳐져도 고른 적 없는 한 상품 나누기로 바꾸지 않는다
+  const splitBy = splitMode;
+  // 묶음이 둘 이상일 때만 나눈다 — 하나뿐이면 상자를 통째로 옮기게 된다
+  const splitGroup =
+    splitBy === 'profile' && profileGroups.length > 1
+      ? profileGroups.find((group) => group.key === splitGroupKey)
+      : undefined;
   const line = shipment.lines.find((entry) => entry.id === lineId);
   const preview = splitPreview(line, qty, shipment.lines);
   const boxTotal = shipment.lines.reduce((sum, entry) => sum + entry.qty, 0);
@@ -308,7 +341,15 @@ export function ShipmentActions({
 
   // 버튼으로 여는 창은 새 작업이다 — 앞 작업의 사유·메모·체크를 넘기지 않는다
   const startAction = (next: Action) => {
-    setDraft(freshDraft(shipment));
+    const fresh = freshDraft(shipment);
+    setDraft(
+      next === 'split' && fresh.splitMode === 'profile'
+        ? {
+            ...fresh,
+            reasonValue: { ...EMPTY_REASON, reasonCode: 'profile_mismatch' },
+          }
+        : fresh
+    );
     setShowReasonErrors(false);
     setAction(next);
   };
@@ -331,6 +372,32 @@ export function ShipmentActions({
     const sent = draft;
     const quantity = Number(qty);
     try {
+      if (action === 'split' && splitBy === 'profile') {
+        if (!splitGroup) {
+          toast.error('새 상자로 보낼 배송 프로필을 고르세요.');
+          return;
+        }
+        if (!canSubmitOperationReason('split', reasonValue)) {
+          setShowReasonErrors(true);
+          return;
+        }
+        const data = {
+          expectedManifestVersion: shipment.manifestVersion,
+          moves: profileSplitMoves(splitGroup),
+          ...toOperationReasonPayload('split', reasonValue),
+        };
+        const run: () => Promise<void> = async () => {
+          registerPending(idempotencyKey, action, sent, run);
+          const result = await split.mutateAsync({
+            shipmentId: shipment.id,
+            data,
+            idempotencyKey,
+          });
+          registerResult(result, idempotencyKey, action, sent, run);
+        };
+        await run();
+        return;
+      }
       if (action === 'split') {
         const reasonReady = canSubmitOperationReason('split', reasonValue);
         if (!reasonReady) setShowReasonErrors(true);
@@ -396,6 +463,7 @@ export function ShipmentActions({
         return;
       }
       if (action === 'plan') {
+        if (profileState.kind === 'blocked') return;
         if (!chosenProfileId) {
           toast.error('배송 프로필을 고르세요.');
           return;
@@ -545,7 +613,43 @@ export function ShipmentActions({
             <DialogTitle>{action ? ACTION_TITLE[action] : ''}</DialogTitle>
           </DialogHeader>
 
-          {action === 'split' && (
+          {action === 'split' &&
+            (profileGroups.length > 1 || splitMode === 'profile') && (
+            <div
+              role="group"
+              aria-label="나누는 방법"
+              className="flex flex-wrap gap-2"
+            >
+              <Button
+                type="button"
+                size="sm"
+                variant={splitBy === 'profile' ? 'default' : 'outline'}
+                aria-pressed={splitBy === 'profile'}
+                onClick={() => edit('splitMode', 'profile')}
+              >
+                배송 프로필별로
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={splitBy === 'line' ? 'default' : 'outline'}
+                aria-pressed={splitBy === 'line'}
+                onClick={() => edit('splitMode', 'line')}
+              >
+                상품 하나만
+              </Button>
+            </div>
+          )}
+
+          {action === 'split' && splitBy === 'profile' && (
+            <ProfileSplitFields
+              groups={profileGroups}
+              groupKey={splitGroupKey}
+              onGroupKeyChange={(key) => edit('splitGroupKey', key)}
+            />
+          )}
+
+          {action === 'split' && splitBy === 'line' && (
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-2 space-y-1.5">
                 <Label htmlFor="split-line">나눌 상품</Label>
@@ -637,7 +741,30 @@ export function ShipmentActions({
             </div>
           )}
 
-          {action === 'plan' && (
+          {action === 'plan' && profileState.kind === 'blocked' && (
+            <PlanProfileNotice
+              groups={profileState.groups}
+              onSplitByProfile={
+                allowed.includes('split') && canRun(useSplitShipment)
+                  ? () => startAction('split')
+                  : null
+              }
+            />
+          )}
+
+          {action === 'plan' && profileState.kind === 'single' && (
+            <div className="space-y-1.5">
+              <p className="text-sm font-medium">배송 프로필</p>
+              <p className="rounded-md bg-muted/50 px-3 py-2 text-sm">
+                {profileState.profile.name}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                이 상자 상품에 지정된 배송 프로필로 확정해요.
+              </p>
+            </div>
+          )}
+
+          {action === 'plan' && profileState.kind === 'unknown' && (
             <div className="space-y-1.5">
               <Label htmlFor="plan-profile">배송 프로필</Label>
               <Select
@@ -752,17 +879,20 @@ export function ShipmentActions({
             <Button variant="outline" onClick={() => setAction(null)}>
               취소
             </Button>
-            <Button
-              variant={action === 'recall' ? 'destructive' : 'default'}
-              onClick={() => submit()}
-              disabled={
-                pending ||
-                (action === 'split' && !preview) ||
-                (action === 'recall' && (!attemptId || !physicalRecovery))
-              }
-            >
-              {pending ? '처리 중…' : action ? SUBMIT_LABEL[action] : ''}
-            </Button>
+            {!(action === 'plan' && profileState.kind === 'blocked') && (
+              <Button
+                variant={action === 'recall' ? 'destructive' : 'default'}
+                onClick={() => submit()}
+                disabled={
+                  pending ||
+                  (action === 'split' &&
+                    (splitBy === 'profile' ? !splitGroup : !preview)) ||
+                  (action === 'recall' && (!attemptId || !physicalRecovery))
+                }
+              >
+                {pending ? '처리 중…' : action ? SUBMIT_LABEL[action] : ''}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

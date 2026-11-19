@@ -114,6 +114,14 @@ function uniqueSorted(values: readonly string[]): string[] {
   return [...new Set(values)].sort();
 }
 
+/** SKU 에 지정된 배송 프로필 — 지정이 없으면 null. 이름은 프로필 행이 있을 때만 있다. */
+function deliveryProfileOf(
+  sku: { profileId: string | null; profileName: string | null } | undefined,
+): { id: string; name: string } | null {
+  if (!sku?.profileId) return null;
+  return { id: sku.profileId, name: sku.profileName ?? '' };
+}
+
 function assertPositiveSafeInteger(name: string, value: number): void {
   if (!Number.isSafeInteger(value) || value <= 0) {
     throw new BadRequestException(`${name} must be a positive safe integer`);
@@ -1175,10 +1183,19 @@ export class ShipmentPlanningService {
       const aggregate = await this.loadAggregate(shipmentId, trx);
       const lineIds = aggregate.lines.map((line) => line.id);
       const skuIds = uniqueSorted(aggregate.lines.map((line) => line.skuId));
-      const skuNamesQuery: Promise<Array<{ id: string; name: string }>> = skuIds.length
+      const skuNamesQuery: Promise<
+        Array<{ id: string; name: string; code: string; profileId: string | null; profileName: string | null }>
+      > = skuIds.length
         ? trx
-            .select({ id: wmsTables.skus.id, name: wmsTables.skus.name })
+            .select({
+              id: wmsTables.skus.id,
+              name: wmsTables.skus.name,
+              code: wmsTables.skus.code,
+              profileId: wmsTables.skus.deliveryProfileId,
+              profileName: wmsTables.deliveryProfiles.name,
+            })
             .from(wmsTables.skus)
+            .leftJoin(wmsTables.deliveryProfiles, eq(wmsTables.deliveryProfiles.id, wmsTables.skus.deliveryProfileId))
             .where(inArray(wmsTables.skus.id, skuIds))
         : Promise.resolve([]);
       const [reservations, waybills, workItems, attempts, origins, operations, skuNames] = await Promise.all([
@@ -1264,7 +1281,7 @@ export class ShipmentPlanningService {
             })
           : [];
       const originByLineId = new Map(origins.map((origin) => [origin.salesOrderLineId, origin]));
-      const skuNameById = new Map(skuNames.map((sku) => [sku.id, sku.name]));
+      const skuById = new Map(skuNames.map((sku) => [sku.id, sku]));
       const reservationByLine = new Map<string, typeof reservations>();
       for (const reservation of reservations) {
         if (!reservation.shipmentLineId) continue;
@@ -1277,7 +1294,9 @@ export class ShipmentPlanningService {
         ...aggregate.shipment,
         lines: aggregate.lines.map((line) => ({
           ...line,
-          skuName: skuNameById.get(line.skuId) ?? null,
+          skuName: skuById.get(line.skuId)?.name ?? null,
+          skuCode: skuById.get(line.skuId)?.code ?? null,
+          deliveryProfile: deliveryProfileOf(skuById.get(line.skuId)),
           origin: line.salesOrderLineId ? (originByLineId.get(line.salesOrderLineId) ?? null) : null,
           reservations: reservationByLine.get(line.id) ?? [],
         })),

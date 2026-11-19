@@ -498,6 +498,31 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
     });
   });
 
+  it('상자 상세의 줄은 SKU 코드와 지금 SKU 에 지정된 배송 프로필을 싣는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const base = await consolidationBase(tx);
+      const source = await createConsolidationSource(tx, wired, base, { quantity: 1, customerId: randomUUID() });
+      const [sku] = await tx
+        .select({ code: wmsTables.skus.code, profileId: wmsTables.skus.deliveryProfileId })
+        .from(wmsTables.skus)
+        .where(eq(wmsTables.skus.id, base.skuId));
+      const [profile] = await tx
+        .select({ id: wmsTables.deliveryProfiles.id, name: wmsTables.deliveryProfiles.name })
+        .from(wmsTables.deliveryProfiles)
+        .where(eq(wmsTables.deliveryProfiles.id, sku.profileId ?? ''));
+
+      expect((await planning.getShipmentDetail(source.shipment.id, tx)).lines).toEqual([
+        expect.objectContaining({ skuId: base.skuId, skuCode: sku.code, deliveryProfile: profile }),
+      ]);
+
+      await tx.update(wmsTables.skus).set({ deliveryProfileId: null }).where(eq(wmsTables.skus.id, base.skuId));
+
+      expect((await planning.getShipmentDetail(source.shipment.id, tx)).lines).toEqual([
+        expect.objectContaining({ skuId: base.skuId, skuCode: sku.code, deliveryProfile: null }),
+      ]);
+    });
+  });
+
   it('쇼핑몰 품목 번호가 없는 상자는 정보 필요로 두고 사유를 보인다', async () => {
     await inRollbackTx(db, async (tx) => {
       const base = await consolidationBase(tx);
