@@ -29,7 +29,7 @@
 
 빈칸: `<T>` 는 컷오버 시각(KST 오프셋을 붙인 ISO, 예 `2026-12-01T09:00:00+09:00`), `<T-날짜>` 는 그날 날짜, `<창고 id>`·`<공유 이름>`·`<실행 id>` 는 리허설에서 정해 적는다.
 
-**T 는 하나다.** 같은 값을 `set-reservation-cutover --at`, `evening-reconcile init --cutover-at`, 판정의 `--after-cutover` 에 쓴다. 정하는 법은 §3.
+**T 는 하나다.** 같은 값을 `set-reservation-cutover --at`, `evening-reconcile init --cutover-at`, 판정의 `--after-cutover`, 그리고 KST 로 `clear-reservations --before` 에 쓴다. 정하는 법은 §3(`collect-cellmate` 마지막 실행 시각).
 
 ### 0-2. 판정 스크립트 (축 0)
 
