@@ -39,6 +39,8 @@ import {
 } from '../../../fulfillment/services/__support__/logistics-fixtures';
 import { cleanupPreparationFixture } from '../../../fulfillment/services/__support__/outbound-preparation-cleanup';
 import { snapshot } from '../../movement/services/__support__/movement-location-policy-fixtures';
+import { OutboundScanRejectionManager } from '../../../fulfillment/scan-rejections/outbound-scan-rejection.manager';
+import { BarcodeService } from '../../shared/services/barcode.service';
 
 // Only the unused native OS transport is replaced. All requests below cross a
 // real listening HTTP socket into production routes/services and PostgreSQL.
@@ -93,6 +95,10 @@ describeIfDb('warehouse demo native runner → Core HTTP → PostgreSQL', () => 
         // 라이브 enforce 와 같은 인가 — 권한 라우트는 새 판정이 정한다.
         ...enforcedPermissionProvidersForTesting(byRole),
         { provide: LocationOutboundService, useValue: outbound.location },
+        {
+          provide: OutboundScanRejectionManager,
+          useValue: new OutboundScanRejectionManager(dbServiceFor(db), new BarcodeService(dbServiceFor(db))),
+        },
         { provide: PickingProcessService, useValue: outbound.picking },
         {
           provide: InboundService,

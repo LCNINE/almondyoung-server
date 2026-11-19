@@ -1163,6 +1163,13 @@
       "when": 1794979861323,
       "tag": "20261118053101_add-waybill-operation-types",
       "breakpoints": true
+    },
+    {
+      "idx": 166,
+      "version": "7",
+      "when": 1795077455511,
+      "tag": "20261119083735_add-outbound-scan-rejections",
+      "breakpoints": true
     }
   ]
 }

@@ -1,6 +1,7 @@
 import { readFileSync } from 'fs';
 import { dirname, join, relative } from 'path';
 import * as ts from 'typescript';
+import { OUTBOUND_SAVE_COMMANDS } from '../reader/scan-rejections';
 
 /**
  * 물류앱은 아래 출고 저장 경로의 409 를 «반영된 것이 없는 거절»로 보고 그 기기의 작업을 묶지 않는다
@@ -213,6 +214,19 @@ function savePointReturnProblems(src: ts.SourceFile, scope: ts.MethodDeclaration
   ];
 }
 
+/** `@RecordsOutboundRejection('<명령>')` 의 명령 이름 — 없으면 undefined. */
+function recordedCommand(route: Route): string | undefined {
+  for (const decorator of ts.getDecorators(route.method) ?? []) {
+    const call = decorator.expression;
+    if (!ts.isCallExpression(call) || call.expression.getText(route.src) !== 'RecordsOutboundRejection') continue;
+    const [arg] = call.arguments;
+    if (!arg || !ts.isStringLiteral(arg))
+      throw new Error(`${route.route}: RecordsOutboundRejection needs a string literal`);
+    return arg.text;
+  }
+  return undefined;
+}
+
 describe('물류앱이 «반영 안 된 거절»로 보는 출고 저장 경로', () => {
   const routes = appRoutes();
   const declared = controllerRoutes();
@@ -220,6 +234,22 @@ describe('물류앱이 «반영 안 된 거절»로 보는 출고 저장 경로'
   it('앱 목록의 경로는 모두 core 에 있다', () => {
     expect(routes.length).toBeGreaterThan(0);
     expect(routes.filter((r) => !declared.some((d) => d.route === r))).toEqual([]);
+  });
+
+  it.each(routes)('%s 의 거절은 관리자 화면에 남고, 그 명령 이름은 막힘 판정이 아는 이름이다', (name) => {
+    const route = declared.find((d) => d.route === name)!;
+    const command = recordedCommand(route);
+    expect(Object.keys(OUTBOUND_SAVE_COMMANDS)).toContain(command);
+    // 서비스가 실제로 그 이름으로 명령을 남겨야 «뒤에 반영된 출고 저장»을 찾을 수 있다.
+    const { field, name: methodName } = delegatedCall(route);
+    const src = parse(serviceFile(route, field));
+    const method = methodOf(src, methodName).getText(src);
+    const [, family, action] = /^shipment\.(\w+)\.(\w+)$/.exec(command ?? '') ?? [];
+    expect(
+      method.includes(`commandType: '${command}'`) ||
+        (src.getText().includes(`commandType: \`shipment.${family}.\${command}\``) &&
+          new RegExp(`this\\.execute(<[^>]*>)?\\(\\s*'${action}'`).test(method)),
+    ).toBe(true);
   });
 
   it.each(routes)('%s 는 명령 기록과 처리를 한 저장점 안에서 하고, 그 뒤에는 반영 없는 거절만 던진다', (name) => {
