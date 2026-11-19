@@ -102,11 +102,14 @@ cd deployments/lcnine/auth     && npx sst shell --stage live -- npx tsx ../../..
 1. **`collect-cellmate` 마지막 실행.** 매일 돌리던 사람이 늘 하던 방식(`scripts/ops/cellmate-local/README.md`)으로 돌리고, 나온 파일을 셀메이트에 올린다. **이 뒤로는 돌리지 않는다.** 이 뒤에 들어온 자사몰 주문은 앱 몫이다.
 2. 셀메이트 화면에서 바로 이어서 받는다(`docs/runbooks/feature-admin-web-merge.md` §4-1, `scripts/sellmate/README.md` «입력 파일 받기»):
    - [ ] **재고 현황 CSV** — `상품코드(카페)`·`미발송주문수`·`상품위치` 열 포함. 이 파일이 마지막 `sync-stock`·`load-shelf-positions`·`init` 의 입력이다
+     - 받는 법(11-19 라이브 리허설): 재고관리 > 재고 상품 관리 > 재고 현황 목록 → 조건 없이 «검색» → «엑셀 다운로드 > 검색결과 전체 다운로드» → 새 창에서 양식 **«개발팀 데이터 내보내기용»** → «다운로드» → 대기열에 올라간다. 대기열은 상단 «엑셀다운로드»(`/imp/Views/excel_api.asp`)에서 보고, «다운가능여부» 가 버튼이 되면 받는다. 1분마다 «새로고침» 을 누르라는 안내가 뜬다
+     - ⏱ **생성에 약 20분**(11-19: 19:28 시작 → 19:47 완료), 파일 약 120MB(`.xls`, 실제로는 HTML). **파일명 시각은 «완료» 시각이다**(`stk_stockList_20261119_194756` = 19:47:56) — `clear-reservations` 가 이 시각을 기준 시각으로 읽는다
+     - 이 양식에는 `바코드번호2`·`공급처`·`원가`·`바코드번호(서식)` 도 들어 있다 — 11-19 에 같은 파일로 `backfill-barcode2` dry-run 이 돌았다. 아래 «현재고 전체 CSV»·«상품목록 엑셀» 을 따로 받을 필요가 있는지는 그 스크립트들로 확인한다
    - [ ] **현재고 전체 CSV** — 바코드번호2 가 든 양식(필요하면 백필을 한 번 더)
    - [ ] **상품목록 엑셀**(상품관리 > 상품목록, `공급처`·`원가`·`바코드번호(서식)` 포함)
    - [ ] **미발송 주문 목록** — `init --sellmate-orders` 의 입력. 판매처·주문번호 열
    - [ ] **주문이력** — 보충 제안 수요(`import-demand-history`)를 나중에 메울 원본
-3. **T 를 정한다.** T = 재고 현황 CSV 의 스냅샷 시각(파일명에서 `clear-reservations` 가 읽는 기준 시각) **이상**. 그보다 이르면 [T, 기준 시각) 주문의 Medusa 예약이 지워진 뒤 투영이 다시 만들어 이중 차감된다(`selmate-stock-pipeline.md` Ⓑ «컷오버 당일 순서 중 Medusa 예약 두 줄»). 적어 둔다: `<T>`.
+3. **T 를 정한다.** T = 재고 현황 CSV 의 스냅샷 시각(파일명에서 `clear-reservations` 가 읽는 기준 시각 = 내보내기 **완료** 시각) **이상**. 그보다 이르면 [T, 기준 시각) 주문의 Medusa 예약이 지워진 뒤 투영이 다시 만들어 이중 차감된다(`selmate-stock-pipeline.md` Ⓑ «컷오버 당일 순서 중 Medusa 예약 두 줄»). 적어 둔다: `<T>`.
 
 **판정:** 파일 다섯 개가 다 있고, 미발송 주문 목록에 자사몰 판매처 행이 있다.
 
@@ -442,7 +445,7 @@ npx tsx scripts/ops/emergency-outbound/index.ts prepare --stage live --warehouse
 - [x] §0-2 판정을 두 셸에서 돌리고 출력 절 이름으로 이 문서의 «판정 …» 을 찾을 수 있다 — 11-19 라이브: services 7초·auth 3초. 이 문서가 부르는 절(로케이션 2·3, 출고 4·6·7, 재고 1, Medusa 0·1)이 다 있다. 워크트리에서도 `deployments/lcnine/*` 의 sst shell 이 돈다
 - [ ] §2 아침 준비(로그인·터널·판정)를 이 문서만 보고 했다
 - [ ] §3 셀메이트 파일 다섯 개를 받았다(받는 화면·양식 이름을 여기 고쳐 적는다)
-- [ ] §4 의 모든 🔍 를 **dry-run 으로만** 돌렸다. ⛔ `--apply` 는 리허설에서 돌리지 않는다(`sync-stock` 은 dry-run 도 `DATABASE_URL` 이 필요하다 — `run.sh` 가 넣는다)
+- [ ] §4 의 모든 🔍 를 **dry-run 으로만** 돌렸다. ⛔ `--apply` 는 리허설에서 돌리지 않는다(`sync-stock` 은 dry-run 도 `DATABASE_URL` 이 필요하다 — `run.sh` 가 넣는다) — 11-19 라이브(위 재고 CSV 한 파일): `clear-reservations` 8초 · `import-products` 10초 · `sync-stock` 13초 · `load-shelf-positions` 11초 · `build-location-master` 41초, 모두 종료 0. `sync-stock` dry-run 은 «core 에 없는 품목» 을 보여 주고 0 으로 끝난다(그날 셀메이트에 새로 등록된 품목 — 4-2 순서대로 `import-products` 가 먼저 돈다). `build-location-master` 는 «사람이 정할 예외» 를 목록으로 보여 준다. **남음: 4-4 `init` dry-run(미발송 주문 목록 필요)**
 - [x] §4-1 `set-reservation-cutover` 를 sst shell 꼴 그대로 **dry-run** 으로 돌려 «지금 값»(비어 있음)이 찍힌다 — 라이브에서 처음 쓰는 명령 꼴이라 여기서 확인한다 — 11-19 라이브: 몇 초, `현재 T: (비어 있음)`. 오프셋 없는 `--at` 은 거절됐다
 - [x] §5 `move-stock-to-shelf` dry-run 의 대상 수가 0 이 아니고, 걸린 시간을 적었다(apply 는 그 몇 배) — 11-19 라이브(`--include-rule=dash-position`, 동시 4): **약 5분**, 대상·옮길 것 모두 0 아님, 터널 안 죽음. 남김 사유에 `stale` 이 있었다 — `--positions-since` 보다 먼저 적재된 위치 행이다. T 당일엔 `load-shelf-positions` 직전 시각을 쓰므로 그 SKU 는 실사 대상으로 남는다
 - [x] §6-2 SQL 을 읽기 전용으로 돌렸다(init 전이라 0 이 정상 — 쿼리가 도는지만) — 11-19 라이브: READ ONLY 트랜잭션(§12-1 의 `readOnly`), 1초 미만, 세 값 0
