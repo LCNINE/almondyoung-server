@@ -3,6 +3,7 @@ import { InjectTypedDb, DbService } from '@app/db';
 import { wmsSchema, DbTx } from '../../schema/inventory.schema';
 import { GetStockQueryDto } from '../dto/get-stock-query.dto';
 import { GetStockSummaryListQueryDto } from '../dto/stock-summary-list.dto';
+import { GetStockSummaryByGroupQueryDto } from '../dto/stock-summary-by-group.dto';
 import { InboundPipelineResponseDto } from '../dto/inbound-pipeline.dto';
 import { StockProjectionReader } from './stock-projection.reader';
 import { StockProjectionManager } from './stock-projection.manager';
@@ -25,6 +26,14 @@ export class StockProjectionService {
 
   listStockSummaries(query: GetStockSummaryListQueryDto, tx?: DbTx) {
     return this.reader.listStockSummaries(query, tx);
+  }
+
+  listStockSummariesByGroup(query: GetStockSummaryByGroupQueryDto, tx?: DbTx) {
+    return this.reader.listStockSummariesByGroup(query, tx);
+  }
+
+  listUnshippedOrders(skuId: string, warehouseId: string, tx?: DbTx) {
+    return this.reader.listUnshippedOrders(skuId, warehouseId, tx);
   }
 
   getTotalBySku(skuId: string, tx?: DbTx) {

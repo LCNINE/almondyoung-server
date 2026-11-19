@@ -9,14 +9,11 @@ import {
 import { Button } from '@/components/ui/button';
 import { useStockHistory, useCancelStockEvent } from '@/lib/services/inventory';
 import { Can } from '@/components/auth/can';
-import type {
-  StockHistoryDto,
-  StockSummaryDto,
-} from '@/lib/types/dto/inventory';
+import type { StockHistoryDto, StockRowRef } from '@/lib/types/dto/inventory';
 import { toast } from 'sonner';
 
 type Props = {
-  row: StockSummaryDto | null;
+  row: StockRowRef | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 };

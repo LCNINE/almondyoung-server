@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, eq, inArray, SQL, sql } from 'drizzle-orm';
+import { and, count, desc, eq, gt, ilike, inArray, isNotNull, isNull, lt, lte, ne, or, SQL, sql } from 'drizzle-orm';
 import { NotFoundError } from '@app/shared';
 import { InjectTypedDb, DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
@@ -12,6 +12,17 @@ import { PaginatedResponseDto } from '../../shared/dto';
 import { LocationContentsDto } from '../dto/location-contents.dto';
 import { readLocationStockAvailability } from '../../shared/availability/location-stock-availability';
 import { physicalQuantity } from './physical-quantity';
+import { GetStockSummaryByGroupQueryDto, StockSummaryByGroupResponseDto } from '../dto/stock-summary-by-group.dto';
+import { groupStockSummaries } from './group-stock-summaries';
+import {
+  productImages,
+  productMasterVariants,
+  productMasterVersions,
+  salesChannels,
+} from '../../../catalog/schema/catalog.schema';
+import { remainingUnshippedQuantity, unshippedDemandPredicate } from './unshipped-demand';
+import { unshippedOrders } from './unshipped-orders';
+import { UnshippedOrdersResponseDto } from '../dto/unshipped-orders.dto';
 
 @Injectable()
 export class StockProjectionReader {
@@ -144,6 +155,264 @@ export class StockProjectionReader {
         page,
         limit,
       };
+    }, tx);
+  }
+
+  async listStockSummariesByGroup(
+    query: GetStockSummaryByGroupQueryDto,
+    tx?: DbTx,
+  ): Promise<StockSummaryByGroupResponseDto> {
+    const { warehouseId, supplierId, search, queue, page = 1, limit = 20 } = query;
+
+    return this.dbService.run(async (trx) => {
+      const v = wmsSchema.stockSummary;
+      const { skus, skuGroups, skuShelfPositions, skuSuppliers, replenishmentSkuOverrides } = wmsTables;
+      const { fulfillmentOrders: fo, fulfillmentOrderItems: foi, productMatchings, productVariantSkuLinks } = wmsTables;
+      const unshipped = trx.$with('unshipped_stock').as(
+        trx
+          .select({
+            skuId: foi.skuId,
+            warehouseId: fo.warehouseId,
+            quantity: sql<number>`sum(${remainingUnshippedQuantity})`.mapWith(Number).as('unshipped_quantity'),
+          })
+          .from(foi)
+          .innerJoin(fo, eq(fo.id, foi.fulfillmentOrderId))
+          .where(and(unshippedDemandPredicate, warehouseId ? eq(fo.warehouseId, warehouseId) : undefined))
+          .groupBy(foi.skuId, fo.warehouseId),
+      );
+      const unshippedQuantity = sql<number>`coalesce(${unshipped.quantity}, 0)`.mapWith(Number);
+      const matches: (SQL | undefined)[] = [];
+
+      if (supplierId) {
+        matches.push(
+          inArray(
+            skus.id,
+            trx.select({ skuId: skuSuppliers.skuId }).from(skuSuppliers).where(eq(skuSuppliers.supplierId, supplierId)),
+          ),
+        );
+      }
+
+      if (search?.trim()) {
+        const like = `%${search.trim()}%`;
+        const matchingProductSkus = trx
+          .select({ skuId: productVariantSkuLinks.skuId })
+          .from(productMasterVersions)
+          .innerJoin(productMasterVariants, eq(productMasterVariants.versionId, productMasterVersions.id))
+          .innerJoin(productMatchings, eq(productMatchings.variantId, productMasterVariants.variantId))
+          .innerJoin(productVariantSkuLinks, eq(productVariantSkuLinks.productMatchingId, productMatchings.id))
+          .where(
+            and(
+              ilike(productMasterVersions.name, like),
+              eq(productMasterVersions.status, 'active'),
+              isNull(productMasterVersions.deletedAt),
+            ),
+          );
+
+        matches.push(or(ilike(skus.name, like), ilike(skus.code, like), inArray(skus.id, matchingProductSkus)));
+      }
+
+      const rows = trx.$with('group_stock_rows').as(
+        trx
+          .select({
+            groupKey:
+              sql<string>`case when ${skus.groupId} is null then 'sku:' || ${skus.id} else 'group:' || ${skus.groupId} end`.as(
+                'group_key',
+              ),
+            groupId: skus.groupId,
+            groupName: sql<string>`coalesce(${skuGroups.name}, ${skus.name})`.as('group_name'),
+            groupCode: sql<string | null>`${skuGroups.code}`.as('group_code'),
+            skuId: v.skuId,
+            skuName: skus.name,
+            skuCode: skus.code,
+            warehouseId: v.warehouseId,
+            warehouseName: sql<string>`coalesce(${v.warehouseName}, '')`.as('warehouse_name'),
+            shelfPosition: skuShelfPositions.positionCode,
+            onHandQty: v.onHandQty,
+            defectiveQty: v.defectiveQty,
+            inTransferQty: v.inTransferQty,
+            returnedQty: v.returnedQty,
+            // 셀메이트와 같은 가용 = 정상 재고 − 미발송. 예약은 가용만큼만 잡혀 재고 0 에 걸린 주문을 못 센다.
+            availableQuantity: sql<number>`${v.onHandQty} - ${unshippedQuantity}`
+              .mapWith(Number)
+              .as('available_quantity'),
+            unshippedQuantity: unshippedQuantity.as('unshipped_quantity'),
+            safetyStock: replenishmentSkuOverrides.safetyStock,
+            matchesFilters: sql<boolean>`${and(...matches) ?? sql`true`}`.as('matches_filters'),
+          })
+          .from(v)
+          .innerJoin(skus, eq(skus.id, v.skuId))
+          .leftJoin(skuGroups, eq(skuGroups.id, skus.groupId))
+          .leftJoin(skuShelfPositions, eq(skuShelfPositions.skuId, v.skuId))
+          .leftJoin(replenishmentSkuOverrides, eq(replenishmentSkuOverrides.skuId, v.skuId))
+          .leftJoin(unshipped, and(eq(unshipped.skuId, v.skuId), eq(unshipped.warehouseId, v.warehouseId)))
+          .where(
+            and(
+              warehouseId ? eq(v.warehouseId, warehouseId) : undefined,
+              or(
+                ne(v.onHandQty, 0),
+                ne(v.defectiveQty, 0),
+                ne(v.inTransferQty, 0),
+                ne(v.returnedQty, 0),
+                ne(v.reservedQty, 0),
+                ne(v.inboundPendingQty, 0),
+                ne(v.transferPendingQty, 0),
+                gt(unshippedQuantity, 0),
+                // 다 써서 0 이 된 옵션도 남긴다 — 그 창고에 원장 행이 있었으면 가용재고 없음·안정재고 미만에 걸려야 한다.
+                sql`exists (select 1 from ${wmsTables.stockLedgers} where ${wmsTables.stockLedgers.skuId} = ${v.skuId} and ${wmsTables.stockLedgers.warehouseId} = ${v.warehouseId})`,
+              ),
+            ),
+          ),
+      );
+      let queueMatch: SQL | undefined;
+
+      const isShort = sql`${rows.unshippedQuantity} > ${rows.onHandQty}`;
+      const isBelowSafety = and(isNotNull(rows.safetyStock), lt(rows.availableQuantity, rows.safetyStock));
+      const isEmpty = lte(rows.availableQuantity, 0);
+
+      if (queue === 'unshipped') queueMatch = gt(rows.unshippedQuantity, 0);
+      if (queue === 'shortage') queueMatch = isShort;
+      if (queue === 'below_safety_stock') queueMatch = isBelowSafety;
+      if (queue === 'out_of_stock') queueMatch = isEmpty;
+
+      const groups = trx.$with('stock_groups').as(
+        trx
+          .select({
+            groupKey: rows.groupKey,
+            groupName: rows.groupName,
+            // 불량·반품·이동 중 재고로는 못 보내므로 부족은 정상 재고(ON_HAND)와 비교한다.
+            maxShortage: sql<number>`max(greatest(${rows.unshippedQuantity} - ${rows.onHandQty}, 0))`.as(
+              'max_shortage',
+            ),
+            maxUnshipped: sql<number>`max(${rows.unshippedQuantity})`.as('max_unshipped'),
+          })
+          .from(rows)
+          .groupBy(rows.groupKey, rows.groupName)
+          // 검색·공급사·큐는 그룹을 고르고, 반환할 형제 SKU 행은 좁히지 않는다.
+          .having(and(sql`bool_or(${rows.matchesFilters})`, queueMatch ? sql`bool_or(${queueMatch})` : undefined)),
+      );
+      const [countResult] = await trx.with(unshipped, rows, groups).select({ total: count() }).from(groups);
+      // 요약 카드 — 큐와 상관없이 창고·공급처·검색 조건 안의 전체 숫자.
+      const [summary] = await trx
+        .with(unshipped, rows)
+        .select({
+          unshippedProducts:
+            sql<number>`count(distinct ${rows.groupKey}) filter (where ${rows.unshippedQuantity} > 0)`.mapWith(Number),
+          shortageQuantity:
+            sql<number>`coalesce(sum(greatest(${rows.unshippedQuantity} - ${rows.onHandQty}, 0)), 0)`.mapWith(Number),
+          shortageOptions: sql<number>`count(*) filter (where ${isShort})`.mapWith(Number),
+          belowSafetyOptions: sql<number>`count(*) filter (where ${isBelowSafety})`.mapWith(Number),
+          emptyOptions: sql<number>`count(*) filter (where ${isEmpty})`.mapWith(Number),
+        })
+        .from(rows)
+        // 카드를 누르면 상품(그룹) 단위로 형제 옵션까지 남으므로, 숫자도 검색·공급처에 걸린 상품의 옵션 전체로 센다.
+        .where(
+          sql`${rows.groupKey} in (select ${rows.groupKey} from ${rows} group by ${rows.groupKey} having bool_or(${rows.matchesFilters}))`,
+        );
+      // CTE 끼리 조인하면 drizzle 가 별칭 칸을 테이블 없이 써서("group_key" = "group_key") 모호해진다 — 두 번에 나눠 읽는다.
+      const pageGroups = await trx
+        .with(unshipped, rows, groups)
+        .select({ groupKey: groups.groupKey })
+        .from(groups)
+        .orderBy(desc(groups.maxShortage), desc(groups.maxUnshipped), groups.groupName, groups.groupKey)
+        .limit(limit)
+        .offset((page - 1) * limit);
+      const groupOrder = new Map(pageGroups.map((group, index) => [group.groupKey, index]));
+      const pageSkuRows =
+        groupOrder.size === 0
+          ? []
+          : (
+              await trx
+                .with(unshipped, rows)
+                .select()
+                .from(rows)
+                .where(inArray(rows.groupKey, [...groupOrder.keys()]))
+                .orderBy(rows.skuName, rows.skuCode, rows.warehouseName, rows.warehouseId)
+            ).sort((a, b) => (groupOrder.get(a.groupKey) ?? 0) - (groupOrder.get(b.groupKey) ?? 0));
+
+      const pageSkuIds = [...new Set(pageSkuRows.map((row) => row.skuId))];
+      // 셀메이트 상품 사진 자리 — 스토어프론트와 같은 원천인 쇼핑몰 상품 대표 이미지. SKU 마다 매칭된 활성 상품 중 먼저 만든 것.
+      const images =
+        pageSkuIds.length === 0
+          ? []
+          : await trx
+              .selectDistinctOn([productVariantSkuLinks.skuId], {
+                skuId: productVariantSkuLinks.skuId,
+                fileId: productImages.fileId,
+              })
+              .from(productVariantSkuLinks)
+              .innerJoin(productMatchings, eq(productMatchings.id, productVariantSkuLinks.productMatchingId))
+              .innerJoin(productMasterVariants, eq(productMasterVariants.variantId, productMatchings.variantId))
+              .innerJoin(productMasterVersions, eq(productMasterVersions.id, productMasterVariants.versionId))
+              .innerJoin(
+                productImages,
+                and(eq(productImages.versionId, productMasterVersions.id), eq(productImages.isPrimary, true)),
+              )
+              .where(
+                and(
+                  inArray(productVariantSkuLinks.skuId, pageSkuIds),
+                  eq(productMasterVersions.status, 'active'),
+                  isNull(productMasterVersions.deletedAt),
+                ),
+              )
+              .orderBy(productVariantSkuLinks.skuId, productMasterVersions.createdAt, productMasterVersions.id);
+
+      return {
+        data: groupStockSummaries(pageSkuRows, new Map(images.map((image) => [image.skuId, image.fileId]))),
+        total: countResult?.total ?? 0,
+        page,
+        limit,
+        summary: summary ?? {
+          unshippedProducts: 0,
+          shortageQuantity: 0,
+          shortageOptions: 0,
+          belowSafetyOptions: 0,
+          emptyOptions: 0,
+        },
+      };
+    }, tx);
+  }
+
+  async listUnshippedOrders(skuId: string, warehouseId: string, tx?: DbTx): Promise<UnshippedOrdersResponseDto> {
+    return this.dbService.run(async (trx) => {
+      const {
+        fulfillmentOrderItems: foi,
+        fulfillmentOrders: fo,
+        salesOrders: so,
+        shipmentLines,
+        shipments,
+      } = wmsTables;
+      const rows = await trx
+        .select({
+          fulfillmentOrderItemId: foi.id,
+          salesOrderId: so.id,
+          orderNo: sql<string | null>`coalesce(${so.displayOrderNo}, ${so.channelOrderId})`,
+          channelName: salesChannels.name,
+          orderDate: so.orderDate,
+          createdAt: fo.createdAt,
+          customerName: so.customerName,
+          remainingQuantity: remainingUnshippedQuantity,
+          // 예약 정본은 상자 라인의 confirmed 예약이다 — FOI.reserved_qty 는 V2 출고에서 갱신되지 않는다.
+          reservedQuantity: sql<number>`(
+            select coalesce(sum(${wmsTables.stockReservations.quantity}), 0)
+            from ${wmsTables.stockReservations}
+            inner join ${shipmentLines} sl_r on sl_r.id = ${wmsTables.stockReservations.shipmentLineId}
+            where sl_r.fulfillment_order_item_id = ${foi.id}
+              and ${wmsTables.stockReservations.status} = 'confirmed'
+          )`.mapWith(Number),
+          shipmentStatus: shipments.status,
+          shipmentQuantity: shipmentLines.qty,
+          inspectedQuantity: shipmentLines.inspectedQty,
+        })
+        .from(foi)
+        .innerJoin(fo, eq(fo.id, foi.fulfillmentOrderId))
+        .leftJoin(so, eq(so.id, fo.salesOrderId))
+        .leftJoin(salesChannels, eq(salesChannels.site, sql`${so.salesChannel}::text`))
+        .leftJoin(shipmentLines, eq(shipmentLines.fulfillmentOrderItemId, foi.id))
+        .leftJoin(shipments, eq(shipments.id, shipmentLines.shipmentId))
+        .where(and(unshippedDemandPredicate, eq(foi.skuId, skuId), eq(fo.warehouseId, warehouseId)))
+        .orderBy(sql`coalesce(${so.orderDate}, ${fo.createdAt})`, foi.id);
+
+      return { items: unshippedOrders(rows, new Date()) };
     }, tx);
   }
 

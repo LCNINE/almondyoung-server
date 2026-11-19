@@ -3,6 +3,7 @@
 
 import type {
   StockSummaryQuery,
+  StockSummaryByGroupQuery,
   StockHistoryQuery,
   ReservationTargetType,
   StocktakingSessionQuery,
@@ -22,6 +23,10 @@ export const inventoryQueryKeys = {
   stocks: ['stocks'] as const,
   stockSummary: (query?: StockSummaryQuery) =>
     ['stocks', 'summary', query] as const,
+  stockSummaryByGroup: (query?: StockSummaryByGroupQuery) =>
+    ['stocks', 'summary', 'by-group', query] as const,
+  unshippedOrders: (skuId: string, warehouseId: string) =>
+    ['stocks', 'sku', skuId, 'warehouse', warehouseId, 'unshipped-orders'] as const,
   skuTotalStock: (sku: string) => ['stocks', 'sku', sku, 'total'] as const,
   skuWarehouseStock: (sku: string, warehouseId: string) =>
     ['stocks', 'sku', sku, 'warehouse', warehouseId] as const,

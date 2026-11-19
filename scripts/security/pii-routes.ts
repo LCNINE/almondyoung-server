@@ -23,6 +23,7 @@ export const PII_ROUTES: readonly string[] = [
   'core GET /fulfillment-operations/:operationId',
   'core GET /fulfillments',
   'core GET /fulfillments/:id',
+  'core GET /inventory/stocks/sku/:skuId/warehouse/:warehouseId/unshipped-orders',
   'core GET /matchings/order-lines',
   'core GET /order-progress/orders',
   'core GET /sales-order-amendments',

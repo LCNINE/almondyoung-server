@@ -12,7 +12,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { RequirePermission } from '@app/authorization';
+import { PiiResponse, RequirePermission } from '@app/authorization';
 import { ApiOkResponsePaginated } from '../../shared/decorators/api-paginated-response.decorator';
 import { PaginatedResponseDto } from '../../shared/dto';
 import { CurrentStockDto } from '../dto/current-stock.dto';
@@ -23,6 +23,8 @@ import { LocationContentsDto } from '../dto/location-contents.dto';
 import { InboundPipelineResponseDto } from '../dto/inbound-pipeline.dto';
 import { ExpectedArrivalsResponseDto } from '../dto/expected-arrivals.dto';
 import { StockProjectionService } from '../services/stock-projection.service';
+import { GetStockSummaryByGroupQueryDto, StockSummaryByGroupResponseDto } from '../dto/stock-summary-by-group.dto';
+import { UnshippedOrdersResponseDto } from '../dto/unshipped-orders.dto';
 
 const EXPECTED_ARRIVAL_INCLUDES: readonly string[] = ['inbound_shipment'];
 
@@ -74,6 +76,36 @@ export class StockProjectionController {
     @Query() query: GetStockSummaryListQueryDto,
   ): Promise<PaginatedResponseDto<StockSummaryListItemDto>> {
     return this.stockProjection.listStockSummaries(query);
+  }
+
+  @RequirePermission('inventory.stock.read')
+  @Get('/stocks/summary/by-group')
+  @ApiOperation({
+    summary: '상품 그룹별 재고 현황',
+    description: '그룹 단위 필터·페이지 처리 후 해당 그룹의 SKU × 창고 행을 반환합니다. limit과 total은 그룹 수입니다.',
+  })
+  @ApiResponse({ status: 200, type: StockSummaryByGroupResponseDto })
+  async listStockSummariesByGroup(
+    @Query() query: GetStockSummaryByGroupQueryDto,
+  ): Promise<StockSummaryByGroupResponseDto> {
+    return this.stockProjection.listStockSummariesByGroup(query);
+  }
+
+  @RequirePermission('inventory.stock.read')
+  @PiiResponse({
+    fields: { 'items[].customerName': 'name' },
+    subjects: [{ path: 'items[].salesOrderId', type: 'sales_order' }],
+  })
+  @Get('stocks/sku/:skuId/warehouse/:warehouseId/unshipped-orders')
+  @ApiOperation({ summary: 'SKU·창고별 미발송 내역 (주문일 오래된 순, 같은 날짜는 FOI ID 순)' })
+  @ApiParam({ name: 'skuId', description: 'SKU ID' })
+  @ApiParam({ name: 'warehouseId', description: '창고 ID' })
+  @ApiResponse({ status: 200, type: UnshippedOrdersResponseDto })
+  async listUnshippedOrders(
+    @Param('skuId', new ParseUUIDPipe()) skuId: string,
+    @Param('warehouseId', new ParseUUIDPipe()) warehouseId: string,
+  ): Promise<UnshippedOrdersResponseDto> {
+    return this.stockProjection.listUnshippedOrders(skuId, warehouseId);
   }
 
   @RequirePermission('inventory.stock.read')
