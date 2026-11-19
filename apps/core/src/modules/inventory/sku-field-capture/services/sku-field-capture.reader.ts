@@ -1,6 +1,25 @@
 import { Injectable } from '@nestjs/common';
-import { and, asc, count, desc, eq, gt, ilike, inArray, isNotNull, isNull, max, notInArray, or, sql } from 'drizzle-orm';
-import { alias, AnyPgColumn } from 'drizzle-orm/pg-core';
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  exists,
+  gt,
+  ilike,
+  inArray,
+  isNotNull,
+  isNull,
+  max,
+  min,
+  not,
+  notInArray,
+  or,
+  sql,
+  SQL,
+} from 'drizzle-orm';
+import { alias, AnyPgColumn, union } from 'drizzle-orm/pg-core';
 import { NotFoundError } from '@app/shared';
 import { InjectTypedDb, DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
@@ -44,27 +63,78 @@ const completedBetweenKst = (completedAt: AnyPgColumn, from?: string, to?: strin
 const liveCaptureOf = (skuId: AnyPgColumn) =>
   and(eq(wmsTables.skuFieldCaptures.skuId, skuId), isNull(wmsTables.skuFieldCaptures.deletedAt));
 
+/**
+ * SKU 의 위치 (#1237). 원장이 먼저다 — ON_HAND 재고가 실제 선반(standard) 로케이션에 있으면 그 로케이션 코드(여럿일 수
+ * 있다)가 위치이고, 셀메이트 «상품위치»(sku_shelf_positions)는 그런 재고가 하나도 없는 SKU 에만 쓴다.
+ * 시스템·zone 로케이션(입고기본존 등)은 위치가 아니다 — 셀메이트 sync 가 재고를 전부 입고기본존에 두기 때문이다.
+ * 실제 로케이션 기준은 컷오버 적치 스크립트(scripts/sellmate/move-stock-to-shelf.ts)와 같다.
+ * 송장 위치(waybill/label/label-items.ts)는 «배정된 로케이션»이 기준이라 이 규칙과 따로다.
+ */
+const sl = wmsTables.stockLedgers;
+const loc = wmsTables.locations;
+const shelf = wmsTables.skuShelfPositions;
+const shelfStock = and(eq(sl.stockState, 'ON_HAND'), gt(sl.qty, 0), eq(loc.locationType, 'standard'));
+
 @Injectable()
 export class SkuFieldCaptureReader {
   constructor(@InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>) {}
 
+  /** 이 SKU 의 원장 선반 재고 행 — `where` 에 조건을 더 붙여 쓴다. */
+  private ledgerShelfRows(trx: DbTx, skuId: AnyPgColumn, where?: SQL) {
+    return trx
+      .select({ skuId: sl.skuId })
+      .from(sl)
+      .innerJoin(loc, eq(loc.id, sl.locationId))
+      .where(and(eq(sl.skuId, skuId), shelfStock, where));
+  }
+
+  /** 화면에 찍을 위치 하나 — 원장 선반 코드 중 가장 앞의 것, 없으면 셀메이트 위치. `shelf` 가 left join 돼 있어야 한다. */
+  private positionOf(trx: DbTx, skuId: AnyPgColumn) {
+    const first = trx
+      .select({ code: min(loc.code) })
+      .from(sl)
+      .innerJoin(loc, eq(loc.id, sl.locationId))
+      .where(and(eq(sl.skuId, skuId), shelfStock));
+    return sql<string | null>`coalesce((${first}), ${shelf.positionCode})`;
+  }
+
+  /** 위치 검색 조건 — 원장 선반 코드 어느 것이든, 원장 선반 재고가 없으면 셀메이트 위치. `shelf` 가 left join 돼 있어야 한다. */
+  private positionLike(trx: DbTx, skuId: AnyPgColumn, pattern: string) {
+    return or(
+      exists(this.ledgerShelfRows(trx, skuId, ilike(loc.code, pattern))),
+      and(ilike(shelf.positionCode, pattern), not(exists(this.ledgerShelfRows(trx, skuId)))),
+    );
+  }
+
   async findByPosition(rawCode: string, tx?: DbTx): Promise<ShelfPositionDto> {
     const positionCode = normalizePositionCode(rawCode);
     return this.dbService.run(async (trx) => {
+      // 후보를 이 코드에서 먼저 뽑는다(로케이션 코드·셀메이트 위치 인덱스) — SKU 전체에 EXISTS 를 돌리지 않게.
+      const atCode = union(
+        trx
+          .select({ skuId: sl.skuId })
+          .from(sl)
+          .innerJoin(loc, eq(loc.id, sl.locationId))
+          .where(and(shelfStock, sql`upper(${loc.code}) = ${positionCode}`)),
+        trx
+          .select({ skuId: shelf.skuId })
+          .from(shelf)
+          .where(and(eq(shelf.positionCode, positionCode), not(exists(this.ledgerShelfRows(trx, shelf.skuId))))),
+      );
       const rows = await trx
         .select({
           skuId: wmsTables.skus.id,
           code: wmsTables.skus.code,
           name: wmsTables.skus.name,
-          imageUrl: wmsTables.skuShelfPositions.imageUrl,
+          imageUrl: shelf.imageUrl,
           barcodeStatus: wmsTables.skuFieldCaptures.barcodeStatus,
           lastWorkerLabel: wmsTables.skuFieldCaptures.lastWorkerLabel,
           lastCompletedAt: wmsTables.skuFieldCaptures.lastCompletedAt,
         })
-        .from(wmsTables.skuShelfPositions)
-        .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, wmsTables.skuShelfPositions.skuId))
+        .from(wmsTables.skus)
+        .leftJoin(shelf, eq(shelf.skuId, wmsTables.skus.id))
         .leftJoin(wmsTables.skuFieldCaptures, liveCaptureOf(wmsTables.skus.id))
-        .where(and(eq(wmsTables.skuShelfPositions.positionCode, positionCode), eq(wmsTables.skus.isDeleted, false)))
+        .where(and(inArray(wmsTables.skus.id, atCode), eq(wmsTables.skus.isDeleted, false)))
         .orderBy(asc(wmsTables.skus.code), asc(wmsTables.skus.id));
       const skus: FieldCaptureSkuSummaryDto[] = rows.map((r) => ({
         skuId: r.skuId,
@@ -96,8 +166,8 @@ export class SkuFieldCaptureReader {
           packageLengthMm: wmsTables.skus.packageLengthMm,
           packageHeightMm: wmsTables.skus.packageHeightMm,
           packageWeightG: wmsTables.skus.packageWeightG,
-          positionCode: wmsTables.skuShelfPositions.positionCode,
-          imageUrl: wmsTables.skuShelfPositions.imageUrl,
+          positionCode: this.positionOf(trx, wmsTables.skus.id),
+          imageUrl: shelf.imageUrl,
           barcodeStatus: wmsTables.skuFieldCaptures.barcodeStatus,
           scannedBarcode: wmsTables.skuFieldCaptures.scannedBarcode,
           allFacesConfirmed: wmsTables.skuFieldCaptures.allFacesConfirmed,
@@ -108,7 +178,7 @@ export class SkuFieldCaptureReader {
           conflictName: conflictSku.name,
         })
         .from(wmsTables.skus)
-        .leftJoin(wmsTables.skuShelfPositions, eq(wmsTables.skuShelfPositions.skuId, wmsTables.skus.id))
+        .leftJoin(shelf, eq(shelf.skuId, wmsTables.skus.id))
         .leftJoin(wmsTables.skuFieldCaptures, liveCaptureOf(wmsTables.skus.id))
         .leftJoin(conflictSku, eq(conflictSku.id, wmsTables.skuFieldCaptures.barcodeConflictSkuId))
         .where(and(eq(wmsTables.skus.id, skuId), eq(wmsTables.skus.isDeleted, false)));
@@ -215,8 +285,8 @@ export class SkuFieldCaptureReader {
         skuId: wmsTables.skus.id,
         code: wmsTables.skus.code,
         name: wmsTables.skus.name,
-        imageUrl: wmsTables.skuShelfPositions.imageUrl,
-        positionCode: wmsTables.skuShelfPositions.positionCode,
+        imageUrl: shelf.imageUrl,
+        positionCode: this.positionOf(trx, wmsTables.skus.id),
         packageWidthMm: wmsTables.skus.packageWidthMm,
         packageLengthMm: wmsTables.skus.packageLengthMm,
         packageHeightMm: wmsTables.skus.packageHeightMm,
@@ -229,7 +299,7 @@ export class SkuFieldCaptureReader {
         ? or(
             ilike(wmsTables.skus.name, likeContains(q)),
             ilike(wmsTables.skus.code, likeContains(q)),
-            ilike(wmsTables.skuShelfPositions.positionCode, likeContains(q)),
+            this.positionLike(trx, wmsTables.skus.id, likeContains(q)),
           )
         : undefined;
       // ponytail: 한 번에 최근 500개. 넘기면 페이지를 단다
@@ -239,7 +309,7 @@ export class SkuFieldCaptureReader {
               .select({ ...base, completedAt: cap.lastCompletedAt })
               .from(cap)
               .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, cap.skuId))
-              .leftJoin(wmsTables.skuShelfPositions, eq(wmsTables.skuShelfPositions.skuId, wmsTables.skus.id))
+              .leftJoin(shelf, eq(shelf.skuId, wmsTables.skus.id))
               .where(
                 and(
                   isNull(cap.deletedAt),
@@ -254,7 +324,7 @@ export class SkuFieldCaptureReader {
               .select({ ...base, completedAt: mine.completedAt })
               .from(mine)
               .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, mine.skuId))
-              .leftJoin(wmsTables.skuShelfPositions, eq(wmsTables.skuShelfPositions.skuId, wmsTables.skus.id))
+              .leftJoin(shelf, eq(shelf.skuId, wmsTables.skus.id))
               .innerJoin(cap, liveCaptureOf(wmsTables.skus.id))
               .where(and(eq(wmsTables.skus.isDeleted, false), search))
               .orderBy(desc(mine.completedAt), asc(wmsTables.skus.id))
@@ -305,7 +375,7 @@ export class SkuFieldCaptureReader {
           skuId: wmsTables.skus.id,
           code: wmsTables.skus.code,
           name: wmsTables.skus.name,
-          positionCode: wmsTables.skuShelfPositions.positionCode,
+          positionCode: this.positionOf(trx, wmsTables.skus.id),
           packageWidthMm: wmsTables.skus.packageWidthMm,
           packageLengthMm: wmsTables.skus.packageLengthMm,
           packageHeightMm: wmsTables.skus.packageHeightMm,
@@ -313,7 +383,7 @@ export class SkuFieldCaptureReader {
         })
         .from(ph)
         .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, ph.skuId))
-        .leftJoin(wmsTables.skuShelfPositions, eq(wmsTables.skuShelfPositions.skuId, wmsTables.skus.id))
+        .leftJoin(shelf, eq(shelf.skuId, wmsTables.skus.id))
         .where(
           and(
             eq(wmsTables.skus.isDeleted, false),
@@ -323,7 +393,7 @@ export class SkuFieldCaptureReader {
               ? or(
                   ilike(wmsTables.skus.name, likeContains(q)),
                   ilike(wmsTables.skus.code, likeContains(q)),
-                  ilike(wmsTables.skuShelfPositions.positionCode, likeContains(q)),
+                  this.positionLike(trx, wmsTables.skus.id, likeContains(q)),
                   ilike(ph.takenByLabel, likeContains(q)),
                 )
               : undefined,
@@ -377,10 +447,7 @@ export class SkuFieldCaptureReader {
         .select({ n: count() })
         .from(wmsTables.skuFieldCaptures)
         .where(
-          and(
-            isNotNull(wmsTables.skuFieldCaptures.barcodeConflictSkuId),
-            isNull(wmsTables.skuFieldCaptures.deletedAt),
-          ),
+          and(isNotNull(wmsTables.skuFieldCaptures.barcodeConflictSkuId), isNull(wmsTables.skuFieldCaptures.deletedAt)),
         );
 
       const ev = wmsTables.skuFieldCaptureEvents;
@@ -388,10 +455,9 @@ export class SkuFieldCaptureReader {
         .select({
           workerId: ev.workerId,
           workerLabel: sql<string>`(array_agg(${ev.workerLabel} order by ${ev.completedAt} desc, ${ev.id} desc))[1]`,
-          today:
-            sql<number>`count(distinct ${ev.skuId}) filter (where ${completedTodayKst(ev.completedAt)})`.mapWith(
-              Number,
-            ),
+          today: sql<number>`count(distinct ${ev.skuId}) filter (where ${completedTodayKst(ev.completedAt)})`.mapWith(
+            Number,
+          ),
           total: sql<number>`count(distinct ${ev.skuId})`.mapWith(Number),
         })
         .from(ev)
