@@ -17,6 +17,16 @@
 | 판정 | 그 단계가 끝났다는 증거. «완료» 로그는 증거가 아니다 |
 | 실패 시 | 그 단계에서 멈췄을 때 할 일 |
 
+**🔴 쓰기 스위치는 스크립트마다 다르다 — `--apply` 만 보고 안심하지 않는다.**
+
+| 스위치 | 스크립트 | 미리보기 | 그대로 돌리면 |
+|---|---|---|---|
+| `DRY_RUN=1` 을 **앞에 붙여야** 미리보기 | `import-products`·`sync-stock`·`load-shelf-positions` | `DRY_RUN=1 bash scripts/sellmate/run.sh …` (값은 `1`·`true` 만 먹는다) | **바로 쓴다.** `--apply` 는 없다. `sync-stock` 은 ⛔ |
+| `--apply` 를 붙여야 쓴다 | `clear-reservations`·`build-location-master`·`move-stock-to-shelf`·`evening-reconcile`·`close-sellmate-leftovers`·`mark-shipped-from-csv`·`backfill-barcode2`·`set-reservation-cutover` | 그대로 | 미리보기(일부는 같은 트랜잭션을 돌린 뒤 롤백한다) |
+| dry-run 이 없다 | `mark-core-shipped`·`mark-medusa-shipped` | 없음 | **바로 쓴다** |
+
+리허설(§11)에서는 첫째 줄을 언제나 `DRY_RUN=1` 로, 셋째 줄은 돌리지 않는다.
+
 빈칸: `<T>` 는 컷오버 시각(KST 오프셋을 붙인 ISO, 예 `2026-12-01T09:00:00+09:00`), `<T-날짜>` 는 그날 날짜, `<창고 id>`·`<공유 이름>`·`<실행 id>` 는 리허설에서 정해 적는다.
 
 **T 는 하나다.** 같은 값을 `set-reservation-cutover --at`, `evening-reconcile init --cutover-at`, 판정의 `--after-cutover` 에 쓴다. 정하는 법은 §3.
