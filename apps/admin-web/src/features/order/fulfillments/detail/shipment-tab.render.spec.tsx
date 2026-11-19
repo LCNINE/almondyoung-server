@@ -1056,3 +1056,57 @@ describe('부분 취소를 기다리는 상자', () => {
     expect(screen.queryByRole('region', { name: '부분 취소 대기' })).toBeNull();
   });
 });
+
+describe('출고 준비 전에 고칠 것', () => {
+  beforeEach(() => {
+    mockShipments.mockReturnValue(loaded([summary('ship-new', 'draft')]));
+  });
+
+  it('정보 부족 상자는 무엇이 비었는지와 고치는 곳을 상자 위에 보인다', () => {
+    mockDetail.mockImplementation((id) =>
+      loaded({
+        ...detail(id, 'draft'),
+        needsInfo: [
+          {
+            kind: 'shipping_profile_mixed',
+            skus: [
+              { name: '상품 A', code: 'A-01', profileName: '일반' },
+              { name: '상품 B', code: 'B-01', profileName: '냉장' },
+            ],
+          },
+          { kind: 'recipient_incomplete', fields: ['roadAddress'] },
+        ],
+      })
+    );
+    renderTab();
+
+    const notice = screen.getByRole('region', {
+      name: '출고 준비 전에 고칠 것',
+    });
+
+    expect(
+      within(notice)
+        .getByRole('link', { name: '상품 B «냉장»' })
+        .getAttribute('href')
+    ).toBe('/inventory/skus?code=B-01');
+    expect(
+      within(notice).getByText(
+        'SKU 의 배송 프로필을 같게 맞추거나, «분할»로 상자를 나눠 주세요'
+      )
+    ).toBeTruthy();
+    expect(
+      within(notice).getByText('수령인 정보의 주소 칸이 비어 있어요')
+    ).toBeTruthy();
+  });
+
+  it('고칠 것이 없거나 옛 응답이면 칸을 그리지 않는다', () => {
+    mockDetail.mockImplementation((id) =>
+      loaded({ ...detail(id, 'draft'), needsInfo: [] })
+    );
+    renderTab();
+
+    expect(
+      screen.queryByRole('region', { name: '출고 준비 전에 고칠 것' })
+    ).toBeNull();
+  });
+});

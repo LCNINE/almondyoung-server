@@ -10,6 +10,14 @@ import type {
 // 한 번에 출고 준비하는 상자 수 상한. 서버 BulkShipmentIdsDto 의 ArrayMaxSize(100) 과 같아야 한다.
 export const PREPARATION_BATCH_LIMIT = 100;
 
+// 고른 상자로 할 일이 있는 분류. 출고불가·정보 부족은 고칠 곳으로 보낼 뿐 고를 것이 없다.
+export const SELECTABLE_BUCKETS: ReadonlySet<PreparationBucket> = new Set([
+  'ready',
+  'partial',
+  'resume',
+  'mergeable',
+]);
+
 // 한꺼번에 고를 상자. 결품으로 돌아온 상자는 자리 수량을 확인한 뒤 하나씩 고른다.
 export function bulkSelectableShipments(
   shipments: PreparationShipmentDto[]

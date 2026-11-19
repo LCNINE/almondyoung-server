@@ -5,7 +5,7 @@ import { FulfillmentInvariantService } from '../services/fulfillment-invariant.s
 import { ShipmentPlanningService } from '../services/shipment-planning.service';
 import { assembleBoxWithdrawal } from '../services/__support__/box-withdrawal-wiring';
 import { randomUUID } from 'crypto';
-import { count, eq, inArray } from 'drizzle-orm';
+import { and, count, eq, inArray, not, sql } from 'drizzle-orm';
 import * as postgres from 'postgres';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
@@ -16,12 +16,16 @@ import {
   makeDb,
   makeDbService,
   seedSalesOrder,
+  seedWarehouseWithZone,
   wireLogistics,
   Wired,
 } from '../services/__support__';
 import { ConsolidationBoardReader } from '../services/consolidation-board.reader';
 import { loadSplitShares } from '../services/consolidation-shipment-reads';
 import { OutboundPreparationReader } from './outbound-preparation.reader';
+import { InboundPipelineReader } from '../../inventory/stock-projection/services/inbound-pipeline.reader';
+import { WarehouseTransferReader } from '../../inventory/warehouse-transfer/services/warehouse-transfer.reader';
+import { PurchaseOrderExpectedArrivalReader } from '../../inventory/procurement/services/purchase-order-expected-arrival.reader';
 import { loadShortPickReturns } from './short-pick-returns';
 import { loadReturnedWorkItems } from './batch-returns';
 import { seedHandedOverOrder } from '../services/__support__/sellmate-handed-over-fixtures';
@@ -59,7 +63,15 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
       assembleBoxWithdrawal(dbService),
       createCheckpointsForTesting(),
     );
-    reader = new OutboundPreparationReader(dbService, new ConsolidationBoardReader(dbService));
+    reader = new OutboundPreparationReader(
+      dbService,
+      new ConsolidationBoardReader(dbService),
+      new InboundPipelineReader(
+        dbService,
+        new WarehouseTransferReader(dbService),
+        new PurchaseOrderExpectedArrivalReader(dbService),
+      ),
+    );
   });
 
   afterAll(async () => {
@@ -454,6 +466,12 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
       expect(missingRecipient.buckets.find(({ bucket }) => bucket === 'needs_info')?.shipments[0].reason).toBe(
         '수령인 정보가 비어 있어요',
       );
+      expect(missingRecipient.buckets.find(({ bucket }) => bucket === 'needs_info')?.shipments[0].needsInfo).toEqual([
+        { kind: 'recipient_incomplete', fields: ['recipientName', 'phone', 'postalCode', 'roadAddress'] },
+      ]);
+      expect((await planning.getShipmentDetail(source.shipment.id, tx)).needsInfo).toEqual([
+        { kind: 'recipient_incomplete', fields: ['recipientName', 'phone', 'postalCode', 'roadAddress'] },
+      ]);
 
       await tx.update(wmsTables.skus).set({ deliveryProfileId: null }).where(eq(wmsTables.skus.id, base.skuId));
 
@@ -461,6 +479,21 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
 
       expect(missingProfile.buckets.find(({ bucket }) => bucket === 'needs_info')?.shipments[0].reason).toBe(
         '배송 프로필이 없는 상품이 있어요',
+      );
+
+      const [sku] = await tx
+        .select({ name: wmsTables.skus.name, code: wmsTables.skus.code })
+        .from(wmsTables.skus)
+        .where(eq(wmsTables.skus.id, base.skuId));
+
+      // 사유는 첫 문제 하나지만, 고칠 것은 모두 보인다
+      expect(
+        missingProfile.buckets
+          .find(({ bucket }) => bucket === 'needs_info')
+          ?.shipments[0].needsInfo?.map((issue) => issue.kind),
+      ).toEqual(['shipping_profile_missing', 'recipient_incomplete']);
+      expect(missingProfile.buckets.find(({ bucket }) => bucket === 'needs_info')?.shipments[0].needsInfo?.[0]).toEqual(
+        { kind: 'shipping_profile_missing', skus: [sku] },
       );
     });
   });
@@ -482,6 +515,87 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
       expect(needsInfo?.shipments.map(({ shipmentId, reason }) => [shipmentId, reason])).toEqual([
         [source.shipment.id, '쇼핑몰 품목 번호가 없거나 맞지 않아요'],
       ]);
+      expect(needsInfo?.shipments[0].needsInfo?.map((issue) => issue.kind)).toEqual(['channel_item_unknown']);
+      expect((await planning.getShipmentDetail(source.shipment.id, tx)).needsInfo.map((issue) => issue.kind)).toEqual([
+        'channel_item_unknown',
+      ]);
+    });
+  });
+
+  it('출고불가 상자의 줄에 이 창고 재고·다른 상자 몫과 들어올 예정을 싣는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const base = await consolidationBase(tx, 4);
+      const held = await createConsolidationSource(tx, wired, base, { quantity: 3, customerId: randomUUID() });
+      const waiting = await createConsolidationSource(tx, wired, base, { quantity: 5, customerId: randomUUID() });
+
+      await tx
+        .update(wmsTables.stockReservations)
+        .set({ status: 'pending' })
+        .where(eq(wmsTables.stockReservations.targetId, waiting.line.id));
+
+      const lineOf = (summary: OutboundPreparationSummaryDto) =>
+        summary.buckets
+          .find(({ bucket }) => bucket === 'unavailable')
+          ?.shipments.find(({ shipmentId }) => shipmentId === waiting.shipment.id)?.lines[0];
+      const [{ reserved }] = await tx
+        .select({ reserved: sql<number>`COALESCE(SUM(${wmsTables.stockReservations.quantity}), 0)::int` })
+        .from(wmsTables.stockReservations)
+        .where(
+          and(
+            eq(wmsTables.stockReservations.skuId, base.skuId),
+            eq(wmsTables.stockReservations.warehouseId, base.warehouseId),
+            eq(wmsTables.stockReservations.status, 'confirmed'),
+          ),
+        );
+
+      expect(held.line.id).not.toBe(waiting.line.id);
+      expect(reserved).toBeGreaterThan(0);
+
+      // 판매하지 않는 창고면 이 창고 재고만 안다
+      await tx
+        .update(wmsTables.warehouses)
+        .set({ isSellable: false })
+        .where(eq(wmsTables.warehouses.id, base.warehouseId));
+
+      expect(lineOf(await reader.summarize(base.warehouseId, undefined, tx))).toEqual({
+        name: expect.any(String),
+        qty: 5,
+        reservedQty: 0,
+        stock: { onHand: 4, reservedByOthers: reserved, incoming: null, elsewhere: null },
+      });
+
+      // 판매 창고가 여럿이면 이 창고로 들어올 수량은 모르고, 판매하지 않는 창고 보유·발주만 안다
+      await tx
+        .update(wmsTables.warehouses)
+        .set({ isSellable: true })
+        .where(eq(wmsTables.warehouses.id, base.warehouseId));
+      await seedWarehouseWithZone(tx);
+
+      expect(lineOf(await reader.summarize(base.warehouseId, undefined, tx))?.stock).toEqual({
+        onHand: 4,
+        reservedByOthers: reserved,
+        incoming: null,
+        elsewhere: expect.objectContaining({ onHand: expect.any(Number), ordered: expect.any(Number) }),
+      });
+
+      await tx
+        .update(wmsTables.warehouses)
+        .set({ isSellable: false })
+        .where(not(eq(wmsTables.warehouses.id, base.warehouseId)));
+
+      expect(lineOf(await reader.summarize(base.warehouseId, undefined, tx))?.stock).toEqual({
+        onHand: 4,
+        reservedByOthers: reserved,
+        incoming: { inTransit: 0, inTransitEta: null, ordered: 0, inboundShipment: 0, inboundShipmentEta: null },
+        elsewhere: { onHand: 0, ordered: 0, orderedEta: null },
+      });
+      // 출고불가가 아닌 상자는 재고를 싣지 않는다
+      expect(
+        (await reader.summarize(base.warehouseId, undefined, tx)).buckets
+          .flatMap(({ bucket, shipments }) => (bucket === 'unavailable' ? [] : shipments))
+          .flatMap(({ lines }) => lines)
+          .some((line) => line.stock !== undefined),
+      ).toBe(false);
     });
   });
 
