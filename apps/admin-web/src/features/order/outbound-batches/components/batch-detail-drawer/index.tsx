@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { CircleHelp } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
+import { getBatchBlockerGroups, type ParsedServerError } from '@/lib/api/server-error';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -106,6 +107,28 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
   } | null>(null);
   const [handoffSubmitting, setHandoffSubmitting] = useState(false);
   const retry = useWarehouseCommandRetry();
+  const [blockerError, setBlockerError] = useState<ParsedServerError | null>(
+    null
+  );
+  const noticeRequest = useRef(0);
+  const canShowBlockerPanel = useRef(false);
+  const [adding, setAdding] = useState(false);
+  const addingRef = useRef(false);
+
+  useEffect(() => {
+    canShowBlockerPanel.current = open && !!batch && !closed;
+  }, [open, batch, closed]);
+
+  useEffect(() => {
+    setBlockerError(null);
+    setAdding(false);
+    addingRef.current = false;
+
+    return () => {
+      noticeRequest.current += 1;
+    };
+  }, [batchId, open]);
+
   const workerName = useOperatorNames(
     (batch?.workItems ?? []).flatMap((item) => [
       item.pickerClaim.workerId,
@@ -142,23 +165,93 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
     run: (payload: T, key: string) => Promise<unknown>,
     successMessage = '명령을 접수했습니다. 서버 상태를 다시 확인합니다.'
   ): Promise<boolean> => {
+    const handlesBlockers = action.startsWith('add:');
+    if (handlesBlockers && addingRef.current) return false;
+
+    const request = handlesBlockers ? ++noticeRequest.current : null;
+
+    if (handlesBlockers) {
+      addingRef.current = true;
+      setAdding(true);
+    }
+
     try {
       await retry.execute(action, payload, run);
-      toast.success(successMessage);
-      await refetch();
+
+      if (request === noticeRequest.current) setBlockerError(null);
+
+      if (handlesBlockers) {
+        const { data: refreshedBatch } = await refetch();
+        if (request !== noticeRequest.current) return false;
+
+        toast.success(
+          refreshedBatch?.startedAt || batch?.startedAt
+            ? '배치에 넣었어요. 송장 출력이 필요한 박스는 창고 담당자에게 프린터가 있는 창고 앱에서 송장을 출력한 뒤 피킹하도록 안내해 주세요.'
+            : successMessage
+        );
+      } else {
+        toast.success(successMessage);
+        await refetch();
+      }
+
       return true;
     } catch (error) {
-      const { code, status } = parseServerError(error);
-      toast.error(
-        status === 404
-          ? '이미 끝났거나 배치에서 빠진 상자예요. 목록을 다시 불러왔어요.'
-          : ((code && COMMAND_ERROR_MESSAGE[code]) ??
-              getServerDenyMessage(error))
-      );
-      await refetch();
+      if (request === noticeRequest.current) setBlockerError(null);
+
+      const parsed = parseServerError(error);
+      const { code, status } = parsed;
+      const showBlockedToast = () => toast.error(`요청 배치 ${batchId}: ${getServerDenyMessage(error)}`, {
+          duration: Infinity,
+          closeButton: true,
+          style: {
+            maxHeight: '70vh',
+            overflowY: 'auto',
+            whiteSpace: 'pre-line',
+          },
+        });
+      let blockerShownInPanel = false;
+
+      if (
+        handlesBlockers &&
+        code === 'BATCH_JOIN_BLOCKED' &&
+        request === noticeRequest.current &&
+        canShowBlockerPanel.current
+      ) {
+        setBlockerError(parsed);
+        blockerShownInPanel = true;
+      } else if (handlesBlockers && code === 'BATCH_JOIN_BLOCKED') {
+        showBlockedToast();
+      } else {
+        toast.error(
+          status === 404
+            ? '이미 끝났거나 배치에서 빠진 상자예요. 목록을 다시 불러왔어요.'
+            : ((code && COMMAND_ERROR_MESSAGE[code]) ??
+                getServerDenyMessage(error))
+        );
+      }
+
+      const { data: refreshedBatch } = await refetch();
+      if (
+        blockerShownInPanel &&
+        (request !== noticeRequest.current ||
+          !canShowBlockerPanel.current ||
+          (refreshedBatch && isClosed(refreshedBatch)))
+      ) {
+        if (request === noticeRequest.current) setBlockerError(null);
+        showBlockedToast();
+      }
       return false;
+    } finally {
+      if (request === noticeRequest.current) {
+        addingRef.current = false;
+        setAdding(false);
+      }
     }
   };
+
+  const blockerGroups = blockerError
+    ? getBatchBlockerGroups(blockerError)
+    : null;
 
   const handOff = async (target: HandoffTarget, reason: string) => {
     if (!handingOff || !handoffItem) return;
@@ -297,6 +390,30 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                 <Separator />
                 <section className="space-y-3">
                   <h3 className="font-medium">추가할 수 있는 상자</h3>
+                  {blockerGroups && (
+                    <section
+                      role="alert"
+                      className="space-y-3 rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm"
+                    >
+                      <p className="font-semibold">
+                        넣지 못했어요 — 아래 사유를 먼저 처리해 주세요
+                      </p>
+                      {blockerGroups.groups.map((group) => (
+                        <div key={group.reason} className="space-y-1">
+                          <h4 className="font-semibold">{group.title}</h4>
+                          <ul className="list-disc space-y-1 pl-5">
+                            {group.rows.map((row, index) => (
+                              <li key={`${index}-${row}`}>{row}</li>
+                            ))}
+                          </ul>
+                          <p>{group.guidance}</p>
+                        </div>
+                      ))}
+                      {blockerGroups.incomplete && (
+                        <p>일부 박스의 상세 사유를 확인하지 못했어요. 배치와 해당 박스의 출고 상태를 확인해 주세요.</p>
+                      )}
+                    </section>
+                  )}
                   {joinBlocked ? (
                     <p className="text-sm text-muted-foreground">{joinBlocked}</p>
                   ) : eligiblePending ? (
@@ -344,6 +461,7 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                                   <Button
                                     size="sm"
                                     variant="outline"
+                                    disabled={adding}
                                     onClick={() =>
                                       command(
                                         `add:${item.shipmentId}`,
@@ -356,7 +474,7 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                                       )
                                     }
                                   >
-                                    추가
+                                    {adding ? '처리 중…' : '추가'}
                                   </Button>
                                 </TableCell>
                               )}

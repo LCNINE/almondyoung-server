@@ -1,7 +1,8 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
+import { parseServerError, getBatchBlockerGroups, type ParsedServerError } from '@/lib/api/server-error';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -49,6 +50,24 @@ export function V2PickingWorkspace() {
   const [targetWorkerId, setTargetWorkerId] = useState('');
   const [reason, setReason] = useState('근무 교대');
   const retry = useWarehouseCommandRetry();
+  const [blockerError, setBlockerError] = useState<ParsedServerError | null>(
+    null
+  );
+  const noticeRequest = useRef(0);
+  const canShowBlockerPanel = useRef(false);
+
+  useEffect(() => {
+    canShowBlockerPanel.current = !!batch;
+  }, [batch]);
+
+  useEffect(() => {
+    setBlockerError(null);
+
+    return () => {
+      noticeRequest.current += 1;
+    };
+  }, [batchId]);
+
   const [shortPickOpen, setShortPickOpen] = useState(false);
   // 이 작업대의 피킹 명령 전부 — 모두 같은 창고 작업 권한이라 한 번에 판정한다
   const canOperateWarehouse = canRun(
@@ -122,14 +141,39 @@ export function V2PickingWorkspace() {
     payload: T,
     run: (payload: T, key: string) => Promise<unknown>
   ) => {
+    const handlesBlockers = action === 'start';
+    const request = handlesBlockers ? ++noticeRequest.current : null;
+
     try {
       await retry.execute(action, payload, run);
+
+      if (request === noticeRequest.current) {
+        setBlockerError(null);
+      }
       toast.success('명령을 접수했습니다. 확정 상태를 다시 불러옵니다.');
       await refetch();
     } catch (error) {
-      toast.error(getServerDenyMessage(error));
+      if (handlesBlockers) {
+        if (request !== noticeRequest.current) return;
+
+        const parsed = parseServerError(error);
+        const blocked = parsed.code === 'BATCH_START_BLOCKED';
+
+        setBlockerError(blocked && canShowBlockerPanel.current ? parsed : null);
+        if (blocked && !canShowBlockerPanel.current) {
+          toast.error(getServerDenyMessage(error), {
+            duration: Infinity,
+            closeButton: true,
+            style: { maxHeight: '70vh', overflowY: 'auto', whiteSpace: 'pre-line' },
+          });
+        } else if (!blocked) toast.error(getServerDenyMessage(error));
+      } else {
+        toast.error(getServerDenyMessage(error));
+      }
     }
   };
+
+  const blockerGroups = blockerError ? getBatchBlockerGroups(blockerError) : null;
 
   const context =
     session && workItem
@@ -194,6 +238,30 @@ export function V2PickingWorkspace() {
                   ? '원래 키로 시작 재시도'
                   : '피킹 시작'}
               </Button>
+            )}
+            {blockerGroups && (
+              <section
+                role="alert"
+                className="space-y-3 rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm"
+              >
+                <p className="font-semibold">
+                  시작하지 못했어요 — 아래 박스를 먼저 처리해 주세요
+                </p>
+                {blockerGroups.groups.map((group) => (
+                  <div key={group.reason} className="space-y-1">
+                    <h4 className="font-semibold">{group.title}</h4>
+                    <ul className="list-disc space-y-1 pl-5">
+                      {group.rows.map((row, index) => (
+                        <li key={`${index}-${row}`}>{row}</li>
+                      ))}
+                    </ul>
+                    <p>{group.guidance}</p>
+                  </div>
+                ))}
+                {blockerGroups.incomplete && (
+                  <p>일부 박스의 상세 사유를 확인하지 못했어요. 배치와 해당 박스의 출고 상태를 확인해 주세요.</p>
+                )}
+              </section>
             )}
           </Card>
 
