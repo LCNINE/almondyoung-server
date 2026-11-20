@@ -13,10 +13,14 @@ jest.mock('./profile-split-dialog', () => ({
   ProfileSplitDialog: ({
     shipmentId,
     orderText,
+    split,
   }: {
     shipmentId: string;
     orderText: string;
-  }) => <div role="dialog">{`${orderText} ${shipmentId} 나누기 창`}</div>,
+    split: { manifestVersion: number } | null;
+  }) => (
+    <div role="dialog">{`${orderText} ${shipmentId} v${split?.manifestVersion} 나누기 창`}</div>
+  ),
 }));
 jest.mock('@/components/auth/can', () => ({
   Can: ({ children }: { children: React.ReactNode }) => children,
@@ -320,7 +324,7 @@ it('배치에서 돌아온 상자와 결품 상자는 사유가 없어도 상자
   ]);
 });
 
-it('배송 프로필이 섞인 정보 부족 상자에만 그 자리에서 나누는 버튼을 두고, 누르면 그 상자의 나누기 창을 연다', () => {
+it('나누기 줄을 받은 정보 부족 상자에만 그 자리에서 나누는 버튼을 두고, 누르면 그 상자의 나누기 창을 연다', () => {
   render(
     list({
       bucket: 'needs_info',
@@ -330,6 +334,7 @@ it('배송 프로필이 섞인 정보 부족 상자에만 그 자리에서 나�
       shipments: [
         {
           ...shipment('mixed', null),
+          profileSplit: { manifestVersion: 4, lines: [] },
           needsInfo: [
             {
               kind: 'shipping_profile_mixed',
@@ -360,5 +365,7 @@ it('배송 프로필이 섞인 정보 부족 상자에만 그 자리에서 나�
   expect(screen.queryByRole('dialog')).toBeNull();
 
   fireEvent.click(buttons[0]);
-  expect(screen.getByRole('dialog').textContent).toBe('#MIXED mixed 나누기 창');
+  expect(screen.getByRole('dialog').textContent).toBe(
+    '#MIXED mixed v4 나누기 창'
+  );
 });

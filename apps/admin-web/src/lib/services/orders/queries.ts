@@ -402,15 +402,11 @@ export const useFulfillmentShipments = (
   });
 };
 
-export const useShipmentDetail = (
-  shipmentId: string,
-  options?: { refetchOnMount?: 'always' }
-) => {
+export const useShipmentDetail = (shipmentId: string) => {
   return useQuery({
     queryKey: orderQueryKeys.shipment(shipmentId),
     queryFn: () => orders.fulfillmentOrder.getShipment(shipmentId),
     enabled: !!shipmentId,
-    ...(options?.refetchOnMount && { refetchOnMount: options.refetchOnMount }),
   });
 };
 

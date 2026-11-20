@@ -2,11 +2,23 @@ import type { ShipmentAdminLine } from '@/lib/types/dto/fulfillment';
 
 export type LineProfile = { id: string; name: string } | null;
 
+/** 프로필별로 묶고 나누는 데 필요한 줄 — 상자 상세 줄과 출고 준비 응답의 나누기 줄이 둘 다 맞는다 */
+export type ProfileLine = Pick<
+  ShipmentAdminLine,
+  | 'id'
+  | 'skuId'
+  | 'skuName'
+  | 'skuCode'
+  | 'qty'
+  | 'lineVersion'
+  | 'deliveryProfile'
+>;
+
 /** 같은 배송 프로필 상품끼리 모은 줄. 프로필이 없는 상품도 한 묶음이다. */
 export interface ProfileGroup {
   key: string;
   profile: LineProfile;
-  lines: ShipmentAdminLine[];
+  lines: ProfileLine[];
   qty: number;
 }
 
@@ -22,9 +34,7 @@ export type PlanProfileState =
 // 고르기 칸의 값은 빈 문자열일 수 없다
 const NO_PROFILE = 'no-profile';
 
-export function profileGroups(
-  lines: ShipmentAdminLine[]
-): ProfileGroup[] | null {
+export function profileGroups(lines: ProfileLine[]): ProfileGroup[] | null {
   if (
     lines.length === 0 ||
     lines.some((line) => line.deliveryProfile === undefined)
@@ -47,7 +57,7 @@ export function profileGroups(
   return [...groups.values()];
 }
 
-export function planProfileState(lines: ShipmentAdminLine[]): PlanProfileState {
+export function planProfileState(lines: ProfileLine[]): PlanProfileState {
   const groups = profileGroups(lines);
 
   if (!groups) {

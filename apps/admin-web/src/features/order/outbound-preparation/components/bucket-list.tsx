@@ -262,9 +262,7 @@ export function BucketList({
                         </Can>
                       )}
                       {bucket.bucket === 'needs_info' &&
-                        shipment.needsInfo?.some(
-                          (issue) => issue.kind === 'shipping_profile_mixed'
-                        ) && (
+                        shipment.profileSplit && (
                           <Can run={useSplitShipment}>
                             <Button
                               size="sm"
@@ -307,6 +305,11 @@ export function BucketList({
           key={splitting.shipmentId}
           shipmentId={splitting.shipmentId}
           orderText={splitting.orderText}
+          split={
+            bucket.shipments.find(
+              (shipment) => shipment.shipmentId === splitting.shipmentId
+            )?.profileSplit ?? null
+          }
           onClose={() => setSplitting(null)}
         />
       )}

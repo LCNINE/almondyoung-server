@@ -2,29 +2,33 @@
 import { randomUUID } from 'node:crypto';
 import * as React from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
-import { CustomError } from '@/lib/api/customError';
-import type { ShipmentAdminDetail } from '@/lib/types/dto/fulfillment';
 import { toast } from 'sonner';
+import { CustomError } from '@/lib/api/customError';
+import type { PreparationProfileSplit } from '@/lib/types/dto/fulfillment';
 import { rememberPending } from '@/features/order/fulfillments/detail/shipment-action-pending';
 import { ProfileSplitDialog } from './profile-split-dialog';
 
 const mutateAsync = jest.fn();
-const refetch = jest.fn();
-let detail: {
-  data?: ShipmentAdminDetail;
-  isFetching: boolean;
-  isError: boolean;
-};
+const invalidateQueries = jest.fn();
+// 실제 QueryClient 처럼 렌더마다 같은 객체
+const mockQueryClient = { invalidateQueries };
+let fetching = 0;
 
+jest.mock('@tanstack/react-query', () => ({
+  useQueryClient: () => mockQueryClient,
+  useIsFetching: () => fetching,
+}));
 jest.mock('@/lib/services/orders', () => ({
   ...jest.requireActual('@/lib/services/orders/idempotency'),
   ...jest.requireActual('@/lib/api/server-error'),
-  useShipmentDetail: () => ({ ...detail, refetch }),
   useSplitShipment: () => ({ mutateAsync, isPending: false }),
 }));
 jest.mock('sonner', () => ({
   toast: { success: jest.fn(), info: jest.fn(), error: jest.fn() },
 }));
+
+const BASIC = { id: 'p-basic', name: '기본 택배' };
+const COLD = { id: 'p-cold', name: '냉장 택배' };
 
 const line = (
   id: string,
@@ -32,48 +36,34 @@ const line = (
   profile: { id: string; name: string } | null
 ) => ({
   id,
-  fulfillmentOrderId: 'fo1',
-  fulfillmentOrderItemId: `foi-${id}`,
+  lineVersion: 3,
+  qty,
   skuId: `sku-${id}`,
   skuName: `상품 ${id}`,
   skuCode: `SKU-${id}`,
   deliveryProfile: profile,
-  qty,
-  reservedQty: qty,
-  inspectedQty: 0,
-  lineVersion: 3,
-  origin: null,
-  reservations: [],
 });
 
-const BASIC = { id: 'p-basic', name: '기본 택배' };
-const COLD = { id: 'p-cold', name: '냉장 택배' };
-
-function box(
-  overrides: Partial<ShipmentAdminDetail> = {}
-): ShipmentAdminDetail {
+function split(
+  overrides: Partial<PreparationProfileSplit> = {}
+): PreparationProfileSplit {
   return {
-    id: 'box1',
-    status: 'draft',
-    warehouseId: 'w1',
-    supplierId: null,
     manifestVersion: 7,
-    reservationVersion: 1,
-    recipientSnapshot: null,
     lines: [line('a', 1, BASIC), line('b', 2, COLD)],
-    waybills: [],
-    workItems: [],
-    dispatchAttempts: [],
-    operations: [],
     ...overrides,
   };
 }
 
 const onClose = jest.fn();
 
-function open() {
-  render(
-    <ProfileSplitDialog shipmentId="box1" orderText="#A-1" onClose={onClose} />
+function dialog(current: PreparationProfileSplit | null = split()) {
+  return (
+    <ProfileSplitDialog
+      shipmentId="box1"
+      orderText="#A-1"
+      split={current}
+      onClose={onClose}
+    />
   );
 }
 
@@ -87,17 +77,20 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
+  jest.clearAllMocks();
   mutateAsync.mockReset();
-  refetch.mockReset();
-  onClose.mockReset();
+  fetching = 0;
   window.localStorage.clear();
-  detail = { data: box(), isFetching: false, isError: false };
 });
 
-it('상자를 새로 읽어 남는 것과 보낼 것을 보이고, 고른 프로필 묶음을 프로필 사유로 나눈다', async () => {
+it('목록이 준 줄로 남는 것과 보낼 것을 보이고, 고른 프로필 묶음을 프로필 사유로 나눈다', async () => {
   mutateAsync.mockResolvedValue({ operationId: 'op1' });
-  open();
+  render(dialog());
 
+  // 열 때 목록을 다시 읽는다
+  expect(invalidateQueries).toHaveBeenCalledWith({
+    queryKey: ['outbound-preparation'],
+  });
   expect(screen.getByText('상품 a 1개')).toBeTruthy();
   expect(screen.getByText('상품 b 2개')).toBeTruthy();
   await act(async () => {
@@ -105,8 +98,7 @@ it('상자를 새로 읽어 남는 것과 보낼 것을 보이고, 고른 프로
   });
 
   expect(mutateAsync).toHaveBeenCalledTimes(1);
-  const [request] = mutateAsync.mock.calls[0];
-  expect(request).toMatchObject({
+  expect(mutateAsync.mock.calls[0][0]).toMatchObject({
     shipmentId: 'box1',
     data: {
       expectedManifestVersion: 7,
@@ -124,7 +116,7 @@ it('응답을 못 받으면 창을 두고, 다시 보낼 때는 같은 요청 �
   mutateAsync.mockRejectedValueOnce(
     new CustomError({ message: 'Network Error', statusCode: 500 })
   );
-  open();
+  const { rerender } = render(dialog());
   await act(async () => {
     fireEvent.click(screen.getByRole('button', { name: '나누기' }));
   });
@@ -134,12 +126,8 @@ it('응답을 못 받으면 창을 두고, 다시 보낼 때는 같은 요청 �
   );
   expect(onClose).not.toHaveBeenCalled();
 
-  // 그사이 상자가 다시 읽혀도 다시 보내는 내용은 처음 보낸 그대로다
-  detail = {
-    data: box({ manifestVersion: 8, lines: [line('a', 1, BASIC)] }),
-    isFetching: false,
-    isError: false,
-  };
+  // 그사이 목록이 다시 읽혀 이 상자가 바뀌어도 다시 보내는 내용은 처음 보낸 그대로다
+  rerender(dialog(split({ manifestVersion: 8, lines: [line('a', 1, BASIC)] })));
   mutateAsync.mockResolvedValueOnce({ operationId: 'op1' });
   await act(async () => {
     fireEvent.click(
@@ -152,7 +140,7 @@ it('응답을 못 받으면 창을 두고, 다시 보낼 때는 같은 요청 �
   expect(onClose).toHaveBeenCalled();
 });
 
-it('서버가 거절하면 창을 두고 상자를 다시 읽으며, 다음 요청은 새 키로 보낸다', async () => {
+it('서버가 거절하면 창을 두고 목록을 다시 읽으며, 다음 요청은 새 키로 보낸다', async () => {
   mutateAsync.mockRejectedValueOnce(
     new CustomError({
       message: 'stale',
@@ -160,21 +148,36 @@ it('서버가 거절하면 창을 두고 상자를 다시 읽으며, 다음 요�
       response: { code: 'SHIPMENT_LINE_STALE_VERSION', message: 'stale' },
     })
   );
-  open();
+  const { rerender } = render(dialog());
+  invalidateQueries.mockClear();
   await act(async () => {
     fireEvent.click(screen.getByRole('button', { name: '나누기' }));
   });
 
-  expect(refetch).toHaveBeenCalled();
+  expect(invalidateQueries).toHaveBeenCalledTimes(1);
+  expect(invalidateQueries).toHaveBeenCalledWith({
+    queryKey: ['outbound-preparation'],
+  });
   expect(onClose).not.toHaveBeenCalled();
   expect(
     screen.queryByRole('button', { name: '같은 요청 다시 보내기' })
   ).toBeNull();
 
+  // 다시 읽는 동안에는 거절된 낡은 줄로 또 보낼 수 없다
+  fetching = 1;
+  rerender(dialog());
+  const busy = screen.getByRole('button', { name: '확인하는 중…' });
+  expect(busy.hasAttribute('disabled')).toBe(true);
+
+  // 새 줄이 오면 그 버전으로, 새 키로 보낸다
+  fetching = 0;
+  rerender(dialog(split({ manifestVersion: 9 })));
   mutateAsync.mockResolvedValueOnce({ operationId: 'op2' });
   await act(async () => {
     fireEvent.click(screen.getByRole('button', { name: '나누기' }));
   });
+  expect(mutateAsync).toHaveBeenCalledTimes(2);
+  expect(mutateAsync.mock.calls[1][0].data.expectedManifestVersion).toBe(9);
   expect(mutateAsync.mock.calls[1][0].idempotencyKey).not.toBe(
     mutateAsync.mock.calls[0][0].idempotencyKey
   );
@@ -187,7 +190,7 @@ it('앞서 닫은 창의 결과를 모르는 요청이 남은 상자는 새로 �
     idempotencyKey: 'earlier-key',
     sentAt: Date.now(),
   });
-  open();
+  render(dialog());
 
   expect(
     screen.getByText(/결과를 모르는 요청이 남아 있어 여기서 나누지 않아요/)
@@ -203,25 +206,28 @@ it('앞서 닫은 창의 결과를 모르는 요청이 남은 상자는 새로 �
   expect(mutateAsync).not.toHaveBeenCalled();
 });
 
-it('다시 읽는 동안·계획 전이 아닌 상자는 나누기를 막는다', () => {
-  detail = { data: box(), isFetching: true, isError: false };
-  const { rerender } = render(
-    <ProfileSplitDialog shipmentId="box1" orderText="#A-1" onClose={onClose} />
-  );
-  expect(screen.getByText('상자 정보를 불러오는 중이에요.')).toBeTruthy();
+it('목록을 다시 읽는 동안에는 낡은 묶음으로 나누지 않는다', async () => {
+  fetching = 1;
+  const { rerender } = render(dialog());
+
+  const busy = screen.getByRole('button', { name: '확인하는 중…' });
+  expect(busy.hasAttribute('disabled')).toBe(true);
+  await act(async () => {
+    fireEvent.click(busy);
+  });
+  expect(mutateAsync).not.toHaveBeenCalled();
+
+  fetching = 0;
+  rerender(dialog());
   expect(
     screen.getByRole('button', { name: '나누기' }).hasAttribute('disabled')
-  ).toBe(true);
+  ).toBe(false);
+});
 
-  detail = {
-    data: box({ status: 'planned' }),
-    isFetching: false,
-    isError: false,
-  };
-  rerender(
-    <ProfileSplitDialog shipmentId="box1" orderText="#A-1" onClose={onClose} />
-  );
-  expect(screen.getByText(/지금은 여기서 나눌 수 없어요/)).toBeTruthy();
+it('목록을 다시 읽어 상자가 정보 부족에서 빠지면 나누기를 막는다', () => {
+  render(dialog(null));
+
+  expect(screen.getByText(/이 상자는 이제 정보 부족에 없어요/)).toBeTruthy();
   expect(
     screen.getByRole('button', { name: '나누기' }).hasAttribute('disabled')
   ).toBe(true);
