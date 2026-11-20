@@ -10,6 +10,7 @@ import type {
   FieldCapturePhotosDto,
   FieldCapturePhotoQuery,
   FieldCaptureProgressDto,
+  FieldCaptureRemainingDto,
   MyTodayDto,
   MyCaptureItemsDto,
   ShelfPositionDto,
@@ -40,4 +41,5 @@ export const skuFieldCaptureClient = {
   getPhotos: async (query: FieldCapturePhotoQuery): Promise<FieldCapturePhotosDto> =>
     (await client.get(`${BASE}/photos`, { params: query })).data,
   getProgress: async (): Promise<FieldCaptureProgressDto> => (await client.get(`${BASE}/progress`)).data,
+  getRemaining: async (): Promise<FieldCaptureRemainingDto> => (await client.get(`${BASE}/remaining`)).data,
 };

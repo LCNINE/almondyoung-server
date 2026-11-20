@@ -8,6 +8,7 @@ import type {
   FieldCaptureDetailDto,
   FieldCapturePhotosDto,
   FieldCaptureProgressDto,
+  FieldCaptureRemainingDto,
   MyTodayDto,
   MyCaptureItemsDto,
   ShelfPositionDto,
@@ -34,6 +35,10 @@ export class SkuFieldCaptureService {
 
   getProgress(): Promise<FieldCaptureProgressDto> {
     return this.reader.getProgress();
+  }
+
+  getRemaining(): Promise<FieldCaptureRemainingDto> {
+    return this.reader.getRemaining();
   }
 
   listPhotos(filter: FieldCapturePhotoFilter): Promise<FieldCapturePhotosDto> {

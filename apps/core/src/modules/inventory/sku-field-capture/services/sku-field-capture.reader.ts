@@ -26,13 +26,16 @@ import {
   FieldCaptureBarcodeStatus,
   FieldCaptureListFilter,
   FieldCapturePhotoFilter,
+  FIELD_CAPTURE_EXCLUDED_ROWS,
   likeContains,
+  summarizeRemaining,
 } from '../sku-field-capture.rules';
 import {
   BarcodeOwnerDto,
   FieldCaptureDetailDto,
   FieldCapturePhotosDto,
   FieldCaptureProgressDto,
+  FieldCaptureRemainingDto,
   FieldCaptureSkuSummaryDto,
   MyCaptureItemsDto,
   ShelfPositionDto,
@@ -482,6 +485,39 @@ export class SkuFieldCaptureReader {
         barcodeConflictSkus: conflicts?.n ?? 0,
         workers,
       };
+    }, tx);
+  }
+
+  /** 남은 선반 — 미완료 기준은 getProgress 의 remaining, 위치는 positionOf 와 같다. 완료는 재고가 없어도 줄 요약에 센다. */
+  async getRemaining(tx?: DbTx): Promise<FieldCaptureRemainingDto> {
+    return this.dbService.run(async (trx) => {
+      const lp = ledgerPositionsOf(trx);
+      const stocked = trx
+        .select({ skuId: sl.skuId, qty: sql<number>`sum(${sl.qty})::int`.as('stocked_qty') })
+        .from(sl)
+        .where(eq(sl.stockState, 'ON_HAND'))
+        .groupBy(sl.skuId)
+        .having(gt(sql`sum(${sl.qty})`, 0))
+        .as('stocked');
+      const capture = wmsTables.skuFieldCaptures;
+
+      const sources = await trx
+        .select({
+          skuId: wmsTables.skus.id,
+          code: wmsTables.skus.code,
+          name: wmsTables.skus.name,
+          positionCode: sql<string | null>`upper(${positionOf(lp)})`,
+          qty: sql<number>`coalesce(${stocked.qty}, 0)`.mapWith(Number),
+          captured: sql<boolean>`${capture.skuId} is not null`,
+        })
+        .from(wmsTables.skus)
+        .leftJoin(shelf, eq(shelf.skuId, wmsTables.skus.id))
+        .leftJoin(lp, eq(lp.skuId, wmsTables.skus.id))
+        .leftJoin(stocked, eq(stocked.skuId, wmsTables.skus.id))
+        .leftJoin(capture, liveCaptureOf(wmsTables.skus.id))
+        .where(and(eq(wmsTables.skus.isDeleted, false), or(isNotNull(stocked.skuId), isNotNull(capture.skuId))));
+
+      return { ...summarizeRemaining(sources), excludedRows: [...FIELD_CAPTURE_EXCLUDED_ROWS] };
     }, tx);
   }
 }

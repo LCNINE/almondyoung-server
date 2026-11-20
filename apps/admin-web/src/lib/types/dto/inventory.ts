@@ -2040,6 +2040,30 @@ export interface FieldCaptureProgressDto {
   workers: WorkerProgressDto[];
 }
 
+export interface RemainingRowDto {
+  row: string;
+  completed: number;
+  remaining: number;
+}
+
+export interface RemainingItemDto {
+  skuId: string;
+  code: string;
+  name: string;
+  positionCode: string | null;
+  /** 꼴이 다르거나 위치가 없으면 null */
+  row: string | null;
+  /** A-08 */
+  shelf: string | null;
+  qty: number;
+}
+
+export interface FieldCaptureRemainingDto {
+  rows: RemainingRowDto[];
+  items: RemainingItemDto[];
+  excludedRows: string[];
+}
+
 export interface CompleteFieldCaptureRequest {
   packageWidthMm: number;
   packageLengthMm: number;

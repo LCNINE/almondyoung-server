@@ -12,6 +12,7 @@ import {
   FieldCapturePhotoQueryDto,
   FieldCapturePhotosDto,
   FieldCaptureProgressDto,
+  FieldCaptureRemainingDto,
   MyTodayDto,
   MyCaptureItemsDto,
   ShelfPositionDto,
@@ -30,6 +31,14 @@ export class SkuFieldCaptureController {
   @ApiResponse({ status: 200, type: FieldCaptureProgressDto })
   getProgress(): Promise<FieldCaptureProgressDto> {
     return this.service.getProgress();
+  }
+
+  @RequirePermission('inventory.master.read')
+  @Get('remaining')
+  @ApiOperation({ summary: '남은 선반(관리자) — 줄별 완료·남은 수와 미완료 상품, 실측 대상이 아닌 줄은 뺀다' })
+  @ApiResponse({ status: 200, type: FieldCaptureRemainingDto })
+  getRemaining(): Promise<FieldCaptureRemainingDto> {
+    return this.service.getRemaining();
   }
 
   @RequirePermission('inventory.master.read')

@@ -422,6 +422,7 @@ export const fieldCaptureKeys = {
   itemsOf: (who: string, from: string, to: string, q: string) =>
     ['sku-field-capture', 'items', who, from, to, q] as const,
   progress: ['sku-field-capture', 'progress'] as const,
+  remaining: ['sku-field-capture', 'remaining'] as const,
   photos: (from: string, to: string, q: string) =>
     ['sku-field-capture', 'photos', from, to, q] as const,
   search: (term: string) => ['sku-field-capture', 'search', term] as const,
