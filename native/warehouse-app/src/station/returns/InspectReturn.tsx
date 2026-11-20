@@ -4,7 +4,7 @@ import { errorMessage } from '../../core/data/errorMessage';
 import { cn } from '../../core/design/cn';
 import { useHumanKeys, useScanner } from '../../core/hardware/scan/useScanner';
 import { isUncertainWrite, recordInspection } from '../../domains/customer-returns/api';
-import { confirmOutcome } from '../../domains/customer-returns/outcome';
+import { confirmOutcome, putawayHint } from '../../domains/customer-returns/outcome';
 import {
   acceptedOf,
   heldTotal,
@@ -48,7 +48,7 @@ export function InspectReturn({
   view: ReturnView;
   /** 상세를 다시 읽어 단계대로 연다 — notice 는 다음 화면 위 한 줄 */
   open(id: string, notice?: ReturnsNotice): Promise<void>;
-  toList(): void;
+  toList(next?: ReturnsNotice | null): void;
   /** 작업자가 새로 무언가 했다 — 위 안내를 지운다 */
   onActivity(): void;
 }) {
@@ -152,7 +152,8 @@ export function InspectReturn({
     try {
       await recordInspection(api, view.id, body);
       signal('complete');
-      toList();
+      const hint = putawayHint(body.items);
+      toList(hint ? { text: `${view.order.orderNo} 검수를 확정했어요. ${hint}`, tone: 'info' } : null);
     } catch (error) {
       if (isUncertainWrite(error)) {
         setPending(body);

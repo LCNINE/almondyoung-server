@@ -36,3 +36,41 @@ export class LocationContentsDto {
   @ApiProperty({ type: [LocationContentItemDto] })
   items: LocationContentItemDto[];
 }
+
+export class ReturnZoneGoodsItemDto {
+  @ApiProperty()
+  skuId: string;
+
+  @ApiProperty()
+  skuCode: string;
+
+  @ApiProperty()
+  skuName: string;
+
+  @ApiProperty({ description: '반품 기본존에서 옮길 수 있는 판매 가능 수량' })
+  quantity: number;
+
+  @ApiProperty({
+    description: '상품의 평소 선반 — 이 창고의 사용 중인 일반 로케이션일 때만',
+    nullable: true,
+    type: String,
+  })
+  usualLocationId: string | null;
+
+  @ApiProperty({ nullable: true, type: String })
+  usualLocationCode: string | null;
+}
+
+export class ReturnZoneGoodsDto {
+  @ApiProperty()
+  locationId: string;
+
+  @ApiProperty()
+  locationCode: string;
+
+  @ApiProperty()
+  warehouseId: string;
+
+  @ApiProperty({ type: [ReturnZoneGoodsItemDto] })
+  items: ReturnZoneGoodsItemDto[];
+}

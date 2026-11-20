@@ -19,3 +19,13 @@ export function confirmOutcome(
 }
 
 export const KIND_LABEL = { return: '반품', exchange: '교환' } as const;
+
+/** 검수가 끝난 뒤 양품을 어디로 가져갈지 — 양품은 반품 자리에 남아 F4 적치 목록에 올라온다 */
+export function putawayHint(
+  items: ReadonlyArray<{ accepted: number }>
+): string {
+  const accepted = items.reduce((sum, item) => sum + item.accepted, 0);
+  return accepted > 0
+    ? `양품 ${accepted}개는 F4 적치에서 선반에 넣어 주세요.`
+    : '';
+}

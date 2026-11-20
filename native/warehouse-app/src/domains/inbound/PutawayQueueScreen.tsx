@@ -13,6 +13,11 @@ import { WarehousePicker } from '../warehouse/WarehousePicker';
 import { PutawaySheet, type LocationRef } from './PutawaySheet';
 import { usePutawayPending, type PutawayDays } from './queries';
 import type { PutawayPendingItem, PutawayTarget } from './types';
+import { useReturnGoods } from './returnGoods';
+import {
+  ReturnPutawaySheet,
+  type ReturnPutawayTarget,
+} from './ReturnPutawaySheet';
 
 const DAY_OPTIONS: Array<{ value: PutawayDays; label: string }> = [
   { value: 1, label: '최근 1일' },
@@ -60,6 +65,14 @@ export function PutawayQueueScreen({
   const scanId = useRef(0);
   const [notice, setNotice] = useState<string | null>(null);
   const [lastDest, setLastDest] = useState<LocationRef | null>(null);
+  const [returnTarget, setReturnTarget] = useState<ReturnPutawayTarget | null>(
+    null
+  );
+  // 반품 양품은 입고와 따로 반품 자리 재고 기준으로 본다 — 상품·원위치로 좁힌 화면에서는 숨긴다.
+  const returnGoods = useReturnGoods(warehouseId, supported && !filtered);
+  // 다시 읽기에 실패하면 남아 있는 옛 줄로 시트를 열지 않는다
+  const returnItems =
+    filtered || returnGoods.isError ? [] : (returnGoods.data?.items ?? []);
 
   const queue = usePutawayPending(
     warehouseId,
@@ -79,6 +92,7 @@ export function PutawayQueueScreen({
   }
   useEffect(() => {
     setTarget(null);
+    setReturnTarget(null);
     setLastDest(null);
   }, [warehouseId, skuId, originLocationId]);
 
@@ -102,7 +116,7 @@ export function PutawayQueueScreen({
   );
 
   useScanner((event) => {
-    if (target || !warehouseId || !supported) return;
+    if (target || returnTarget || !warehouseId || !supported) return;
     clearScanFeedback();
     const id = scanId.current;
     setNotice('상품을 확인하고 있어요.');
@@ -185,6 +199,59 @@ export function PutawayQueueScreen({
         </p>
       ) : null}
 
+      {returnItems.length > 0 && returnGoods.data ? (
+        <section aria-label="반품 양품" className="space-y-2">
+          <h2 className="text-sm font-semibold text-gray-700">
+            반품 양품 — {returnGoods.data.locationCode}에서 선반으로
+          </h2>
+          <ul className="space-y-2">
+            {returnItems.map((item) => (
+              <li key={item.skuId}>
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-3 rounded-lg border border-emerald-200 bg-white p-3 text-left active:bg-gray-50"
+                  disabled={returnGoods.isFetching}
+                  onClick={() => {
+                    clearScanFeedback();
+                    setReturnTarget({
+                      ...item,
+                      returnLocationId: returnGoods.data.locationId,
+                      returnLocationCode: returnGoods.data.locationCode,
+                    });
+                  }}
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium text-gray-800">
+                      {item.skuName}
+                    </span>
+                    <span className="block text-xs text-gray-500">
+                      {item.usualLocationCode
+                        ? `평소 선반 ${item.usualLocationCode}`
+                        : '평소 선반 없음'}
+                    </span>
+                  </span>
+                  <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">
+                    양품 {item.quantity}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+      {returnGoods.isError && !filtered ? (
+        <div role="alert" className="text-sm text-red-600">
+          반품 양품을 불러오지 못했어요. {errorMessage(returnGoods.error)}{' '}
+          <button
+            type="button"
+            className="underline"
+            onClick={() => void returnGoods.refetch()}
+          >
+            다시 확인
+          </button>
+        </div>
+      ) : null}
+
       {queue.isError ? (
         <p role="alert" className="text-sm text-red-600">
           {errorMessage(queue.error, 'putaway')}
@@ -195,7 +262,9 @@ export function PutawayQueueScreen({
       ) : null}
       {queue.isSuccess && !queue.isFetching && items.length === 0 ? (
         <p className="text-sm text-gray-500">
-          적치할 항목이 없어요.
+          {returnItems.length > 0
+            ? '입고 적치 대기는 없어요.'
+            : '적치할 항목이 없어요.'}
           {days === 'all' ? '' : ' 기간 필터를 넓혀 보세요.'}
         </p>
       ) : null}
@@ -282,6 +351,24 @@ export function PutawayQueueScreen({
             setNotice('이 상품은 적치 대기가 없어요.');
           }}
           onClose={clearScanFeedback}
+        />
+      ) : null}
+
+      {returnTarget && warehouseId ? (
+        <ReturnPutawaySheet
+          target={returnTarget}
+          warehouseId={warehouseId}
+          onCancel={() => {
+            clearScanFeedback();
+            setReturnTarget(null);
+          }}
+          onDone={(dest, quantity) => {
+            clearScanFeedback();
+            setReturnTarget(null);
+            setNotice(
+              `${returnTarget.skuName} ${quantity}개를 ${dest.code}에 넣었어요.`
+            );
+          }}
         />
       ) : null}
 

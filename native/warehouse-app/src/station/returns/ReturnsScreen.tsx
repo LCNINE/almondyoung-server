@@ -12,6 +12,7 @@ import { useFeedback } from '../feedback/FeedbackProvider';
 import { InspectReturn } from './InspectReturn';
 import { ParcelWork } from './ParcelWork';
 import { ReturnList } from './ReturnList';
+import { RETURN_GOODS_KEY } from '../../domains/inbound/returnGoods';
 import type { ReturnsNotice, ReturnsView } from './returnsTypes';
 
 const CLOSED_MESSAGE = { cancelled: '취소된 반품이에요', inspected: '끝난 반품이에요' } as const;
@@ -48,6 +49,8 @@ function Returns({ warehouseId }: { warehouseId: string }) {
       setCurrent({ kind: 'list' });
       say(next);
       void queryClient.invalidateQueries({ queryKey: ['customer-return-receiving'] });
+      // 검수로 반품 자리에 양품이 늘었을 수 있다 — F4 적치가 옛 목록을 보이지 않게
+      void queryClient.invalidateQueries({ queryKey: [RETURN_GOODS_KEY] });
     },
     [queryClient, say]
   );

@@ -5,7 +5,7 @@ import { cn } from '../../core/design/cn';
 import { useHumanKeys, useScanner } from '../../core/hardware/scan/useScanner';
 import { isUncertainWrite, recordArrival, recordInspection } from '../../domains/customer-returns/api';
 import { inspectionItems } from '../../domains/customer-returns/inspection';
-import { confirmOutcome } from '../../domains/customer-returns/outcome';
+import { confirmOutcome, putawayHint } from '../../domains/customer-returns/outcome';
 import { receivingStageOf } from '../../domains/customer-returns/stage';
 import {
   arrivalItems,
@@ -179,15 +179,20 @@ export function ParcelWork({
 
   /** 다 온 반품을 모두 양품으로 검수한다 — 실패하면 상세를 다시 읽어 그 단계로(검수 화면 또는 끝난 반품) */
   const inspectAllGood = async (arrivedView: ReturnView) => {
+    const items = inspectionItems(arrivedView, new Map());
     try {
-      await recordInspection(api, arrivedView.id, { items: inspectionItems(arrivedView, new Map()) });
+      await recordInspection(api, arrivedView.id, { items });
     } catch (error) {
       const text = isUncertainWrite(error) ? INSPECTION_UNCERTAIN : errorMessage(error);
       await open(arrivedView.id, { text, tone: 'error' });
       return;
     }
     signal('complete');
-    toList({ text: `${arrivedView.order.orderNo} 검수까지 끝냈어요 — ${outcome.done}`, tone: 'info' });
+    const hint = putawayHint(items);
+    toList({
+      text: `${arrivedView.order.orderNo} 검수까지 끝냈어요 — ${outcome.done}${hint ? `. ${hint}` : ''}`,
+      tone: 'info',
+    });
   };
 
   const send = async (body: ArrivalBody, then: Then = 'arrive') => {
