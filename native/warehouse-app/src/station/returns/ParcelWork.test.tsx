@@ -480,7 +480,7 @@ describe('서버 거절 — 상세를 다시 읽는다(N10)', () => {
     press('F10');
     expect(await screen.findByText('새 소포이고 모두 양품이면 F10 한 번 더')).toBeInTheDocument();
     press('F10');
-    expect(await screen.findByText('O-1001 검수까지 끝냈어요 — 환불을 요청했어요')).toBeInTheDocument();
+    expect(await screen.findByText(/^O-1001 검수까지 끝냈어요 — 환불을 요청했어요\. 양품 \d+개는 F4 적치에서 선반에 넣어 주세요\.$/)).toBeInTheDocument();
     expect(server.arrivalCalls).toHaveLength(2);
     expect(server.arrivalCalls[1].body.idempotencyKey).not.toBe(server.arrivalCalls[0].body.idempotencyKey);
     expect(server.inspections).toHaveLength(1);
@@ -548,7 +548,7 @@ describe('다 오는 소포 — 모두 양품이면 F10 두 번', () => {
     expect(screen.getByText('환불을 요청해요 · 불량·보류가 있으면 F11 검수')).toBeInTheDocument();
     expect(server.arrivalCalls).toHaveLength(0);
     press('F10');
-    expect(await screen.findByText('O-1001 검수까지 끝냈어요 — 환불을 요청했어요')).toBeInTheDocument();
+    expect(await screen.findByText('O-1001 검수까지 끝냈어요 — 환불을 요청했어요. 양품 2개는 F4 적치에서 선반에 넣어 주세요.')).toBeInTheDocument();
     expect(server.arrivals).toEqual([
       { returnId: 'cr-1', key: expect.any(String), itemId: 'cri-1', quantity: 2 },
     ]);
@@ -567,7 +567,7 @@ describe('다 오는 소포 — 모두 양품이면 F10 두 번', () => {
     expect(await screen.findByText('교환품 출고를 지시해요 · 불량·보류가 있으면 F11 검수')).toBeInTheDocument();
     expect(screen.queryByText(/환불/)).toBeNull();
     press('F10');
-    expect(await screen.findByText('O-1001 검수까지 끝냈어요 — 교환품 출고를 지시했어요')).toBeInTheDocument();
+    expect(await screen.findByText(/^O-1001 검수까지 끝냈어요 — 교환품 출고를 지시했어요\. 양품 \d+개는 F4 적치에서 선반에 넣어 주세요\.$/)).toBeInTheDocument();
     expect(server.inspections).toHaveLength(1);
   });
 
@@ -602,7 +602,7 @@ describe('다 오는 소포 — 모두 양품이면 F10 두 번', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('결과를 확인하지 못했어요 — F10 다시 보내기');
     expect(server.inspectionCalls).toHaveLength(0);
     press('F10');
-    expect(await screen.findByText('O-1001 검수까지 끝냈어요 — 환불을 요청했어요')).toBeInTheDocument();
+    expect(await screen.findByText(/^O-1001 검수까지 끝냈어요 — 환불을 요청했어요\. 양품 \d+개는 F4 적치에서 선반에 넣어 주세요\.$/)).toBeInTheDocument();
     expect(server.arrivals).toHaveLength(1);
     expect(server.inspections).toHaveLength(1);
   });

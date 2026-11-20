@@ -48,6 +48,10 @@ export class StockProjectionService {
     return this.reader.getLocationContents(locationId, tx);
   }
 
+  getReturnZoneGoods(warehouseId: string, tx?: DbTx) {
+    return this.reader.getReturnZoneGoods(warehouseId, tx);
+  }
+
   getHistory(skuId: string, warehouseId?: string, startDate?: string, endDate?: string) {
     return this.reader.getHistory(skuId, warehouseId, startDate, endDate);
   }
