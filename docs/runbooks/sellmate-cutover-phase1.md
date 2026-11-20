@@ -445,9 +445,9 @@ bash scripts/sellmate/run.sh live evening-reconcile close apps/core/tmp/<날짜>
      ```
   3. 명령 프롬프트(cmd): `cd %USERPROFILE%\Desktop` → `copy /b test.zpl \\localhost\<공유 이름>`
   4. 판정: 라벨 한 장에 «TEST 1251 / copy /b OK» 가 찍힌다(위치는 치우쳐도 된다). 안 나오면 프린터 대기열에 문서가 걸렸는지, 명령문이 글자 그대로 찍히면 그 드라이버가 ZPL 을 못 받는 것이다 — 둘 다 개발자에게 알린다
-- [ ] 운영자 계정 권한: `fulfillment.shipment.read` · `fulfillment.warehouse.operate` · `fulfillment.dispatch.force` · `inventory.stock.read`
-- [ ] 창고가 낱개 피킹(discrete)을 지원(판정 «출고 1»)
-- [ ] 창고 id 적기 `<창고 id>` — 어드민 «로케이션 관리»(`/inventory/locations`)에서 창고를 고르면 주소 끝 `?warehouseId=` 뒤의 값
+- [x] 운영자 계정 권한: `fulfillment.shipment.read` · `fulfillment.warehouse.operate` · `fulfillment.dispatch.force` · `inventory.stock.read`
+- [x] 창고가 낱개 피킹(discrete)을 지원(판정 «출고 1»)
+- [x] 창고 id 적기 `<창고 id>` — 어드민 «로케이션 관리»(`/inventory/locations`)에서 창고를 고르면 주소 끝 `?warehouseId=` 뒤의 값
 - 권한·낱개 피킹은 명령마다 먼저 확인하고, 모자라면 아무것도 안 바꾸고 멈춘다.
 
 ### 10-2. 아침
@@ -538,7 +538,7 @@ npx tsx scripts/ops/emergency-outbound/index.ts prepare --stage live --warehouse
 
 ### 11-3. 비상 출고 경로 한 번 (라이브 창고)
 
-- [ ] §10-1 사전 준비 네 개(공유 프린터·권한·낱개 피킹·창고 id) — 11-19: 권한(운영자 계정)·낱개 피킹(판정 «출고 1»)·창고 id 끝. **남음: 공유 프린터**
+- [x] §10-1 사전 준비 네 개(공유 프린터·권한·낱개 피킹·창고 id) — 11-19: 권한(운영자 계정)·낱개 피킹(판정 «출고 1»)·창고 id 끝. 11-20: 공유 프린터 끝, `prepare` dry-run 을 다시 돌려 사전 점검 통과·뺀 사유가 한국어로 찍히는 것을 확인
 - [x] `prepare --stage live --warehouse <창고 id>` **dry-run** — 사전 점검 통과, 대상과 뺀 사유가 보인다 — 11-19 라이브(운영자 본인 계정, 별도 터미널 — Claude Code 의 `!` 셸은 숨김 입력을 못 받는다): «사전 점검 통과», 실행 id 자동(`yyyyMMdd-HHmm`), 대상·뺀 상자가 상자마다 찍혔다. 3분 10초(아이디·비밀번호 입력 포함). 뺀 사유 중 «일부만 낼 수 있음»·«재고 없음» 이 `partial:`·`unavailable:` 처럼 영어 버킷 이름과 빈 사유로 찍혔다 — core 가 그 버킷엔 사유를 비워 보낸다 → 스크립트가 버킷 뜻을 한국어로 찍게 고쳤다(`select.ts`)
 - [x] 송장 프린터 공유로 `copy /b` 시험 출력 — §10-1 절차. 11-20 부천 스테이션 PC 에서 시험 라벨이 정상 출력됐다
 - `dispatch` 는 돌리지 않는다 — `prepare --apply` 가 남긴 `run.json` 이 있어야 돈다.
