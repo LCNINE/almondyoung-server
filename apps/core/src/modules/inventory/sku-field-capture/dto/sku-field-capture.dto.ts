@@ -5,7 +5,8 @@ import {
   FieldCaptureBarcodeStatus,
   FieldCaptureListWho,
 } from '../sku-field-capture.rules';
-import { IsIn, IsOptional, IsString, IsUUID, Matches, MaxLength } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsIn, IsInt, IsOptional, IsString, IsUUID, Matches, MaxLength, Min } from 'class-validator';
 
 export class FieldCaptureCompletionDto {
   @ApiProperty({ enum: FIELD_CAPTURE_BARCODE_STATUSES })
@@ -124,10 +125,19 @@ export class FieldCaptureListQueryDto {
   @IsString()
   @MaxLength(100)
   q?: string;
+
+  @ApiPropertyOptional({ description: '더 보기 — 직전 응답의 nextOffset' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  offset?: number;
 }
 
 export class MyCaptureItemsDto {
   @ApiProperty({ type: () => [MyCaptureItemDto] }) items!: MyCaptureItemDto[];
+  @ApiProperty({ description: '조건에 맞는 전체 개수' }) total!: number;
+  @ApiProperty({ type: Number, nullable: true, description: '더 없으면 null' }) nextOffset!: number | null;
 }
 
 export class FieldCapturePhotoQueryDto {

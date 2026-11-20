@@ -56,7 +56,7 @@ export class SkuFieldCaptureController {
   listItems(@Query() query: FieldCaptureListQueryDto, @User() user: CaptureUser): Promise<MyCaptureItemsDto> {
     const q = query.q?.trim();
     return this.service.listItems(
-      { who: query.who ?? 'mine', from: query.from, to: query.to, q: q || undefined },
+      { who: query.who ?? 'mine', from: query.from, to: query.to, q: q || undefined, offset: query.offset },
       fieldCaptureActorOf(user),
     );
   }

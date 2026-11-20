@@ -34,7 +34,7 @@ import {
   FieldCapturePhotosDto,
   FieldCaptureProgressDto,
   FieldCaptureSkuSummaryDto,
-  MyCaptureItemDto,
+  MyCaptureItemsDto,
   ShelfPositionDto,
 } from '../dto/sku-field-capture.dto';
 
@@ -45,6 +45,7 @@ function asBarcodeStatus(raw: string): FieldCaptureBarcodeStatus {
 }
 
 const PHOTO_PAGE_SIZE = 200;
+const ITEM_PAGE_SIZE = 200;
 
 /** 「오늘」은 KST. getProgress 의 작업자별 today 와 countWorkerToday 가 같은 식을 쓴다. */
 const completedTodayKst = (completedAt: AnyPgColumn) =>
@@ -261,8 +262,8 @@ export class SkuFieldCaptureReader {
    * 작업 기록 목록, 최근 완료순. mine 은 내 완료 이벤트 기준(완료 시각 = 그 기간에 내가 마지막으로 끝낸 때),
    * all 은 모든 작업자의 현재 완료 기준(완료 시각 = 누군가 마지막으로 끝낸 때).
    */
-  async listItems(filter: FieldCaptureListFilter, workerId: string, tx?: DbTx): Promise<MyCaptureItemDto[]> {
-    const { who, from, to, q } = filter;
+  async listItems(filter: FieldCaptureListFilter, workerId: string, tx?: DbTx): Promise<MyCaptureItemsDto> {
+    const { who, from, to, q, offset = 0 } = filter;
     return this.dbService.run(async (trx) => {
       const ev = wmsTables.skuFieldCaptureEvents;
       const cap = wmsTables.skuFieldCaptures;
@@ -292,6 +293,7 @@ export class SkuFieldCaptureReader {
         lastWorkerId: cap.lastWorkerId,
         lastWorkerLabel: cap.lastWorkerLabel,
         lastCompletedAt: cap.lastCompletedAt,
+        total: sql<number>`count(*) over ()`.mapWith(Number),
       };
       const search = q
         ? or(
@@ -300,7 +302,7 @@ export class SkuFieldCaptureReader {
             positionLike(trx, lp, likeContains(q)),
           )
         : undefined;
-      // ponytail: 한 번에 최근 500개. 넘기면 페이지를 단다
+      // ponytail: offset 페이지 — 넘기는 사이 새로 끝낸 상품이 생기면 한 줄 겹친다. 화면이 skuId 로 거른다
       const rows =
         who === 'all'
           ? await trx
@@ -318,7 +320,8 @@ export class SkuFieldCaptureReader {
                 ),
               )
               .orderBy(desc(cap.lastCompletedAt), asc(wmsTables.skus.id))
-              .limit(500)
+              .limit(ITEM_PAGE_SIZE)
+              .offset(offset)
           : await trx
               .select({ ...base, completedAt: mine.completedAt })
               .from(mine)
@@ -328,8 +331,10 @@ export class SkuFieldCaptureReader {
               .innerJoin(cap, liveCaptureOf(wmsTables.skus.id))
               .where(and(eq(wmsTables.skus.isDeleted, false), search))
               .orderBy(desc(mine.completedAt), asc(wmsTables.skus.id))
-              .limit(500);
-      return rows.flatMap((r) =>
+              .limit(ITEM_PAGE_SIZE)
+              .offset(offset);
+      const total = rows[0]?.total ?? 0;
+      const items = rows.flatMap((r) =>
         r.completedAt && r.barcodeStatus && r.lastWorkerId && r.lastWorkerLabel && r.lastCompletedAt
           ? [
               {
@@ -350,6 +355,9 @@ export class SkuFieldCaptureReader {
             ]
           : [],
       );
+      const fetched = offset + rows.length;
+
+      return { items, total, nextOffset: fetched < total ? fetched : null };
     }, tx);
   }
 

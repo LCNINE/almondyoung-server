@@ -45,7 +45,7 @@ export class SkuFieldCaptureService {
   }
 
   async listItems(filter: FieldCaptureListFilter, actor: FieldCaptureActor): Promise<MyCaptureItemsDto> {
-    return { items: await this.reader.listItems(filter, actor.workerId) };
+    return this.reader.listItems(filter, actor.workerId);
   }
 
   cancel(skuId: string, actor: FieldCaptureActor): Promise<void> {

@@ -1994,10 +1994,13 @@ export interface FieldCaptureListQuery {
   from?: string;
   to?: string;
   q?: string;
+  offset?: number;
 }
 
 export interface MyCaptureItemsDto {
   items: MyCaptureItemDto[];
+  total: number;
+  nextOffset: number | null;
 }
 
 export interface FieldCapturePhotoDto {

@@ -201,10 +201,12 @@ describeIfDb('SkuFieldCaptureReader (DB integration)', () => {
       await w.receive(a, s2.locationId);
       await complete(manager, a, trx);
 
-      const items = await reader.listItems({ who: 'mine', q: s2.code.toLowerCase() }, w1.workerId, trx);
+      const { items } = await reader.listItems({ who: 'mine', q: s2.code.toLowerCase() }, w1.workerId, trx);
       expect(items.filter((i) => i.skuId === a).map((i) => i.positionCode)).toEqual([s1.code]);
       expect(
-        (await reader.listItems({ who: 'all', q: `${s1.code}-OLD` }, w1.workerId, trx)).filter((i) => i.skuId === a),
+        (await reader.listItems({ who: 'all', q: `${s1.code}-OLD` }, w1.workerId, trx)).items.filter(
+          (i) => i.skuId === a,
+        ),
       ).toEqual([]);
 
       const photos = (await reader.listPhotos({ q: s2.code }, trx)).photos.filter((p) => p.skuId === a);
@@ -365,16 +367,24 @@ describeIfDb('SkuFieldCaptureReader (DB integration)', () => {
       await trx
         .update(wmsTables.skuFieldCaptureEvents)
         .set({ completedAt: sql`now() - interval '1 day'` })
-        .where(and(eq(wmsTables.skuFieldCaptureEvents.skuId, c), eq(wmsTables.skuFieldCaptureEvents.workerId, me.workerId)));
+        .where(
+          and(eq(wmsTables.skuFieldCaptureEvents.skuId, c), eq(wmsTables.skuFieldCaptureEvents.workerId, me.workerId)),
+        );
       const [{ today }] = await trx.execute<{ today: string }>(
         sql`select to_char((now() at time zone 'Asia/Seoul')::date, 'YYYY-MM-DD') as today`,
       );
       const ids = async (filter: Parameters<SkuFieldCaptureReader['listItems']>[0]) =>
-        (await reader.listItems(filter, me.workerId, trx)).map((i) => i.skuId).filter((id) => [a, b, c].includes(id));
+        (await reader.listItems(filter, me.workerId, trx)).items
+          .map((i) => i.skuId)
+          .filter((id) => [a, b, c].includes(id));
 
       expect((await ids({ who: 'mine', from: today, to: today })).sort()).toEqual([a, b].sort());
       expect((await ids({ who: 'mine' })).sort()).toEqual([a, b, c].sort());
-      const bItem = (await reader.listItems({ who: 'all' }, me.workerId, trx)).find((i) => i.skuId === b);
+      expect(await reader.listItems({ who: 'mine' }, me.workerId, trx)).toMatchObject({ total: 3, nextOffset: null });
+      const rest = await reader.listItems({ who: 'mine', offset: 2 }, me.workerId, trx);
+      expect(rest).toMatchObject({ total: 3, nextOffset: null });
+      expect(rest.items).toHaveLength(1);
+      const bItem = (await reader.listItems({ who: 'all' }, me.workerId, trx)).items.find((i) => i.skuId === b);
       expect(bItem).toMatchObject({ lastWorkerLabel: 'other', canCancel: false });
 
       const [aSku] = await trx
