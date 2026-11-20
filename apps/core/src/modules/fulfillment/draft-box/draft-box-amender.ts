@@ -1,14 +1,13 @@
 import { classifyOperationReason } from '../shipment/shipment-operation-reasons';
 import { ConflictException, Injectable } from '@nestjs/common';
 import { DbService, InjectTypedDb } from '@app/db';
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, sql } from 'drizzle-orm';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { AuditService } from '../../inventory/shared/services/audit.service';
 import { acquireStockAvailabilityLocks } from '../../inventory/shared/locks/stock-availability-lock';
 import { canonicalFulfillmentRequestHash } from '../services/fulfillment-command.service';
 import { FulfillmentInvariantService } from '../services/fulfillment-invariant.service';
 import { ShipmentReservationService } from '../services/shipment-reservation.service';
-import { compatibleShippingProfileId } from '../services/shipping-profile';
 import { shrinkDraftLines } from '../services/draft-line-shrink';
 import {
   completeShipmentOperation,
@@ -231,15 +230,6 @@ export class DraftBoxAmender {
       await this.reservations.reservePartial(entry.shipmentLineId, entry.qty, trx);
     }
 
-    const changedLines = await loadShipmentAggregate(trx, shipmentId);
-    const skuRows = await trx
-      .select({ deliveryProfileId: wmsTables.skus.deliveryProfileId })
-      .from(wmsTables.skus)
-      .where(inArray(wmsTables.skus.id, [...new Set(changedLines.lines.map((line) => line.skuId))]));
-    await writer.setShippingProfile(
-      shipmentId,
-      compatibleShippingProfileId(skuRows.map((row) => row.deliveryProfileId)),
-    );
     for (const fulfillmentOrderId of aggregate.fulfillmentOrderIds) {
       await this.recomputeTotals(trx, fulfillmentOrderId);
     }

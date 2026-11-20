@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { eq } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { inRollbackTx, makeDb, makeDbService } from '../services/__support__';
@@ -86,6 +87,89 @@ describeIfDb('editShipmentManifest', () => {
       expect((await shipment(tx, newId)).manifestVersion).toBe(1);
       expect((await line(tx, b.lineB)).shipmentId).toBe(newId);
       expect(recompute.mock.calls.map((c) => c[0])).toEqual([b.shipmentId, newId]);
+    });
+  });
+
+  async function profile(tx: DbTx) {
+    const [row] = await tx
+      .insert(wmsTables.deliveryProfiles)
+      .values({ name: `it-${randomUUID().slice(0, 8)}`, sourceType: 'in_house' })
+      .returning();
+    return row.id;
+  }
+  async function setSkuProfile(tx: DbTx, lineId: string, profileId: string) {
+    const skuId = (await line(tx, lineId)).skuId;
+    await tx.update(wmsTables.skus).set({ deliveryProfileId: profileId }).where(eq(wmsTables.skus.id, skuId));
+  }
+
+  it('배송 프로필이 다른 줄을 새 상자로 옮기면 두 draft 상자의 프로필이 담긴 상품 것으로 맞춰진다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { deps, wired } = makeDeps();
+      const b = await box(tx, wired);
+      const [p1, p2] = [await profile(tx), await profile(tx)];
+      await setSkuProfile(tx, b.lineA, p1);
+      await setSkuProfile(tx, b.lineB, p2);
+      await tx.update(S).set({ shippingProfileId: null }).where(eq(S.id, b.shipmentId));
+      const s0 = await shipment(tx, b.shipmentId);
+      const newId = await editShipmentManifest(
+        deps,
+        { shipmentIds: [b.shipmentId], allow: ['draft'] },
+        async (w) => {
+          const created = await w.createShipment({
+            owner: { kind: 'warehouse', warehouseId: b.warehouseId },
+            status: 'draft',
+            shippingProfileId: s0.shippingProfileId,
+            recipientSnapshot: s0.recipientSnapshot,
+            entrancePassword: null,
+          });
+          await w.moveLine(b.lineB, b.shipmentId, created.id);
+          return created.id;
+        },
+        tx,
+      );
+      const source = await shipment(tx, b.shipmentId);
+      expect(source.shippingProfileId).toBe(p1);
+      expect(source.manifestVersion).toBe(s0.manifestVersion + 1);
+      expect((await shipment(tx, newId)).shippingProfileId).toBe(p2);
+    });
+  });
+
+  it('남은 줄의 프로필이 서로 다르거나 없으면 칸을 비우고, 줄이 그대로인 상자와 draft 가 아닌 상자는 건드리지 않는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { deps, wired } = makeDeps();
+      const b = await box(tx, wired);
+      const untouched = await box(tx, wired);
+      const [p1, p2] = [await profile(tx), await profile(tx)];
+      await setSkuProfile(tx, b.lineA, p1);
+      await setSkuProfile(tx, b.lineB, p2);
+      await tx.update(S).set({ shippingProfileId: p1 }).where(eq(S.id, b.shipmentId));
+      await tx.update(S).set({ shippingProfileId: p1 }).where(eq(S.id, untouched.shipmentId));
+      const s0 = await shipment(tx, b.shipmentId);
+      const tombstoneId = await editShipmentManifest(
+        deps,
+        { shipmentIds: [b.shipmentId, untouched.shipmentId], allow: ['draft'] },
+        async (w) => {
+          await w.setLineQty(b.lineA, b.shipmentId, 2, 2);
+          await w.reviseRecipient(untouched.shipmentId, { recipientName: 'New' });
+          const created = await w.createShipment({
+            owner: { kind: 'warehouse', warehouseId: b.warehouseId },
+            status: 'canceled',
+            shippingProfileId: null,
+            recipientSnapshot: s0.recipientSnapshot,
+            entrancePassword: null,
+          });
+          await w.addLine(created.id, {
+            fulfillmentOrderItemId: (await line(tx, b.lineA)).fulfillmentOrderItemId,
+            skuId: (await line(tx, b.lineA)).skuId,
+            qty: 1,
+          });
+          return created.id;
+        },
+        tx,
+      );
+      expect((await shipment(tx, b.shipmentId)).shippingProfileId).toBeNull();
+      expect((await shipment(tx, untouched.shipmentId)).shippingProfileId).toBe(p1);
+      expect((await shipment(tx, tombstoneId)).shippingProfileId).toBeNull();
     });
   });
 
