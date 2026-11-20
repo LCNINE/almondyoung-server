@@ -32,12 +32,15 @@ type Options = {
   totalCount: number;
   pageIndex: number;
   pageSize: number;
+  /** 매칭 편집 창을 연다. 없으면 기능 칸에 매칭하기를 그리지 않는다. */
+  onEditMatching?: (row: MasterSummaryDto) => void;
 };
 
 export function useProductsListTableColumns({
   totalCount,
   pageIndex,
   pageSize,
+  onEditMatching,
 }: Options) {
   const router = useRouter();
 
@@ -121,6 +124,23 @@ export function useProductsListTableColumns({
           />
         ),
       }),
+      columnHelper.accessor('unlinkedVariantCount', {
+        header: 'SKU 연결',
+        meta: { width: 120 },
+        cell: ({ row }) => {
+          const { unlinkedVariantCount, variantCount } = row.original;
+
+          if (!unlinkedVariantCount) return null;
+
+          return (
+            <span className="whitespace-nowrap text-[13px] font-bold text-[#b91c1c]">
+              {unlinkedVariantCount >= variantCount
+                ? `${variantCount}개 모두 안 됨`
+                : `${variantCount}개 중 ${unlinkedVariantCount}개 안 됨`}
+            </span>
+          );
+        },
+      }),
       columnHelper.accessor('supplierId', {
         header: '공급처',
         meta: { width: 112 },
@@ -178,32 +198,50 @@ export function useProductsListTableColumns({
               </Badge>
             );
           }
+          if (status === 'active') {
+            return (
+              <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs text-[#374151]">
+                <span className="h-1.5 w-1.5 rounded-full bg-[#16a34a]" aria-hidden="true" />
+                판매중
+              </span>
+            );
+          }
           const label = STATUS_LABELS[status] ?? status;
-          const variant =
-            status === 'active'
-              ? 'default'
-              : status === 'draft'
-                ? 'secondary'
-                : 'outline';
+          const variant = status === 'draft' ? 'secondary' : 'outline';
           return <Badge variant={variant}>{label}</Badge>;
         },
       }),
       columnHelper.display({
         id: 'actions',
         header: '기능',
-        meta: { width: 88 },
+        meta: { width: 96 },
         cell: ({ row }) => (
-          <Button
-            size="sm"
-            variant="outline"
-            className="text-xs"
-            onClick={(e) => {
-              e.stopPropagation();
-              router.push(`/mall/pricing/${row.original.masterId}`);
-            }}
-          >
-            가격 관리
-          </Button>
+          <div className="flex flex-col gap-1">
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-xs"
+              onClick={(e) => {
+                e.stopPropagation();
+                router.push(`/mall/pricing/${row.original.masterId}`);
+              }}
+            >
+              가격 관리
+            </Button>
+            {onEditMatching && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-xs"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEditMatching(row.original);
+                }}
+              >
+                매칭하기
+              </Button>
+            )}
+          </div>
         ),
       }),
       columnHelper.accessor('createdAt', {
@@ -224,6 +262,6 @@ export function useProductsListTableColumns({
         ),
       }),
     ],
-    [router, totalCount, pageIndex, pageSize]
+    [router, totalCount, pageIndex, pageSize, onEditMatching]
   );
 }

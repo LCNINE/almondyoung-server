@@ -24,6 +24,7 @@ export function toExportFilters(
   // 목록은 기간을 `createdAt` JSON 으로 싣는다(목록 훅과 같은 해석).
   const created = toDayBoundInstants(parseDateRangeParam(params.get('createdAt') ?? undefined));
   const stock = str('stock');
+  const skuLink = str('skuLink');
   const sort = str('sort');
   const order = str('order');
 
@@ -45,6 +46,10 @@ export function toExportFilters(
     stock:
       stock === 'in_stock' || stock === 'partial' || stock === 'sold_out'
         ? stock
+        : undefined,
+    skuLink:
+      skuLink === 'unlinked' || skuLink === 'linked' || skuLink === 'void'
+        ? skuLink
         : undefined,
     createdBy: str('createdBy'),
     supplierId: list('supplierId'),

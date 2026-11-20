@@ -28,6 +28,7 @@ export const useProductsListTableQuery = ({
     'sort',
     'order',
     'stock',
+    'skuLink',
     'size',
   ]);
 
@@ -45,6 +46,7 @@ export const useProductsListTableQuery = ({
     sort,
     order,
     stock,
+    skuLink,
     size,
   } = queryObject;
 
@@ -86,6 +88,10 @@ export const useProductsListTableQuery = ({
     stock:
       stock === 'in_stock' || stock === 'partial' || stock === 'sold_out'
         ? stock
+        : undefined,
+    skuLink:
+      skuLink === 'unlinked' || skuLink === 'linked' || skuLink === 'void'
+        ? skuLink
         : undefined,
   };
 

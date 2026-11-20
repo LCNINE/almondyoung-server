@@ -41,6 +41,8 @@ import { SelectedProductsModal } from '../selected-products-modal';
 import { ProductsListFilterBox } from '../filter-box';
 import { ExcelDownloadMenu } from '../excel-download';
 import { PageSizeSelect } from './page-size-select';
+import { ProductsListMatchingDrawer } from '../matching-drawer';
+import type { MasterSummaryDto } from '@/lib/types/dto/products';
 
 export function ProductsListTable() {
   const router = useRouter();
@@ -52,6 +54,9 @@ export function ProductsListTable() {
   const { searchParams: query, pageSize } = useProductsListTableQuery();
   const { data, isLoading, isFetching } = useMastersSummary(query);
   const totalCount = data?.total ?? 0;
+  const { data: unlinked } = useMastersSummary({ skuLink: 'unlinked', limit: 1 });
+  const unlinkedTotal = unlinked?.total ?? 0;
+  const [matchingMaster, setMatchingMaster] = useState<MasterSummaryDto | null>(null);
 
   const searchParams = useSearchParams();
   const masterSelection = useMasterSelection();
@@ -66,6 +71,7 @@ export function ProductsListTable() {
     totalCount,
     pageIndex: (query.page ?? 1) - 1,
     pageSize,
+    onEditMatching: setMatchingMaster,
   });
 
   const { table } = useDataTable({
@@ -159,7 +165,44 @@ export function ProductsListTable() {
 
   return (
     <div>
-      <ProductsListFilterBox />
+      <ProductsListFilterBox key={searchParams.get('skuLink') ?? ''} />
+
+      {unlinkedTotal > 0 && (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-[10px] border border-[#e5e7eb] bg-white px-4 py-3">
+          <p className="text-sm">
+            <b>SKU 가 연결 안 된 옵션이 있는 상품 {unlinkedTotal.toLocaleString()}개</b>
+            <span className="text-[#6b7280]">
+              {' '}
+              · 이 옵션은 주문이 들어와도 출고주문이 만들어지지 않고 매칭 대기로 남아요.
+            </span>
+          </p>
+          {query.skuLink !== 'unlinked' && (
+            <Button
+              size="sm"
+              variant="link"
+              className="h-auto p-0"
+              onClick={() => {
+                const params = new URLSearchParams(searchParams.toString());
+                params.set('skuLink', 'unlinked');
+                params.set('page', '1');
+                router.replace(`?${params.toString()}`);
+              }}
+            >
+              이것만 보기
+            </Button>
+          )}
+        </div>
+      )}
+
+      <ProductsListMatchingDrawer
+        master={
+          // 저장 뒤 다시 불러온 행으로 옵션 표시를 바꾼다. 거른 목록에서 빠졌으면 열 때의 값을 쓴다
+          (matchingMaster &&
+            data?.data.find((row) => row.masterId === matchingMaster.masterId)) ??
+          matchingMaster
+        }
+        onOpenChange={(open) => !open && setMatchingMaster(null)}
+      />
 
       <DataTable
         table={table}
