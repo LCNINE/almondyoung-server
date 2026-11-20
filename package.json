@@ -85,7 +85,7 @@
     "generate:token": "node scripts/generate-jwt-token.js",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "lint:admin-web": "cd apps/admin-web && npm run lint",
-    "type-check": "tsc -p tsconfig.json --noEmit",
+    "type-check": "node --max-old-space-size=8192 node_modules/typescript/bin/tsc -p tsconfig.json --noEmit",
     "type-check:scoped": "tsc -p tsconfig.spec-scope.json --noEmit",
     "audit:event-handlers": "node scripts/events/event-handler-contract-audit.js",
     "audit:event-publishers": "node scripts/events/publisher-contract-audit.js",
