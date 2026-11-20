@@ -1,7 +1,7 @@
 'use client';
 
 import Image from 'next/image';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -17,15 +17,26 @@ import {
 import { isSubscribeReturnUrl, leaveToReturnUrl, subscribeIntentOf } from '@/lib/return-url';
 import { SignupContinueFooter } from '@/components/signup-continue-footer';
 import { redirectToWalletLogin } from '@/lib/auth-expired';
+import { BillingAccount, BillingAccountBanner, billingAccountLabel } from '@/components/billing-account';
 
 interface BillingChangeFormProps {
   returnUrl: string;
   billingMethodId?: string;
   initialPhone?: string;
   initialError?: string;
+  account: BillingAccount;
+  /** 이 화면을 연 진입표. 등록 요청에 실어 다른 탭이 세션을 바꿨으면 서버가 거절하게 한다. */
+  entryId: string;
 }
 
-export function BillingChangeForm({ returnUrl, billingMethodId, initialPhone, initialError }: BillingChangeFormProps) {
+export function BillingChangeForm({
+  returnUrl,
+  billingMethodId,
+  initialPhone,
+  initialError,
+  account,
+  entryId,
+}: BillingChangeFormProps) {
   const isRegister = !billingMethodId;
   // register: 'details' → 'consent' → 'signature' → done
   // update:   'details' → 'consent' → 'signature' → done
@@ -44,6 +55,15 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialPhone, in
   // 동의 단계로 넘어가면 CmsAccountFields 가 unmount 된다. 확인 결과를 여기 두어야
   // 뒤로 돌아왔을 때 같은 계좌를 다시 유료 조회하지 않는다.
   const [verifiedAccount, setVerifiedAccount] = useState<CmsVerifiedAccount | null>(null);
+
+  // 콜백이 붙인 1회용 진입표를 주소에서 지운다. 새로고침·즐겨찾기로 다시 들어오면 쇼핑몰을 한 번 더 거친다.
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has('entry')) return;
+
+    url.searchParams.delete('entry');
+    window.history.replaceState(window.history.state, '', url.toString());
+  }, []);
   const { paymentCompany, payerName, payerNumber, paymentNumber, phone } = details;
 
   const returnUrlWithFlag = (() => {
@@ -88,7 +108,12 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialPhone, in
         ? '/api/billing/cms-register-with-agreement'
         : `/api/billing/cms-update-with-agreement/${billingMethodId}`;
       const method = isRegister ? 'POST' : 'PUT';
-      const res = await fetch(url, { method, credentials: 'include', body: formData });
+      const res = await fetch(url, {
+        method,
+        credentials: 'include',
+        headers: { 'x-wallet-entry': entryId },
+        body: formData,
+      });
       const data = (await res.json().catch(() => ({}))) as {
         error?: string;
         agreementUploadFailed?: boolean;
@@ -262,6 +287,11 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialPhone, in
             <p className="text-[14px] font-bold tracking-tight text-foreground">출금 계좌 확인</p>
             <div className="mt-3 space-y-2.5">
               <div className="flex items-center justify-between gap-3">
+                <span className="text-[13px] text-muted-foreground">아몬드영 계정</span>
+                <span className="text-[14px] font-bold text-foreground">{billingAccountLabel(account)}</span>
+              </div>
+              <div className="h-px bg-border/60" />
+              <div className="flex items-center justify-between gap-3">
                 <span className="text-[13px] text-muted-foreground">금융기관</span>
                 <span className="text-[14px] font-semibold text-foreground">{bankName}</span>
               </div>
@@ -270,6 +300,12 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialPhone, in
                 <span className="text-[14px] font-semibold text-foreground">{payerName}</span>
               </div>
             </div>
+            <p className="mt-3 text-[12px] leading-relaxed text-muted-foreground">
+              내 계정이 아니면 등록하지 말고{' '}
+              <a href={account.reselectHref} className="font-semibold text-foreground underline">
+                계정을 다시 골라주세요
+              </a>
+            </p>
           </div>
 
           {/* 개인정보 수집·이용 동의 */}
@@ -431,6 +467,7 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialPhone, in
         onComplete={goToConsent}
         verified={verifiedAccount}
         onVerifiedChange={setVerifiedAccount}
+        notice={<BillingAccountBanner account={account} />}
       />
     </div>
   );

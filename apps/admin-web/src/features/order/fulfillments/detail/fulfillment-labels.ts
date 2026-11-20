@@ -77,6 +77,8 @@ const OPERATION_TYPE: Record<string, string> = {
   recall: '출고 되돌리기',
   amend: '구성 변경',
   force_dispatch: '강제 출고',
+  waybill_void: '송장 무효화',
+  waybill_reissue: '송장 재발급',
 };
 
 export const operationTypeLabel = (type: string) =>

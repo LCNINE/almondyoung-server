@@ -1,6 +1,7 @@
 'use client';
 
 import { Fragment, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { AlertTriangle, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { Container } from '@/components/admin-ui-experimental/common/container/container';
@@ -104,7 +105,11 @@ function shipmentNo(shipment: ConsolidationBoardShipment): string {
 export default function ConsolidationTemplate() {
   const { data: warehouses = [] } = useWarehouses();
   const { can, canRun, isPermissionLoading } = usePermissionCheck();
-  const [pickedWarehouse, setPickedWarehouse] = useState('');
+  const searchParams = useSearchParams();
+  // 출고 준비 «합치러 가기»는 보던 창고를 ?warehouseId= 로 넘긴다
+  const [pickedWarehouse, setPickedWarehouse] = useState(
+    () => searchParams.get('warehouseId') ?? ''
+  );
   const [todayOnly, setTodayOnly] = useState(false);
   const [beforeWaybillOnly, setBeforeWaybillOnly] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
@@ -120,7 +125,12 @@ export default function ConsolidationTemplate() {
   // 확인 창에 보여 준 묶음 그대로 요청한다. 그사이 목록을 다시 불러와도 바뀌지 않는다.
   const [confirming, setConfirming] = useState<ConsolidationBoardGroup[]>([]);
 
-  const warehouseId = pickedWarehouse || defaultWarehouseId(warehouses);
+  // 없는 창고(옛 링크)를 받으면 기본 창고로 연다
+  const warehouseId = warehouses.some(
+    (warehouse) => warehouse.id === pickedWarehouse
+  )
+    ? pickedWarehouse
+    : defaultWarehouseId(warehouses);
   const canRead = can(['fulfillment.shipment.read']);
   const canCreate = canRun(useCreateShipmentConsolidation);
   const board = useConsolidationBoard(canRead ? warehouseId : '');

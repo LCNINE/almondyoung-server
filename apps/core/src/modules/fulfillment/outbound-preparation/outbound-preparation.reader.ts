@@ -16,22 +16,25 @@ import {
   PREPARATION_BUCKETS,
   PreparationFacts,
 } from './outbound-preparation-classify';
-import { compatibleShippingProfileId } from '../services/shipping-profile';
-import { isUntrustedExternalLine } from '../services/external-line-identity';
+import { loadSellmateShipmentIds } from '../services/sellmate-handed-over-shipments';
 import { waybillFailureText } from '../waybill/waybill-failure-text';
+import { loadShortPickReturns } from './short-pick-returns';
+import { batchExitReasonOf, loadNeedsNewWaybill, loadReturnedWorkItems } from './batch-returns';
+import { OUR_HOLDER_KEY, preparationOwnerOf } from './preparation-owner';
+import { loadNeedsInfoLines, loadUntrustedLineSkus, needsInfoIssues, needsInfoReasonText } from './needs-info';
+import { loadWarehouseStock, readPipelineScope, shortageStockOf } from './shortage-stock';
+import { InboundPipelineReader } from '../../inventory/stock-projection/services/inbound-pipeline.reader';
 import {
   OutboundPreparationQueryDto,
   OutboundPreparationSummaryDto,
   PreparationBucketDto,
+  PreparationHolderDto,
 } from '../dto/outbound-preparation.dto';
 
-type PreparationLineQuantity = PreparationFacts['lines'][number] & { name: string };
+type PreparationLineQuantity = PreparationFacts['lines'][number] & { name: string; skuId: string };
 
 // 분류마다 한 번에 돌려주는 상자 수. 나머지는 화면이 `bucket`·`offset` 으로 더 부른다.
 const BUCKET_PAGE_SIZE = 200;
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-// 바인드 변수 한도 안에서 판매주문 품목을 나눠 찾는다
-const LINE_LOOKUP_CHUNK = 5000;
 
 @Injectable()
 export class OutboundPreparationReader {
@@ -39,11 +42,12 @@ export class OutboundPreparationReader {
     @InjectTypedDb<typeof wmsSchema>()
     private readonly dbService: DbService<typeof wmsSchema>,
     private readonly consolidationBoard: ConsolidationBoardReader,
+    private readonly inboundPipeline: InboundPipelineReader,
   ) {}
 
   async summarize(
     warehouseId: string,
-    page?: Pick<OutboundPreparationQueryDto, 'bucket' | 'offset'>,
+    page?: Pick<OutboundPreparationQueryDto, 'bucket' | 'offset' | 'holders'>,
     tx?: DbTx,
   ): Promise<OutboundPreparationSummaryDto> {
     return this.dbService.run(async (trx) => {
@@ -52,17 +56,22 @@ export class OutboundPreparationReader {
         count: 0,
         singleCount: 0,
         multiCount: 0,
+        shortPickCount: 0,
+        batchReturnCount: 0,
         shipments: [],
       }));
+      const holders = new Map<string, PreparationHolderDto>();
+      const holderFilter = page?.holders?.length ? new Set(page.holders) : null;
       const [backlog] = await trx
         .select({ count: count() })
         .from(wmsTables.fulfillmentOrderCreationBacklogs)
         .where(eq(wmsTables.fulfillmentOrderCreationBacklogs.status, 'awaiting_matching'));
-      const shipments = await trx
+      const candidates = await trx
         .select({
           id: wmsTables.shipments.id,
           status: wmsTables.shipments.status,
           recipientSnapshot: wmsTables.shipments.recipientSnapshot,
+          manifestVersion: wmsTables.shipments.manifestVersion,
         })
         .from(wmsTables.shipments)
         .where(
@@ -73,10 +82,22 @@ export class OutboundPreparationReader {
           ),
         )
         .orderBy(asc(wmsTables.shipments.createdAt), asc(wmsTables.shipments.id));
-      const ids = shipments.map((shipment) => shipment.id);
+      // 드레인 중 셀메이트가 내보내는 주문의 상자는 앱 출고 대상이 아니다(#1412)
+      const sellmate = await loadSellmateShipmentIds(
+        trx,
+        candidates.map((shipment) => shipment.id),
+      );
+      const kept = candidates.filter((shipment) => !sellmate.has(shipment.id));
+      const ids = kept.map((shipment) => shipment.id);
+      const returned = await loadReturnedWorkItems(trx, ids);
+      const shortPicks = await loadShortPickReturns(trx, returned);
+      const newWaybills = await loadNeedsNewWaybill(trx, [...returned.keys()]);
+      // 분류마다 결품으로 돌아온 상자, 배치에서 빠져 돌아온 상자 순으로 앞에 모은다 — 쪽 나누기 전에 정렬해야 다음 쪽에 묻히지 않는다
+      const rank = (id: string) => (shortPicks.has(id) ? 0 : returned.has(id) ? 1 : 2);
+      const shipments = [0, 1, 2].flatMap((order) => kept.filter((shipment) => rank(shipment.id) === order));
 
       if (ids.length === 0) {
-        return { warehouseId, buckets, awaitingMatchingCount: backlog.count };
+        return { warehouseId, buckets, awaitingMatchingCount: backlog.count, holders: [] };
       }
 
       const lines = await loadShipmentLines(trx, ids);
@@ -91,7 +112,7 @@ export class OutboundPreparationReader {
             notInArray(wmsTables.outboundBatchWorkItems.status, ['excluded', 'completed']),
           ),
         );
-      const untrustedIds = await this.untrustedExternalLineShipments(trx, ids);
+      const untrustedIds = await loadUntrustedLineSkus(trx, ids);
       const board = await this.consolidationBoard.findBoard(warehouseId, trx);
       const groupByShipment = new Map(
         board.groups.flatMap((group) =>
@@ -99,6 +120,7 @@ export class OutboundPreparationReader {
         ),
       );
       const activeIds = new Set(workItems.map((item) => item.shipmentId));
+      const needsInfoTargets: { id: string; recipientSnapshot: unknown; manifestVersion: number }[] = [];
       const linesByShipment = new Map<string, OptionLine[]>();
 
       for (const line of lines) {
@@ -135,11 +157,25 @@ export class OutboundPreparationReader {
           continue;
         }
 
+        const owner = preparationOwnerOf(shipmentLines);
+        const holder = holders.get(owner.key) ?? { key: owner.key, name: owner.name, count: 0 };
+
+        holder.count++;
+        holders.set(owner.key, holder);
+
+        if (holderFilter && !holderFilter.has(owner.key)) {
+          continue;
+        }
+
         const single = isSingleItem(quantities);
+        const shortPick = shortPicks.get(shipment.id) ?? null;
+        const exit = returned.get(shipment.id);
 
         bucket.count++;
         bucket.singleCount += single ? 1 : 0;
         bucket.multiCount += single ? 0 : 1;
+        bucket.shortPickCount += shortPick ? 1 : 0;
+        bucket.batchReturnCount += exit && !shortPick ? 1 : 0;
 
         if (
           (page?.bucket && bucketName !== page.bucket) ||
@@ -149,19 +185,12 @@ export class OutboundPreparationReader {
           continue;
         }
 
-        let reason: string | null = null;
-
         if (bucketName === 'needs_info') {
-          if (compatibleShippingProfileId(profileIds) === null) {
-            reason =
-              profileIds.includes(null) || profileIds.length === 0
-                ? '배송 프로필이 없는 상품이 있어요'
-                : '배송 프로필이 상품마다 달라요';
-          } else if (!isRecipientComplete(shipment.recipientSnapshot)) {
-            reason = '수령인 정보가 비어 있어요';
-          } else {
-            reason = '쇼핑몰 품목 번호가 없거나 맞지 않아요';
-          }
+          needsInfoTargets.push({
+            id: shipment.id,
+            recipientSnapshot: shipment.recipientSnapshot,
+            manifestVersion: shipment.manifestVersion,
+          });
         }
 
         const names = shipmentLines.map((line) => line.skuName);
@@ -172,67 +201,134 @@ export class OutboundPreparationReader {
           itemSummary: names.length > 1 ? `${names[0]} 외 ${names.length - 1}건` : (names[0] ?? ''),
           totalQty: shipmentLines.reduce((total, line) => total + line.qty, 0),
           single,
-          reason,
+          reason: null,
           lines: quantities.map((line) => ({
             name: line.name,
             qty: line.qty,
             reservedQty: Math.min(line.qty, line.confirmedQty),
           })),
           split: splits.get(shipment.id) ?? null,
+          shortPick,
+          batchReturn: exit
+            ? {
+                batchNumber: exit.batchNumber,
+                exitedAt: exit.exitedAt.toISOString(),
+                ...batchExitReasonOf(exit.exclusionReason),
+                needsNewWaybill: newWaybills.has(shipment.id),
+              }
+            : null,
+          owner: owner.key === OUR_HOLDER_KEY ? null : { id: owner.key, name: owner.name },
         });
       }
 
       await this.fillWaybillFailures(trx, buckets.find((entry) => entry.bucket === 'resume')?.shipments ?? []);
+      await this.fillNeedsInfo(trx, buckets.find((entry) => entry.bucket === 'needs_info')?.shipments ?? [], {
+        targets: needsInfoTargets,
+        untrusted: untrustedIds,
+      });
+      await this.fillShortageStock(
+        trx,
+        warehouseId,
+        buckets.find((entry) => entry.bucket === 'unavailable')?.shipments ?? [],
+        quantitiesByShipment,
+      );
 
-      return { warehouseId, buckets, awaitingMatchingCount: backlog.count };
+      return {
+        warehouseId,
+        buckets,
+        awaitingMatchingCount: backlog.count,
+        // 자사를 맨 앞에, 업체는 이름순
+        holders: [...holders.values()].sort(
+          (a, b) => Number(b.key === OUR_HOLDER_KEY) - Number(a.key === OUR_HOLDER_KEY) || a.name.localeCompare(b.name),
+        ),
+      };
     }, tx);
   }
 
-  // 상자 확정이 같은 판정으로 거절하는 상자. 다시 눌러도 같으니 «정보 필요»로 둔다.
-  // 판매주문 품목은 기본키로 찾는다 — 출고 품목의 참조는 문자열이라 조인하면 인덱스를 못 쓴다.
-  private async untrustedExternalLineShipments(trx: DbTx, shipmentIds: string[]): Promise<Set<string>> {
-    const links = await trx
-      .select({
-        shipmentId: wmsTables.shipmentLines.shipmentId,
-        salesOrderLineId: wmsTables.fulfillmentOrderItems.salesOrderLineId,
-      })
-      .from(wmsTables.shipmentLines)
-      .innerJoin(
-        wmsTables.fulfillmentOrderItems,
-        eq(wmsTables.fulfillmentOrderItems.id, wmsTables.shipmentLines.fulfillmentOrderItemId),
-      )
-      .where(inArray(wmsTables.shipmentLines.shipmentId, shipmentIds));
-    // 상자 확정은 `id::text` 와 그대로 견준다 — 같은 판정이 되도록 소문자 uuid 꼴만 찾는다
-    const lineIds = uniqueInOrder(
-      links.flatMap(({ salesOrderLineId }) =>
-        salesOrderLineId && UUID.test(salesOrderLineId) ? [salesOrderLineId] : [],
-      ),
-    );
-    const untrusted = new Set<string>();
-
-    for (let start = 0; start < lineIds.length; start += LINE_LOOKUP_CHUNK) {
-      const origins = await trx
-        .select({
-          id: wmsTables.salesOrderLines.id,
-          salesChannel: wmsTables.salesOrders.salesChannel,
-          channelOrderItemId: wmsTables.salesOrderLines.channelOrderItemId,
-          channelProductId: wmsTables.salesOrderLines.channelProductId,
-          exchangeReturnLineId: wmsTables.salesOrderLines.exchangeReturnLineId,
-        })
-        .from(wmsTables.salesOrderLines)
-        .innerJoin(wmsTables.salesOrders, eq(wmsTables.salesOrders.id, wmsTables.salesOrderLines.salesOrderId))
-        .where(inArray(wmsTables.salesOrderLines.id, lineIds.slice(start, start + LINE_LOOKUP_CHUNK)));
-
-      for (const origin of origins.filter(isUntrustedExternalLine)) {
-        untrusted.add(origin.id);
-      }
+  // 정보 부족 상자에 고쳐야 할 것을 모두 싣는다. 첫 항목이 사유다 — 분류와 같은 판정이다.
+  private async fillNeedsInfo(
+    trx: DbTx,
+    shipments: PreparationBucketDto['shipments'],
+    input: {
+      targets: { id: string; recipientSnapshot: unknown; manifestVersion: number }[];
+      untrusted: Map<string, Set<string>>;
+    },
+  ): Promise<void> {
+    if (shipments.length === 0) {
+      return;
     }
 
-    return new Set(
-      links.flatMap(({ shipmentId, salesOrderLineId }) =>
-        salesOrderLineId && untrusted.has(salesOrderLineId) ? [shipmentId] : [],
-      ),
+    const lines = await loadNeedsInfoLines(
+      trx,
+      shipments.map((shipment) => shipment.shipmentId),
     );
+    const targets = new Map(input.targets.map((target) => [target.id, target]));
+
+    for (const shipment of shipments) {
+      const target = targets.get(shipment.shipmentId);
+      const shipmentLines = lines.get(shipment.shipmentId) ?? [];
+      const issues = needsInfoIssues({
+        lines: shipmentLines,
+        recipientSnapshot: target?.recipientSnapshot,
+        untrustedSkuIds: input.untrusted.get(shipment.shipmentId) ?? new Set(),
+      });
+
+      shipment.needsInfo = issues;
+      shipment.reason = issues[0] ? needsInfoReasonText(issues[0]) : null;
+
+      if (target && issues.some((issue) => issue.kind === 'shipping_profile_mixed')) {
+        shipment.profileSplit = {
+          manifestVersion: target.manifestVersion,
+          lines: shipmentLines.map((line) => ({
+            id: line.lineId,
+            lineVersion: line.lineVersion,
+            qty: line.qty,
+            skuId: line.skuId,
+            skuName: line.skuName,
+            skuCode: line.skuCode,
+            deliveryProfile: line.profileId ? { id: line.profileId, name: line.profileName ?? '' } : null,
+          })),
+        };
+      }
+    }
+  }
+
+  // 출고불가 상자의 줄마다 이 창고 재고·다른 상자 몫과 들어올 예정을 싣는다.
+  private async fillShortageStock(
+    trx: DbTx,
+    warehouseId: string,
+    shipments: PreparationBucketDto['shipments'],
+    quantitiesByShipment: Map<string, PreparationLineQuantity[]>,
+  ): Promise<void> {
+    if (shipments.length === 0) {
+      return;
+    }
+
+    const skuIds = uniqueInOrder(
+      shipments.flatMap((shipment) => (quantitiesByShipment.get(shipment.shipmentId) ?? []).map((line) => line.skuId)),
+    );
+    const stock = await loadWarehouseStock(trx, warehouseId, skuIds);
+    const scope = await readPipelineScope(trx, warehouseId);
+    const pipeline = new Map(
+      scope.elsewhere
+        ? (await this.inboundPipeline.read(trx, { skuIds, toWarehouseId: warehouseId })).map((row) => [row.skuId, row])
+        : [],
+    );
+
+    for (const shipment of shipments) {
+      const quantities = quantitiesByShipment.get(shipment.shipmentId) ?? [];
+
+      shipment.lines = shipment.lines.map((line, index) => {
+        const skuId = quantities[index]?.skuId;
+
+        return skuId
+          ? {
+              ...line,
+              stock: shortageStockOf(stock.get(skuId), pipeline.get(skuId), line.reservedQty, scope),
+            }
+          : line;
+      });
+    }
   }
 
   // «이어서 하기» 상자는 송장 단계에서 멈춘 것이다 — 마지막 송장 기록으로 이유를 보인다.
@@ -277,6 +373,7 @@ export class OutboundPreparationReader {
         .select({
           id: wmsTables.shipmentLines.id,
           shipmentId: wmsTables.shipmentLines.shipmentId,
+          skuId: wmsTables.shipmentLines.skuId,
           qty: wmsTables.shipmentLines.qty,
           name: wmsTables.skus.name,
         })
@@ -305,7 +402,12 @@ export class OutboundPreparationReader {
       for (const line of quantityLines) {
         const shipmentLines = quantitiesByShipment.get(line.shipmentId) ?? [];
 
-        shipmentLines.push({ name: line.name, qty: line.qty, confirmedQty: confirmedByLine.get(line.id) ?? 0 });
+        shipmentLines.push({
+          name: line.name,
+          skuId: line.skuId,
+          qty: line.qty,
+          confirmedQty: confirmedByLine.get(line.id) ?? 0,
+        });
         quantitiesByShipment.set(line.shipmentId, shipmentLines);
       }
 

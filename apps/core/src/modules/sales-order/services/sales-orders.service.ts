@@ -94,6 +94,7 @@ import type { CancellationEffect } from '../cancellation-record/cancellation-lin
 import { recordSalesOrderCancellation } from '../cancellation-record/record-cancellation';
 import { FULFILLMENT_SYSTEM_ACTOR } from '../../../platform/auth/system-actor';
 import { isCustomerRequestReason } from '../../fulfillment/shipment/shipment-operation-reasons';
+import { hasCancelWaitingBoxSql, loadPendingCancellations } from '../../fulfillment/reader/pending-cancellations';
 
 type SalesOrderLineInsert = InferInsertModel<typeof wmsTables.salesOrderLines>;
 type BusinessLinkInsert = InferInsertModel<typeof wmsTables.businessLinks>;
@@ -684,25 +685,63 @@ export class SalesOrdersService {
       .where(eq(wmsTables.salesOrderLines.salesOrderId, id));
     const shipmentPhase = (await this.loadShipmentPhases([id], db)).get(id) ?? FALLBACK_SHIPMENT_PHASE;
     // 판매주문당 출고주문은 많아야 하나다 — 화면이 받는 분 정보가 실린 출고주문 목록을 부르지 않고 바로 이동하게 id·상태만 싣는다
-    const [fulfillmentOrder] = await db
-      .select({ id: wmsTables.fulfillmentOrders.id, status: wmsTables.fulfillmentOrders.status })
+    const [foRow] = await db
+      .select({
+        id: wmsTables.fulfillmentOrders.id,
+        status: wmsTables.fulfillmentOrders.status,
+        // 현장에서 빠지기를 기다리는 취소가 걸린 상자가 있는지 — 있을 때만 줄별 수량을 읽는다
+        hasCancelWaitingBox: hasCancelWaitingBoxSql(),
+      })
       .from(wmsTables.fulfillmentOrders)
       .where(eq(wmsTables.fulfillmentOrders.salesOrderId, id))
       .limit(1);
+    const fulfillmentOrder = foRow ? { id: foRow.id, status: foRow.status } : undefined;
     const { links: businessLinks, context } = await this.loadBusinessTimelineLinks(id, db);
     // 리더는 상태가 없다 — 생성자에 넣으면 이 서비스를 위치 인자로 만드는 통합 스펙이 깨진다
     const cancelRequestRow = await new ChannelCancelRequestReader().latestFor(id, db);
+    const warehouseCancelPending = foRow?.hasCancelWaitingBox
+      ? await this.loadWarehouseCancelPending(id, db)
+      : new Map<string, number>();
     return {
       ...order,
       shipmentPhase,
       fulfillmentOrder: fulfillmentOrder ?? null,
       // 출고주문이 없을 때 «아직 안 생김»과 «생길 라인이 없음»을 화면이 가른다
       lineRouteCounts: countLineRoutes(lines),
-      lines,
+      // 현장에서 상자가 빠지기를 기다리는 취소 수량 — 상자가 빠져야 그 줄의 취소가 끝난다
+      lines: lines.map((line) => ({ ...line, warehouseCancelPendingQty: warehouseCancelPending.get(line.id) ?? 0 })),
       businessTimeline: this.toBusinessTimeline(context, businessLinks),
       // 채널 주문 취소 요청(#1016 35번) — admin-web 이 «취소 요청됨»·«취소 실패»를 그린다
       cancelRequest: cancelRequestRow ? toCancelRequestView(cancelRequestRow) : null,
     };
+  }
+
+  /** 판매 줄별로, 이 주문의 상자가 현장에서 빠지기를 기다리는 취소 수량 */
+  private async loadWarehouseCancelPending(salesOrderId: string, db: DbTx | WmsDb): Promise<Map<string, number>> {
+    const waiting = await db
+      .select({ shipmentId: wmsTables.shipments.id })
+      .from(wmsTables.shipments)
+      .innerJoin(wmsTables.shipmentLines, eq(wmsTables.shipmentLines.shipmentId, wmsTables.shipments.id))
+      .innerJoin(
+        wmsTables.fulfillmentOrderItems,
+        eq(wmsTables.fulfillmentOrderItems.id, wmsTables.shipmentLines.fulfillmentOrderItemId),
+      )
+      .where(
+        and(
+          eq(wmsTables.fulfillmentOrderItems.salesOrderId, salesOrderId),
+          eq(wmsTables.shipments.status, 'recovery_required'),
+          eq(wmsTables.shipments.recoveryCode, 'CANCEL_REPLAN_PENDING'),
+        ),
+      );
+    const qtyByLine = new Map<string, number>();
+    const pending = await loadPendingCancellations(db, [...new Set(waiting.map((row) => row.shipmentId))]);
+    for (const cancellation of pending.values()) {
+      for (const line of cancellation.lines) {
+        if (!line.salesOrderLineId) continue;
+        qtyByLine.set(line.salesOrderLineId, (qtyByLine.get(line.salesOrderLineId) ?? 0) + line.qty);
+      }
+    }
+    return qtyByLine;
   }
 
   async createBusinessLink(id: string, dto: CreateBusinessLinkDto, tx?: DbTx) {

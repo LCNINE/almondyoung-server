@@ -18,6 +18,7 @@ function row(overrides: Partial<WaybillRow>): WaybillRow {
     manifestVersion: 3,
     recipientHash: 'hash',
     labelData: null,
+    senderSnapshot: null,
     lastError: null,
     attempts: 0,
     transientAttempts: 0,

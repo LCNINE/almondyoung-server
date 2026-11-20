@@ -24,18 +24,6 @@ export type WithdrawCustomerOutcome = {
   auth_identities_deleted: number;
 };
 
-const CORE_SHIPPING_STATUS_PRECEDENCE: Record<CoreShippingProjectionStatus, number> = {
-  partially_shipped: 1,
-  shipped: 2,
-  partially_delivered: 3,
-  delivered: 4,
-  recalled: 4,
-};
-
-function isCoreShippingProjectionStatus(value: unknown): value is CoreShippingProjectionStatus {
-  return typeof value === 'string' && value in CORE_SHIPPING_STATUS_PRECEDENCE;
-}
-
 function deriveCoreShippingStatus(attempts: Array<Record<string, unknown>>): CoreShippingProjectionStatus | null {
   if (attempts.length === 0) return null;
   const activeAttempts = attempts.filter((attempt) => attempt.status !== 'recalled');
@@ -50,32 +38,17 @@ function deriveCoreShippingStatus(attempts: Array<Record<string, unknown>>): Cor
 }
 
 function mergeCoreShippingStatus(
-  writer: 'v1' | 'v2',
   incoming: CoreShippingProjectionStatus,
   attempts: Array<Record<string, unknown>>,
   existing: unknown,
 ): CoreShippingProjectionStatus {
-  const v2Status = deriveCoreShippingStatus(attempts);
-  if (!v2Status) return incoming;
-  // V1 full-completion may arrive before its constituent V2 events. Once the
-  // order reached delivered, neither writer may move the projection back.
+  const derived = deriveCoreShippingStatus(attempts);
+  if (!derived) return incoming;
+  // Once the order reached delivered, a late attempt event may not move the projection back.
   if (existing === 'delivered') return 'delivered';
-
-  if (writer === 'v2') {
-    // Every other V2 transition is derived from the complete attempt array. This
-    // intentionally lets a new active attempt supersede an all-recalled history.
-    return v2Status;
-  }
-
-  const protectedStatus =
-    isCoreShippingProjectionStatus(existing) &&
-    !(existing === 'recalled' && v2Status !== 'recalled') &&
-    CORE_SHIPPING_STATUS_PRECEDENCE[existing] > CORE_SHIPPING_STATUS_PRECEDENCE[v2Status]
-      ? existing
-      : v2Status;
-  return CORE_SHIPPING_STATUS_PRECEDENCE[protectedStatus] >= CORE_SHIPPING_STATUS_PRECEDENCE[incoming]
-    ? protectedStatus
-    : incoming;
+  // Every other transition is derived from the complete attempt array. This
+  // intentionally lets a new active attempt supersede an all-recalled history.
+  return derived;
 }
 
 /** 주문에 달린 Medusa 반품 (K8 PR5). 접수 기록은 `metadata.almondReturn` 이고 `medusa-return-observations.ts` 가 읽는다. */
@@ -2053,66 +2026,8 @@ export class MedusaClient {
   }
 
   /**
-   * Core WMS 출고/배송 완료 이벤트를 Medusa order metadata에 반영 (projection only).
-   *
-   * Medusa를 배송 SSOT로 만들지 않는다. order.metadata에 Core WMS 기준 배송 상태를
-   * 기록하여 storefront가 Core actions API와 함께 참조할 수 있게 한다.
-   * PG/provider를 다시 호출하지 않고 metadata 업데이트만 수행한다.
-   * 멱등성: 같은 status로 재전달돼도 같은 metadata 값으로 덮어쓰므로 안전하다.
-   */
-  async updateOrderShippingProjection(
-    orderId: string,
-    data: {
-      status: 'shipped' | 'delivered';
-      fulfillmentId: string;
-      carrier?: string;
-      trackingNumber?: string;
-      shippedAt?: string;
-      deliveredAt?: string;
-    },
-  ): Promise<void> {
-    try {
-      // 기존 metadata를 GET으로 읽어 병합 — metadata 필드를 통째로 교체하지 않기 위해
-      const existing = await this.sdk.client.fetch<{ order: { metadata?: Record<string, unknown> } }>(
-        `/admin/orders/${encodeURIComponent(orderId)}`,
-        { method: 'GET' },
-      );
-      const existingMeta = (existing?.order?.metadata as Record<string, unknown>) ?? {};
-      const attempts = Array.isArray(existingMeta.coreShipmentAttempts)
-        ? (existingMeta.coreShipmentAttempts as Array<Record<string, unknown>>)
-        : [];
-      const projectedStatus = mergeCoreShippingStatus('v1', data.status, attempts, existingMeta.coreShippingStatus);
-
-      const metadata: Record<string, unknown> = {
-        ...existingMeta,
-        coreShippingStatus: projectedStatus,
-        coreFulfillmentId: data.fulfillmentId,
-      };
-      if (data.carrier) metadata.coreCarrier = data.carrier;
-      if (data.trackingNumber) metadata.coreTrackingNumber = data.trackingNumber;
-      if (data.shippedAt) metadata.coreShippedAt = data.shippedAt;
-      if (data.deliveredAt) metadata.coreDeliveredAt = data.deliveredAt;
-
-      await this.sdk.client.fetch(`/admin/orders/${encodeURIComponent(orderId)}`, {
-        method: 'POST',
-        body: { metadata } as Record<string, unknown>,
-      });
-
-      this.logger.log(`Updated Medusa order shipping projection: orderId=${orderId}, status=${projectedStatus}`);
-    } catch (error) {
-      const fetchError = error as FetchError;
-      if (fetchError.status === 404) {
-        this.logger.warn(`Medusa updateOrderShippingProjection: order not found, skipping orderId=${orderId}`);
-        return;
-      }
-      this.logger.error(`Failed to update Medusa order shipping projection: ${orderId}`, fetchError.message);
-      throw new Error(`Medusa updateOrderShippingProjection failed: ${fetchError.message}`, { cause: fetchError });
-    }
-  }
-
-  /**
-   * Additive V2 shipment/attempt projection. Unlike the V1 compatibility projection,
-   * this keeps immutable attempt history and derives partial progress from the array.
+   * Additive V2 shipment/attempt projection. Keeps immutable attempt history and
+   * derives partial progress from the array.
    */
   async updateOrderShipmentAttemptProjection(
     orderId: string,
@@ -2272,7 +2187,6 @@ export class MedusaClient {
       const activeAttempts = attempts.filter((attempt) => attempt.status !== 'recalled');
       const deliveredAttempts = activeAttempts.filter((attempt) => attempt.status === 'delivered');
       const derivedStatus = mergeCoreShippingStatus(
-        'v2',
         deriveCoreShippingStatus(attempts)!,
         attempts,
         existingMeta.coreShippingStatus,

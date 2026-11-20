@@ -13,6 +13,8 @@ import type { OrderLineRow } from '../../hooks/use-order-rows';
 const mockOperationsHook = jest.fn();
 const mockOrder = jest.fn();
 const mockRows = jest.fn();
+let mockPage = 0;
+const mockSetPage = jest.fn();
 const mockBankRefunds = jest.fn();
 
 jest.mock('@/lib/services/orders', () => ({
@@ -39,14 +41,17 @@ jest.mock('@/components/common/merged-data-table', () => ({
   MergedDataTable: ({
     data,
     columns,
+    emptyMessage,
   }: {
     data: OrderLineRow[];
     columns: {
       label: string;
       render?: (value: unknown, row: OrderLineRow) => React.ReactNode;
     }[];
+    emptyMessage?: string;
   }) => (
     <>
+      {data.length === 0 && <p>{emptyMessage}</p>}
       {data.map((r) => (
         <div key={r.rowId}>
           {columns.find((c) => c.label === '기능')?.render?.(undefined, r)}
@@ -56,7 +61,9 @@ jest.mock('@/components/common/merged-data-table', () => ({
   ),
 }));
 jest.mock('@/components/admin-ui-experimental/common/table/table', () => ({
-  Table: { Pagination: () => null },
+  Table: {
+    Pagination: ({ count }: { count: number }) => <p>전체 {count}건</p>,
+  },
 }));
 jest.mock('@/features/order/cancel-settlement/settlement-actions', () => ({
   SettlementActions: () => null,
@@ -71,7 +78,12 @@ jest.mock('@/hooks/use-permission', () => ({
   usePermissionCheck: () => ({ can: () => true, canRun: () => true }),
 }));
 jest.mock('../../contexts/filter.context', () => ({
-  useOrderHistoryFilter: () => ({ filter: { type: 'all' }, searchToken: 0 }),
+  useOrderHistoryFilter: () => ({
+    filter: { type: 'all' },
+    searchToken: 0,
+    page: mockPage,
+    setPage: mockSetPage,
+  }),
 }));
 jest.mock('../../hooks/use-order-rows', () => ({
   useSalesOrderRows: () => mockRows(),
@@ -179,6 +191,7 @@ describe('주문 행의 계좌 대기 안내', () => {
           rejection: null,
           outcome: null,
           refundMode: 'manual',
+          lines: [],
           settlement: {
             requestId: 'req-1',
             phase: 'delayed',
@@ -412,5 +425,142 @@ describe('주문 이력 창의 상자 작업', () => {
     const text = document.body.textContent ?? '';
     expect(text).toContain('불러오는 중');
     expect(text).not.toContain('아직 기록된 업무 이력이 없습니다');
+  });
+});
+
+describe('주문 목록 조회 실패', () => {
+  const renderTable = () =>
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <OrderTable />
+      </QueryClientProvider>
+    );
+
+  beforeEach(() => {
+    mockBankRefunds.mockReturnValue({ data: [] });
+  });
+
+  it('실패하면 빈 목록이라고 하지 않고 다시 시도를 준다', () => {
+    const refetchList = jest.fn();
+    mockRows.mockReturnValue({
+      data: { items: [] },
+      total: 0,
+      lineTotal: 0,
+      pageCount: 0,
+      listFailed: true,
+      listRetrying: false,
+      refetchList,
+    });
+    renderTable();
+
+    expect(screen.getByRole('alert').textContent).toContain(
+      '주문 목록을 불러오지 못했어요.'
+    );
+    expect(screen.getByText('주문을 불러오지 못했어요.')).toBeTruthy();
+    expect(screen.queryByText(/이 조건에 맞는 주문이 없어요/)).toBeNull();
+    expect(screen.queryByText(/"검색" 버튼을 눌러/)).toBeNull();
+    expect(document.body.textContent).toContain('총 주문 -건');
+    expect(document.body.textContent).not.toContain('전체 0건');
+
+    fireEvent.click(screen.getByRole('button', { name: '다시 시도' }));
+
+    expect(refetchList).toHaveBeenCalledTimes(1);
+  });
+
+  it('다시 불러오는 동안에도 실패 안내를 두고 단추만 막는다', () => {
+    mockRows.mockReturnValue({
+      data: { items: [] },
+      total: 0,
+      lineTotal: 0,
+      pageCount: 0,
+      listFailed: true,
+      listRetrying: true,
+      refetchList: jest.fn(),
+    });
+    renderTable();
+
+    expect(screen.getByRole('alert')).toBeTruthy();
+    expect(
+      (
+        screen.getByRole('button', {
+          name: '다시 불러오는 중…',
+        }) as HTMLButtonElement
+      ).disabled
+    ).toBe(true);
+  });
+
+  it('성공했는데 비었으면 지금 조건에 맞는 주문이 없다고 한다', () => {
+    mockRows.mockReturnValue({
+      data: { items: [] },
+      total: 0,
+      lineTotal: 0,
+      pageCount: 0,
+      listFailed: false,
+    });
+    renderTable();
+
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByText('이 조건에 맞는 주문이 없어요.')).toBeTruthy();
+    expect(document.body.textContent).toContain('총 주문 0건');
+  });
+
+  it('주소에 남은 쪽이 지금 결과보다 뒤면 마지막 쪽으로 옮긴다', () => {
+    mockPage = 3;
+    mockSetPage.mockClear();
+    mockRows.mockReturnValue({
+      data: { items: [] },
+      total: 60,
+      lineTotal: 60,
+      pageCount: 2,
+      listFailed: false,
+      listSettled: true,
+    });
+    try {
+      renderTable();
+
+      expect(mockSetPage).toHaveBeenCalledWith(1);
+    } finally {
+      mockPage = 0;
+    }
+  });
+
+  it('지금 조건의 목록을 받는 중이면 앞 결과의 쪽 수로 옮기지 않는다', () => {
+    mockPage = 4;
+    mockSetPage.mockClear();
+    mockRows.mockReturnValue({
+      data: { items: [] },
+      total: 60,
+      lineTotal: 60,
+      pageCount: 2,
+      listFailed: false,
+      listSettled: false,
+    });
+    try {
+      renderTable();
+
+      expect(mockSetPage).not.toHaveBeenCalled();
+    } finally {
+      mockPage = 0;
+    }
+  });
+
+  it('결과가 없으면 첫 쪽으로 돌아간다', () => {
+    mockPage = 4;
+    mockSetPage.mockClear();
+    mockRows.mockReturnValue({
+      data: { items: [] },
+      total: 0,
+      lineTotal: 0,
+      pageCount: 0,
+      listFailed: false,
+      listSettled: true,
+    });
+    try {
+      renderTable();
+
+      expect(mockSetPage).toHaveBeenCalledWith(0);
+    } finally {
+      mockPage = 0;
+    }
   });
 });

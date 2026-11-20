@@ -2,6 +2,7 @@
 // 판정 조건은 코드에서 옮겼다(각 검사 옆 주석의 파일이 정본이다 — 코드가 바뀌면 여기도 바꾼다).
 import type { Sql } from '../db';
 import type { Report } from '../report';
+import { judgeSellmateSyncAfterCutover } from '../rules';
 
 const OPEN_SHIPMENT = `s.status in ('draft','planned')`;
 
@@ -38,7 +39,7 @@ export async function checkOutbound(tx: Sql, r: Report): Promise<void> {
   else
     r.bad(
       '완전한 배송 프로필이 없다 → 모든 상자가 SHIPMENT_PROFILE_INCOMPATIBLE/CONFIGURATION_INCOMPLETE 로 draft 에 갇힌다',
-      '배송 프로필 생성 경로가 코드에 없다(API·화면 0). 생성 수단 + 한진 실계약번호(carrier_account_ref) 필요 (#1233)',
+      'admin-web «배송 프로필»(/inventory/delivery-profiles)에서 만든다 — 보내는 분·출고지·반품지·한진 실계약번호(carrier_account_ref) (#1233)',
     );
 
   // 열린 상자의 SKU 가 프로필을 갖고 있나. 한 상자의 SKU 는 전부 같은 프로필이어야 한다.
@@ -70,13 +71,14 @@ export async function checkOutbound(tx: Sql, r: Report): Promise<void> {
 
   r.section('출고 3. 상자 상태·수취인');
   r.table(await tx`select status, count(*)::int from shipments group by 1 order by 2 desc`);
-  // shipment-planning.service.ts assertRecipientComplete 의 5개 필드
+  // shipment-planning.service.ts assertRecipientComplete → recipient-completeness.ts missingRecipientFields.
+  // 필드 목록의 정본은 waybill-request.assembler.ts REQUIRED_RECIPIENT_FIELDS(4개 — 상세주소는 필수가 아니다)
   const [recipient] = await tx`
     select count(*)::int as n from shipments s
     where ${tx.unsafe(OPEN_SHIPMENT)} and exists (
-      select 1 from unnest(array['recipientName','phone','postalCode','roadAddress','detailAddress']) k
+      select 1 from unnest(array['recipientName','phone','postalCode','roadAddress']) k
       where coalesce(btrim(s.recipient_snapshot ->> k), '') = '')`;
-  if (recipient.n === 0) r.ok('열린 상자의 수취인 5필드 전부 채워짐');
+  if (recipient.n === 0) r.ok('열린 상자의 수취인 필수 4필드 전부 채워짐');
   else
     r.bad(
       `수취인 필드가 빈 열린 상자 ${recipient.n}개 → SHIPMENT_RECIPIENT_INCOMPLETE`,
@@ -113,7 +115,7 @@ export async function checkOutbound(tx: Sql, r: Report): Promise<void> {
     r.table(ghosts);
     r.bad(
       '끝난 출고주문에 확정 예약이 남아 재고를 묶고 있다(유령 예약)',
-      'ShipmentReservationService.releasePartial 로 해제 (#1233). ReservationLifecycleService 는 SHIPMENT_LINE 을 못 본다',
+      'ShipmentReservationService.releasePartial 로 해제 (#1233). ReservationLifecycleService 는 SHIPMENT_LINE 을 못 본다. 드레인 끝이면 bash scripts/sellmate/run.sh live close-sellmate-leftovers 후 --apply (#1243)',
     );
   }
   const [negative] = await tx`select count(*)::int as n from stock_summary_view where available_qty < 0`;
@@ -123,7 +125,7 @@ export async function checkOutbound(tx: Sql, r: Report): Promise<void> {
     r.bad(
       `가용재고가 음수인 SKU·창고 ${negative.n}개`,
       ghosts.length
-        ? '유령 예약 해제(close-shipped-shipments.ts) 후 다시 판정 (#1233)'
+        ? '유령 예약 해제 후 다시 판정 — T 전은 close-shipped-shipments.ts, T 뒤(드레인 끝)는 close-sellmate-leftovers (#1243)'
         : '유령 예약은 0 — sync-stock 과 core 예약의 이중 차감. 컷오버 때 실사는 안 한다(#1233 결정) — 컷오버 뒤 실사로 재확인',
     );
   else r.ok('가용재고 음수 0');
@@ -151,9 +153,13 @@ export async function checkOutbound(tx: Sql, r: Report): Promise<void> {
              from fulfillment_order_creation_backlogs group by 1 order by 2 desc`,
   );
   // 이미 셀메이트로 나간 주문(판매주문 shipped·delivered·취소)의 행은 출고할 게 아니라 닫을 대상이다.
-  const [matching] = await tx<{ open: number; done: number }[]>`
+  // 닫기 스크립트(#1243)는 1단계 범위인 자사몰만 닫는다 — 마켓분은 2단계(#1306) 몫이라 ◆ 에 넣지 않는다.
+  const [matching] = await tx<{ open: number; done: number; done_market: number }[]>`
     select count(*) filter (where so.status::text not in ('shipped','delivered','canceled','cancelled'))::int as open,
-           count(*) filter (where so.status::text in ('shipped','delivered','canceled','cancelled'))::int as done
+           count(*) filter (where so.status::text in ('shipped','delivered','canceled','cancelled')
+                              and so.sales_channel = 'medusa')::int as done,
+           count(*) filter (where so.status::text in ('shipped','delivered','canceled','cancelled')
+                              and so.sales_channel <> 'medusa')::int as done_market
     from fulfillment_order_creation_backlogs b join sales_orders so on so.id = b.sales_order_id
     where b.status = 'awaiting_matching'`;
   if (matching.open)
@@ -162,7 +168,12 @@ export async function checkOutbound(tx: Sql, r: Report): Promise<void> {
       'admin-web /order/matching 에서 SKU 매칭',
     );
   else r.ok('아직 안 나간 주문의 매칭 대기 0');
-  if (matching.done) r.dayOf(`이미 끝난 주문의 매칭 대기 ${matching.done}건`, '출고할 게 아니라 닫는다 (#1243)');
+  if (matching.done)
+    r.dayOf(
+      `이미 끝난 자사몰 주문의 매칭 대기 ${matching.done}건`,
+      '드레인 끝에 bash scripts/sellmate/run.sh live close-sellmate-leftovers 후 --apply (#1243)',
+    );
+  if (matching.done_market) r.info(`이미 끝난 마켓 주문의 매칭 대기 ${matching.done_market}건 — 2단계(#1306) 몫`);
   const failed = await tx`
     select coalesce(failure_reason, '(null)') as failure_reason, count(*)::int
     from fulfillment_order_creation_backlogs where status = 'failed' group by 1 order by 2 desc limit 10`;
@@ -196,13 +207,19 @@ export async function checkOutbound(tx: Sql, r: Report): Promise<void> {
   r.info(
     `셀메이트 재고 sync 마지막 실행 ${sellmate.last_at?.toISOString() ?? '없음'} (누적 ${sellmate.n}건) — 컷오버 후엔 이 값이 멈춰야 한다`,
   );
-  // sync-stock 은 절대값 수렴이라 컷오버 뒤 한 번만 돌아도 우리 원장(SHIP·RECEIVE)을 되돌린다.
-  if (r.cutoverAt && sellmate.last_at && sellmate.last_at > r.cutoverAt)
-    r.bad(
-      `셀메이트 재고 sync 가 컷오버 시각 뒤(${sellmate.last_at.toISOString()})에 돌았다 — 원장이 셀메이트 값으로 덮였다`,
-      '즉시 sync 를 멈추고, 그 뒤의 앱 출고·입고분을 원장과 대조한다 (#1251 런북)',
-    );
-  else if (r.cutoverAt) r.ok('컷오버 시각 뒤 셀메이트 재고 sync 없음');
+  // sync-stock 은 절대값 수렴이라 컷오버 뒤 한 번만 돌아도 우리 원장(SHIP·RECEIVE)을 되돌린다. 금지선은 저녁 맞추기 init(rules.ts).
+  // 테이블은 #1304 마이그 뒤에만 있다 — 없는 테이블을 부르면 문장 해석에서 실패하므로 먼저 본다.
+  const [runs] = await tx<{ ok: boolean }[]>`select to_regclass('sellmate_reconcile_runs') is not null as ok`;
+  const [init] = runs?.ok
+    ? await tx<{ created_at: Date }[]>`select created_at from sellmate_reconcile_runs where kind = 'init' limit 1`
+    : [];
+  const syncVerdict = judgeSellmateSyncAfterCutover({
+    cutoverAt: r.cutoverAt,
+    lastSyncAt: sellmate.last_at,
+    initAt: init?.created_at ?? null,
+  });
+  if (syncVerdict?.level === 'bad') r.bad(syncVerdict.msg, syncVerdict.fix ?? '');
+  else if (syncVerdict) r.ok(syncVerdict.msg);
   const [scriptShipped] = await tx`
     select count(*)::int as n from fulfillment_orders fo
     where fo.status = 'shipped' and not exists (

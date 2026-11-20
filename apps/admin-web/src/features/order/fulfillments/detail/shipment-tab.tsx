@@ -35,6 +35,7 @@ import {
 import type {
   ConsolidationProgressResponse,
   FulfillmentOrderDetail,
+  PendingCancellation,
   ShipmentAdminDetail,
   ShipmentAdminSummary,
 } from '@/lib/types/dto/fulfillment';
@@ -75,6 +76,8 @@ import {
   waybillNextStep,
 } from './waybill-view';
 import { StuckWaybillPanel } from './stuck-waybill-panel';
+import { pendingCancellationItems } from '@/lib/api/domains/orders/pending-cancellation.shape';
+import { NeedsInfoList } from '@/features/order/outbound-preparation/components/needs-info-list';
 
 const STATUS_VARIANT = (
   status: string
@@ -377,6 +380,26 @@ function ShipmentDetailView({
           <ShipmentActions shipment={shipment} />
         </section>
 
+        {shipment.pendingCancellation && (
+          <CancelWaitingNotice
+            pending={shipment.pendingCancellation}
+            workItems={shipment.workItems ?? []}
+          />
+        )}
+
+        {shipment.needsInfo && shipment.needsInfo.length > 0 && (
+          <section
+            aria-label="출고 준비 전에 고칠 것"
+            className="space-y-1.5 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
+          >
+            <p className="font-semibold break-keep">
+              출고 준비 전에 고칠 것 — 고치기 전에는 계획 확정·출고 준비가
+              거절돼요
+            </p>
+            <NeedsInfoList issues={shipment.needsInfo} place="detail" />
+          </section>
+        )}
+
         <section>
           <h3 className="mb-2 text-sm font-semibold">
             {`담긴 상품 ${kinds}종 · ${totalQty}개`}
@@ -607,6 +630,59 @@ function ShipmentListButton({
         )}
       </span>
     </Button>
+  );
+}
+
+const ACTIVE_WORK_ITEM_STATUSES = new Set([
+  'queued',
+  'picking',
+  'ready_to_pack',
+  'packing',
+  'withdrawing',
+]);
+
+/** 배치에서 작업 중인 상자를 부분 취소하면, 현장에서 상자가 빠져야 취소가 끝난다 */
+function CancelWaitingNotice({
+  pending,
+  workItems,
+}: {
+  pending: PendingCancellation;
+  workItems: ShipmentAdminDetail['workItems'];
+}) {
+  const active = workItems.find(
+    (item) => ACTIVE_WORK_ITEM_STATUSES.has(item.status) && item.batchId
+  );
+  const batchId = active?.batchId;
+  return (
+    <section
+      aria-label="부분 취소 대기"
+      className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
+    >
+      <p className="font-semibold break-keep">
+        부분 취소 대기 — {pendingCancellationItems(pending)}
+      </p>
+      {batchId ? (
+        <div className="mt-1 flex flex-wrap items-end justify-between gap-2">
+          <p className="break-keep">
+            {active?.status === 'withdrawing'
+              ? '출고 배치에서 빼는 중이에요. 물류앱 출고 검수에서 송장을 찍고 꺼낸 상품을 되돌림 바구니에 넣으면 취소가 끝나요.'
+              : '출고 배치에서 작업 중인 상자라 현장에서 빼야 취소가 끝나요. 물류앱 출고 검수에서 송장을 찍고 F11 로 빼거나, 배치 상세에서 «배치에서 빼기»를 누르세요.'}{' '}
+            다 빠지면 이 송장은 무효가 되고 남은 상품은 출고 준비로 돌아가요.
+          </p>
+          <Button size="sm" variant="outline" asChild>
+            <Link
+              href={`/order/outbound-batches?batchId=${encodeURIComponent(batchId)}`}
+            >
+              배치에서 빼러 가기
+            </Link>
+          </Button>
+        </div>
+      ) : (
+        <p className="mt-1 break-keep">
+          취소를 이어 가는 중이에요. 잠시 뒤 다시 확인해 주세요.
+        </p>
+      )}
+    </section>
   );
 }
 

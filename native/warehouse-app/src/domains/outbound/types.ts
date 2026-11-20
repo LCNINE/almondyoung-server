@@ -30,6 +30,8 @@ export interface ShipmentByWaybillLine {
   skuId: string;
   skuCode: string;
   skuName: string;
+  /** 이 SKU 에 등록된 바코드 — 찍은 바코드의 상품 이름을 응답 없이 알아본다. 옛 core 면 없다 */
+  barcodes?: string[];
   qty: number;
   pickedQty: number;
   inspectedQty: number;
@@ -66,6 +68,10 @@ export interface ShipmentByWaybill {
   carrier: string;
   waybillStatus: string;
   shipmentStatus: string;
+  /** recovery_required 의 사유(core 가 실을 때만). 부분 취소 대기는 CANCEL_REPLAN_PENDING */
+  recoveryCode?: string | null;
+  /** 부분 취소를 기다리는 박스면 줄마다 취소될 수량(core 가 실을 때만) */
+  pendingCancellation?: Array<{ shipmentLineId: string; qty: number }> | null;
   batchId: string | null;
   workItemId: string | null;
   workItemStatus: string | null;
@@ -78,6 +84,8 @@ export interface ShipmentByWaybill {
   exitTo: 'draft' | 'canceled' | null;
   /** 배송메모(core A5). 없으면 null, 옛 core 면 필드가 없다 */
   deliveryNote?: string | null;
+  /** 위탁 업체(3pl) 박스면 그 화주 이름. 자사 박스는 null, 옛 core 면 필드가 없다 */
+  ownerName?: string | null;
   /** 결품 보고 버전(core A5). 활성 작업 항목과 active 세션이 둘 다 있을 때만 값이 있다 */
   shortPickContext?: ShortPickContext | null;
 }

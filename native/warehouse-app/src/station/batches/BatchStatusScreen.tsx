@@ -27,7 +27,7 @@ import { JoinBoxPanel } from '../../domains/outbound/JoinBoxPanel';
 import { useOutboundBatches } from '../../domains/outbound/queries';
 import { writeLastBox } from '../../domains/outbound/lastBox';
 import { RemoveBoxPanel } from '../../domains/outbound/RemoveBoxPanel';
-import { StartBatchButton } from '../../domains/outbound/StartBatchButton';
+import { RemovedOnStartNotice, StartBatchButton, type RemovedOnStart } from '../../domains/outbound/StartBatchButton';
 import type { OutboundBatchSummary } from '../../domains/outbound/types';
 import { fetchBatchLabelStates, type BatchWorkItem } from '../../domains/outbound/waybillLabel';
 import { WarehousePicker } from '../../domains/warehouse/WarehousePicker';
@@ -50,6 +50,7 @@ function BatchStatus({ warehouseId, prefs, print }: { warehouseId: string; prefs
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [panel, setPanel] = useState<'join' | 'remove' | null>(null);
   const [printing, setPrinting] = useState(false);
+  const [removedOnStart, setRemovedOnStart] = useState<Record<string, RemovedOnStart>>({});
   const selected = batches.find((batch) => batch.id === selectedId) ?? batches[0] ?? null;
   const items = useBatchWorkItems(selected?.id ?? null);
   useBatchProgress(selected && items.data ? batchProgressOf(selected.batchNumber, items.data) : null);
@@ -87,7 +88,11 @@ function BatchStatus({ warehouseId, prefs, print }: { warehouseId: string; prefs
         {selected ? (
           <div className="flex shrink-0 flex-wrap items-start gap-2">
             {selected.startedAt === null ? (
-              <StartBatchButton key={selected.id} batchId={selected.id} />
+              <StartBatchButton
+                key={selected.id}
+                batchId={selected.id}
+                onStarted={(outcome) => setRemovedOnStart((prev) => ({ ...prev, [selected.id]: outcome }))}
+              />
             ) : (
               <>
                 <BatchLabelPrintButton key={selected.id} batchId={selected.id} prefs={prefs} print={print} onRunningChange={setPrinting} />
@@ -101,6 +106,7 @@ function BatchStatus({ warehouseId, prefs, print }: { warehouseId: string; prefs
             )}
           </div>
         ) : null}
+        {selected && removedOnStart[selected.id] ? <RemovedOnStartNotice outcome={removedOnStart[selected.id]} /> : null}
         {selected && panel === 'join' ? (
           <JoinBoxPanel batchId={selected.id} prefs={prefs} print={print} labelPrinting onClose={() => setPanel(null)} />
         ) : null}

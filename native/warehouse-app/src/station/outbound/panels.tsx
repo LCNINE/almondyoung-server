@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { Check, Package, Printer, ScanLine, X } from 'lucide-react';
+import { Check, CircleHelp, Package, Printer, ScanLine, X } from 'lucide-react';
 import { Button } from '../../core/design/Button';
 import { cn } from '../../core/design/cn';
 import { SCAN_STORAGE_MESSAGE } from '../../core/hardware/scan/useWorkScanQueue';
@@ -9,6 +9,7 @@ import { Kbd } from '../Kbd';
 import { bigTextPx, type LastBox } from './model';
 import { clockOf, type RecentEntry, type RecentKind } from './recent';
 import { UNCERTAIN_SCAN_MESSAGE } from './useInspectionBox';
+import type { CancelWaitingLine } from '../../domains/outbound/cancelWaiting';
 
 const CARD = 'rounded-[10px] border border-[#D5D8DE] bg-white';
 
@@ -26,13 +27,18 @@ export function BoxCard({
   trackingNo,
   recipient,
   deliveryNote,
+  ownerName,
 }: {
   trackingNo: string;
   recipient: string;
   deliveryNote?: string | null;
+  ownerName?: string | null;
 }) {
   return (
     <div className={cn(CARD, 'flex shrink-0 flex-col gap-2.5 p-[18px]')}>
+      {ownerName ? (
+        <div className="rounded-md bg-[#1F2329] px-3 py-2 text-lg font-bold text-white">3PL · {ownerName}</div>
+      ) : null}
       <h2 className="font-mono text-[30px] font-semibold">{formatTrackingNo(trackingNo)}</h2>
       <div className="text-lg font-medium">{recipient}</div>
       {deliveryNote ? (
@@ -47,7 +53,8 @@ export type BigPanelContent =
   | { kind: 'quantity'; value: string }
   | { kind: 'armed'; keyLabel: string; label: string }
   | { kind: 'alert'; message: string; detail?: string }
-  | { kind: 'notice'; title: string; message?: string };
+  | { kind: 'notice'; title: string; message?: string }
+  | { kind: 'cancelWaiting'; lines: CancelWaitingLine[]; whole: boolean };
 
 /** 왼쪽 아래 큰 칸 — 지금 찍을 것과 진행(거대), 또는 오류·안내 하나(스펙 §6.4) */
 export function BigPanel({ content }: { content: BigPanelContent }) {
@@ -95,6 +102,29 @@ export function BigPanel({ content }: { content: BigPanelContent }) {
           </div>
           <div className="text-[28px] font-bold text-[#9E1320]">{content.message}</div>
           {content.detail ? <div className="font-mono text-xl font-semibold">{content.detail}</div> : null}
+        </div>
+      );
+    case 'cancelWaiting':
+      return (
+        <div role="status" aria-label="취소 대기" className={cn(base, 'border-2 border-[#D99A00] bg-[#FFF1C7] text-[#5E3B00]')}>
+          <div className="text-[28px] font-bold">
+            {content.whole ? '주문이 취소된 박스예요' : '주문 일부가 취소된 박스예요'}
+          </div>
+          {content.lines.length ? (
+            <ul className="w-full list-none text-left text-lg font-semibold">
+              {content.lines.map((line, index) => (
+                <li key={`${line.name}-${index}`} className="flex justify-between gap-3">
+                  <span className="min-w-0 truncate">{line.name}</span>
+                  <span className="whitespace-nowrap font-mono">
+                    {line.from} → {line.to}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          <div className="text-lg font-semibold">
+            검수하지 말고 F11 을 두 번 눌러 박스를 빼 주세요. 담은 상품은 빼기 화면에서 되돌림 바구니에 넣어요.
+          </div>
         </div>
       );
     case 'notice':
@@ -217,6 +247,7 @@ const RECENT_ICON: Record<RecentKind, typeof Check> = {
   shipped: Package,
   printed: Printer,
   error: X,
+  check: CircleHelp,
 };
 const RECENT_TONE: Record<RecentKind, string> = {
   waybill: 'text-[#1D5BD8]',
@@ -224,12 +255,14 @@ const RECENT_TONE: Record<RecentKind, string> = {
   shipped: 'text-[#1E7A46]',
   printed: 'text-[#7A4B00]',
   error: 'text-[#9E1320]',
+  check: 'text-[#7A4B00]',
 };
 
 function recentText(entry: RecentEntry): string {
   if (entry.kind === 'shipped') return `${formatTrackingNo(entry.text)} 출고 완료`;
   if (entry.kind === 'printed') return `${formatTrackingNo(entry.text)} 새 송장 출력`;
   if (entry.kind === 'waybill') return formatTrackingNo(entry.text);
+  if (entry.kind === 'check') return `${formatTrackingNo(entry.text)} 처리 여부 확인 중 — 아래 «확인할 일»`;
   return entry.text;
 }
 
@@ -354,6 +387,23 @@ export function ScanWaiting({ count }: { count: number }) {
     <p role="status" className="shrink-0 rounded-[10px] border-2 border-[#D99A00] bg-[#FFF1C7] p-3 font-semibold text-[#5E3B00]">
       연결이 끊겨 상품 스캔 {count}개를 보내지 못하고 있어요. 연결되면 자동으로 보내요. 같은 상품은 다시 찍지 마세요.
     </p>
+  );
+}
+
+/** 다시 연 박스에 남은 결과 모름 — 무엇을 확인하고 있는지 보여 같은 상품을 또 찍지 않게 한다 */
+export function ScanChecking({ scans }: { scans: ReadonlyArray<{ name: string; quantity: number }> }) {
+  return (
+    <div role="status" className="shrink-0 space-y-1 rounded-[10px] border-2 border-[#D99A00] bg-[#FFF1C7] p-3 text-[#5E3B00]">
+      <p className="font-semibold">처리 여부를 확인하고 있어요. 이 상품은 다시 찍지 마세요.</p>
+      <ul className="list-none">
+        {scans.map((scan, i) => (
+          <li key={i} className="font-mono font-semibold">
+            {scan.name} ×{scan.quantity}
+          </li>
+        ))}
+      </ul>
+      <p className="text-sm">결과는 아래 상태바 «확인할 일»에서 다시 확인할 수 있어요. 다른 박스는 그대로 찍어도 돼요.</p>
+    </div>
   );
 }
 

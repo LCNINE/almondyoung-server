@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { BadRequestError, ConflictError, NotFoundError } from '@app/shared';
 import { DbService, InjectTypedDb } from '@app/db';
 import { DbTx, inventorySchema, inventoryTables } from '../../inventory/schema/inventory.schema';
@@ -15,12 +15,27 @@ import { WaybillRepository } from './waybill.repository';
 import { WAYBILL, WAYBILL_DISPATCHABLE_STATUSES } from './waybill.constants';
 import type { BatchResultItem, WaybillRow } from './waybill.types';
 import { warehouseIdOf } from '../shipment/shipment-owner';
+import { resolveOperationReason } from '../shipment/shipment-operation-reasons';
+import { transitionShipments } from '../shipment/shipment-lifecycle';
+import { ACTIVE_WORK_ITEM_STATUSES } from '../services/work-item-status';
+
+/** 사유 없이 온 재발급(옛 화면)의 작업 기록 문구 */
+const REISSUE_DEFAULT_REASON = '송장 재발급';
 
 export interface IssueOpts {
   carrier: CarrierCode;
   expectedManifestVersion: number;
 }
 export type Actor = { id: string; roles: string[] };
+
+/** 운영자가 고른 무효화·재발급 사유. 있으면 작업 기록을 남긴다 — 자동 무효화(박스 빼기·결품 이탈)는 넘기지 않는다. */
+export interface WaybillOperationRecord {
+  type: 'waybill_void' | 'waybill_reissue';
+  reason: string;
+  reasonCode?: string;
+  requestChannel?: string;
+  note?: string;
+}
 
 @Injectable()
 export class WaybillManager {
@@ -89,6 +104,7 @@ export class WaybillManager {
             lines: ctx.lines,
             config: this.config,
             entrancePassword: ctx.entrancePassword,
+            profileSender: ctx.profileSender,
           });
           const row = await this.repo.insertPending(trx, {
             shipmentId,
@@ -97,6 +113,7 @@ export class WaybillManager {
             custOrdNo: req.custOrdNo,
             manifestVersion: ctx.manifestVersion,
             recipientHash: this.reader.recipientHashOf(ctx.recipientSnapshot),
+            senderSnapshot: req.sender,
           });
           return { response: { waybillId: row.id }, resourceType: 'waybill', resourceId: row.id };
         },
@@ -104,13 +121,18 @@ export class WaybillManager {
       .then(async (r) => {
         // 커맨드 밖에서 request 재조립(멱등 replay 시에도 동일). 커맨드 핸들러의 지역변수는 replay 시 실행되지 않아
         // 사용할 수 없다 — drive 는 저장된 pending 행 기준으로 동작하므로 재조립 request 로 충분하다.
-        const ctx = await this.dbService.run((trx) => this.reader.loadIssueContext(trx, shipmentId));
+        const { ctx, stored } = await this.dbService.run(async (trx) => ({
+          ctx: await this.reader.loadIssueContext(trx, shipmentId),
+          stored: (await this.repo.findById(trx, r.waybillId))?.senderSnapshot,
+        }));
         const request = assembleWaybillRequest({
           shipmentId,
           recipientSnapshot: ctx.recipientSnapshot,
           lines: ctx.lines,
           config: this.config,
           entrancePassword: ctx.entrancePassword,
+          profileSender: ctx.profileSender,
+          storedSender: stored,
         });
         return { waybillId: r.waybillId, request };
       });
@@ -165,6 +187,8 @@ export class WaybillManager {
       lines: ctx.lines,
       config: this.config,
       entrancePassword: ctx.entrancePassword,
+      profileSender: ctx.profileSender,
+      storedSender: active.senderSnapshot,
     });
     return this.machine.drive(active.id, request);
   }
@@ -310,6 +334,12 @@ export class WaybillManager {
         canonicalRequest: { actorId: actor.id, shipmentId, ...dto },
       },
       async (trx) => {
+        // 송장 무효화 뒤 draft 로 내리는 정리(returnIdleToDraft)와 겹치지 않게 상자부터 잠근다
+        await trx
+          .select({ id: inventoryTables.shipments.id })
+          .from(inventoryTables.shipments)
+          .where(eq(inventoryTables.shipments.id, shipmentId))
+          .for('update');
         const ctx = await this.reader.loadIssueContext(trx, shipmentId);
         if (ctx.status !== 'planned') {
           throw new ConflictError(`${WAYBILL.ERROR.NOT_DISPATCHABLE}: shipment ${ctx.status}`);
@@ -359,18 +389,22 @@ export class WaybillManager {
     idempotencyKey: string,
     actor: Actor,
     tx?: DbTx,
+    record?: WaybillOperationRecord,
   ): Promise<WaybillRow> {
     return this.commands.execute<WaybillRow>(
       {
         commandType: 'shipment.waybill.void',
         idempotencyKey,
-        canonicalRequest: { actorId: actor.id, waybillId, ...dto },
+        canonicalRequest: { actorId: actor.id, waybillId, ...dto, ...(record ? { record } : {}) },
       },
-      async (trx) => {
+      async (trx, _commandRequestId, requestHash) => {
         const wb = await this.repo.findById(trx, waybillId);
         if (!wb) throw new NotFoundError(`${WAYBILL.ERROR.NOT_FOUND}: ${waybillId}`);
         const [shipment] = await trx
-          .select({ status: inventoryTables.shipments.status })
+          .select({
+            status: inventoryTables.shipments.status,
+            manifestVersion: inventoryTables.shipments.manifestVersion,
+          })
           .from(inventoryTables.shipments)
           .where(eq(inventoryTables.shipments.id, wb.shipmentId))
           .limit(1);
@@ -379,6 +413,18 @@ export class WaybillManager {
         }
         if (wb.status !== 'registered') {
           throw new ConflictError(`${WAYBILL.ERROR.NOT_VOIDABLE}: ${waybillId} is ${wb.status}`);
+        }
+        // 상자 행을 참조하는 기록을 송장 CAS 보다 먼저 쓴다 — 다른 경로처럼 상자 → 송장 순으로 잠근다.
+        if (record && shipment) {
+          await this.recordOperation(trx, {
+            record,
+            shipmentId: wb.shipmentId,
+            manifestVersion: shipment.manifestVersion,
+            waybill: { id: wb.id, trackingNo: wb.trackingNo },
+            actor,
+            idempotencyKey,
+            requestHash,
+          });
         }
         const ok = await this.repo.casToVoided(trx, waybillId, new Date());
         if (!ok) throw new ConflictError(`${WAYBILL.ERROR.NOT_VOIDABLE}: ${waybillId} changed concurrently`);
@@ -389,6 +435,49 @@ export class WaybillManager {
       },
       tx,
     );
+  }
+
+  private async recordOperation(
+    trx: DbTx,
+    input: {
+      record: WaybillOperationRecord;
+      shipmentId: string;
+      manifestVersion: number;
+      waybill: { id: string; trackingNo: string | null };
+      actor: Actor;
+      idempotencyKey: string;
+      requestHash: string;
+    },
+  ): Promise<void> {
+    const { record } = input;
+    const resolved = resolveOperationReason(record.type, {
+      reason: record.reason,
+      reasonCode: record.reasonCode,
+      requestChannel: record.requestChannel,
+    });
+    const [operation] = await trx
+      .insert(inventoryTables.shipmentOperations)
+      .values({
+        type: record.type,
+        status: 'completed',
+        operatorId: input.actor.id,
+        reason: resolved.reason,
+        reasonCode: resolved.reasonCode,
+        requestChannel: resolved.requestChannel,
+        note: record.note?.trim() || null,
+        idempotencyKey: input.idempotencyKey,
+        requestHash: input.requestHash,
+        afterManifestSnapshot: { voidedWaybill: input.waybill },
+        completedAt: new Date(),
+      })
+      .returning({ id: inventoryTables.shipmentOperations.id });
+    await trx.insert(inventoryTables.shipmentOperationMembers).values({
+      operationId: operation.id,
+      shipmentId: input.shipmentId,
+      role: 'source',
+      beforeManifestVersion: input.manifestVersion,
+      afterManifestVersion: input.manifestVersion,
+    });
   }
 
   // recall 전용: 발송된(used) 운송장을 voided 로 되돌린다. 일반 void 의 WAYBILL_ALREADY_DISPATCHED
@@ -428,10 +517,19 @@ export class WaybillManager {
 
   // 활성 waybill 을 void 후 새로 발급(§11) — 원자적 한 커맨드처럼 호출자에게 노출.
   // carrier I/O 포함(issueForShipment 경유) → tx? 를 받지 않는다.
-  async reissue(shipmentId: string, opts: IssueOpts, idempotencyKey: string, actor: Actor): Promise<WaybillRow> {
+  async reissue(
+    shipmentId: string,
+    opts: IssueOpts,
+    idempotencyKey: string,
+    actor: Actor,
+    reason?: Omit<WaybillOperationRecord, 'type'>,
+  ): Promise<WaybillRow> {
     const active = await this.dbService.run((trx) => this.reader.getActiveWaybill(trx, shipmentId));
     if (active && active.status === 'registered') {
-      await this.void(active.id, { reason: 'reissue' }, `${idempotencyKey}:void`, actor);
+      await this.void(active.id, { reason: 'reissue' }, `${idempotencyKey}:void`, actor, undefined, {
+        type: 'waybill_reissue',
+        ...(reason ?? { reason: REISSUE_DEFAULT_REASON }),
+      });
     } else if (active && active.status === 'used') {
       // 이미 발송에 쓰인 waybill 은 void 불가 대상과 동일하게 ALREADY_DISPATCHED — ABANDON_NOT_ALLOWED 로
       // 뭉뚱그리면 안 된다(§11, void 의 순서 원칙과 동일한 이유. 최종리뷰 하드닝 #3).
@@ -502,6 +600,56 @@ export class WaybillManager {
   async getActiveWaybill(shipmentId: string, tx?: DbTx): Promise<WaybillRow | null> {
     const wb = await this.dbService.run((trx) => this.reader.getActiveWaybill(trx, shipmentId), tx);
     return wb ?? null;
+  }
+
+  // 송장을 잃고 배치에도 없는 planned 상자는 계획부터 다시 해야 한다 — 이어서 처리에 남기지 않고 출고 가능으로 돌린다
+  // voidedAt 보다 뒤에 다시 계획된 상자는 건드리지 않는다 — 같은 무효화 명령이 재생돼도 새 계획을 되돌리지 않게
+  async returnIdleToDraft(shipmentId: string, voidedAt: Date, tx?: DbTx): Promise<boolean> {
+    return this.dbService.run(async (trx) => {
+      const [shipment] = await trx
+        .select({
+          status: inventoryTables.shipments.status,
+          manifestVersion: inventoryTables.shipments.manifestVersion,
+          plannedAt: inventoryTables.shipments.plannedAt,
+        })
+        .from(inventoryTables.shipments)
+        .where(eq(inventoryTables.shipments.id, shipmentId))
+        .limit(1)
+        .for('update');
+
+      if (
+        shipment?.status !== 'planned' ||
+        (shipment.plannedAt && shipment.plannedAt > voidedAt) ||
+        (await this.reader.getActiveWaybill(trx, shipmentId))
+      ) {
+        return false;
+      }
+
+      const [workItem] = await trx
+        .select({ id: inventoryTables.outboundBatchWorkItems.id })
+        .from(inventoryTables.outboundBatchWorkItems)
+        .where(
+          and(
+            eq(inventoryTables.outboundBatchWorkItems.shipmentId, shipmentId),
+            inArray(inventoryTables.outboundBatchWorkItems.status, [...ACTIVE_WORK_ITEM_STATUSES]),
+          ),
+        )
+        .limit(1);
+
+      if (workItem) {
+        return false;
+      }
+
+      const drafted = await transitionShipments(trx, {
+        shipmentIds: [shipmentId],
+        from: ['planned'],
+        to: 'draft',
+        expect: { manifestVersion: shipment.manifestVersion },
+        stale: 'ignore',
+      });
+
+      return drafted.length > 0;
+    }, tx);
   }
 }
 

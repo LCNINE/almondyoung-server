@@ -6,6 +6,7 @@ import {
   isPlaceholderEnv,
   isPlaceholderValue,
   judgeReconcile,
+  judgeSellmateSyncAfterCutover,
   type ReconcileFacts,
   linkedSecretValue,
   missingGrants,
@@ -14,6 +15,7 @@ import {
   reservationAxisFindings,
   reservationMismatches,
   shelfCodeLinks,
+  shelfMoveSummary,
 } from './rules';
 import { reservationTarget } from '../../../apps/channel-adapter/src/services/reservation-projection/reservation-target';
 
@@ -230,5 +232,70 @@ describe('judgeReconcile', () => {
     const v = judge({ carry: [{ optionSerial: 'TEST-0001', skuCode: 'SKU-1', carry: 3 }] });
     expect(v.filter((x) => x.level === 'bad')).toHaveLength(0);
     expect(v.some((x) => x.level === 'info' && x.msg.includes('이월'))).toBe(true);
+  });
+});
+
+describe('shelfMoveSummary — «로케이션 2» 를 재고 이동 스크립트와 같은 판정으로 센다 (#1236)', () => {
+  const move = { kind: 'move', toCode: 'A-01-01', rule: 'exact' } as const;
+  const noPosition = { kind: 'keep', reason: 'no-position' } as const;
+  const unconfirmed = { kind: 'keep', reason: 'unconfirmed', rule: 'zero-pad' } as const;
+
+  it('옮길 것·사유별 남김·규칙을 켜면 더 옮겨지는 수를 낸다', () => {
+    const exactOnly = [move, move, noPosition, unconfirmed];
+    const allRules = [move, move, noPosition, { kind: 'move', toCode: 'CC-04-01', rule: 'zero-pad' } as const];
+    expect(shelfMoveSummary(exactOnly, allRules)).toEqual({
+      move: 2,
+      byReason: { 'no-position': 1, stale: 0, unreadable: 0, unconfirmed: 1, 'no-location': 0, elsewhere: 0 },
+      unlockedByRules: 1,
+    });
+  });
+
+  it('두 목록 길이가 다르면 던진다 — SKU 마다 한 쌍이어야 한다', () => {
+    expect(() => shelfMoveSummary([move], [])).toThrow();
+  });
+});
+
+describe('judgeSellmateSyncAfterCutover — 금지선은 init 이다 (#1251)', () => {
+  // 런북 순서: CSV 스냅샷 = T(#1247 은 T ≥ 스냅샷) → 마지막 sync-stock → init. 마지막 sync 는 늘 T 뒤다.
+  const T = new Date('2026-11-19T03:02:49Z');
+  const lastSync = new Date('2026-11-19T03:02:57Z');
+  const init = new Date('2026-11-19T03:04:10Z');
+
+  it('컷오버 전(--after-cutover 없음)엔 판정하지 않는다', () => {
+    expect(judgeSellmateSyncAfterCutover({ cutoverAt: null, lastSyncAt: lastSync, initAt: init })).toBeNull();
+  });
+
+  it('T 뒤·init 전의 sync 는 T 의 마지막 실행이다 — 실패가 아니다', () => {
+    const v = judgeSellmateSyncAfterCutover({ cutoverAt: T, lastSyncAt: lastSync, initAt: init });
+    expect(v?.level).toBe('ok');
+  });
+
+  it('init 뒤의 sync 는 실패다', () => {
+    const v = judgeSellmateSyncAfterCutover({
+      cutoverAt: T,
+      lastSyncAt: new Date('2026-11-19T09:00:00Z'),
+      initAt: init,
+    });
+    expect(v?.level).toBe('bad');
+    expect(v?.msg).toContain('init');
+  });
+
+  it('sync 가 한 번도 없으면 ok', () => {
+    expect(judgeSellmateSyncAfterCutover({ cutoverAt: T, lastSyncAt: null, initAt: init })?.level).toBe('ok');
+  });
+
+  it('init 이 없으면 금지선을 모른다 — T 뒤 sync 를 실패로 보고 init 을 먼저 하라고 한다', () => {
+    const v = judgeSellmateSyncAfterCutover({ cutoverAt: T, lastSyncAt: lastSync, initAt: null });
+    expect(v?.level).toBe('bad');
+    expect(v?.fix).toContain('init');
+  });
+
+  it('init 이 없어도 sync 가 T 전에 멈췄으면 ok', () => {
+    const v = judgeSellmateSyncAfterCutover({
+      cutoverAt: T,
+      lastSyncAt: new Date('2026-11-18T03:00:00Z'),
+      initAt: null,
+    });
+    expect(v?.level).toBe('ok');
   });
 });

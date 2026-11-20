@@ -179,7 +179,15 @@ it('keeps restored inputs in recovery until replay and reconciliation finish', a
 it('settle 은 저장·처리가 다 끝난 뒤 풀리고, 머리가 실패하면 그 오류로 거절한다', async () => {
   const store = createOperationStore(crypto.randomUUID());
   const getScope = async () => 'local-test-worker';
-  const runtime = { store, getScope, runner: createOperationRunner({ store, getScope, api: { request: vi.fn() } }) };
+  const runtime = {
+    store,
+    getScope,
+    runner: createOperationRunner({
+      store,
+      getScope,
+      api: { request: vi.fn() },
+    }),
+  };
   let release!: () => void;
   const gate = new Promise<void>((resolve) => {
     release = resolve;
@@ -195,7 +203,9 @@ it('settle 은 저장·처리가 다 끝난 뒤 풀리고, 머리가 실패하�
       }, 'settle:s1'),
     {
       wrapper: ({ children }: { children: ReactNode }) => (
-        <OperationContext.Provider value={runtime}>{children}</OperationContext.Provider>
+        <OperationContext.Provider value={runtime}>
+          {children}
+        </OperationContext.Provider>
       ),
     }
   );
@@ -224,7 +234,15 @@ it('settle 은 저장·처리가 다 끝난 뒤 풀리고, 머리가 실패하�
 it('settle 은 기다리는 사이 새로 받은 입력(아직 저장 중)까지 보낸 뒤에 풀린다', async () => {
   const store = createOperationStore(crypto.randomUUID());
   const getScope = async () => 'local-test-worker';
-  const runtime = { store, getScope, runner: createOperationRunner({ store, getScope, api: { request: vi.fn() } }) };
+  const runtime = {
+    store,
+    getScope,
+    runner: createOperationRunner({
+      store,
+      getScope,
+      api: { request: vi.fn() },
+    }),
+  };
   const draft = store.draft;
   // B 의 저장을 붙잡는다 — A 가 다 보내져 처리 큐가 비는 순간 B 는 아직 저장 큐에 있다
   let releaseSave!: () => void;
@@ -232,7 +250,11 @@ it('settle 은 기다리는 사이 새로 받은 입력(아직 저장 중)까지
     releaseSave = resolve;
   });
   vi.spyOn(store, 'draft').mockImplementation(async (id, update) => {
-    if (update && (update([]) as { data: string }[]).some((e) => e.data === 'B')) await saveHeld;
+    if (
+      update &&
+      (update([]) as { data: string }[]).some((e) => e.data === 'B')
+    )
+      await saveHeld;
     return draft(id, update);
   });
   let releaseA!: () => void;
@@ -248,7 +270,9 @@ it('settle 은 기다리는 사이 새로 받은 입력(아직 저장 중)까지
       }, 'settle-late:s1'),
     {
       wrapper: ({ children }: { children: ReactNode }) => (
-        <OperationContext.Provider value={runtime}>{children}</OperationContext.Provider>
+        <OperationContext.Provider value={runtime}>
+          {children}
+        </OperationContext.Provider>
       ),
     }
   );
@@ -271,4 +295,95 @@ it('settle 은 기다리는 사이 새로 받은 입력(아직 저장 중)까지
   releaseSave();
   await act(async () => done);
   expect(consumed).toEqual(['A', 'B']);
+});
+
+function leavingFixture() {
+  const store = createOperationStore(crypto.randomUUID());
+  const getScope = async () => 'local-test-worker';
+  const runtime = {
+    store,
+    getScope,
+    runner: createOperationRunner({
+      store,
+      getScope,
+      api: { request: vi.fn() },
+    }),
+  };
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <OperationContext.Provider value={runtime}>
+      {children}
+    </OperationContext.Provider>
+  );
+  return { store, wrapper };
+}
+
+it('결과 모름을 남기고 떠난 화면의 큐는 뒤에 줄 선 입력을 보내지 않고 저장해 둔다', async () => {
+  const { store, wrapper } = leavingFixture();
+  let releaseHead!: () => void;
+  const consumed: string[] = [];
+  let checking = false;
+  const { result, unmount } = renderHook(
+    () =>
+      useWorkScanQueue<string>(
+        async (code) => {
+          if (code === 'A')
+            await new Promise<void>((resolve) => (releaseHead = resolve));
+          consumed.push(code);
+        },
+        'outbound:s1',
+        () => checking
+      ),
+    { wrapper }
+  );
+  act(() => {
+    result.current.enqueue('A');
+    result.current.enqueue('B');
+  });
+  await waitFor(() => expect(releaseHead).toBeDefined());
+  await waitFor(() => expect(result.current.unsaved()).toBe(false));
+  checking = true;
+  unmount();
+  await act(async () => releaseHead());
+  await waitFor(() => expect(consumed).toContain('A'));
+  // 줄 선 입력이 처리될 시간을 준다 — 떠난 큐는 그래도 보내지 않는다
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  });
+  expect(consumed).toEqual(['A']);
+  expect(
+    (
+      await store.draft<Array<{ data: string }>>(
+        'local-test-worker:scan:outbound:s1'
+      )
+    )?.map((e) => e.data)
+  ).toEqual(['B']);
+});
+
+it('결과 모름이 남아도 뒤 입력이 아직 저장되지 않았으면 떠나지 못한다', async () => {
+  const { store, wrapper } = leavingFixture();
+  const draft = store.draft;
+  let holdSave!: () => void;
+  vi.spyOn(store, 'draft').mockImplementation(async (id, update) => {
+    if (update && !holdSave)
+      await new Promise<void>((resolve) => (holdSave = resolve));
+    return draft(id, update);
+  });
+  const { result } = renderHook(
+    () =>
+      useWorkScanQueue<string>(
+        async () => {},
+        'outbound:s1',
+        () => true
+      ),
+    { wrapper }
+  );
+  act(() => {
+    result.current.enqueue('A');
+  });
+  await waitFor(() => expect(holdSave).toBeDefined());
+  expect(result.current.unsaved()).toBe(true);
+  const leave = new Event('beforeunload', { cancelable: true });
+  window.dispatchEvent(leave);
+  expect(leave.defaultPrevented).toBe(true);
+  await act(async () => holdSave());
 });

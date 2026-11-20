@@ -7,16 +7,24 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { useStockHistory, useCancelStockEvent } from '@/lib/services/inventory';
 import { Can } from '@/components/auth/can';
-import type {
-  StockHistoryDto,
-  StockSummaryDto,
-} from '@/lib/types/dto/inventory';
+import type { StockHistoryDto, StockRowRef } from '@/lib/types/dto/inventory';
 import { toast } from 'sonner';
 
 type Props = {
-  row: StockSummaryDto | null;
+  row: StockRowRef | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 };
@@ -46,6 +54,22 @@ function deltaForWarehouse(
   if (inbound && !outbound) return item.quantity;
   if (outbound && !inbound) return -item.quantity;
   return 0;
+}
+
+// 취소 이벤트의 사유는 서버가 'REVERSAL of <원래 이벤트 id>: <사유>' 로 남긴다
+function reasonText(item: StockHistoryDto, items: StockHistoryDto[]) {
+  if (!item.reversalOfEventId) return item.reason ?? '';
+
+  const original = items.find((i) => i.id === item.reversalOfEventId);
+  const target = original
+    ? `${TRANSITION_TYPE_LABELS[original.transitionType] ?? original.transitionType} ${original.quantity.toLocaleString('ko-KR')}개 (${new Date(original.occurredAt).toLocaleString('ko-KR')})`
+    : '이전 기록';
+  const userReason = (item.reason ?? '').replace(
+    /^REVERSAL of [0-9a-f-]+:?\s*/i,
+    ''
+  );
+
+  return `${target} 취소${userReason ? ` · ${userReason}` : ''}`;
 }
 
 export function StockHistoryDrawer({ row, open, onOpenChange }: Props) {
@@ -98,6 +122,9 @@ export function StockHistoryDrawer({ row, open, onOpenChange }: Props) {
             <ul className="space-y-2">
               {items.map((item) => {
                 const delta = deltaForWarehouse(item, row?.warehouseId);
+                const label =
+                  TRANSITION_TYPE_LABELS[item.transitionType] ??
+                  item.transitionType;
                 return (
                   <li
                     key={item.id}
@@ -105,8 +132,7 @@ export function StockHistoryDrawer({ row, open, onOpenChange }: Props) {
                   >
                     <div className="space-y-0.5">
                       <p className="font-medium">
-                        {TRANSITION_TYPE_LABELS[item.transitionType] ??
-                          item.transitionType}
+                        {label}
                         <span
                           className={`ml-2 tabular-nums ${
                             delta > 0
@@ -123,9 +149,9 @@ export function StockHistoryDrawer({ row, open, onOpenChange }: Props) {
                           {delta === 0 && ' (창고 내 전환)'}
                         </span>
                       </p>
-                      {item.reason && (
+                      {reasonText(item, items) && (
                         <p className="text-xs text-muted-foreground">
-                          {item.reason}
+                          {reasonText(item, items)}
                         </p>
                       )}
                       <p className="text-xs text-muted-foreground">
@@ -133,15 +159,43 @@ export function StockHistoryDrawer({ row, open, onOpenChange }: Props) {
                       </p>
                     </div>
                     <Can run={useCancelStockEvent}>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="shrink-0 text-xs"
-                        disabled={cancelMutation.isPending}
-                        onClick={() => handleCancel(item.id)}
-                      >
-                        취소
-                      </Button>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="shrink-0 text-xs"
+                            disabled={cancelMutation.isPending}
+                          >
+                            취소
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>
+                              이 재고 이력을 취소할까요?
+                            </AlertDialogTitle>
+                            <AlertDialogDescription>
+                              {label} {delta > 0 ? '+' : ''}
+                              {(delta !== 0
+                                ? delta
+                                : item.quantity
+                              ).toLocaleString('ko-KR')}
+                              개를 되돌려요.
+                              {delta !== 0 &&
+                                ` 재고가 ${Math.abs(delta).toLocaleString('ko-KR')}개 ${delta > 0 ? '줄어요' : '늘어요'}.`}
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>닫기</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() => handleCancel(item.id)}
+                            >
+                              되돌리기
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     </Can>
                   </li>
                 );

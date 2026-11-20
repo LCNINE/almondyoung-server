@@ -81,6 +81,9 @@ export function parseReconcileStock(table: string[][], file: string): StockCsv {
     const row = table[i];
     const optionSerial = cell(row, cols.itemCode).trim();
     if (!optionSerial) {
+      // «개발팀 데이터 내보내기용» 양식은 상품마다 합계 행(첫 칸 «합계», 재고 칸만 값)을 넣는다 — 품목이 아니니 건너뛴다
+      // (2026-11-19 라이브 리허설에서 이 행 때문에 init 이 파일 전체를 거절했다). 그 꼴 밖은 아래대로 오류다.
+      if ((row[0] ?? '').toString().trim() === '합계') continue;
       // 완전히 빈 행만 건너뛴다. 값이 있는데 옵션정보일련번호만 비었으면 조용히 빼지 않는다
       if (row.some((v) => (v ?? '').toString().trim() !== '')) {
         result.errors.push(`${path.basename(file)} 행${i + 1}: 옵션정보일련번호가 비었는데 다른 값이 있습니다`);

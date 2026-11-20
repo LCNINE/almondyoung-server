@@ -1,6 +1,7 @@
 import type { SystemPrincipal } from '@app/authorization';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
+import { NeedsInfoIssueDto } from './outbound-preparation.dto';
 import {
   ArrayMinSize,
   IsArray,
@@ -175,6 +176,14 @@ export class ShipmentLineReservationResponseDto {
   status: string;
 }
 
+export class ShipmentLineDeliveryProfileResponseDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty()
+  name: string;
+}
+
 export class ShipmentLineDetailResponseDto {
   @ApiProperty()
   id: string;
@@ -190,6 +199,16 @@ export class ShipmentLineDetailResponseDto {
 
   @ApiProperty({ nullable: true, description: '상품명(옵션 포함)' })
   skuName: string | null;
+
+  @ApiProperty({ nullable: true })
+  skuCode: string | null;
+
+  @ApiProperty({
+    type: ShipmentLineDeliveryProfileResponseDto,
+    nullable: true,
+    description: 'SKU 에 지금 지정된 배송 프로필. 상자 확정은 담긴 SKU 가 모두 같은 프로필이어야 받는다',
+  })
+  deliveryProfile: ShipmentLineDeliveryProfileResponseDto | null;
 
   @ApiProperty()
   qty: number;
@@ -360,6 +379,62 @@ export class ShipmentSummaryResponseDto {
   recoveryCode: string | null;
 }
 
+export class PendingCancellationItemResponseDto {
+  @ApiProperty()
+  shipmentLineId: string;
+
+  @ApiProperty({ nullable: true, type: String })
+  salesOrderLineId: string | null;
+
+  @ApiProperty()
+  skuName: string;
+
+  @ApiProperty({ description: '이 줄에서 취소될 수량' })
+  qty: number;
+}
+
+/** 상자가 현장에서 빠지기를 기다리는 취소 */
+export class PendingCancellationResponseDto {
+  @ApiProperty()
+  operationId: string;
+
+  @ApiProperty({ type: [PendingCancellationItemResponseDto] })
+  lines: PendingCancellationItemResponseDto[];
+}
+
+/** 물류앱 출고 저장이 관리자 손이 필요한 사유로 거절돼 막힌 상자 */
+export class ScanRejectionResponseDto {
+  @ApiProperty({ description: '거절 코드' })
+  code: string;
+
+  @ApiProperty({ nullable: true, type: String, description: '출고 준비가 막힌 경우의 세부 사유' })
+  reasonCode: string | null;
+
+  @ApiProperty({ description: '관리자에게 보일 사유 문장' })
+  message: string;
+
+  @ApiProperty({ enum: ['release_tote', 'check_waybill', 'handoff_worker', 'review_box'] })
+  action: 'release_tote' | 'check_waybill' | 'handoff_worker' | 'review_box';
+
+  @ApiProperty({ enum: ['simple_scan', 'simple_force', 'location_scan', 'location_force'] })
+  route: 'simple_scan' | 'simple_force' | 'location_scan' | 'location_force';
+
+  @ApiProperty({ nullable: true, type: String })
+  barcode: string | null;
+
+  @ApiProperty({ nullable: true, type: String, description: '찍은 바코드의 상품 이름' })
+  skuName: string | null;
+
+  @ApiProperty({ nullable: true, type: Number })
+  quantity: number | null;
+
+  @ApiProperty({ description: '거절된 작업자' })
+  actorId: string;
+
+  @ApiProperty()
+  rejectedAt: Date;
+}
+
 export class ShipmentDetailResponseDto {
   @ApiProperty()
   id: string;
@@ -398,6 +473,18 @@ export class ShipmentDetailResponseDto {
 
   @ApiProperty({ type: [ShipmentOperationHistoryResponseDto] })
   operations: ShipmentOperationHistoryResponseDto[];
+
+  @ApiProperty({ type: PendingCancellationResponseDto, nullable: true })
+  pendingCancellation: PendingCancellationResponseDto | null;
+
+  @ApiProperty({ type: ScanRejectionResponseDto, nullable: true, description: '물류앱에서 막혀 아직 풀리지 않은 거절' })
+  scanRejection: ScanRejectionResponseDto | null;
+
+  @ApiProperty({
+    type: [NeedsInfoIssueDto],
+    description: '준비 전 상자가 상자 확정에서 거절될 정보 부족 문제. 없으면 빈 배열',
+  })
+  needsInfo: NeedsInfoIssueDto[];
 }
 
 export class FulfillmentOperationResponseDto {

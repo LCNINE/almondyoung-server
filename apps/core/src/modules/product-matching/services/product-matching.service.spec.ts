@@ -869,3 +869,18 @@ describe('ProductMatchingService shipped order filter', () => {
     },
   );
 });
+
+describe('ProductMatchingService order date range', () => {
+  it('reads startDate and endDate as Korean calendar days', async () => {
+    const { service } = makeService();
+    const tx = makeTx([[{ total: 0 }], []]);
+
+    await service.getOrderLines({ startDate: '2026-03-02', endDate: '2026-03-02' }, tx as unknown as DbTx);
+
+    const where = tx.select.mock.results[0].value.where.mock.calls[0][0];
+    const { params } = new PgDialect().sqlToQuery(where);
+    const bounds = params.map((p) => new Date(p as string).toISOString());
+
+    expect(bounds).toEqual(['2026-03-01T15:00:00.000Z', '2026-03-02T14:59:59.999Z']);
+  });
+});

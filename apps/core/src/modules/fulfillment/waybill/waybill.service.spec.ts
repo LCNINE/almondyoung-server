@@ -21,6 +21,7 @@ const voided: WaybillRow = {
   manifestVersion: 1,
   recipientHash: 'hash',
   labelData: null,
+  senderSnapshot: null,
   lastError: null,
   attempts: 0,
   transientAttempts: 0,
@@ -34,7 +35,12 @@ const voided: WaybillRow = {
 describe('WaybillService void 후 보류 작업 재개', () => {
   let module: TestingModule;
   let service: WaybillService;
-  const manager = { void: jest.fn(), voidForRecall: jest.fn(), findWithdrawalVoid: jest.fn() };
+  const manager = {
+    void: jest.fn(),
+    voidForRecall: jest.fn(),
+    findWithdrawalVoid: jest.fn(),
+    returnIdleToDraft: jest.fn(),
+  };
   const consolidation = {
     findPendingOperationIdForSource: jest.fn(),
     tryResumePending: jest.fn(),
@@ -99,6 +105,38 @@ describe('WaybillService void 후 보류 작업 재개', () => {
 
     expect(consolidation.tryResumePending).not.toHaveBeenCalled();
     expect(planning.tryResumePendingCancellation).not.toHaveBeenCalled();
+  });
+
+  it('보류 작업이 없으면 송장을 잃은 상자를 출고 가능으로 돌린다', async () => {
+    consolidation.findPendingOperationIdForSource.mockResolvedValue(null);
+    planning.findPendingCancellationOperationId.mockResolvedValue(null);
+
+    await runVoid();
+
+    expect(manager.returnIdleToDraft).toHaveBeenCalledWith('source-1', at);
+  });
+
+  it('보류 작업이 있으면 상자 상태를 그쪽에 맡긴다', async () => {
+    await runVoid();
+
+    expect(manager.returnIdleToDraft).not.toHaveBeenCalled();
+  });
+
+  it('보류 작업 조회가 실패하면 상자를 되돌리지 않는다', async () => {
+    consolidation.findPendingOperationIdForSource.mockRejectedValue(new Error('lookup failed'));
+    planning.findPendingCancellationOperationId.mockResolvedValue(null);
+
+    await expect(runVoid()).resolves.toMatchObject({ status: 'voided' });
+
+    expect(manager.returnIdleToDraft).not.toHaveBeenCalled();
+  });
+
+  it('출고 가능으로 돌리기가 실패해도 송장 취소는 성공한다', async () => {
+    consolidation.findPendingOperationIdForSource.mockResolvedValue(null);
+    planning.findPendingCancellationOperationId.mockResolvedValue(null);
+    manager.returnIdleToDraft.mockRejectedValue(new Error('draft failed'));
+
+    await expect(runVoid()).resolves.toMatchObject({ status: 'voided' });
   });
 
   it.each(['blocked', 'already_completed'])('재개 결과가 %s여도 취소는 성공한다', async (outcome) => {

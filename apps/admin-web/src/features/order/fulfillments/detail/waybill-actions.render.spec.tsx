@@ -8,6 +8,7 @@ import { WaybillActions } from './waybill-actions';
 
 const mockIssue = jest.fn();
 const mockReissue = jest.fn();
+const mockVoid = jest.fn();
 
 jest.mock('@/hooks/use-permission', () => ({
   usePermissionCheck: () => ({ canRun: () => true }),
@@ -28,7 +29,7 @@ jest.mock('@/lib/services/orders', () => {
     useIssueWaybill: () => ({ mutateAsync: mockIssue, isPending: false }),
     useRegisterManualWaybill: idle,
     useReissueWaybill: () => ({ mutateAsync: mockReissue, isPending: false }),
-    useVoidWaybill: idle,
+    useVoidWaybill: () => ({ mutateAsync: mockVoid, isPending: false }),
   };
 });
 
@@ -60,6 +61,9 @@ const shipment = {
 } as unknown as ShipmentAdminDetail;
 
 const withoutWaybill = { ...shipment, waybills: [] } as ShipmentAdminDetail;
+
+const chooseReason = (label: string) =>
+  userEvent.click(within(screen.getByRole('dialog')).getByLabelText(label));
 
 it('택배사를 이름으로 고르고 발급 버튼은 하는 일로 부른다', async () => {
   render(<WaybillActions shipment={withoutWaybill} />);
@@ -128,6 +132,7 @@ it('재발급이 끝나면 기존 송장을 바꿔 붙이라고 알린다', asyn
   mockReissue.mockResolvedValue({ status: 'registered' });
   render(<WaybillActions shipment={shipment} />);
   await userEvent.click(screen.getByRole('button', { name: '재발급' }));
+  await chooseReason('송장 출력 불량·분실');
   await userEvent.click(screen.getByRole('button', { name: '재발급하기' }));
 
   expect(toast.success).toHaveBeenCalledWith(
@@ -140,6 +145,7 @@ it('재발급에서 새 송장을 받지 못하면 창을 닫고 기존 송장�
   mockReissue.mockResolvedValue({ status: 'failed' });
   render(<WaybillActions shipment={shipment} />);
   await userEvent.click(screen.getByRole('button', { name: '재발급' }));
+  await chooseReason('송장 출력 불량·분실');
   await userEvent.click(screen.getByRole('button', { name: '재발급하기' }));
 
   expect(toast.error).toHaveBeenCalledWith(
@@ -153,6 +159,7 @@ it('재발급이 발급 대기로 끝나면 다시 시도는 같은 재발급의
   mockIssue.mockResolvedValue({ status: 'registered' });
   render(<WaybillActions shipment={shipment} />);
   await userEvent.click(screen.getByRole('button', { name: '재발급' }));
+  await chooseReason('송장 출력 불량·분실');
   await userEvent.click(screen.getByRole('button', { name: '재발급하기' }));
   await userEvent.click(
     within(screen.getByRole('alert')).getByRole('button', { name: '다시 시도' })
@@ -162,4 +169,85 @@ it('재발급이 발급 대기로 끝나면 다시 시도는 같은 재발급의
   expect(mockIssue).toHaveBeenCalledWith(
     expect.objectContaining({ idempotencyKey: 'key-1:issue' })
   );
+});
+
+it('재발급은 사유를 고르기 전엔 보내지 않고, 고른 사유를 함께 보낸다', async () => {
+  mockReissue.mockResolvedValue({ status: 'registered' });
+  render(<WaybillActions shipment={shipment} />);
+  await userEvent.click(screen.getByRole('button', { name: '재발급' }));
+  await userEvent.click(screen.getByRole('button', { name: '재발급하기' }));
+  expect(mockReissue).not.toHaveBeenCalled();
+
+  await chooseReason('택배사 접수 오류');
+  await userEvent.click(screen.getByRole('button', { name: '재발급하기' }));
+  expect(mockReissue).toHaveBeenCalledWith(
+    expect.objectContaining({
+      data: {
+        carrier: 'HANJIN',
+        expectedManifestVersion: 1,
+        reason: '택배사 접수 오류',
+        reasonCode: 'carrier_error',
+      },
+    })
+  );
+});
+
+it('무효화는 고른 사유 코드와 문구를 보낸다', async () => {
+  mockVoid.mockResolvedValue({ status: 'voided' });
+  render(<WaybillActions shipment={shipment} />);
+  await userEvent.click(screen.getByRole('button', { name: '무효화' }));
+  await chooseReason('송장 출력 불량·분실');
+  await userEvent.click(screen.getByRole('button', { name: '무효로 하기' }));
+
+  expect(mockVoid).toHaveBeenCalledWith(
+    expect.objectContaining({
+      waybillId: 'wb-uuid-1',
+      data: { reason: '송장 출력 불량·분실', reasonCode: 'label_damaged' },
+    })
+  );
+});
+
+it('배치에 든 상자를 무효로 하려 하면 현장 배치가 멈춘다고 알리고 재발급으로 이어 준다', async () => {
+  render(
+    <WaybillActions
+      shipment={{
+        ...shipment,
+        workItems: [{ id: 'wi-1', status: 'queued', batchId: 'b-1' }],
+      }}
+    />
+  );
+  await userEvent.click(screen.getByRole('button', { name: '무효화' }));
+  expect(screen.getByRole('dialog').textContent).toContain(
+    '현장에서 이 배치를 시작하거나 이 상자를 출고할 수 없어요'
+  );
+
+  await userEvent.click(
+    screen.getByRole('button', { name: '무효로 하고 바로 새로 발급하기' })
+  );
+  expect(screen.getByRole('heading', { name: '운송장 재발급' })).toBeTruthy();
+  expect(screen.getByRole('dialog').textContent).toContain(
+    '이 번호는 먼저 무효가 돼요'
+  );
+});
+
+it('배치에 없는 상자의 무효화 창에는 배치 경고가 없다', async () => {
+  render(<WaybillActions shipment={shipment} />);
+  await userEvent.click(screen.getByRole('button', { name: '무효화' }));
+  expect(screen.getByRole('dialog').textContent).not.toContain(
+    '출고 배치에 들어 있어요'
+  );
+});
+
+it.each([
+  ['취소를 기다리는 상자', { operationId: 'op-1', lines: [] }, 'bg-background'],
+  ['그 밖의 상자', null, 'bg-destructive'],
+])('%s의 무효화 단추 모양', (_, pendingCancellation, className) => {
+  render(
+    <WaybillActions
+      shipment={{ ...shipment, pendingCancellation } as ShipmentAdminDetail}
+    />
+  );
+  const button = screen.getByRole('button', { name: '무효화' });
+  expect(button.className).toContain(className);
+  expect(button.hasAttribute('disabled')).toBe(false);
 });

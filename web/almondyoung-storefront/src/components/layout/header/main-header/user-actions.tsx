@@ -19,7 +19,6 @@ export function AccountMenu({ tone = "light" }: { tone?: "light" | "dark" }) {
 
   return (
     <div className="flex items-center gap-4 md:gap-[clamp(0.5px,2vw,1.5rem)]">
-      {/* 모바일은 로그인 줄을 없앴으므로 사람 아이콘을 장바구니 앞에 둔다 */}
       <div className="md:order-last">
         <AccountMenuItem
           href={user ? `/${countryCode}/mypage` : `/${countryCode}/login`}

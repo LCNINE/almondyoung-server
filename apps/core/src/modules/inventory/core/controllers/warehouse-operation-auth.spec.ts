@@ -7,6 +7,7 @@ import { enforcedPermissionProvidersForTesting, FIRST_GRANT_ROLE_PERMISSIONS } f
 import * as request from 'supertest';
 import { LocationOutboundController } from '../../../fulfillment/controllers/location-outbound.controller';
 import { LocationOutboundService } from '../../../fulfillment/services/location-outbound.service';
+import { OutboundScanRejectionManager } from '../../../fulfillment/scan-rejections/outbound-scan-rejection.manager';
 import { WarehouseWorkContextController } from './warehouse-work-context.controller';
 import { InventoryController } from './inventory.controller';
 import { InventoryCommandService } from '../services/inventory-command.service';
@@ -60,6 +61,7 @@ describe('warehouse v2 HTTP authorization and DTO contract', () => {
           mapped_master: FIRST_GRANT_ROLE_PERMISSIONS.master,
         }),
         { provide: LocationOutboundService, useValue: { force: mutation } },
+        { provide: OutboundScanRejectionManager, useValue: { record: jest.fn().mockResolvedValue(false) } },
         { provide: InventoryIdempotencyService, useValue: { withIdempotency: mutation } },
         ...[
           InventoryCommandService,

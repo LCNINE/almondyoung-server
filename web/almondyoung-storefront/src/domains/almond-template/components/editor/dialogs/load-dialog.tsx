@@ -55,15 +55,13 @@ export function LoadDialog({ editor }: { editor: AlmondEditor }) {
                     {formatDate(item.updatedAt, DATE_FORMATS.KO_DOT_TIME)}
                   </span>
                 </button>
-                {designer && (
+                {designer && item.status === "published" && (
                   <button
                     className="border px-2 py-1 text-xs disabled:opacity-50"
                     disabled={storagePending}
                     onClick={() => togglePublished(item)}
                   >
-                    {item.status === "published"
-                      ? "게시 중 · 내리기"
-                      : "게시하기"}
+                    게시 중 · 내리기
                   </button>
                 )}
                 <button

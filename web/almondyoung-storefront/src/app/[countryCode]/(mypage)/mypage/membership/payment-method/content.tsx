@@ -32,6 +32,7 @@ import { MembershipPaymentMethodSkeleton } from "@/components/skeletons/page-ske
 import { providerLabel } from "@lib/utils/billing-provider"
 import { getCmsFailureReasonKey } from "@lib/utils/cms-failure-reason"
 import { formatDate } from "@lib/utils/format-date"
+import { goToWalletWeb } from "@lib/utils/wallet-web-navigation"
 import SignupResumeCard from "@/domains/membership/components/signup-resume-card"
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { deleteBillingMethodAction } from "./actions"
@@ -367,14 +368,13 @@ export default function MembershipPaymentMethodContent() {
 
   const pushToCmsRegistration = () => {
     // CMS 자동이체 등록은 wallet-web 으로 통일한다. /billing-change 는 기존 CMS 수단 유무로
-    // 신규등록/변경을 자동 판별하고, 자체 auth 가드(/auth/ensure)로 세션을 복구한다.
+    // 신규등록/변경을 자동 판별한다.
     // 등록 완료 시 returnUrl(현재 화면 + cardChanged=1)로 복귀해 기존 자동구독 흐름을 잇는다.
     const returnUrl = window.location.href
-    const walletWebUrl =
-      process.env.NEXT_PUBLIC_WALLET_WEB_URL || "http://localhost:3200"
-    window.location.href = `${walletWebUrl}/billing-change?returnUrl=${encodeURIComponent(
-      returnUrl
-    )}`
+
+    goToWalletWeb(
+      `/billing-change?returnUrl=${encodeURIComponent(returnUrl)}`
+    )
   }
 
   const handleRegisterNewCard = () => {

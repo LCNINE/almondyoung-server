@@ -1,6 +1,6 @@
 import { render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { LineTable } from './panels';
+import { BoxCard, LineTable } from './panels';
 
 const row = (patch: Partial<Parameters<typeof LineTable>[0]['rows'][number]>) => ({
   shipmentLineId: 'l',
@@ -41,5 +41,17 @@ describe('품목 표 위치 칸', () => {
   it('위치가 없으면(옛 core) 대시', () => {
     render(<LineTable currentLineId={null} rows={[row({ locations: [] })]} />);
     expect(screen.getByText('—')).toBeInTheDocument();
+  });
+});
+
+describe('박스 카드 화주', () => {
+  it('위탁 업체 박스면 3PL 배지를, 자사 박스면 아무것도 보이지 않는다', () => {
+    const { rerender } = render(<BoxCard trackingNo="123412341234" recipient="홍*동" ownerName="업체" />);
+
+    expect(screen.getByText('3PL · 업체')).toBeTruthy();
+
+    rerender(<BoxCard trackingNo="123412341234" recipient="홍*동" ownerName={null} />);
+
+    expect(screen.queryByText(/3PL/)).toBeNull();
   });
 });

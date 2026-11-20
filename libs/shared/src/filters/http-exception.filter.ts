@@ -9,6 +9,7 @@ interface ErrorResponse {
   errors?: unknown;
   details?: unknown;
   requiredPermissions?: unknown;
+  rejectionRecorded?: unknown;
 }
 
 type PreparationDetails = { reasonCode: string; recovery: 'retry_preparation' | 'review_batch' };
@@ -66,6 +67,8 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     let details: PreparationDetails | LineBoxNotDraftDetails | undefined;
     // 권한 거부(403)가 어떤 권한이 필요한지 알려 주면 화면이 그 이름으로 안내한다. 문자열 목록만 통과시킨다.
     let requiredPermissions: string[] | undefined;
+    // 거절을 관리자 화면에 남겼다는 표시 — 현장 앱이 «관리자에게 알려 주세요» 대신 그 사실을 말한다.
+    let rejectionRecorded = false;
 
     // 1. Custom ApplicationException 처리
     if (exception instanceof ApplicationException) {
@@ -112,6 +115,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       if (status === 403 && Array.isArray(required) && required.every((key): key is string => typeof key === 'string')) {
         requiredPermissions = required;
       }
+      rejectionRecorded = status === 409 && errorResponse?.rejectionRecorded === true;
       devMessage = `${exception.message} - ${request.method} ${request.url}`;
     }
     // 3. 일반 Error 처리
@@ -135,6 +139,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       ...(errors !== undefined && { errors }),
       ...(details !== undefined && { details }),
       ...(requiredPermissions !== undefined && { requiredPermissions }),
+      ...(rejectionRecorded && { rejectionRecorded }),
       ...(process.env.NODE_ENV !== 'production' &&
         devMessage && {
           devMessage: devMessage,

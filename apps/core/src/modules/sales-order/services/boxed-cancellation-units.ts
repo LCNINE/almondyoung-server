@@ -56,7 +56,7 @@ export function physicalCancellationByItem(
     const outstanding = candidates.reduce((total, item) => total + outstandingOf(item), 0);
     if (remaining > outstanding) {
       throw new BadRequestException(
-        `Cancellation for SalesOrder line ${salesOrderLineId} includes shipped or already canceled quantity; use recall or return`,
+        '이미 출고됐거나 취소된 수량이 있어 취소할 수 없어요. 반품으로 접수해 주세요.',
       );
     }
     for (const item of candidates) {

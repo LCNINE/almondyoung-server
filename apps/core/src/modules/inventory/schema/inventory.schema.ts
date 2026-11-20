@@ -284,6 +284,9 @@ export const shipmentOperationTypeEnum = pgEnum('shipment_operation_type', [
   'force_dispatch',
   // #1063: 작성 중 박스를 목표 내용에 맞춘 기록(라인 구성 변경·S2 주문 수정). PR 2 부터 쓴다.
   'amend',
+  // 운영자가 송장을 무효로 하거나 다시 받은 기록. 자동 무효화(박스 빼기·결품 이탈)는 그 작업이 남긴다.
+  'waybill_void',
+  'waybill_reissue',
 ]);
 export const shipmentOperationStatusEnum = pgEnum('shipment_operation_status', [
   'pending',
@@ -1128,6 +1131,8 @@ export const deliveryProfiles = pgTable('delivery_profiles', {
   id: uuid('id').primaryKey().defaultRandom(),
   name: varchar('name', { length: 128 }).notNull(),
   sourceType: sourceTypeEnum('source_type').notNull(),
+  // 위탁(3PL) 프로필이면 그 업체 화주. 자사 프로필은 비워 둔다.
+  holderId: uuid('holder_id').references(() => holders.id, { onDelete: 'restrict' }),
   avgDeliveryDays: integer('avg_delivery_days'),
   // TODO(outbound-v2-contract Task 25): require execution snapshots/modes for profiles used by planned shipments.
   senderSnapshot: jsonb('sender_snapshot'),
@@ -3567,6 +3572,37 @@ export const fulfillmentCommandRequests = pgTable(
   }),
 );
 
+/**
+ * 물류앱 출고 저장(스캔·강제출고)이 관리자 손이 필요한 사유로 거절된 기록. 거절된 명령은 통째로 되돌려지므로
+ * 그 트랜잭션 밖에서 따로 남긴다. 지우지 않고, 지금 보일지는 읽을 때 상자·작업 항목·뒤 명령으로 판정한다.
+ */
+export const outboundScanRejections = pgTable(
+  'outbound_scan_rejections',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    shipmentId: uuid('shipment_id')
+      .notNull()
+      .references(() => shipments.id, { onDelete: 'cascade' }),
+    workItemId: uuid('work_item_id').references(() => outboundBatchWorkItems.id, { onDelete: 'set null' }),
+    /** 기록할 때의 상자 상태 — 상태가 바뀌면 이 기록은 지난 일이다. */
+    shipmentStatus: shipmentStatusEnum('shipment_status').notNull(),
+    commandType: varchar('command_type', { length: 128 }).notNull(),
+    idempotencyKey: varchar('idempotency_key', { length: 255 }).notNull(),
+    code: varchar('code', { length: 128 }).notNull(),
+    reasonCode: varchar('reason_code', { length: 128 }),
+    barcode: varchar('barcode', { length: 255 }),
+    /** 찍은 바코드를 출고 스캔과 같은 규칙으로 푼 SKU — 풀리지 않으면 비운다. */
+    skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'set null' }),
+    quantity: integer('quantity'),
+    actorId: varchar('actor_id', { length: 255 }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uqRejectionCommand: unique('uq_outbound_scan_rejection_command').on(t.commandType, t.idempotencyKey),
+    idxRejectionShipment: index('idx_outbound_scan_rejection_shipment').on(t.shipmentId, t.createdAt),
+  }),
+);
+
 export const shipmentOperations = pgTable(
   'shipment_operations',
   {
@@ -3656,6 +3692,8 @@ export const waybills = pgTable(
     trackingNo: varchar('tracking_no', { length: 128 }),
     custOrdNo: varchar('cust_ord_no', { length: 30 }),
     labelData: jsonb('label_data'),
+    // 발급 때 한진에 보낸 보내는 분. 재시도·라벨이 이 값을 다시 쓴다(발급 뒤 프로필을 고쳐도 등록값과 어긋나지 않게)
+    senderSnapshot: jsonb('sender_snapshot'),
     manifestVersion: integer('manifest_version').notNull(),
     recipientHash: varchar('recipient_hash', { length: 64 }).notNull(),
     lastError: text('last_error'),
@@ -4380,6 +4418,7 @@ export const wmsTables = {
 
   // Outbound V2 expand model
   fulfillmentCommandRequests,
+  outboundScanRejections,
   shipmentOperations,
   shipmentOperationMembers,
   outboundBatchWorkItems,

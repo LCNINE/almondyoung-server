@@ -29,6 +29,10 @@
  *   DATABASE_URL   core 논리 DB (run.sh 가 주입)
  *   DRY_RUN=1      대상만 세고 DB 미반영
  *   OUT_VARIANTS   영향 variant id 를 적을 파일 (기본 apps/core/tmp/closeout-variant-ids.txt)
+ *
+ * ⚠️ 컷오버 시각 T 뒤에는 단독으로 돌리지 않는다 — 채널·취소를 가리지 않아 앱이 맡은 취소 주문의 상자를
+ * 도메인 경로(리컨실러) 밖에서 닫는다. 드레인 끝 정리는 `close-sellmate-leftovers.ts` (#1243) 가 이 문장을
+ * 대상 주문으로 좁혀(SCOPED_CLOSEOUT_CTE) 대신 돌린다.
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -38,7 +42,7 @@ const DRY_RUN = process.env.DRY_RUN === '1' || process.env.DRY_RUN === 'true';
 const OUT_VARIANTS = process.env.OUT_VARIANTS || 'apps/core/tmp/closeout-variant-ids.txt';
 
 // 종결 대상 상자. 라인이 없는 상자는 판단 근거가 없으므로 JOIN 으로 자연히 빠진다.
-const CLOSEOUT_CTE = `
+export const CLOSEOUT_CTE = `
   SELECT s.id     AS shipment_id,
          CASE WHEN bool_and(fo.status = 'canceled' OR so.status = 'cancelled') THEN 'canceled' ELSE 'shipped' END AS new_status
     FROM shipments s
@@ -51,6 +55,75 @@ const CLOSEOUT_CTE = `
   HAVING bool_and(fo.status IN ('shipped','completed','canceled')
                OR so.status IN ('shipped','delivered','cancelled'))
 `;
+
+// #1243 의 좁힌 종결 대상. 호출하는 쪽이 같은 트랜잭션에 임시 표 leftover_scope(sales_order_id uuid) 를 먼저 채운다.
+// 위 CTE 와 다른 점: 상자의 모든 FO 가 대상 주문의 것이고 이미 terminal 이어야 한다(판매주문 상태로 대신하지 않는다 —
+// FO 는 같은 트랜잭션에서 먼저 닫는다), recovery_required 상자(집은 물건이 있을 수 있다)와
+// 진행 중 작업 항목이 걸린 상자는 닫지 않는다.
+export const SCOPED_CLOSEOUT_CTE = `
+  SELECT s.id     AS shipment_id,
+         CASE WHEN bool_and(fo.status = 'canceled') THEN 'canceled' ELSE 'shipped' END AS new_status
+    FROM shipments s
+    JOIN shipment_lines sl ON sl.shipment_id = s.id
+    JOIN fulfillment_order_items foi ON foi.id = sl.fulfillment_order_item_id
+    JOIN fulfillment_orders fo ON fo.id = foi.fulfillment_order_id
+   WHERE s.status IN ('draft','planned')
+     AND NOT EXISTS (SELECT 1 FROM outbound_batch_work_items wi
+                      WHERE wi.shipment_id = s.id AND wi.status NOT IN ('excluded','completed'))
+   GROUP BY s.id
+  HAVING bool_and(fo.sales_order_id IN (SELECT sales_order_id FROM leftover_scope)
+                  AND fo.status IN ('shipped','completed','canceled'))
+`;
+
+/** 종결 문장 — 상자 먼저 닫고(위 머리 주석의 순서 이유) 예약을 푼 뒤 예약 수량 투영을 0 으로. 한 트랜잭션에서 차례로 돈다. */
+export function closeoutStatements(cte: string): string[] {
+  return [
+    `CREATE TEMP TABLE closeout ON COMMIT DROP AS ${cte}`,
+    `
+        CREATE TEMP TABLE closeout_reservation ON COMMIT DROP AS
+        SELECT r.id AS reservation_id, r.sku_id
+          FROM stock_reservations r
+          JOIN shipment_lines sl ON sl.id = r.shipment_line_id
+         WHERE r.status = 'confirmed'
+           AND sl.shipment_id IN (SELECT shipment_id FROM closeout)
+      `,
+    `
+        UPDATE shipments s
+           SET status       = c.new_status::shipment_status,
+               shipped_at   = CASE WHEN c.new_status = 'shipped' THEN coalesce(s.shipped_at, now()) ELSE s.shipped_at END,
+               last_updated = now()
+          FROM closeout c
+         WHERE s.id = c.shipment_id
+      `,
+    `
+        UPDATE stock_reservations r
+           SET status = 'released',
+               state_reason = 'closeout: fulfillment order already terminal',
+               invalidated_at = now(),
+               updated_at = now()
+          FROM closeout_reservation cr
+         WHERE r.id = cr.reservation_id
+      `,
+    `
+        UPDATE shipment_lines sl SET reserved_qty = 0
+          FROM closeout c
+         WHERE sl.shipment_id = c.shipment_id AND sl.reserved_qty <> 0
+      `,
+    `
+        UPDATE fulfillment_order_items foi SET reserved_qty = 0, updated_at = now()
+         WHERE foi.reserved_qty <> 0
+           AND foi.id IN (SELECT sl.fulfillment_order_item_id FROM shipment_lines sl
+                           WHERE sl.shipment_id IN (SELECT shipment_id FROM closeout))
+      `,
+    `
+        UPDATE fulfillment_orders fo SET total_reserved_qty = 0, updated_at = now()
+         WHERE fo.total_reserved_qty <> 0
+           AND fo.id IN (SELECT foi.fulfillment_order_id FROM shipment_lines sl
+                           JOIN fulfillment_order_items foi ON foi.id = sl.fulfillment_order_item_id
+                          WHERE sl.shipment_id IN (SELECT shipment_id FROM closeout))
+      `,
+  ];
+}
 
 async function main() {
   const url = process.env.DATABASE_URL;
@@ -89,56 +162,7 @@ async function main() {
     }
 
     const variantIds = await sql.begin(async (trx) => {
-      await trx.unsafe(`CREATE TEMP TABLE closeout ON COMMIT DROP AS ${CLOSEOUT_CTE}`);
-      await trx.unsafe(`
-        CREATE TEMP TABLE closeout_reservation ON COMMIT DROP AS
-        SELECT r.id AS reservation_id, r.sku_id
-          FROM stock_reservations r
-          JOIN shipment_lines sl ON sl.id = r.shipment_line_id
-         WHERE r.status = 'confirmed'
-           AND sl.shipment_id IN (SELECT shipment_id FROM closeout)
-      `);
-
-      // 1. 상자 종결이 먼저다 (위 주석의 순서 이유)
-      await trx.unsafe(`
-        UPDATE shipments s
-           SET status       = c.new_status::shipment_status,
-               shipped_at   = CASE WHEN c.new_status = 'shipped' THEN coalesce(s.shipped_at, now()) ELSE s.shipped_at END,
-               last_updated = now()
-          FROM closeout c
-         WHERE s.id = c.shipment_id
-      `);
-
-      // 2. 유령 예약 해제
-      await trx.unsafe(`
-        UPDATE stock_reservations r
-           SET status = 'released',
-               state_reason = 'closeout: fulfillment order already terminal',
-               invalidated_at = now(),
-               updated_at = now()
-          FROM closeout_reservation cr
-         WHERE r.id = cr.reservation_id
-      `);
-
-      // 3. 예약 수량 프로젝션 정리
-      await trx.unsafe(`
-        UPDATE shipment_lines sl SET reserved_qty = 0
-          FROM closeout c
-         WHERE sl.shipment_id = c.shipment_id AND sl.reserved_qty <> 0
-      `);
-      await trx.unsafe(`
-        UPDATE fulfillment_order_items foi SET reserved_qty = 0, updated_at = now()
-         WHERE foi.reserved_qty <> 0
-           AND foi.id IN (SELECT sl.fulfillment_order_item_id FROM shipment_lines sl
-                           WHERE sl.shipment_id IN (SELECT shipment_id FROM closeout))
-      `);
-      await trx.unsafe(`
-        UPDATE fulfillment_orders fo SET total_reserved_qty = 0, updated_at = now()
-         WHERE fo.total_reserved_qty <> 0
-           AND fo.id IN (SELECT foi.fulfillment_order_id FROM shipment_lines sl
-                           JOIN fulfillment_order_items foi ON foi.id = sl.fulfillment_order_item_id
-                          WHERE sl.shipment_id IN (SELECT shipment_id FROM closeout))
-      `);
+      for (const statement of closeoutStatements(CLOSEOUT_CTE)) await trx.unsafe(statement);
 
       return trx.unsafe<{ variant_id: string }[]>(`
         SELECT DISTINCT pm.variant_id
@@ -169,7 +193,9 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error('❌ 실패:', error);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((error) => {
+    console.error('❌ 실패:', error);
+    process.exit(1);
+  });
+}

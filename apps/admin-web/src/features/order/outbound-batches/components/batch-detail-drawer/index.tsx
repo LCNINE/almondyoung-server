@@ -41,6 +41,8 @@ import type {
   PickingStrategyName,
 } from '@/lib/types/dto/fulfillment';
 import { ExcludeShipmentDialog } from '../exclude-shipment-dialog';
+import { pendingCancellationItems } from '@/lib/api/domains/orders/pending-cancellation.shape';
+import type { PendingCancellation } from '@/lib/types/dto/fulfillment';
 import { BatchStatusBadge } from '../batch-status-badge';
 import { useWarehouseCommandRetry } from '../../warehouse-command-retry';
 import { PICKING_METHOD_LABELS } from '@/lib/utils/picking-method';
@@ -97,6 +99,7 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
     id: string;
     shipmentId: string;
     trackingNo?: string | null;
+    pendingCancellation?: PendingCancellation | null;
   } | null>(null);
   const [handingOff, setHandingOff] = useState<{
     claim: HandoffClaim;
@@ -311,7 +314,9 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
               {
                 batchId,
                 shipmentId: excluding.shipmentId,
-                reason: '잘못 넣은 상자',
+                reason: excluding.pendingCancellation
+                  ? CANCEL_WAITING_EXIT_REASON
+                  : WRONG_BOX_EXIT_REASON,
                 voidWaybill,
               },
               (payload, idempotencyKey) =>
@@ -510,6 +515,7 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                               <p>맡기 버튼은 앱을 못 쓸 때만 눌러요.</p>
                               <p>넘기기는 근무 교대처럼 맡은 사람이 끝까지 못 할 때 다른 작업자에게 넘기는 거예요.</p>
                               <p>배치에서 빼기는 상자를 잘못 넣었을 때 써요.</p>
+                              <p>부분 취소를 기다리는 상자는 빼는 것 말고 할 일이 없어 «배치에서 빼기»만 보여요.</p>
                             </HelpTip>
                           </span>
                         </TableHead>
@@ -520,12 +526,13 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                     {batch.workItems.map((item) => (
                       <TableRow key={item.id}>
                         <TableCell>
-                          <p
-                            className="font-medium"
+                          <Link
+                            className="font-medium hover:underline"
+                            href={`/order/fulfillments?shipmentId=${item.shipmentId}`}
                             title={`상자 ${item.shipmentId} · 작업 ${item.id} · lease v${item.leaseVersion}`}
                           >
                             {item.displayOrderNo ? `#${item.displayOrderNo}` : '주문번호 없음'}
-                          </p>
+                          </Link>
                           <p className="text-xs text-muted-foreground">
                             {item.itemSummary}
                           </p>
@@ -545,6 +552,19 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                               제외: {item.exclusionReason}
                             </p>
                           )}
+                          {item.pendingCancellation && (
+                            <div className="mt-1 max-w-60 space-y-0.5">
+                              <Badge variant="outline" className="border-amber-300 bg-amber-50 text-amber-800">
+                                취소 대기
+                              </Badge>
+                              <p className="text-xs text-amber-800 whitespace-normal break-keep">
+                                {pendingCancellationItems(item.pendingCancellation)} 취소 —{' '}
+                                {item.status === 'withdrawing'
+                                  ? '빼는 중이에요. 물류앱에서 송장을 찍고 꺼낸 상품을 되돌림 바구니에 넣으면 끝나요'
+                                  : '현장에서 빼야 끝나요. 물류앱 F11 또는 «배치에서 빼기»'}
+                              </p>
+                            </div>
+                          )}
                         </TableCell>
                         <TableCell className="text-xs" title={item.pickerClaim.workerId ?? undefined}>
                           {claimText(item.pickerClaim, workerName)}
@@ -555,14 +575,23 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                         {canWorkItemAction && (
                           <TableCell>
                             <div className="flex min-w-52 flex-wrap gap-1">
-                              {!hasWorkItemAction(item.status) && (
+                              {!item.pendingCancellation &&
+                                !hasWorkItemAction(item.status) && (
                                 <span className="text-xs text-muted-foreground">
                                   {item.status === 'completed'
                                     ? '끝난 상자라 할 작업이 없어요'
                                     : '지금은 할 수 있는 작업이 없어요'}
                                 </span>
                               )}
-                              {canClaimPicker && PICKER_CLAIMABLE.includes(item.status) && (
+                              {item.pendingCancellation &&
+                                !(canExclude && EXCLUDABLE.includes(item.status)) && (
+                                  <span className="text-xs text-muted-foreground">
+                                    {cancelWaitingIdleText(item.status)}
+                                  </span>
+                                )}
+                              {!item.pendingCancellation &&
+                                canClaimPicker &&
+                                PICKER_CLAIMABLE.includes(item.status) && (
                               <Button
                                 size="sm"
                                 variant="outline"
@@ -587,7 +616,9 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                                 내가 피킹 맡기
                               </Button>
                               )}
-                              {canClaimPacker && PACKER_CLAIMABLE.includes(item.status) && (
+                              {!item.pendingCancellation &&
+                                canClaimPacker &&
+                                PACKER_CLAIMABLE.includes(item.status) && (
                               <Button
                                 size="sm"
                                 variant="outline"
@@ -612,7 +643,8 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                                 내가 포장 맡기
                               </Button>
                               )}
-                              {canHandoffPicker &&
+                              {!item.pendingCancellation &&
+                                canHandoffPicker &&
                                 handoffOwnerOf(
                                   'picker',
                                   item,
@@ -631,7 +663,8 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                                     피킹 넘기기
                                   </Button>
                                 )}
-                              {canHandoff &&
+                              {!item.pendingCancellation &&
+                                canHandoff &&
                                 handoffOwnerOf(
                                   'packer',
                                   item,
@@ -654,7 +687,11 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                                 EXCLUDABLE.includes(item.status) && (
                                   <Button
                                     size="sm"
-                                    variant="destructive"
+                                    variant={
+                                      item.pendingCancellation
+                                        ? 'default'
+                                        : 'destructive'
+                                    }
                                     onClick={() => setExcluding(item)}
                                   >
                                     배치에서 빼기
@@ -759,10 +796,21 @@ const WORK_ITEM_STATUS_LABEL: Record<string, string> = {
 // 서버 판정(core outbound-batch-orchestrator 의 assertClaimable·handoff, WITHDRAWABLE_WORK_ITEM_STATUSES)과 같은 범위
 const PICKER_CLAIMABLE = ['queued', 'picking'];
 const PACKER_CLAIMABLE = ['ready_to_pack', 'packing'];
+// 출고 준비가 «배치에서 빠져 돌아온 상자»의 뺀 곳·사유를 이 고정 문구로 읽는다
+const WRONG_BOX_EXIT_REASON = '잘못 넣은 상자';
+const CANCEL_WAITING_EXIT_REASON = '부분 취소로 뺌';
+
 const EXCLUDABLE = ['queued', 'picking', 'ready_to_pack', 'packing'];
 
 function hasWorkItemAction(status: string): boolean {
   return [...PICKER_CLAIMABLE, ...PACKER_CLAIMABLE].includes(status);
+}
+
+// 취소를 기다리는 상자는 빼기만 남기므로, 빼기를 못 할 때 그 까닭을 말한다
+function cancelWaitingIdleText(status: string): string {
+  if (status === 'withdrawing') return '빼는 중이라 할 작업이 없어요';
+  if (EXCLUDABLE.includes(status)) return '배치에서 빼기 권한이 없어요';
+  return '지금은 할 수 있는 작업이 없어요';
 }
 
 type WorkItem = OutboundBatchV2['workItems'][number];

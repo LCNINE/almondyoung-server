@@ -4,7 +4,8 @@ import { errorMessage } from '../../core/data/errorMessage';
 import { useHumanKeys } from '../../core/hardware/scan/useScanner';
 import { useWorkPermissions } from '../../core/operations/useWorkCapabilities';
 import { excludeFromBatch } from '../../domains/outbound/batchRemove';
-import { inspectionRows, inspectionTotals, remainingOf } from '../../domains/outbound/inspection';
+import { CANCEL_WAITING_SCAN_MESSAGE, cancelWaitingOf } from '../../domains/outbound/cancelWaiting';
+import { inspectionRows, inspectionTotals, lineOfBarcode, remainingOf } from '../../domains/outbound/inspection';
 import { fetchShipmentByWaybill } from '../../domains/outbound/queries';
 import {
   buildShortPickRequest,
@@ -22,7 +23,7 @@ import type { StationAction } from '../actions';
 import { modalOpen } from '../useStationKeys';
 import { INSPECTION_ACTIONS } from './inspectionActions';
 import type { Alert, BoxWorkHandle } from './model';
-import { BigPanel, BoxCard, LineTable, QueueTrouble, RecentList, ScanWaiting, WorkGrid, type BigPanelContent } from './panels';
+import { BigPanel, BoxCard, LineTable, QueueTrouble, RecentList, ScanChecking, ScanWaiting, WorkGrid, type BigPanelContent } from './panels';
 import type { RecentEntry } from './recent';
 import { ShortPickDialog } from './ShortPickDialog';
 import { INTAKE_BLOCKED_MESSAGE, STATION_WITHDRAW_REASON, useInspectionBox } from './useInspectionBox';
@@ -99,9 +100,15 @@ export function InspectWork({
 }) {
   const api = useApiClient();
   const permissions = useWorkPermissions();
-  const nameOf = (lineId: string | null) => box.lines.find((line) => line.shipmentLineId === lineId)?.skuName ?? '';
+  // 오른 줄을 못 찾으면(다시 연 박스의 저장된 스캔) 바코드로 알아보고, 그래도 모르면 바코드를 그대로 적는다
+  const nameOf = (lineId: string | null, barcode: string) =>
+    box.lines.find((line) => line.shipmentLineId === lineId)?.skuName ??
+    lineOfBarcode(box.lines, barcode)?.skuName ??
+    `상품 바코드 ${barcode}`;
+  // 부분 취소를 기다리는 박스 — 검수하지 않고 박스 빼기로 보낸다
+  const cancelWaiting = cancelWaitingOf(box);
   const work = useInspectionBox(box, {
-    onAccepted: (lineId, quantity) => onScanned(nameOf(lineId), quantity),
+    onAccepted: (lineId, quantity, barcode) => onScanned(nameOf(lineId, barcode), quantity),
     onShipped: () => onShipped(box),
     onRejected: (message, barcode) => onAlert(message, barcode ?? undefined),
     onWithdrawn: (barcode) => onWithdrawn(box, barcode),
@@ -130,6 +137,10 @@ export function InspectWork({
       accept(code) {
         // 스캔은 무장을 푼다. 수량은 이 스캔 한 번에 쓰고 1 로 돌아간다(§6.3)
         setArmed(null);
+        if (cancelWaiting) {
+          onAlert(CANCEL_WAITING_SCAN_MESSAGE, code);
+          return;
+        }
         const typed = quantityRef.current;
         if (typed !== null) setQuantity(null);
         const count = typed ? Math.max(1, Number(typed)) : 1;
@@ -153,7 +164,7 @@ export function InspectWork({
     setArmed(null);
     setQuantity((q) => `${q ?? ''}${digit}`.replace(/^0+(?=\d)/, '').slice(0, MAX_QUANTITY_DIGITS));
   }, []);
-  const typing = !shortOpen && (quantity !== null || !work.intakeBlocked);
+  const typing = !shortOpen && !cancelWaiting && (quantity !== null || !work.intakeBlocked);
   useDigitCommands(typing ? typeDigit : null);
   useHumanKeys(
     typing
@@ -254,7 +265,7 @@ export function InspectWork({
   const actions: StationAction[] = [
     {
       ...INSPECTION_ACTIONS.all,
-      enabled: work.idle && remaining > 0,
+      enabled: work.idle && remaining > 0 && !cancelWaiting,
       run: () => {
         setArmed(null);
         setQuantity(null);
@@ -266,7 +277,8 @@ export function InspectWork({
       ? [
           {
             ...INSPECTION_ACTIONS.shortPick,
-            enabled: work.idle && (draft.length > 0 || retry !== null) && !shortBusy && !withdrawing && !parentBusy,
+            enabled:
+              work.idle && (draft.length > 0 || retry !== null) && !shortBusy && !withdrawing && !parentBusy && !cancelWaiting,
             run: () => {
               setArmed(null);
               setQuantity(null);
@@ -280,7 +292,7 @@ export function InspectWork({
           {
             ...INSPECTION_ACTIONS.force,
             label: armed === 'force' ? '강제출고 확정' : INSPECTION_ACTIONS.force.label,
-            enabled: work.idle && !work.forcing,
+            enabled: work.idle && !work.forcing && !cancelWaiting,
             run: () => arm('force', () => void work.forceOut()),
           },
         ]
@@ -320,16 +332,25 @@ export function InspectWork({
       ? { kind: 'quantity', value: quantity }
       : alert
         ? { kind: 'alert', ...alert }
-        : { kind: 'progress', ...totals };
+        : cancelWaiting
+          ? { kind: 'cancelWaiting', ...cancelWaiting }
+          : { kind: 'progress', ...totals };
   return (
     <>
       <WorkGrid
-        intake={work.intakeBlocked ? 'blocked' : 'open'}
+        intake={work.intakeBlocked || cancelWaiting ? 'blocked' : 'open'}
         left={
           <>
-            <BoxCard trackingNo={box.trackingNo} recipient={box.recipientMasked} deliveryNote={box.deliveryNote} />
+            <BoxCard trackingNo={box.trackingNo} recipient={box.recipientMasked} deliveryNote={box.deliveryNote} ownerName={box.ownerName} />
             <BigPanel content={big} />
-            {work.queueError ? (
+            {work.checking.length > 0 ? (
+              <ScanChecking
+                scans={work.checking.map((scan) => ({
+                  name: scan.name ?? (scan.barcode ? `상품 바코드 ${scan.barcode}` : '강제출고'),
+                  quantity: scan.quantity,
+                }))}
+              />
+            ) : work.queueError ? (
               <QueueTrouble storage={!!work.storageError} onRetry={() => void work.retryHead().catch(() => {})} />
             ) : work.waitingForNetwork > 0 ? (
               <ScanWaiting count={work.waitingForNetwork} />

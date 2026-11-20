@@ -129,6 +129,9 @@ sales-order(`apps/core/src/modules/sales-order`), 돈 이동은 wallet. Core →
 > Medusa 가 계산하게 되면서 사라졌다. 성립은 Medusa, 이행·취소 가능 판정은 Core, 돈 이동의 실행은 wallet, 배송 상태
 > 역투영(`updateOrderShippingProjection`)은 그대로다. 위 본문은 역사 기록으로 남긴다.
 
+> **(2026-11-18, #1452)** 배송 상태 역투영은 시도별 `updateOrderShipmentAttemptProjection`(`coreShipmentAttempts`·`coreShippingStatus`) 하나다.
+> 주문 단위 `updateOrderShippingProjection`(최상위 `coreTrackingNumber` 등)은 한 번도 동작하지 않아 지웠다.
+
 **5.6 Medusa 대시보드는 개발자 진단 전용이다.** 운영 편집 표면은 admin-web 하나. 대시보드에서 투영 데이터를
 고치면 다음 투영이 덮어쓴다 — 결함이 아니라 설계다.
 

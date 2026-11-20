@@ -4,6 +4,7 @@ import {
   createAuthorizationRequest,
   type OidcStateRecord,
 } from '@/lib/auth/oidc-client';
+import { sanitizeInternalRedirect } from '@/lib/auth/internal-redirect';
 import { writeStateCookie } from '@/lib/auth/session-cookies';
 
 /**
@@ -35,13 +36,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const res = NextResponse.redirect(authorizeUrl);
   writeStateCookie(res.cookies, stateRecord);
   return res;
-}
-
-function sanitizeInternalRedirect(value: string | null): string {
-  if (!value) return '/';
-  if (!value.startsWith('/')) return '/';
-  if (value.startsWith('//')) return '/';
-  return value;
 }
 
 function resolvePrompt(raw: string | undefined): OidcStateRecord['prompt'] {

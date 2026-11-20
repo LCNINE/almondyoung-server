@@ -4,6 +4,7 @@ import MatchingTemplate from './index';
 import { useOrderLines } from '@/lib/services/matching';
 
 let mockExcludeMatched = true;
+let mockDateType: 'today' | 'custom' = 'custom';
 
 jest.mock('@/lib/services/matching', () => ({
   useOrderLines: jest.fn(() => ({
@@ -20,7 +21,7 @@ jest.mock('../contexts/filter.context', () => ({
     appliedFilters: {
       excludeMatched: mockExcludeMatched,
       excludeShipped: true,
-      dateType: 'custom',
+      dateType: mockDateType,
     },
   }),
 }));
@@ -54,3 +55,21 @@ it.each([true, false])(
     );
   }
 );
+
+it('«오늘»은 한국 오전 9시 전에도 한국 날짜로 묻는다', () => {
+  jest.useFakeTimers({ now: new Date('2026-03-01T15:30:00.000Z') });
+  mockDateType = 'today';
+  try {
+    render(<MatchingTemplate />);
+
+    expect(useOrderLines).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        startDate: '2026-03-02',
+        endDate: '2026-03-02',
+      })
+    );
+  } finally {
+    mockDateType = 'custom';
+    jest.useRealTimers();
+  }
+});

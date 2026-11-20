@@ -29,6 +29,7 @@ export class DeliveryProfileMapper {
       id: row.id,
       name: row.name,
       sourceType: row.sourceType,
+      holderId: row.holderId,
       avgDeliveryDays: row.avgDeliveryDays,
       sender: { name: text(row.senderSnapshot, 'name'), phone: text(row.senderSnapshot, 'phone') },
       originAddress: {
@@ -55,6 +56,7 @@ export class DeliveryProfileMapper {
     const columns: NewColumns = {};
     if (dto.name !== undefined) columns.name = dto.name.trim();
     if (dto.sourceType !== undefined) columns.sourceType = dto.sourceType;
+    if (dto.holderId !== undefined) columns.holderId = dto.holderId;
     if (dto.avgDeliveryDays !== undefined) columns.avgDeliveryDays = dto.avgDeliveryDays;
     if (dto.sender !== undefined) columns.senderSnapshot = { name: dto.sender.name, phone: dto.sender.phone };
     if (dto.originAddress !== undefined) {

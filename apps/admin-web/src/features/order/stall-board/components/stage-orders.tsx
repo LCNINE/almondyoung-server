@@ -119,110 +119,112 @@ export function StageOrders(props: {
               : '이 단계에 머무는 주문 없음'}
         </div>
       ) : (
-        <table className="w-full border-collapse text-sm">
-          <thead className="bg-slate-50 text-xs text-muted-foreground">
-            <tr>
-              <th className="px-4 py-2 text-left font-medium">주문번호</th>
-              <th className="px-4 py-2 text-left font-medium">채널</th>
-              <th className="px-4 py-2 text-left font-medium">고객</th>
-              <th className="px-4 py-2 text-left font-medium">주문일</th>
-              <th className="px-4 py-2 text-left font-medium">세부 상태</th>
-              {isReserve && (
-                <th className="px-4 py-2 text-left font-medium">모자람</th>
-              )}
-              <th className="px-4 py-2 text-right font-medium">체류</th>
-              {(isCancelRequest || isReserve) && (
-                <th className="px-4 py-2 text-right font-medium">조치</th>
-              )}
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((r) => {
-              const badge = gaveUpBadge(r.gaveUp);
-              return (
-                <tr key={r.salesOrderId} className="border-t hover:bg-slate-50">
-                  <td className="px-4 py-2 font-mono text-[13px]">
-                    <Link
-                      href={`/order/history?orderNo=${encodeURIComponent(r.channelOrderId)}`}
-                    >
-                      {r.orderNo}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-2">{r.salesChannel}</td>
-                  <td className="px-4 py-2">{r.customerName ?? ''}</td>
-                  <td className="px-4 py-2">
-                    {new Date(r.orderedAt).toLocaleString('ko-KR', {
-                      dateStyle: 'short',
-                      timeStyle: 'short',
-                    })}
-                  </td>
-                  <td className="px-4 py-2">
-                    <span className="whitespace-nowrap rounded bg-slate-100 px-1.5 py-0.5 text-xs">
-                      {r.settlement ? settlementLabel(r.settlement) : stateLabel(r.state)}
-                    </span>
-                    {badge && (
-                      <span
-                        className="ml-1.5 rounded bg-red-50 px-1.5 py-0.5 text-xs font-semibold text-red-600"
-                        title={badge.title}
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-sm">
+            <thead className="bg-slate-50 text-xs text-muted-foreground">
+              <tr>
+                <th className="px-4 py-2 text-left font-medium">주문번호</th>
+                <th className="px-4 py-2 text-left font-medium">채널</th>
+                <th className="px-4 py-2 text-left font-medium">고객</th>
+                <th className="px-4 py-2 text-left font-medium">주문일</th>
+                <th className="px-4 py-2 text-left font-medium">세부 상태</th>
+                {isReserve && (
+                  <th className="px-4 py-2 text-left font-medium">모자람</th>
+                )}
+                <th className="px-4 py-2 text-right font-medium">체류</th>
+                {(isCancelRequest || isReserve) && (
+                  <th className="px-4 py-2 text-right font-medium">조치</th>
+                )}
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((r) => {
+                const badge = gaveUpBadge(r.gaveUp);
+                return (
+                  <tr key={r.salesOrderId} className="border-t hover:bg-slate-50">
+                    <td className="px-4 py-2 font-mono text-[13px]">
+                      <Link
+                        href={`/order/history?orderNo=${encodeURIComponent(r.channelOrderId)}`}
                       >
-                        {badge.text}
-                      </span>
-                    )}
-                    {r.settlement && (
-                      <div className="mt-1 text-xs text-muted-foreground">
-                        {settlementTiming(r.settlement, props.now.getTime())}
-                        {settlementReason(r.settlement) && (
-                          <span className="ml-1.5 text-red-600">{settlementReason(r.settlement)}</span>
-                        )}
-                        <ManualRefundTodo settlement={r.settlement} walletIntentId={r.walletIntentId} />
-                      </div>
-                    )}
-                  </td>
-                  {isReserve && (
+                        {r.orderNo}
+                      </Link>
+                    </td>
+                    <td className="px-4 py-2">{r.salesChannel}</td>
+                    <td className="px-4 py-2">{r.customerName ?? ''}</td>
                     <td className="px-4 py-2">
-                      {r.shortage && (
-                        <>
-                          {shortageSummary(r.shortage)}
-                          {arrivalLabel(r.shortage.items[0].expectedArrival) && (
-                            <span className="ml-1.5 text-xs text-muted-foreground">
-                              {arrivalLabel(r.shortage.items[0].expectedArrival)}
-                            </span>
+                      {new Date(r.orderedAt).toLocaleString('ko-KR', {
+                        dateStyle: 'short',
+                        timeStyle: 'short',
+                      })}
+                    </td>
+                    <td className="px-4 py-2">
+                      <span className="whitespace-nowrap rounded bg-slate-100 px-1.5 py-0.5 text-xs">
+                        {r.settlement ? settlementLabel(r.settlement) : stateLabel(r.state)}
+                      </span>
+                      {badge && (
+                        <span
+                          className="ml-1.5 rounded bg-red-50 px-1.5 py-0.5 text-xs font-semibold text-red-600"
+                          title={badge.title}
+                        >
+                          {badge.text}
+                        </span>
+                      )}
+                      {r.settlement && (
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          {settlementTiming(r.settlement, props.now.getTime())}
+                          {settlementReason(r.settlement) && (
+                            <span className="ml-1.5 text-red-600">{settlementReason(r.settlement)}</span>
                           )}
-                        </>
+                          <ManualRefundTodo settlement={r.settlement} walletIntentId={r.walletIntentId} />
+                        </div>
                       )}
                     </td>
-                  )}
-                  <td
-                    className={cn(
-                      'px-4 py-2 text-right tabular-nums',
-                      r.stuck && 'font-semibold text-red-600'
+                    {isReserve && (
+                      <td className="px-4 py-2">
+                        {r.shortage && (
+                          <>
+                            {shortageSummary(r.shortage)}
+                            {arrivalLabel(r.shortage.items[0].expectedArrival) && (
+                              <span className="ml-1.5 text-xs text-muted-foreground">
+                                {arrivalLabel(r.shortage.items[0].expectedArrival)}
+                              </span>
+                            )}
+                          </>
+                        )}
+                      </td>
                     )}
-                  >
-                    {formatDwell(
-                      props.now.getTime() - new Date(r.stageEnteredAt).getTime()
+                    <td
+                      className={cn(
+                        'px-4 py-2 text-right tabular-nums',
+                        r.stuck && 'font-semibold text-red-600'
+                      )}
+                    >
+                      {formatDwell(
+                        props.now.getTime() - new Date(r.stageEnteredAt).getTime()
+                      )}
+                    </td>
+                    {isReserve && (
+                      <td className="px-4 py-2 text-right whitespace-nowrap">
+                        {r.shortage ? <ShortageSplitAction shortage={r.shortage} /> : null}
+                      </td>
                     )}
-                  </td>
-                  {isReserve && (
-                    <td className="px-4 py-2 text-right whitespace-nowrap">
-                      {r.shortage ? <ShortageSplitAction shortage={r.shortage} /> : null}
-                    </td>
-                  )}
-                  {isCancelRequest && (
-                    <td className="px-4 py-2 text-right whitespace-nowrap">
-                      {r.settlement ? (
-                        <SettlementActions
-                          salesOrderId={r.salesOrderId}
-                          settlement={r.settlement}
-                          walletIntentId={r.walletIntentId}
-                        />
-                      ) : null}
-                    </td>
-                  )}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+                    {isCancelRequest && (
+                      <td className="px-4 py-2 text-right whitespace-nowrap">
+                        {r.settlement ? (
+                          <SettlementActions
+                            salesOrderId={r.salesOrderId}
+                            settlement={r.settlement}
+                            walletIntentId={r.walletIntentId}
+                          />
+                        ) : null}
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
       {q.hasNextPage && (
         <button

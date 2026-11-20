@@ -92,6 +92,21 @@ check_port_row() {
 e2e_env_each required check_port_row
 e2e_env_each extra check_port_row
 check_port 3099 && ok "3099 sms-stub" || bad "3099 sms-stub — 폰 인증 503 → 가입 UI 를 못 지난다 (start-all.sh 가 띄운다)"
+# 가짜 한진(#1440) — 출고 송장 발급이 여기로 간다. core 가 실제로 어디를 보는지는 3100 을 쥔 프로세스 환경에서 읽는다.
+HANJIN_STUB_URL="http://127.0.0.1:${E2E_HANJIN_STUB_PORT}"
+HANJIN_CORE_PID=$(ss -ltnpH "sport = :3100" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | head -1)
+HANJIN_CORE_URL=""
+[ -n "$HANJIN_CORE_PID" ] && HANJIN_CORE_URL=$(tr '\0' '\n' < "/proc/$HANJIN_CORE_PID/environ" 2>/dev/null | grep -m1 '^HANJIN_ORDER_BASE_URL=' | cut -d= -f2-)
+# E2E_HANJIN=real 로 띄운 스택은 스텁을 일부러 안 띄운다 — core 가 스텁이 아닌 곳을 보면 스텁이 없어도 경고만(설계 §5.1).
+if check_port "$E2E_HANJIN_STUB_PORT"; then ok "$E2E_HANJIN_STUB_PORT hanjin-stub"
+elif [ -n "$HANJIN_CORE_URL" ] && [ "$HANJIN_CORE_URL" != "$HANJIN_STUB_URL" ]; then
+  warn "$E2E_HANJIN_STUB_PORT hanjin-stub 안 떠 있음 — core 가 실제 한진을 보는 스택(E2E_HANJIN=real)이라 정상이다"
+else bad "$E2E_HANJIN_STUB_PORT hanjin-stub — 출고 송장 발급이 막힌다 (start-all.sh 가 띄운다)"; fi
+if [ -z "$HANJIN_CORE_PID" ]; then warn "core 가 안 떠 있다 — core 의 한진 주소 판정 생략"
+elif [ "$HANJIN_CORE_URL" = "$HANJIN_STUB_URL" ]; then ok "core 한진 주소 = 가짜 한진"
+else warn "core 가 가짜 한진이 아닌 곳을 부른다(${HANJIN_CORE_URL:-비어 있음}) — E2E_HANJIN=real 로 띄웠나? 아니면 start-all 로 다시 띄울 것"; fi
+if grep -q '^CHANNEL_ADAPTER_INTERNAL_KEY=.' apps/channel-adapter/.env 2>/dev/null; then ok "channel-adapter 즉시 수집 키"
+else bad "apps/channel-adapter/.env 에 CHANNEL_ADAPTER_INTERNAL_KEY 가 없다 — 즉시 수집 401 → npm run bootstrap:e2e:local"; fi
 if check_port 19000; then ok "19000 medusa-metrics"
 elif check_port 9000; then bad "19000 medusa-metrics — medusa 는 떴는데 메트릭이 없다. apps/medusa/.env 에 PORT=9000 을 넣고 재기동"
 else warn "19000 medusa-metrics — medusa 자체가 안 떠 있다"; fi
@@ -144,6 +159,24 @@ WAL=$(url_of apps/wallet/.env)
   [ "$(pgq "$MED" "SELECT count(*) FROM region")" -ge 1 ] 2>/dev/null \
     && ok "medusa: region 존재" || bad "medusa 시드 미실행 → npm run bootstrap:e2e:local"
 }
+# 주문 경로 상품(#1440) — 주문 리허설을 할 때만 필요해 «경고»다. 이름·창고 정본은 scripts/local/order-path/plan.ts·config.ts.
+# 발행된 [E2E] 주문 경로 단일 → 매칭됨 → 그 SKU 의 부천 가용 ≥1 → Medusa 에 식별자가 투영됨. 하나라도 빠지면 주문이 어디선가 멈춘다.
+ORDER_PATH_HINT="주문 리허설 전에 npm run seed:order-path:local"
+if [ -n "$CORE" ] && [ -n "$MED" ]; then
+  OP_MASTER=$(pgq "$CORE" "SELECT master_id FROM product_master_versions WHERE name = '[E2E] 주문 경로 단일' AND status = 'active' LIMIT 1")
+  OP_READY=$(pgq "$CORE" "SELECT count(*) FROM product_master_versions ver
+    JOIN product_master_variants pmv ON pmv.version_id = ver.id
+    JOIN product_matchings m ON m.variant_id = pmv.variant_id AND m.status = 'matched'
+    JOIN product_variant_sku_links l ON l.product_matching_id = m.id
+    JOIN stock_summary_view s ON s.sku_id = l.sku_id AND s.warehouse_id = '019d0001-0001-7000-a000-000000000001' AND s.available_qty >= 1
+    WHERE ver.name = '[E2E] 주문 경로 단일' AND ver.status = 'active'")
+  OP_MEDUSA=""
+  [ -n "$OP_MASTER" ] && OP_MEDUSA=$(pgq "$MED" "SELECT count(*) FROM product WHERE handle = '$OP_MASTER' AND metadata->>'pimMasterId' IS NOT NULL AND deleted_at IS NULL")
+  if [ -z "$OP_MASTER" ]; then warn "주문 경로 상품 없음 — $ORDER_PATH_HINT"
+  elif [ "${OP_READY:-0}" -lt 1 ] 2>/dev/null; then warn "주문 경로 상품이 매칭·부천 재고 중 하나가 비었다 — $ORDER_PATH_HINT"
+  elif [ "${OP_MEDUSA:-0}" -lt 1 ] 2>/dev/null; then warn "주문 경로 상품이 Medusa 에 투영되지 않았다 — $ORDER_PATH_HINT (logs/channel-adapter.log)"
+  else ok "주문 경로 상품 — 발행·매칭·부천 재고·Medusa 투영"; fi
+fi
 
 echo "── 6. 앱 사이에서 «같아야» 하는 값 (어긋나면 조용히 401/400)"
 same_value OAUTH_INTERNAL_SECRET apps/user-service/.env web/auth-web/.env.local

@@ -10,7 +10,8 @@
     "shipping": "Orders & Shipping"
   },
   "userInfo": {
-    "logout": "Log out"
+    "logout": "Log out",
+    "nameSuffix": ""
   },
   "categoryDropdown": {
     "trigger": "Categories",

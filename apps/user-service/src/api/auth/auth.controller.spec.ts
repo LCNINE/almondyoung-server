@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { AuthController } from './auth.controller';
+import { OAuthService } from '../oauth/oauth.service';
 import { AuthService } from './auth.service';
 import { SignInDto } from './dto/sign-in.dto';
 import { LocalSignUpDto } from './dto/sign-up.dto';
@@ -32,6 +33,7 @@ function makeSignUpDto(overrides: Partial<LocalSignUpDto> = {}): LocalSignUpDto 
 describe('AuthController', () => {
   let controller: AuthController;
   let authService: AuthService;
+  let oauthService: OAuthService;
 
   const res = {} as FastifyReply;
   const req = {} as FastifyRequest;
@@ -48,6 +50,10 @@ describe('AuthController', () => {
             signOut: jest.fn().mockResolvedValue('로그아웃'),
           },
         },
+        {
+          provide: OAuthService,
+          useValue: { issuePaymentHandoffCode: jest.fn().mockResolvedValue({ code: 'c', expiresIn: 60 }) },
+        },
         // 컨트롤러가 OAuth 실패 리다이렉트에서 FRONTEND_URL 을 읽는다.
         {
           provide: ConfigService,
@@ -60,10 +66,19 @@ describe('AuthController', () => {
 
     controller = module.get<AuthController>(AuthController);
     authService = module.get<AuthService>(AuthService);
+    oauthService = module.get<OAuthService>(OAuthService);
   });
 
   it('should be defined', () => {
     expect(controller).toBeDefined();
+  });
+
+  it('결제창 핸드오프 코드는 토큰의 사용자 몫으로만 발급한다', async () => {
+    const dto = { redirectUri: 'https://wallet.example/auth/callback', codeChallenge: 'ch', codeChallengeMethod: 'S256' as const };
+
+    await controller.paymentHandoff(dto, { id: 'token-user' } as never);
+
+    expect(oauthService.issuePaymentHandoffCode).toHaveBeenCalledWith('token-user', dto);
   });
 
   it('signUp 은 dto·res·redirect_to 를 그대로 authService 에 넘긴다', async () => {

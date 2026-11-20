@@ -77,7 +77,7 @@ export interface BoxRow {
 const IN_WORK_STATUSES: ReadonlySet<string> = new Set(['picking', 'ready_to_pack', 'packing']);
 
 /**
- * 배치 현황 박스 한 줄(스펙 §8 F2, 목업 ⑤). 송장번호가 없으면(옛 core) null — 현장이 읽을 수 없는 id 를 그리지 않는다.
+ * 배치 현황 박스 한 줄(스펙 §8 F2, 목업 ⑤). 송장번호 칸이 없으면(옛 core) null, 송장이 없으면 «송장 필요».
  * 취소 대기 박스는 송장이 없어도 그린다 — 빼기 전까지 취소가 끝나지 않는데 목록에서 안 보이면 «대기» 숫자만 남는다
  */
 export function boxRowOf(state: BatchLabelState): BoxRow | null {
@@ -85,7 +85,9 @@ export function boxRowOf(state: BatchLabelState): BoxRow | null {
 
   if (state.cancelPending) return { ...base, status: '취소 대기', tone: 'alert' };
 
-  if (!state.trackingNo) return null;
+  if (state.trackingNo === undefined) return null;
+  // 송장을 무효로 한 상자는 배치 시작을 막는다 — 목록에서 사라지면 요약 숫자와 어긋나 어느 상자인지 모른다
+  if (!state.trackingNo) return { ...base, status: '송장 필요', tone: 'alert' };
 
   if (state.state === 'withdrawing' || state.workItemStatus === 'withdrawing') return { ...base, status: '빠지는 중', tone: 'warn' };
   if (state.state === 'never_printed') return { ...base, status: '미출력', tone: 'alert' };

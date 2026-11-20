@@ -10,6 +10,8 @@ import { WAYBILL_TERMINAL_STATUSES } from '../waybill/waybill.constants';
 import { maskName, readDeliveryNote, readRecipientName } from './recipient-snapshot';
 import { warehouseIdOf } from '../shipment/shipment-owner';
 import { labelLocationCode } from '../waybill/label/label-items';
+import { cancellationVoidKey, withdrawalVoidKey } from '../services/waybill-void-keys';
+import { loadPendingCancellations, PendingCancellationLine } from './pending-cancellations';
 
 // 보충 대기·배치 오케스트레이터·스펙이 이 경로로 가져다 쓴다 — 정본을 옮긴 뒤에도 그대로 둔다
 export { maskName, readDeliveryNote, readRecipientName } from './recipient-snapshot';
@@ -27,6 +29,8 @@ export interface ShipmentByWaybillLine {
   skuId: string;
   skuCode: string;
   skuName: string;
+  /** 이 SKU 에 등록된 바코드 — 기기가 찍은 바코드가 어느 줄인지 응답 없이도 알아보게(이름 표시용) */
+  barcodes: string[];
   qty: number;
   pickedQty: number;
   inspectedQty: number;
@@ -49,11 +53,17 @@ export interface ShipmentByWaybillResult {
   carrier: string;
   waybillStatus: string;
   shipmentStatus: string;
+  /** recovery_required 의 사유(취소 대기·합포장 대기·발송 회수 대기). 그 밖엔 null. */
+  recoveryCode: string | null;
+  /** 취소를 기다리는 박스(CANCEL_REPLAN_PENDING)면 줄마다 취소될 수량. 그 밖엔 null. */
+  pendingCancellation: PendingCancellationLine[] | null;
   batchId: string | null;
   workItemId: string | null;
   workItemStatus: string | null;
   recipientMasked: string;
   deliveryNote: string | null;
+  /** 위탁 업체(3pl) 박스면 그 화주 이름 — 검수할 때 업체 물건임을 보여 준다. 자사 박스는 null */
+  ownerName: string | null;
   lines: ShipmentByWaybillLine[];
   /** 송장 상태(스펙 §10.5). 활성 작업 항목이 없으면 null — 시작된 배치에서 빠진 박스(withdrawn)만 예외. */
   labelState: LabelState | null;
@@ -109,6 +119,7 @@ export class ShipmentWaybillReader {
         .select({
           warehouseId: wmsTables.shipments.warehouseId,
           status: wmsTables.shipments.status,
+          recoveryCode: wmsTables.shipments.recoveryCode,
           recipientSnapshot: wmsTables.shipments.recipientSnapshot,
           manifestVersion: wmsTables.shipments.manifestVersion,
         })
@@ -214,6 +225,10 @@ export class ShipmentWaybillReader {
         : new Map<string, ShipmentByWaybillAllocation[]>();
 
       const label = await this.labelStates.forShipment(waybill.shipmentId, trx);
+      const pendingCancellation =
+        shipment.status === 'recovery_required' && shipment.recoveryCode === 'CANCEL_REPLAN_PENDING'
+          ? await this.loadPendingCancellation(trx, waybill.shipmentId)
+          : null;
 
       return {
         shipmentId: waybill.shipmentId,
@@ -222,11 +237,14 @@ export class ShipmentWaybillReader {
         carrier: waybill.carrier,
         waybillStatus: waybill.status,
         shipmentStatus: shipment.status,
+        recoveryCode: shipment.recoveryCode ?? null,
+        pendingCancellation,
         batchId: workItem?.batchId ?? null,
         workItemId: workItem?.id ?? null,
         workItemStatus: workItem?.status ?? null,
         recipientMasked: maskName(readRecipientName(shipment.recipientSnapshot)),
         deliveryNote: readDeliveryNote(shipment.recipientSnapshot),
+        ownerName: await this.loadOwnerName(trx, waybill.shipmentId),
         lines: lines.map((line) => ({
           ...line,
           pickedQty: pickedByLine.get(line.shipmentLineId) ?? 0,
@@ -294,8 +312,27 @@ export class ShipmentWaybillReader {
     return byLine;
   }
 
-  private loadLines(trx: DbTx, shipmentId: string) {
-    return trx
+  private async loadOwnerName(trx: DbTx, shipmentId: string): Promise<string | null> {
+    const [row] = await trx
+      .select({ name: wmsTables.holders.name })
+      .from(wmsTables.shipmentLines)
+      .innerJoin(
+        wmsTables.fulfillmentOrderItems,
+        eq(wmsTables.fulfillmentOrderItems.id, wmsTables.shipmentLines.fulfillmentOrderItemId),
+      )
+      .innerJoin(
+        wmsTables.fulfillmentOrders,
+        eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId),
+      )
+      .innerJoin(wmsTables.holders, eq(wmsTables.holders.id, wmsTables.fulfillmentOrders.ownerId))
+      .where(eq(wmsTables.shipmentLines.shipmentId, shipmentId))
+      .limit(1);
+
+    return row?.name ?? null;
+  }
+
+  private async loadLines(trx: DbTx, shipmentId: string) {
+    const lines = await trx
       .select({
         shipmentLineId: wmsTables.shipmentLines.id,
         skuId: wmsTables.shipmentLines.skuId,
@@ -309,6 +346,17 @@ export class ShipmentWaybillReader {
       .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, wmsTables.shipmentLines.skuId))
       .where(eq(wmsTables.shipmentLines.shipmentId, shipmentId))
       .orderBy(asc(wmsTables.shipmentLines.id));
+    const skuIds = [...new Set(lines.map((line) => line.skuId))];
+    const registered = skuIds.length
+      ? await trx
+          .select({ skuId: wmsTables.skuBarcodes.skuId, barcode: wmsTables.skuBarcodes.barcode })
+          .from(wmsTables.skuBarcodes)
+          .where(inArray(wmsTables.skuBarcodes.skuId, skuIds))
+          .orderBy(asc(wmsTables.skuBarcodes.createdAt), asc(wmsTables.skuBarcodes.barcode))
+      : [];
+    const barcodesBySku = new Map<string, string[]>();
+    for (const row of registered) barcodesBySku.set(row.skuId, [...(barcodesBySku.get(row.skuId) ?? []), row.barcode]);
+    return lines.map((line) => ({ ...line, barcodes: barcodesBySku.get(line.skuId) ?? [] }));
   }
 
   /**
@@ -352,7 +400,8 @@ export class ShipmentWaybillReader {
     // 결품으로 빠진 초안 박스가 나중에 초안으로 취소되면 status 는 canceled 지만 이 송장은 결품이 무효화한 것이다 — 취소 이탈이 아니면 결품 이탈도 본다.
     const exitTo =
       (shipment.status === 'canceled' ? await this.canceledExit(trx, waybill.shipmentId) : null) ??
-      (await this.shortPickExit(trx, waybill.shipmentId, waybill.id));
+      (await this.shortPickExit(trx, waybill.shipmentId, waybill.id)) ??
+      (await this.waitingCancelExit(trx, waybill.shipmentId, waybill.id, shipment.status));
     if (!exitTo) return null;
     const lines = await this.loadLines(trx, waybill.shipmentId);
     return {
@@ -362,11 +411,14 @@ export class ShipmentWaybillReader {
       carrier: waybill.carrier,
       waybillStatus: waybill.status,
       shipmentStatus: shipment.status,
+      recoveryCode: null,
+      pendingCancellation: null,
       batchId: null,
       workItemId: null,
       workItemStatus: null,
       recipientMasked: maskName(readRecipientName(shipment.recipientSnapshot)),
       deliveryNote: readDeliveryNote(shipment.recipientSnapshot),
+      ownerName: await this.loadOwnerName(trx, waybill.shipmentId),
       lines: lines.map((line) => ({ ...line, pickedQty: 0, allocations: [] })),
       labelState: 'withdrawn',
       labelChanges: [],
@@ -375,6 +427,12 @@ export class ShipmentWaybillReader {
       exitTo,
       shortPickContext: null,
     };
+  }
+
+  /** 박스가 기다리는 취소(가장 먼저 접수된 대기 오퍼레이션)의 줄별 수량. */
+  private async loadPendingCancellation(trx: DbTx, shipmentId: string): Promise<PendingCancellationLine[] | null> {
+    const pending = (await loadPendingCancellations(trx, [shipmentId])).get(shipmentId);
+    return pending ? pending.lines.map(({ shipmentLineId, qty }) => ({ shipmentLineId, qty })) : null;
   }
 
   /** PR 3 — 마지막 작업 항목이 취소로 나갔다. */
@@ -386,6 +444,59 @@ export class ShipmentWaybillReader {
       .orderBy(desc(wmsTables.outboundBatchWorkItems.createdAt), desc(wmsTables.outboundBatchWorkItems.id))
       .limit(1);
     return last?.status === 'excluded' && last.exitTo === 'canceled' ? 'canceled' : null;
+  }
+
+  /**
+   * 기다리던 취소를 들고 배치에서 나갔고 그 취소가 이 송장을 무효화했다 — 남은 몫이 있으면 다시 준비할 draft,
+   * 전량 취소면 canceled. 무효화 명령 기록으로 송장을 잇는다(재발급으로 무효화된 다른 번호와 섞이지 않게) — 취소가
+   * 무효화했거나, 관리자가 송장 무효화까지 골라 뺀 경우다.
+   */
+  private async waitingCancelExit(
+    trx: DbTx,
+    shipmentId: string,
+    waybillId: string,
+    shipmentStatus: string,
+  ): Promise<'draft' | 'canceled' | null> {
+    const [last] = await trx
+      .select({
+        workItemId: wmsTables.outboundBatchWorkItems.id,
+        status: wmsTables.outboundBatchWorkItems.status,
+        exitTo: wmsTables.outboundBatchWorkItems.exitTo,
+        operationId: wmsTables.shipmentOperations.id,
+        operationType: wmsTables.shipmentOperations.type,
+        operationStatus: wmsTables.shipmentOperations.status,
+      })
+      .from(wmsTables.outboundBatchWorkItems)
+      .innerJoin(
+        wmsTables.shipmentOperations,
+        eq(wmsTables.shipmentOperations.id, wmsTables.outboundBatchWorkItems.waitingOperationId),
+      )
+      .where(eq(wmsTables.outboundBatchWorkItems.shipmentId, shipmentId))
+      .orderBy(desc(wmsTables.outboundBatchWorkItems.createdAt), desc(wmsTables.outboundBatchWorkItems.id))
+      .limit(1);
+    if (
+      last?.status !== 'excluded' ||
+      last.exitTo !== 'draft' ||
+      last.operationType !== 'cancel' ||
+      last.operationStatus !== 'completed'
+    )
+      return null;
+    const [voided] = await trx
+      .select({ id: wmsTables.fulfillmentCommandRequests.id })
+      .from(wmsTables.fulfillmentCommandRequests)
+      .where(
+        and(
+          eq(wmsTables.fulfillmentCommandRequests.commandType, 'shipment.waybill.void'),
+          inArray(wmsTables.fulfillmentCommandRequests.idempotencyKey, [
+            cancellationVoidKey(last.operationId, shipmentId),
+            withdrawalVoidKey(last.workItemId, waybillId),
+          ]),
+          eq(wmsTables.fulfillmentCommandRequests.resourceId, waybillId),
+        ),
+      )
+      .limit(1);
+    if (!voided) return null;
+    return shipmentStatus === 'canceled' ? 'canceled' : 'draft';
   }
 
   /** PR 4 — 이 송장을 결품 마무리가 무효화했다(ShortPickExitService.finish 가 after 스냅샷에 적는다). 박스가 다시 계획돼도 옛 번호는 그대로 빠진 박스다. */

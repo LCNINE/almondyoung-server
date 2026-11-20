@@ -45,6 +45,7 @@ describeIfDb('ShipmentWaybillReader', () => {
           skuId: fixture.skuId,
           skuCode: fixture.skuCode,
           skuName: 'Simple SKU',
+          barcodes: [fixture.barcode],
           qty: 2,
           pickedQty: 0,
           inspectedQty: 0,
@@ -52,6 +53,23 @@ describeIfDb('ShipmentWaybillReader', () => {
           allocations: [],
         },
       ]);
+    });
+  });
+
+  it('줄마다 그 SKU 에 등록된 바코드를 모두 싣는다 — 등록 바코드가 없는 SKU 는 빈 목록', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await seedPickableShipment(tx, 2);
+      await tx
+        .insert(wmsTables.skuBarcodes)
+        .values({ skuId: fixture.skuId, barcode: `${fixture.barcode}-BOX`, packingUnit: 10 });
+      const reader = new ShipmentWaybillReader(ambientDbService(tx), assembleLabels(ambientDbService(tx)).states);
+
+      const found = await reader.byTrackingNo(fixture.trackingNo);
+      expect(found.lines[0].barcodes).toEqual([fixture.barcode, `${fixture.barcode}-BOX`]);
+
+      await tx.delete(wmsTables.skuBarcodes).where(eq(wmsTables.skuBarcodes.skuId, fixture.skuId));
+      const bare = await reader.byTrackingNo(fixture.trackingNo);
+      expect(bare.lines[0].barcodes).toEqual([]);
     });
   });
 
@@ -94,6 +112,7 @@ describeIfDb('ShipmentWaybillReader', () => {
           skuId: fixture.skuId,
           skuCode: fixture.skuCode,
           skuName: 'Simple SKU',
+          barcodes: [fixture.barcode],
           qty: 2,
           pickedQty: 1,
           inspectedQty: 0,

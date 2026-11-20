@@ -7,6 +7,7 @@ import { PermissionCheckpoints, createCheckpointsForTesting } from '@app/authori
 import { SimpleOutboundController } from './simple-outbound.controller';
 import { ShipmentPlanningController } from './shipment-planning.controller';
 import { SimpleOutboundService } from '../services/simple-outbound.service';
+import { OutboundScanRejectionManager } from '../scan-rejections/outbound-scan-rejection.manager';
 import { ShipmentWaybillReader } from '../reader/shipment-waybill.reader';
 import { ShipmentPlanningService } from '../services/shipment-planning.service';
 
@@ -137,6 +138,7 @@ describe('shipments route ordering (by-waybill vs :id)', () => {
         { provide: PermissionCheckpoints, useValue: createCheckpointsForTesting() },
         { provide: ShipmentWaybillReader, useValue: { byTrackingNo } },
         { provide: ShipmentPlanningService, useValue: { getShipmentDetail } },
+        { provide: OutboundScanRejectionManager, useValue: { record: jest.fn() } },
       ],
     }).compile();
 

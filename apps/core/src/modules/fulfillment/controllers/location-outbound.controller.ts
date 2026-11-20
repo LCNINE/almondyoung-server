@@ -21,6 +21,7 @@ import {
   StartLocationOutboundDto,
 } from '../dto/location-outbound.dto';
 import { LocationOutboundService } from '../services/location-outbound.service';
+import { RecordsOutboundRejection } from '../scan-rejections/outbound-rejection.interceptor';
 
 type AuthenticatedUser = { id?: string; userId?: string; sub?: string; roles?: string[] } | undefined;
 
@@ -57,6 +58,7 @@ export class LocationOutboundController {
 
   @RequirePermission('fulfillment.warehouse.operate')
   @Post(':shipmentId/location-outbound-scans')
+  @RecordsOutboundRejection('shipment.location_outbound.scan')
   @ApiHeader({ name: 'Idempotency-Key', required: true })
   async scan(
     @Param('shipmentId', ParseUUIDPipe) shipmentId: string,
@@ -69,6 +71,7 @@ export class LocationOutboundController {
 
   @RequirePermission('fulfillment.dispatch.force')
   @Post(':shipmentId/location-outbound-forces')
+  @RecordsOutboundRejection('shipment.location_outbound.force')
   @ApiHeader({ name: 'Idempotency-Key', required: true })
   async force(
     @Param('shipmentId', ParseUUIDPipe) shipmentId: string,

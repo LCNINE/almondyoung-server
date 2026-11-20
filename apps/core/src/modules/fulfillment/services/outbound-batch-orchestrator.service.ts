@@ -29,6 +29,7 @@ import { joinBlocked } from '../picking/allocation/allocation.errors';
 import { describeStartBlockers, dispatchBlocker } from '../picking/allocation/allocation.locks';
 import { StartBlocker } from '../picking/allocation/allocation.types';
 import { AuditService } from '../../inventory/shared/services/audit.service';
+import { loadSellmateShipmentIds } from './sellmate-handed-over-shipments';
 import { canonicalFulfillmentRequestHash, FulfillmentCommandService } from './fulfillment-command.service';
 import { FulfillmentInvariantService } from './fulfillment-invariant.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
@@ -42,6 +43,8 @@ import { findShipmentIdsByCode } from './join-candidate.queries';
 import { isAppPrintable } from '../waybill/waybill-label-content.assembler';
 import { WAYBILL_TERMINAL_STATUSES } from '../waybill/waybill.constants';
 import { maskName, readRecipientName } from '../reader/shipment-waybill.reader';
+import { loadPendingCancellations, PendingCancellation } from '../reader/pending-cancellations';
+import { loadOpenScanRejections, OpenScanRejection } from '../reader/scan-rejections';
 import { PermissionCheckpoints } from '@app/authorization';
 import { authzSubjectOf } from '../../../platform/auth/system-actor';
 import { warehouseIdOf } from '../shipment/shipment-owner';
@@ -541,6 +544,13 @@ export class OutboundBatchOrchestrator {
         .where(eq(wmsTables.outboundBatches.id, batchId))
         .limit(1);
       if (!batch) throw new NotFoundException(`Outbound batch ${batchId} not found`);
+      // 추가 명령이 거절할 끝난 배치에는 후보를 주지 않는다(같은 파생 상태로 판정).
+      const workItems = await trx
+        .select()
+        .from(wmsTables.outboundBatchWorkItems)
+        .where(eq(wmsTables.outboundBatchWorkItems.batchId, batchId));
+      const status = this.derivedBatchStatus(batch, workItems);
+      if (status === 'completed' || status === 'canceled') return [];
       const candidates = await trx
         .select({ id: wmsTables.shipments.id })
         .from(wmsTables.shipments)
@@ -728,7 +738,10 @@ export class OutboundBatchOrchestrator {
         .from(wmsTables.outboundBatchWorkItems)
         .where(eq(wmsTables.outboundBatchWorkItems.batchId, batchId))
         .orderBy(asc(wmsTables.outboundBatchWorkItems.createdAt), asc(wmsTables.outboundBatchWorkItems.id));
-      return withShipmentLabels(trx, rows.map((row) => this.workItemResponse(row)));
+      return withShipmentLabels(
+        trx,
+        rows.map((row) => this.workItemResponse(row)),
+      );
     }, tx);
   }
 
@@ -843,7 +856,16 @@ export class OutboundBatchOrchestrator {
         scheduledPickingAt: batch.scheduledPickingAt ?? undefined,
         startedAt: batch.startedAt ?? undefined,
         completedAt: batch.completedAt ?? undefined,
-        workItems: await withShipmentLabels(trx, workItems.map((row) => this.workItemResponse(row))),
+        workItems: await withShipmentLabels(
+          trx,
+          await withScanRejections(
+            trx,
+            await withPendingCancellations(
+              trx,
+              workItems.map((row) => this.workItemResponse(row)),
+            ),
+          ),
+        ),
         warehouse: {
           ...warehouse,
           supportedPickingStrategies: warehouse.supportedPickingStrategies ?? [],
@@ -1220,6 +1242,13 @@ export class OutboundBatchOrchestrator {
     }
     if (shipment.warehouseId !== batch.warehouseId) {
       throw this.conflict('SHIPMENT_WRONG_WAREHOUSE', `Shipment ${shipment.id} belongs to another warehouse`);
+    }
+    // T 에 이미 planned 였던 셀메이트 상자도 배치로 나가지 않는다 — 추가·합류·후보 목록이 모두 이 판정을 지난다(#1412)
+    if ((await loadSellmateShipmentIds(tx, [shipment.id])).has(shipment.id)) {
+      throw this.conflict(
+        'SHIPMENT_HANDED_OVER_TO_SELLMATE',
+        `Shipment ${shipment.id} belongs to an order Sellmate ships`,
+      );
     }
     if (!shipment.shippingProfileId) {
       throw this.conflict('SHIPMENT_PROFILE_REQUIRED', `Shipment ${shipment.id} has no shipping profile`);
@@ -1636,6 +1665,40 @@ export class OutboundBatchOrchestrator {
   }
 }
 
+/** 현장에서 빠지기를 기다리는 취소 — 작업 항목이 기다리는 오퍼레이션이 그 상자의 대기 취소일 때만 싣는다 */
+async function withPendingCancellations<T extends { shipmentId: string; waitingOperationId: string | null }>(
+  trx: DbTx,
+  rows: T[],
+): Promise<(T & { pendingCancellation: PendingCancellation | null })[]> {
+  const waiting = rows.filter((row) => row.waitingOperationId);
+  const pending = await loadPendingCancellations(
+    trx,
+    waiting.map((row) => row.shipmentId),
+  );
+  return rows.map((row) => {
+    const found = pending.get(row.shipmentId);
+    return {
+      ...row,
+      pendingCancellation: found && found.operationId === row.waitingOperationId ? found : null,
+    };
+  });
+}
+
+/** 물류앱에서 막힌 상자 — 그 작업 항목에서 남은 거절만 싣는다(다른 배치 시절 기록은 싣지 않는다) */
+async function withScanRejections<T extends { id: string; shipmentId: string }>(
+  trx: DbTx,
+  rows: T[],
+): Promise<(T & { scanRejection: OpenScanRejection | null })[]> {
+  const open = await loadOpenScanRejections(
+    trx,
+    rows.map((row) => row.shipmentId),
+  );
+  return rows.map((row) => {
+    const found = open.get(row.shipmentId);
+    return { ...row, scanRejection: found && found.workItemId === row.id ? found : null };
+  });
+}
+
 /** 화면이 상자 id 대신 주문번호와 상품 요약을 보이게 한다 */
 async function withShipmentLabels<T extends { shipmentId: string }>(
   trx: DbTx,
@@ -1659,7 +1722,12 @@ async function withShipmentLabels<T extends { shipmentId: string }>(
     )
     .leftJoin(wmsTables.salesOrders, eq(wmsTables.salesOrders.id, wmsTables.fulfillmentOrders.salesOrderId))
     .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, wmsTables.shipmentLines.skuId))
-    .where(inArray(wmsTables.shipmentLines.shipmentId, rows.map((row) => row.shipmentId)))
+    .where(
+      inArray(
+        wmsTables.shipmentLines.shipmentId,
+        rows.map((row) => row.shipmentId),
+      ),
+    )
     .orderBy(asc(wmsTables.shipmentLines.createdAt));
   return rows.map((row) => {
     const own = lines.filter((line) => line.shipmentId === row.shipmentId);

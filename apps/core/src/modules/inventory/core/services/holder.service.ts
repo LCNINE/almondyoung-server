@@ -179,7 +179,7 @@ export class HolderService implements OnModuleInit {
 
   async deleteHolder(id: string, tx?: DbTx): Promise<{ success: boolean }> {
     return this.dbService.run(async (trx) => {
-      const { holders, skus, fulfillmentOrders } = wmsTables;
+      const { holders, skus, fulfillmentOrders, deliveryProfiles } = wmsTables;
 
       const [existing] = await trx.select().from(holders).where(eq(holders.id, id)).limit(1);
 
@@ -203,6 +203,17 @@ export class HolderService implements OnModuleInit {
       if (fulfillmentCount.count > 0) {
         throw new BadRequestException(
           `Cannot delete holder "${existing.name}" because ${fulfillmentCount.count} fulfillment order(s) are associated with it`,
+        );
+      }
+
+      const [profileCount] = await trx
+        .select({ count: count() })
+        .from(deliveryProfiles)
+        .where(eq(deliveryProfiles.holderId, id));
+
+      if (profileCount.count > 0) {
+        throw new BadRequestException(
+          `Cannot delete holder "${existing.name}" because ${profileCount.count} delivery profile(s) are associated with it`,
         );
       }
 

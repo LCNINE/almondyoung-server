@@ -5,23 +5,35 @@ import { FulfillmentInvariantService } from '../services/fulfillment-invariant.s
 import { ShipmentPlanningService } from '../services/shipment-planning.service';
 import { assembleBoxWithdrawal } from '../services/__support__/box-withdrawal-wiring';
 import { randomUUID } from 'crypto';
-import { count, eq, inArray } from 'drizzle-orm';
+import { and, count, eq, inArray, not, sql } from 'drizzle-orm';
 import * as postgres from 'postgres';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import {
+  CONSOLIDATION_RECIPIENT,
   consolidationBase,
   createConsolidationSource,
   inRollbackTx,
   makeDb,
   makeDbService,
   seedSalesOrder,
+  seedWarehouseWithZone,
   wireLogistics,
   Wired,
 } from '../services/__support__';
 import { ConsolidationBoardReader } from '../services/consolidation-board.reader';
 import { loadSplitShares } from '../services/consolidation-shipment-reads';
 import { OutboundPreparationReader } from './outbound-preparation.reader';
+import { InboundPipelineReader } from '../../inventory/stock-projection/services/inbound-pipeline.reader';
+import { WarehouseTransferReader } from '../../inventory/warehouse-transfer/services/warehouse-transfer.reader';
+import { PurchaseOrderExpectedArrivalReader } from '../../inventory/procurement/services/purchase-order-expected-arrival.reader';
+import { loadShortPickReturns } from './short-pick-returns';
+import { loadReturnedWorkItems } from './batch-returns';
+import { seedHandedOverOrder } from '../services/__support__/sellmate-handed-over-fixtures';
+import { OutboundPreparationSummaryDto } from '../dto/outbound-preparation.dto';
+
+const idsIn = (summary: OutboundPreparationSummaryDto, bucket: string) =>
+  summary.buckets.find((entry) => entry.bucket === bucket)?.shipments.map((shipment) => shipment.shipmentId) ?? [];
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -33,12 +45,13 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
   let wired: Wired;
   let reader: OutboundPreparationReader;
   let planning: ShipmentPlanningService;
+  let dbService: ReturnType<typeof makeDbService>;
 
   beforeAll(() => {
     if (!DATABASE_URL) throw new Error('DATABASE_URL is required');
 
     ({ sql: client, db } = makeDb(DATABASE_URL));
-    const dbService = makeDbService(db);
+    dbService = makeDbService(db);
 
     wired = wireLogistics(dbService, 'v2');
     planning = new ShipmentPlanningService(
@@ -51,7 +64,15 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
       assembleBoxWithdrawal(dbService),
       createCheckpointsForTesting(),
     );
-    reader = new OutboundPreparationReader(dbService, new ConsolidationBoardReader(dbService));
+    reader = new OutboundPreparationReader(
+      dbService,
+      new ConsolidationBoardReader(dbService),
+      new InboundPipelineReader(
+        dbService,
+        new WarehouseTransferReader(dbService),
+        new PurchaseOrderExpectedArrivalReader(dbService),
+      ),
+    );
   });
 
   afterAll(async () => {
@@ -307,6 +328,83 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
     });
   });
 
+  it('셀메이트 상자는 어느 분류에도 없고 합칠 상대도 되지 않는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const base = await consolidationBase(tx);
+      const customerId = randomUUID();
+      const handed = await createConsolidationSource(tx, wired, base, { quantity: 1, customerId });
+      const app = await createConsolidationSource(tx, wired, base, { quantity: 1, customerId });
+      const planned = await createConsolidationSource(tx, wired, base, { quantity: 1, customerId: randomUUID() });
+
+      await tx
+        .update(wmsTables.shipments)
+        .set({ status: 'planned' })
+        .where(eq(wmsTables.shipments.id, planned.shipment.id));
+
+      const before = await reader.summarize(base.warehouseId, undefined, tx);
+
+      expect(idsIn(before, 'mergeable')).toEqual(expect.arrayContaining([handed.shipment.id, app.shipment.id]));
+      expect(before.buckets.flatMap((bucket) => bucket.shipments.map((s) => s.shipmentId))).toContain(
+        planned.shipment.id,
+      );
+
+      await seedHandedOverOrder(tx, handed.salesOrderId);
+      await seedHandedOverOrder(tx, planned.salesOrderId);
+
+      const after = await reader.summarize(base.warehouseId, undefined, tx);
+      const all = after.buckets.flatMap((bucket) => bucket.shipments.map((s) => s.shipmentId));
+
+      expect(all).not.toContain(handed.shipment.id);
+      expect(all).not.toContain(planned.shipment.id);
+      expect(idsIn(after, 'ready')).toContain(app.shipment.id);
+
+      const board = await new ConsolidationBoardReader(dbService).findBoard(base.warehouseId, tx);
+
+      expect(board.groups.flatMap((group) => group.shipments.map((s) => s.shipmentId))).not.toContain(
+        handed.shipment.id,
+      );
+    });
+  });
+
+  it('셀메이트 상자는 계획 확정을 409 로 거절하고 draft 로 남긴다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const base = await consolidationBase(tx);
+      const source = await createConsolidationSource(tx, wired, base, { quantity: 1, customerId: randomUUID() });
+      const actor = { id: randomUUID(), roles: ['master'] };
+
+      await tx
+        .update(wmsTables.deliveryProfiles)
+        .set({
+          senderSnapshot: { name: 'Sender' },
+          originAddressSnapshot: { address: 'Origin' },
+          returnAddressSnapshot: { address: 'Return' },
+          carrierAccountRef: 'carrier-account-1',
+        })
+        .where(eq(wmsTables.deliveryProfiles.id, base.profileId));
+      await seedHandedOverOrder(tx, source.salesOrderId);
+
+      await expect(
+        planning.plan(
+          source.shipment.id,
+          {
+            shippingProfileId: base.profileId,
+            expectedManifestVersion: source.shipment.manifestVersion,
+            expectedReservationVersion: source.shipment.reservationVersion,
+          },
+          randomUUID(),
+          actor,
+          tx,
+        ),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'SHIPMENT_HANDED_OVER_TO_SELLMATE' }),
+      });
+
+      const [after] = await tx.select().from(wmsTables.shipments).where(eq(wmsTables.shipments.id, source.shipment.id));
+
+      expect(after.status).toBe('draft');
+    });
+  });
+
   it('대상 상자가 없어도 빈 버킷 6개와 전 창고 매칭 대기 건수를 반환한다', async () => {
     await inRollbackTx(db, async (tx) => {
       const [backlog] = await tx
@@ -369,6 +467,15 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
       expect(missingRecipient.buckets.find(({ bucket }) => bucket === 'needs_info')?.shipments[0].reason).toBe(
         '수령인 정보가 비어 있어요',
       );
+      expect(missingRecipient.buckets.find(({ bucket }) => bucket === 'needs_info')?.shipments[0].needsInfo).toEqual([
+        { kind: 'recipient_incomplete', fields: ['recipientName', 'phone', 'postalCode', 'roadAddress'] },
+      ]);
+      expect((await planning.getShipmentDetail(source.shipment.id, tx)).needsInfo).toEqual([
+        { kind: 'recipient_incomplete', fields: ['recipientName', 'phone', 'postalCode', 'roadAddress'] },
+      ]);
+      expect(
+        missingRecipient.buckets.find(({ bucket }) => bucket === 'needs_info')?.shipments[0].profileSplit,
+      ).toBeUndefined();
 
       await tx.update(wmsTables.skus).set({ deliveryProfileId: null }).where(eq(wmsTables.skus.id, base.skuId));
 
@@ -377,6 +484,122 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
       expect(missingProfile.buckets.find(({ bucket }) => bucket === 'needs_info')?.shipments[0].reason).toBe(
         '배송 프로필이 없는 상품이 있어요',
       );
+
+      const [sku] = await tx
+        .select({ name: wmsTables.skus.name, code: wmsTables.skus.code })
+        .from(wmsTables.skus)
+        .where(eq(wmsTables.skus.id, base.skuId));
+
+      // 사유는 첫 문제 하나지만, 고칠 것은 모두 보인다
+      expect(
+        missingProfile.buckets
+          .find(({ bucket }) => bucket === 'needs_info')
+          ?.shipments[0].needsInfo?.map((issue) => issue.kind),
+      ).toEqual(['shipping_profile_missing', 'recipient_incomplete']);
+      expect(missingProfile.buckets.find(({ bucket }) => bucket === 'needs_info')?.shipments[0].needsInfo?.[0]).toEqual(
+        { kind: 'shipping_profile_missing', skus: [sku] },
+      );
+    });
+  });
+
+  it('배송 프로필이 섞인 정보 부족 상자에만 그 자리에서 나눌 줄과 상자 버전을 싣는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const base = await consolidationBase(tx);
+      const kept = await createConsolidationSource(tx, wired, base, { quantity: 1, customerId: randomUUID() });
+      const moved = await createConsolidationSource(tx, wired, base, { quantity: 2, customerId: randomUUID() });
+      const [baseSku] = await tx.select().from(wmsTables.skus).where(eq(wmsTables.skus.id, base.skuId));
+      const [cold] = await tx
+        .insert(wmsTables.deliveryProfiles)
+        .values({ name: `it-cold-${randomUUID().slice(0, 8)}`, sourceType: 'in_house' })
+        .returning();
+      const [coldSku] = await tx
+        .insert(wmsTables.skus)
+        .values({
+          name: 'it-cold-sku',
+          code: `IT-COLD-${randomUUID()}`,
+          holderId: baseSku.holderId,
+          deliveryProfileId: cold.id,
+        })
+        .returning();
+      // 다른 프로필의 상품 줄을 한 상자에 둔다(분할 전 섞인 상자)
+      await tx
+        .update(wmsTables.fulfillmentOrderItems)
+        .set({ skuId: coldSku.id })
+        .where(eq(wmsTables.fulfillmentOrderItems.id, moved.fulfillmentOrderItemId));
+      await tx
+        .update(wmsTables.shipmentLines)
+        .set({ shipmentId: kept.shipment.id, skuId: coldSku.id })
+        .where(eq(wmsTables.shipmentLines.id, moved.shipmentLineId));
+      const [baseProfile] = await tx
+        .select({ id: wmsTables.deliveryProfiles.id, name: wmsTables.deliveryProfiles.name })
+        .from(wmsTables.deliveryProfiles)
+        .where(eq(wmsTables.deliveryProfiles.id, baseSku.deliveryProfileId ?? ''));
+
+      const summary = await reader.summarize(base.warehouseId, undefined, tx);
+      const row = summary.buckets
+        .find(({ bucket }) => bucket === 'needs_info')
+        ?.shipments.find(({ shipmentId }) => shipmentId === kept.shipment.id);
+
+      expect(row?.needsInfo?.[0].kind).toBe('shipping_profile_mixed');
+      expect(row?.profileSplit).toEqual({
+        manifestVersion: kept.shipment.manifestVersion,
+        lines: expect.arrayContaining([
+          {
+            id: kept.shipmentLineId,
+            lineVersion: kept.line.lineVersion,
+            qty: 1,
+            skuId: base.skuId,
+            skuName: baseSku.name,
+            skuCode: baseSku.code,
+            deliveryProfile: baseProfile,
+          },
+          {
+            id: moved.shipmentLineId,
+            lineVersion: moved.line.lineVersion,
+            qty: 2,
+            skuId: coldSku.id,
+            skuName: 'it-cold-sku',
+            skuCode: coldSku.code,
+            deliveryProfile: { id: cold.id, name: cold.name },
+          },
+        ]),
+      });
+      expect(row?.profileSplit?.lines).toHaveLength(2);
+      // 받는 분 정보는 싣지 않는다
+      expect(JSON.stringify(row?.profileSplit)).not.toContain(CONSOLIDATION_RECIPIENT.recipientName);
+
+      // 프로필이 하나로 맞으면 정보 부족이 아니고, 나눌 줄도 없다
+      await tx.update(wmsTables.skus).set({ deliveryProfileId: cold.id }).where(eq(wmsTables.skus.id, base.skuId));
+      const fixed = await reader.summarize(base.warehouseId, undefined, tx);
+      expect(
+        fixed.buckets.flatMap(({ shipments }) => shipments).find(({ shipmentId }) => shipmentId === kept.shipment.id)
+          ?.profileSplit,
+      ).toBeUndefined();
+    });
+  });
+
+  it('상자 상세의 줄은 SKU 코드와 지금 SKU 에 지정된 배송 프로필을 싣는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const base = await consolidationBase(tx);
+      const source = await createConsolidationSource(tx, wired, base, { quantity: 1, customerId: randomUUID() });
+      const [sku] = await tx
+        .select({ code: wmsTables.skus.code, profileId: wmsTables.skus.deliveryProfileId })
+        .from(wmsTables.skus)
+        .where(eq(wmsTables.skus.id, base.skuId));
+      const [profile] = await tx
+        .select({ id: wmsTables.deliveryProfiles.id, name: wmsTables.deliveryProfiles.name })
+        .from(wmsTables.deliveryProfiles)
+        .where(eq(wmsTables.deliveryProfiles.id, sku.profileId ?? ''));
+
+      expect((await planning.getShipmentDetail(source.shipment.id, tx)).lines).toEqual([
+        expect.objectContaining({ skuId: base.skuId, skuCode: sku.code, deliveryProfile: profile }),
+      ]);
+
+      await tx.update(wmsTables.skus).set({ deliveryProfileId: null }).where(eq(wmsTables.skus.id, base.skuId));
+
+      expect((await planning.getShipmentDetail(source.shipment.id, tx)).lines).toEqual([
+        expect.objectContaining({ skuId: base.skuId, skuCode: sku.code, deliveryProfile: null }),
+      ]);
     });
   });
 
@@ -397,6 +620,87 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
       expect(needsInfo?.shipments.map(({ shipmentId, reason }) => [shipmentId, reason])).toEqual([
         [source.shipment.id, '쇼핑몰 품목 번호가 없거나 맞지 않아요'],
       ]);
+      expect(needsInfo?.shipments[0].needsInfo?.map((issue) => issue.kind)).toEqual(['channel_item_unknown']);
+      expect((await planning.getShipmentDetail(source.shipment.id, tx)).needsInfo.map((issue) => issue.kind)).toEqual([
+        'channel_item_unknown',
+      ]);
+    });
+  });
+
+  it('출고불가 상자의 줄에 이 창고 재고·다른 상자 몫과 들어올 예정을 싣는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const base = await consolidationBase(tx, 4);
+      const held = await createConsolidationSource(tx, wired, base, { quantity: 3, customerId: randomUUID() });
+      const waiting = await createConsolidationSource(tx, wired, base, { quantity: 5, customerId: randomUUID() });
+
+      await tx
+        .update(wmsTables.stockReservations)
+        .set({ status: 'pending' })
+        .where(eq(wmsTables.stockReservations.targetId, waiting.line.id));
+
+      const lineOf = (summary: OutboundPreparationSummaryDto) =>
+        summary.buckets
+          .find(({ bucket }) => bucket === 'unavailable')
+          ?.shipments.find(({ shipmentId }) => shipmentId === waiting.shipment.id)?.lines[0];
+      const [{ reserved }] = await tx
+        .select({ reserved: sql<number>`COALESCE(SUM(${wmsTables.stockReservations.quantity}), 0)::int` })
+        .from(wmsTables.stockReservations)
+        .where(
+          and(
+            eq(wmsTables.stockReservations.skuId, base.skuId),
+            eq(wmsTables.stockReservations.warehouseId, base.warehouseId),
+            eq(wmsTables.stockReservations.status, 'confirmed'),
+          ),
+        );
+
+      expect(held.line.id).not.toBe(waiting.line.id);
+      expect(reserved).toBeGreaterThan(0);
+
+      // 판매하지 않는 창고면 이 창고 재고만 안다
+      await tx
+        .update(wmsTables.warehouses)
+        .set({ isSellable: false })
+        .where(eq(wmsTables.warehouses.id, base.warehouseId));
+
+      expect(lineOf(await reader.summarize(base.warehouseId, undefined, tx))).toEqual({
+        name: expect.any(String),
+        qty: 5,
+        reservedQty: 0,
+        stock: { onHand: 4, reservedByOthers: reserved, incoming: null, elsewhere: null },
+      });
+
+      // 판매 창고가 여럿이면 이 창고로 들어올 수량은 모르고, 판매하지 않는 창고 보유·발주만 안다
+      await tx
+        .update(wmsTables.warehouses)
+        .set({ isSellable: true })
+        .where(eq(wmsTables.warehouses.id, base.warehouseId));
+      await seedWarehouseWithZone(tx);
+
+      expect(lineOf(await reader.summarize(base.warehouseId, undefined, tx))?.stock).toEqual({
+        onHand: 4,
+        reservedByOthers: reserved,
+        incoming: null,
+        elsewhere: expect.objectContaining({ onHand: expect.any(Number), ordered: expect.any(Number) }),
+      });
+
+      await tx
+        .update(wmsTables.warehouses)
+        .set({ isSellable: false })
+        .where(not(eq(wmsTables.warehouses.id, base.warehouseId)));
+
+      expect(lineOf(await reader.summarize(base.warehouseId, undefined, tx))?.stock).toEqual({
+        onHand: 4,
+        reservedByOthers: reserved,
+        incoming: { inTransit: 0, inTransitEta: null, ordered: 0, inboundShipment: 0, inboundShipmentEta: null },
+        elsewhere: { onHand: 0, ordered: 0, orderedEta: null },
+      });
+      // 출고불가가 아닌 상자는 재고를 싣지 않는다
+      expect(
+        (await reader.summarize(base.warehouseId, undefined, tx)).buckets
+          .flatMap(({ bucket, shipments }) => (bucket === 'unavailable' ? [] : shipments))
+          .flatMap(({ lines }) => lines)
+          .some((line) => line.stock !== undefined),
+      ).toBe(false);
     });
   });
 
@@ -452,6 +756,220 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
           [untouched.shipment.id, null],
         ]),
       );
+    });
+  });
+
+  it('결품으로 배치에서 빠진 상자를 분류 맨 앞에 모으고 상품·자리·모자란 수량을 사유로 준다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const base = await consolidationBase(tx);
+      const source = () => createConsolidationSource(tx, wired, base, { quantity: 1, customerId: randomUUID() });
+      const plain = await source();
+      const exited = await source();
+      const refilled = await source();
+      const rebatched = await source();
+      const otherExit = await source();
+      const [location] = await tx
+        .select({ id: wmsTables.locations.id, code: wmsTables.locations.code })
+        .from(wmsTables.locations)
+        .where(eq(wmsTables.locations.warehouseId, base.warehouseId))
+        .limit(1);
+      const [sku] = await tx
+        .select({ name: wmsTables.skus.name })
+        .from(wmsTables.skus)
+        .where(eq(wmsTables.skus.id, base.skuId));
+      const [batch] = await tx
+        .insert(wmsTables.outboundBatches)
+        .values({
+          warehouseId: base.warehouseId,
+          batchNumber: `short-pick-${randomUUID()}`,
+          pickingMethod: 'individual',
+          name: `short-pick-${randomUUID()}`,
+        })
+        .returning();
+      const leave = async (shipmentId: string, exclusionReason: string) => {
+        const [item] = await tx
+          .insert(wmsTables.outboundBatchWorkItems)
+          .values({ batchId: batch.id, shipmentId, status: 'excluded', exitTo: 'draft', exclusionReason })
+          .returning();
+
+        return item.id;
+      };
+      const shortPick = async (shipmentId: string, lineId: string, workItemId: string, outcome: string) => {
+        const id = randomUUID();
+
+        await tx.insert(wmsTables.shipmentOperations).values({
+          id,
+          type: 'short_pick',
+          status: 'completed',
+          operatorId: randomUUID(),
+          reason: 'inventory_shortage',
+          idempotencyKey: randomUUID(),
+          requestHash: 'a'.repeat(64),
+          beforeManifestSnapshot: {
+            intent: {
+              kind: 'short_pick',
+              operationId: id,
+              shipmentId,
+              workItemId,
+              sessionId: randomUUID(),
+              actorId: randomUUID(),
+              reason: 'inventory_shortage',
+              lines: [{ shipmentLineId: lineId, sourceLocationId: location.id, shortQty: 1, allocationQty: 1 }],
+            },
+          },
+          afterManifestSnapshot: { outcome },
+          completedAt: new Date(),
+        });
+        await tx.insert(wmsTables.shipmentOperationMembers).values({ operationId: id, shipmentId, role: 'source' });
+      };
+
+      await shortPick(
+        exited.shipment.id,
+        exited.line.id,
+        await leave(exited.shipment.id, 'short_pick:inventory_shortage'),
+        'exited',
+      );
+      await shortPick(
+        refilled.shipment.id,
+        refilled.line.id,
+        await leave(refilled.shipment.id, '잘못 넣은 상자'),
+        'refilled',
+      );
+      await shortPick(
+        rebatched.shipment.id,
+        rebatched.line.id,
+        await leave(rebatched.shipment.id, 'short_pick:inventory_shortage'),
+        'exited',
+      );
+      await tx.insert(wmsTables.outboundBatchWorkItems).values({
+        batchId: batch.id,
+        shipmentId: rebatched.shipment.id,
+        status: 'excluded',
+        exitTo: 'draft',
+        exclusionReason: '잘못 넣은 상자',
+        createdAt: new Date(Date.now() + 60_000),
+      });
+      await leave(otherExit.shipment.id, 'station_withdraw_command');
+
+      const summary = await reader.summarize(base.warehouseId, undefined, tx);
+      const ready = summary.buckets.find((entry) => entry.bucket === 'ready');
+
+      expect(ready?.count).toBe(5);
+      expect(ready?.shortPickCount).toBe(1);
+      expect(ready?.shipments[0]).toMatchObject({
+        shipmentId: exited.shipment.id,
+        reason: null,
+        shortPick: [{ name: sku.name, locationCode: location.code, shortQty: 1 }],
+      });
+      expect(
+        ready?.shipments
+          .filter((shipment) => shipment.shipmentId !== exited.shipment.id)
+          .map((shipment) => shipment.shortPick),
+      ).toEqual([null, null, null, null]);
+      await tx.insert(wmsTables.outboundBatchWorkItems).values({
+        batchId: batch.id,
+        shipmentId: exited.shipment.id,
+        status: 'queued',
+        createdAt: new Date(Date.now() - 60_000),
+      });
+      expect(await loadShortPickReturns(tx, await loadReturnedWorkItems(tx, [exited.shipment.id]))).toEqual(new Map());
+      expect(ready?.batchReturnCount).toBe(3);
+      expect(idsIn(summary, 'ready').slice(1, 4).sort()).toEqual(
+        [refilled, rebatched, otherExit].map((fixture) => fixture.shipment.id).sort(),
+      );
+      expect(idsIn(summary, 'ready')[4]).toBe(plain.shipment.id);
+      expect(ready?.shipments.find((shipment) => shipment.shipmentId === otherExit.shipment.id)?.batchReturn).toEqual({
+        batchNumber: batch.batchNumber,
+        exitedAt: expect.any(String),
+        place: '물류앱 출고 검수',
+        reason: '박스 빼기',
+        needsNewWaybill: true,
+      });
+      expect(
+        ready?.shipments.find((shipment) => shipment.shipmentId === rebatched.shipment.id)?.batchReturn,
+      ).toMatchObject({ place: '관리자 출고 배치', reason: '잘못 넣은 상자' });
+      expect(ready?.shipments.find((shipment) => shipment.shipmentId === plain.shipment.id)?.batchReturn).toBeNull();
+    });
+  });
+
+  it('배치에서 빠져 돌아온 이어서 할 상자는 뺀 곳·사유와 새 송장이 필요한지를 준다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const base = await consolidationBase(tx);
+      const make = () => createConsolidationSource(tx, wired, base, { quantity: 1, customerId: randomUUID() });
+      const voided = await make();
+      const kept = await make();
+      const typed = await make();
+      const rejoined = await make();
+      const failed = await make();
+      const fixtures = [voided, kept, typed, rejoined, failed];
+
+      await tx
+        .update(wmsTables.shipments)
+        .set({ status: 'planned' })
+        .where(
+          inArray(
+            wmsTables.shipments.id,
+            fixtures.map((fixture) => fixture.shipment.id),
+          ),
+        );
+
+      const [batch] = await tx
+        .insert(wmsTables.outboundBatches)
+        .values({
+          warehouseId: base.warehouseId,
+          batchNumber: `returned-${randomUUID()}`,
+          pickingMethod: 'individual',
+          name: `returned-${randomUUID()}`,
+        })
+        .returning();
+      const leave = (fixture: typeof voided, exclusionReason: string) =>
+        tx
+          .insert(wmsTables.outboundBatchWorkItems)
+          .values({ batchId: batch.id, shipmentId: fixture.shipment.id, status: 'excluded', exclusionReason });
+      const waybill = (fixture: typeof voided, status: 'voided' | 'registered' | 'failed') =>
+        tx.insert(wmsTables.waybills).values({
+          shipmentId: fixture.shipment.id,
+          source: 'carrier',
+          carrier: 'HANJIN',
+          manifestVersion: fixture.shipment.manifestVersion,
+          recipientHash: 'h'.repeat(64),
+          status,
+          trackingNo: status === 'registered' ? randomUUID().slice(0, 12) : null,
+          lastError: status === 'failed' ? 'allocate ERROR-01' : null,
+        });
+
+      await leave(voided, '작업 시작 전 뺌 — 송장 미발급·재발급 필요');
+      await waybill(voided, 'voided');
+      await leave(kept, '잘못 넣은 상자');
+      await waybill(kept, 'registered');
+      await leave(typed, '고객 요청으로 보류');
+      await waybill(typed, 'registered');
+      await leave(failed, '잘못 넣은 상자');
+      await waybill(failed, 'failed');
+      await leave(rejoined, '잘못 넣은 상자');
+      await tx
+        .insert(wmsTables.outboundBatchWorkItems)
+        .values({ batchId: batch.id, shipmentId: rejoined.shipment.id, status: 'queued' });
+
+      const summary = await reader.summarize(base.warehouseId, undefined, tx);
+      const resume = summary.buckets.find(({ bucket }) => bucket === 'resume');
+      const returns = new Map(resume?.shipments.map(({ shipmentId, batchReturn }) => [shipmentId, batchReturn]));
+
+      expect(resume?.batchReturnCount).toBe(4);
+      expect(returns.get(voided.shipment.id)).toMatchObject({
+        batchNumber: batch.batchNumber,
+        place: '물류앱 작업 시작',
+        reason: '송장 미발급·재발급 필요',
+        needsNewWaybill: true,
+      });
+      expect(returns.get(kept.shipment.id)).toMatchObject({
+        place: '관리자 출고 배치',
+        reason: '잘못 넣은 상자',
+        needsNewWaybill: false,
+      });
+      expect(returns.get(typed.shipment.id)).toMatchObject({ place: null, reason: '고객 요청으로 보류' });
+      expect(returns.get(failed.shipment.id)).toMatchObject({ needsNewWaybill: true });
+      expect(await loadReturnedWorkItems(tx, [rejoined.shipment.id])).toEqual(new Map());
     });
   });
 });

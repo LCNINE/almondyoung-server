@@ -48,6 +48,7 @@ export function BucketTable({
   onView,
   onPrepare,
   onSplit,
+  holders = [],
 }: {
   summary: OutboundPreparationSummary;
   busy: boolean;
@@ -56,8 +57,9 @@ export function BucketTable({
   onView: (bucket: PreparationBucket) => void;
   onPrepare: (bucket: 'ready' | 'resume') => void;
   onSplit: () => void;
+  holders?: readonly string[];
 }) {
-  const loadMore = useLoadMoreOutboundPreparation(summary.warehouseId);
+  const loadMore = useLoadMoreOutboundPreparation(summary.warehouseId, holders);
 
   return (
     <div className="rounded-md border">

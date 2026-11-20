@@ -148,10 +148,56 @@ preflight 가 «환경이 옳은가»를 본다면 이건 «테넌트가 섞이�
   손으로 둔다. 없으면 흔적 항목이 «못 쟀다». 라이브는 Secret `IsolationCheck` 의 `forbiddenWords`.
 - 인증서 항목은 로컬(http)에선 «못 쟀다» 가 정상이다.
 
+### §2-E. 주문 한 건을 끝까지 — 브라우저 없이 (#1440)
+
+자사몰 주문 → channel-adapter 수집 → core 매칭 → 출고 주문·상자 → 부천 재고 예약까지를 명령 둘로 재현한다.
+스택(`start:all:local`)이 뜬 뒤 부른다. 둘 다 실제 HTTP API 만 부른다 — DB 에 직접 쓰면 outbox → channel-adapter → Medusa
+투영이 생기지 않아 실제 경로를 검증하지 못한다.
+
+```bash
+npm run seed:order-path:local              # 주문 가능한 상품을 갖춘다(멱등 — 다시 돌려도 상품·SKU·재고가 늘지 않는다)
+npm run order:place:local -- --count 3     # 주문 3건 → 부천 상자 id 출력. 상품 준비를 먼저 알아서 부른다
+```
+
+- **상품 준비**가 하는 일: 배송 프로필 `[E2E] 주문 경로 배송` · 부천 위치 `E2E-01-01` · 상품 둘(`[E2E] 주문 경로 단일`, 옵션 A/B 인
+  `[E2E] 주문 경로 옵션`, 판매가 12,000원) 발행 → Medusa 투영 확인 → SKU(고정 보조 바코드 `E2E-ORDER-…`) → 부천 가용 100 까지 채우기
+  → 매칭 → Medusa 판매 가능 확인. 찾는 열쇠는 상품 이름·SKU 바코드다(상품 코드·SKU 코드는 자동 발급이라 못 정한다).
+- **주문 넣기**가 하는 일: 구매자 `e2eorderbuyer` 가입(없을 때만 — 인증번호는 sms-stub 이 받은 것을 DB 에서 읽는다)·적립금
+  10,000,000P(한 번만) → 스토어프론트의 SSO 로그인을 브라우저 없이(customer 는 `user-service-sso` 로만 들어온다) → 장바구니 → 포인트
+  전액 결제 → 장바구니 완료 → channel-adapter **즉시 수집**(`POST /adapter/orders/medusa/:id/sync` — 5분 폴링을 기다리지 않는다)
+  → core 백로그가 상자를 세우고 예약할 때까지 기다린다. 멈추면 어디서 멈췄는지(격리·매칭 대기·출고 주문 없음·예약 부족) 적는다.
+- 끝 줄 `상자: <id>,<id>,…` 는 #1249 비상 출고의 `local/compare.ts --normal <id,…> --emergency <id,…>` 에 그대로 붙는다.
+- 주문마다 **상세주소가 다르다**(`E2E <실행 시각>-<순번>`). core 는 고객·배송 프로필·주소가 같은 상자를 합배송 묶음으로 보고, 묶음은
+  출고 준비에서 «합칠 수 있음»으로 빠진다(비상 출고 도구도 뺀다). 앞 실행의 안 나간 상자와도 묶이지 않게 실행 시각을 넣는다.
+- 적립금이 바닥나면 결제가 `INSUFFICIENT_POINTS` 로 거절된다 → `LOCAL_POINT_REASON=<새 이름> LOCAL_POINT_LOGIN_IDS=e2eorderbuyer LOCAL_POINT_AMOUNT=10000000 npm run db:seed:points:local`.
+- 테넌트 1 만 다룬다. ① 모드와 ② 모드(`E2E_GATE_MODE=reject`) 모두에서 돈다.
+
+**그다음 — 상자를 내보내고 Medusa 반영을 본다.** 상자는 `draft` 다. 창고 앱(정식 출고) 또는 #1249 비상 출고 도구로 내보낸다.
+송장은 **가짜 한진**(`scripts/local/hanjin-stub.ts`, :4599)이 12자리 `91…` 번호로 준다. 반영 확인:
+
+```bash
+psql postgresql://postgres:postgres@localhost:5432/medusa -c \
+  "select id, metadata->>'coreShippingStatus' as status,
+          (select string_agg(a->'invoice'->>'trackingNo', ',') from jsonb_array_elements(metadata->'coreShipmentAttempts') a) as tracking
+     from \"order\" where id='<Medusa 주문 id>';"
+# status = shipped, tracking = 91 로 시작하는 12자리 (상자의 송장)
+```
+
+송장은 시도별 투영 `coreShipmentAttempts[].invoice.trackingNo` 에 온다. 최상위 `coreTrackingNumber` 는 정식(앱) 경로로 내보내도
+비어 있다 — 그 칸을 쓰던 옛 주문 단위 투영은 한 번도 동작하지 않았고 #1452 에서 지웠다(로컬·라이브 모두 쓰는 코드가 없다). 이 칸으로 판정하지 않는다.
+
+**가짜 한진.** `start:all:local` 이 sms-stub 옆에서 띄우고(`logs/hanjin-stub.log`), core 를 띄울 때 `HANJIN_ORDER_BASE_URL`·
+`HANJIN_PRINT_BASE_URL` 을 셸 값으로 이 스텁에 덮는다 — `apps/core/.env` 에 실제 한진 키·주소가 있어도 로컬 스택은 바깥을 부르지 않는다.
+같은 `msg_key` 재요청엔 같은 번호, 같은 주문번호 재등록엔 `ERROR-09`(이미 등록), 배송 조회는 «아직 스캔 안 됨»(`ERROR-01`)만 준다.
+실제 한진이 필요하면(한진 검수용 `seed-hanjin-samples.ts` 등) `E2E_HANJIN=real npm run start:all:local` — 그때만 실제 한진을 부른다.
+preflight 는 스텁 포트·core 가 보는 한진 주소·즉시 수집 키(`CHANNEL_ADAPTER_INTERNAL_KEY`, bootstrap 이 없을 때 더한다)·
+주문 경로 상품을 판정한다(마지막은 경고 — 주문 리허설을 할 때만 필요하다).
+
 ### 앱 기동
 
 ```bash
-npm run start:all:local                    # E2E 11개 + sms-stub
+npm run start:all:local                    # E2E 11개 + sms-stub + 가짜 한진
+E2E_HANJIN=real npm run start:all:local    # 가짜 한진 대신 apps/core/.env 의 실제 한진을 부른다
 E2E_PROFILE=full npm run start:all:local   # extra 4개(리뷰·통계·알림·검색)도 — .env 가 있는 것만
 DRY_RUN=1 npm run start:all:local          # 무엇을 어떤 순서로 띄울지만 출력
 E2E_GATE_MODE=reject npm run start:all:local  # ② 모드(없으면 거절 + core 테넌트 라우팅). .env 는 안 바꾸고 프로세스에만 덮는다
@@ -621,6 +667,8 @@ product_masters 0 · product_variants 0 · channel_variant_listings 0
 
 ## 8-D. ✅ 격리를 푸는 절차 (실측으로 통과한 경로)
 
+> 🟢 **명령으로 대체됐다(#1440)** — `npm run seed:order-path:local` 이 아래를 API 로 한다(§2-E). 아래는 화면을 직접 볼 때만 쓴다.
+
 **core 에서 상품을 만들어 발행하면 채널 어댑터가 Medusa 로 투영하면서 식별자 셋을 심어 준다.**
 `reh-a` 같은 Medusa 시드 상품으로는 절대 안 된다 — 새로 만들어야 한다.
 
@@ -789,6 +837,8 @@ core 에 대응 컬럼이 없어 받아도 버려지던 것들이다. 원가는 
 | `scripts/local/sms-stub.js` | 폰 인증용 로컬 SMS 스텁. 외부 발송 없음 |
 | **`scripts/local/sync-medusa-keys.sh`** | **`npm run sync:medusa-keys:local`.** Medusa 초기화로 죽는 API 키 2종을 .env 3곳에 맞춘다 — §2-A |
 | **`env-templates/.env.membership.local.example`** | membership 로컬 템플릿 신설. 배포용 템플릿엔 `PORT`·`OIDC_ISSUER_URL`·`MEMBERSHIP_INTERNAL_KEY` 가 없다 |
+| **`scripts/local/order-path/`** · `order-path-local.sh` | **`npm run seed:order-path:local` · `npm run order:place:local`** — 주문 가능한 상품 준비와 자사몰 주문 넣기(§2-E, #1440). 판정 함수는 `plan.ts`(스펙 있음) |
+| **`scripts/local/hanjin-stub.ts`** | **가짜 한진**(:4599, `E2E_HANJIN_STUB_PORT`) — start-all 이 띄우고 core 의 한진 주소를 여기로 덮는다. #1249 의 `fake-hanjin.ts` 를 옮긴 정본 |
 | `docs/local-e2e-environment.md` | 이 문서 |
 
 ⚠️ `scripts/local/seed-dev-core`(디렉터리)와 헷갈리지 말 것. 그쪽은 **`dev_core` 를 drop/create** 하고

@@ -1,4 +1,6 @@
 import { validateOperationResult } from './operationResult';
+import { forgetScanDraft } from './boxChecks';
+const SIMPLE_SCAN_PATH = /^\/shipments\/([^/]+)\/simple-outbound-scans$/;
 import { recordDiagnostic } from '../diagnostics/operationDiagnostics';
 import { ApiError, type ApiClient } from '../data/httpClient';
 import { type OperationStore, type StoredOperation } from './operationStore';
@@ -23,6 +25,19 @@ function resource(path: string, body: Record<string, unknown>) {
   if (path.endsWith('/adjust'))
     return `adjust:${body.skuId}:${body.locationId}`;
   return `${path}:${body.warehouseId}`;
+}
+/** 저장된 거절을 화면에 돌려줄 오류로 다시 만든다 — 경로가 있어야 출고 저장 경로의 거절로 읽힌다. */
+export function storedRejection(op: StoredOperation) {
+  return new ApiError(
+    '작업이 반영되지 않았어요.',
+    op.errorStatus ?? 400,
+    op.errorCode,
+    op.preparation,
+    undefined,
+    op.requiredPermissions,
+    undefined,
+    op.path
+  );
 }
 export function createOperationRunner(deps: {
   api: ApiClient;
@@ -55,17 +70,15 @@ export function createOperationRunner(deps: {
     callbacks?.forEach((w) =>
       op.status === 'confirmed'
         ? w.resolve(op.result)
-        : w.reject(
-            new ApiError(
-              '작업이 반영되지 않았어요.',
-              op.errorStatus ?? 400,
-              op.errorCode,
-              op.preparation,
-              undefined,
-              op.requiredPermissions
-            )
-          )
+        : w.reject(storedRejection(op))
     );
+  }
+  /** 결과가 정해진 스캔은 그 박스의 저장된 입력에서 뺀다 — 박스를 닫은 사이 확인됐으면 다시 열 때 옛 응답을 재생하지 않게 */
+  async function forgetSettledScan(op: StoredOperation) {
+    // 위치 확인 출고는 현재 상태 조회가 확인할 때까지 머리를 남기는 설계라 건드리지 않는다
+    const box = SIMPLE_SCAN_PATH.exec(op.path)?.[1];
+    if (box)
+      await forgetScanDraft(deps.store, op.scope, box, op.id).catch(() => {});
   }
   async function execute(input: StoredOperation) {
     if (flights.has(input.id)) return flights.get(input.id);
@@ -80,6 +93,7 @@ export function createOperationRunner(deps: {
         if (!latest) return;
         if (['confirmed', 'rejected'].includes(latest.status)) {
           await settle(latest);
+          await forgetSettledScan(latest);
           await notify();
           return;
         }
@@ -200,6 +214,12 @@ export function createOperationRunner(deps: {
         recordDiagnostic(saved);
         if (status === 'confirmed') deps.onConfirmed?.();
         await settle(saved).catch(() => {});
+        // 첫 시도에 정해진 결과는 화면의 큐가 지운다 — 다시 보낸 것만(그 사이 박스를 닫았을 수 있다)
+        if (
+          status !== 'uncertain' &&
+          (claimed.attempts > 0 || claimed.status !== 'queued')
+        )
+          await forgetSettledScan(saved);
         await notify().catch(() => {});
         if (locationForce && !resolving && status === 'uncertain') {
           if (input.scope !== (await deps.getScope())) return;
@@ -263,15 +283,7 @@ export function createOperationRunner(deps: {
       createdAt: Date.now(),
     });
     if (op.status === 'confirmed') return op.result as T;
-    if (op.status === 'rejected')
-      throw new ApiError(
-        '작업이 반영되지 않았어요.',
-        op.errorStatus ?? 400,
-        op.errorCode,
-        op.preparation,
-        undefined,
-        op.requiredPermissions
-      );
+    if (op.status === 'rejected') throw storedRejection(op);
     return new Promise<T>((resolve, reject) => {
       const list = waiting.get(id) ?? [];
       list.push({ resolve: (v) => resolve(v as T), reject });
@@ -296,6 +308,18 @@ export function createOperationRunner(deps: {
           await deps.store.finish(op.id, 'uncertain');
       }
       await notify();
+    },
+    /** 고른 작업만 같은 키로 다시 맞춘다(확인할 일 목록). 끝난 뒤의 기록을 돌려준다 */
+    async recheck(ids: readonly string[]) {
+      const scope = await deps.getScope();
+      for (const id of ids) {
+        const op = await deps.store.get(id);
+        if (op && op.scope === scope) await execute(op);
+      }
+      await reconcileWaiting();
+      await notify();
+      const after = await Promise.all(ids.map((id) => deps.store.get(id)));
+      return after.filter((op): op is StoredOperation => op !== null);
     },
     async retryPending() {
       await reconcileWaiting();

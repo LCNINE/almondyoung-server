@@ -10,6 +10,7 @@ import { useOrderLines } from '@/lib/services/matching';
 import { FilterBox } from '../components/filter-box';
 import { MatchingTable } from '../components/table';
 import { NameMatchButton } from '../components/name-match-button';
+import { kstToday } from '../lib/date-key';
 
 const CATEGORY_TO_CHANNEL: Record<string, string> = {
   medusa: 'medusa',
@@ -50,7 +51,7 @@ function MatchingContent() {
     let endDate: string | undefined;
 
     if (appliedFilters.dateType === 'today') {
-      const today = new Date().toISOString().slice(0, 10);
+      const today = kstToday();
       startDate = today;
       endDate = today;
     } else if (appliedFilters.dateType === 'custom') {

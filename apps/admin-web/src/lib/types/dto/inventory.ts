@@ -801,6 +801,96 @@ export interface StockQuery {
   asOfTimestamp?: string; // ISO 8601 형식
 }
 
+export type StockQueue =
+  | 'unshipped'
+  | 'shortage'
+  | 'below_safety_stock'
+  | 'out_of_stock';
+
+export interface StockSummaryByGroupQuery {
+  warehouseId?: string;
+  supplierId?: string;
+  search?: string;
+  queue?: StockQueue[];
+  page?: number;
+  limit?: number;
+}
+
+export interface StockSummaryGroupSkuDto {
+  skuId: string;
+  skuName: string;
+  skuCode: string;
+  warehouseId: string;
+  warehouseName: string;
+  shelfPosition: string | null;
+  currentQuantity: number;
+  /** 정상 재고 — 부족·가용 계산의 기준 */
+  onHandQuantity: number;
+  /** 정상 재고 − 미발송 (셀메이트와 같은 식, 음수 가능) */
+  availableQuantity: number;
+  unshippedQuantity: number;
+  shortageQuantity: number;
+  safetyStock: number | null;
+  belowSafetyStock: boolean;
+}
+
+export interface StockSummaryGroupDto {
+  groupId: string | null;
+  groupName: string;
+  groupCode: string | null;
+  /** 쇼핑몰 상품 대표 이미지 fileId — resolvePublicFileUrl 로 그린다 */
+  imageFileId: string | null;
+  masterId: string | null;
+  skus: StockSummaryGroupSkuDto[];
+}
+
+export interface StockSummaryCountsDto {
+  unshippedProducts: number;
+  shortageQuantity: number;
+  shortageOptions: number;
+  belowSafetyOptions: number;
+  emptyOptions: number;
+}
+
+export interface StockSummaryByGroupResponseDto {
+  data: StockSummaryGroupDto[];
+  total: number;
+  page: number;
+  limit: number;
+  summary: StockSummaryCountsDto;
+}
+
+export type UnshippedOrderProgress =
+  | 'not_boxed'
+  | 'waiting'
+  | 'inspecting'
+  | 'inspected'
+  | 'recovery_required';
+
+export interface UnshippedOrderDto {
+  fulfillmentOrderItemId: string;
+  salesOrderId: string | null;
+  orderNo: string | null;
+  channelName: string | null;
+  orderedAt: string;
+  delayDays: number;
+  customerName: string | null;
+  remainingQuantity: number;
+  reservedQuantity: number;
+  canShip: boolean;
+  progress: UnshippedOrderProgress;
+}
+
+export interface UnshippedOrdersResponseDto {
+  items: UnshippedOrderDto[];
+}
+
+/** 재고 이력·조정 다이얼로그가 쓰는 행 필드 */
+export type StockRowRef = Pick<
+  StockSummaryDto,
+  'skuId' | 'skuName' | 'warehouseId' | 'warehouseName' | 'currentQuantity'
+>;
+
 export interface StockSummaryQuery {
   skuId?: string;
   warehouseId?: string;
@@ -1781,6 +1871,7 @@ export interface DeliveryProfileDto {
   id: string;
   name: string;
   sourceType: DeliveryProfileSourceType;
+  holderId: string | null;
   avgDeliveryDays: number | null;
   sender: { name: string; phone: string };
   originAddress: DeliveryProfileAddress;
@@ -1795,6 +1886,7 @@ export interface DeliveryProfileDto {
 export interface CreateDeliveryProfileDto {
   name: string;
   sourceType: DeliveryProfileSourceType;
+  holderId?: string;
   avgDeliveryDays?: number;
   sender: { name: string; phone: string };
   originAddress: DeliveryProfileAddress;
@@ -1805,9 +1897,11 @@ export interface CreateDeliveryProfileDto {
 
 // avgDeliveryDays 만 CreateDeliveryProfileDto 보다 넓다 — PATCH 는 null(지우기)을 허용한다.
 export type UpdateDeliveryProfileDto = Partial<
-  Omit<CreateDeliveryProfileDto, 'avgDeliveryDays'>
+  Omit<CreateDeliveryProfileDto, 'avgDeliveryDays' | 'holderId'>
 > & {
   avgDeliveryDays?: number | null;
+  /** null 이면 화주 연결을 푼다 */
+  holderId?: string | null;
 };
 
 // ── SKU 실측 작업 (core inventory/sku-field-capture 응답/요청 미러) ──

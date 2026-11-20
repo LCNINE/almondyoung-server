@@ -1,0 +1,161 @@
+import * as http from 'node:http';
+import { AddressInfo } from 'node:net';
+import { CoreApiError, httpCoreApi } from './core-api';
+
+interface Seen {
+  method: string;
+  url: string;
+  headers: http.IncomingHttpHeaders;
+  body: string;
+}
+
+describe('httpCoreApi', () => {
+  let server: http.Server;
+  let url = '';
+  let seen: Seen[] = [];
+  let reply: { status: number; body: string } = { status: 200, body: '{}' };
+
+  beforeAll(async () => {
+    server = http.createServer((req, res) => {
+      const chunks: Buffer[] = [];
+      req.on('data', (c: Buffer) => chunks.push(c));
+      req.on('end', () => {
+        seen.push({
+          method: req.method ?? '',
+          url: req.url ?? '',
+          headers: req.headers,
+          body: Buffer.concat(chunks).toString('utf8'),
+        });
+        res.statusCode = reply.status;
+        res.setHeader('content-type', 'application/json');
+        res.end(reply.body);
+      });
+    });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  });
+  afterAll(async () => {
+    await new Promise((r) => server.close(r));
+  });
+  beforeEach(() => {
+    seen = [];
+    reply = { status: 200, body: '{}' };
+  });
+
+  it('sends bearer and idempotency key', async () => {
+    reply = { status: 200, body: JSON.stringify({ succeeded: ['a'], failed: [] }) };
+    const api = httpCoreApi(url, () => Promise.resolve('t1'));
+    const r = await api.plan(['a'], 'emergency:r:plan:a');
+    expect(r.succeeded).toEqual(['a']);
+    expect(seen[0].method).toBe('POST');
+    expect(seen[0].url).toBe('/outbound-preparation/plans');
+    expect(seen[0].headers.authorization).toBe('Bearer t1');
+    expect(seen[0].headers['idempotency-key']).toBe('emergency:r:plan:a');
+    expect(JSON.parse(seen[0].body)).toEqual({ shipmentIds: ['a'] });
+  });
+
+  it('asks for a token on every request', async () => {
+    const token = jest.fn(() => Promise.resolve('t1'));
+    const api = httpCoreApi(url, token);
+    await api.warehouse('w1');
+    await api.warehouse('w1');
+    expect(token).toHaveBeenCalledTimes(2);
+  });
+
+  it('throws CoreApiError with the core code', async () => {
+    reply = {
+      status: 409,
+      body: JSON.stringify({
+        success: false,
+        code: 'BATCH_START_BLOCKED',
+        errors: [{ shipmentId: 's1', reason: 'STOCK_SHORT' }],
+      }),
+    };
+    const api = httpCoreApi(url, () => Promise.resolve('t1'));
+    const err = await api.startBatch('b1', 'k').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(CoreApiError);
+    const e = err as CoreApiError;
+    expect(e.status).toBe(409);
+    expect(e.code).toBe('BATCH_START_BLOCKED');
+    expect((e.body as { errors: { shipmentId: string }[] }).errors[0].shipmentId).toBe('s1');
+  });
+
+  describe('error code derivation', () => {
+    const fail = async (status: number, body: unknown): Promise<CoreApiError> => {
+      reply = { status, body: JSON.stringify(body) };
+      const api = httpCoreApi(url, () => Promise.resolve('t1'));
+      return (await api.label('s1').catch((e: unknown) => e)) as CoreApiError;
+    };
+
+    it('takes the domain code from the message prefix when body.code is generic', async () => {
+      const e = await fail(409, {
+        success: false,
+        code: 'CONFLICT',
+        error: 'CONFLICT',
+        message: 'WAYBILL_LABEL_UNAVAILABLE: manual waybill w1 has no carrier label data',
+      });
+      expect(e.code).toBe('WAYBILL_LABEL_UNAVAILABLE');
+      expect(e.httpCode).toBe('CONFLICT');
+    });
+
+    it('keeps a specific body.code', async () => {
+      const e = await fail(409, { code: 'SHIPMENT_NOT_DISPATCHABLE', message: 'OTHER_CODE: x' });
+      expect(e.code).toBe('SHIPMENT_NOT_DISPATCHABLE');
+      expect(e.httpCode).toBe('SHIPMENT_NOT_DISPATCHABLE');
+    });
+
+    it('keeps the generic code when the message has no prefix', async () => {
+      const e = await fail(500, {
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'ITF needs an even number of digits: "59995549012"',
+      });
+      expect(e.code).toBe('INTERNAL_SERVER_ERROR');
+    });
+
+    it('takes the domain code from the message prefix of an unavailable error', async () => {
+      const e = await fail(503, { code: 'SERVICE_UNAVAILABLE', message: 'CARRIER_DOWN: hanjin unreachable' });
+      expect(e.code).toBe('CARRIER_DOWN');
+      expect(e.httpCode).toBe('SERVICE_UNAVAILABLE');
+    });
+
+    it('derives from the message when there is no body.code at all', async () => {
+      const e = await fail(404, { message: 'NOT_THERE: gone' });
+      expect(e.code).toBe('NOT_THERE');
+    });
+  });
+
+  it('returns null for no active waybill', async () => {
+    reply = { status: 200, body: '' };
+    const api = httpCoreApi(url, () => Promise.resolve('t1'));
+    expect(await api.activeWaybill('s1')).toBeNull();
+  });
+
+  it('never puts the token in an error message', async () => {
+    reply = { status: 500, body: JSON.stringify({ success: false, message: 'boom' }) };
+    const api = httpCoreApi(url, () => Promise.resolve('t1'));
+    const e = (await api.warehouse('w1').catch((x: unknown) => x)) as CoreApiError;
+    expect(e).toBeInstanceOf(CoreApiError);
+    expect(e.message).not.toContain('t1');
+    expect(JSON.stringify(e.body)).not.toContain('Bearer');
+  });
+
+  it('builds routes and bodies', async () => {
+    reply = { status: 200, body: JSON.stringify({ batchId: 'b1', operationId: 'o' }) };
+    const api = httpCoreApi(url, () => Promise.resolve('t1'));
+    await api.createBatch('w1', 'N', 'k1');
+    expect(seen[0].url).toBe('/outbound-batches/v2');
+    expect(JSON.parse(seen[0].body)).toEqual({
+      warehouseId: 'w1',
+      pickingMethod: 'individual',
+      name: 'N',
+    });
+    await api.excludeFromBatch('b1', 's1', 'why', 'k2');
+    expect(seen[1].method).toBe('DELETE');
+    expect(seen[1].url).toBe('/outbound-batches/b1/shipments/s1');
+    expect(JSON.parse(seen[1].body)).toEqual({ reason: 'why' });
+    await api.preparation('w1', 'ready', 200);
+    expect(seen[2].url).toBe('/outbound-preparation?warehouseId=w1&bucket=ready&offset=200');
+    await api.preparation('w1', 'partial', 0);
+    expect(seen[3].url).toBe('/outbound-preparation?warehouseId=w1&bucket=partial&offset=0');
+  });
+});

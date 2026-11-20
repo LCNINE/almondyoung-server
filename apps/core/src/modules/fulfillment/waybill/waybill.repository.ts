@@ -5,6 +5,7 @@ import { DbTx, inventorySchema, inventoryTables } from '../../inventory/schema/i
 import { WaybillTrackingLiveConflictError } from './waybill.errors';
 import { WAYBILL_DISPATCHABLE_STATUSES, WAYBILL_TERMINAL_STATUSES } from './waybill.constants';
 import type { WaybillRow } from './waybill.types';
+import type { WaybillRequest } from './carrier/carrier-gateway.interface';
 
 const T = inventoryTables.waybills;
 
@@ -53,6 +54,7 @@ export class WaybillRepository {
       custOrdNo: string;
       manifestVersion: number;
       recipientHash: string;
+      senderSnapshot: WaybillRequest['sender'];
     },
   ): Promise<WaybillRow> {
     const [wb] = await trx

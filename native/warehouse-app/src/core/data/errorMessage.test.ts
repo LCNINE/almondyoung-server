@@ -58,6 +58,18 @@ describe('errorMessage', () => {
 });
 
 describe('errorMessage with context', () => {
+  it('셀메이트가 내보내는 박스는 두고 다음으로 넘어가도록 안내한다', () => {
+    const error = new ConflictError(
+      'Shipment s-1 belongs to an order Sellmate ships',
+      'SHIPMENT_HANDED_OVER_TO_SELLMATE'
+    );
+
+    expect(error.status).toBe(409);
+    expect(errorMessage(error, 'outbound')).toBe(
+      '셀메이트가 내보내는 주문의 박스예요. 이 박스는 두고 다음으로 넘어가 주세요.'
+    );
+  });
+
   it('바코드 문맥의 404 는 미등록 바코드로 안내한다', () => {
     expect(
       errorMessage(new Error('GET /inventory/skus → 404'), 'barcode')
@@ -354,5 +366,83 @@ describe('이탈·되돌림 문구 (#989)', () => {
   ])('되돌림 %s — 출고·되돌림 화면 둘 다', (code, text) => {
     expect(errorMessage(new ConflictError('m', code), 'returns')).toBe(text);
     expect(errorMessage(new ConflictError('m', code), 'outbound')).toBe(text);
+  });
+});
+
+describe('출고 판정 거절 문구', () => {
+  it.each([
+    [
+      'SHIPMENT_NOT_DISPATCHABLE',
+      '지금 출고할 수 없는 박스예요. 주문이 취소되거나 바뀌었을 수 있어요. 담은 상품은 그대로 두고 관리자에게 확인해 주세요.',
+    ],
+    [
+      'SHIPMENT_NOT_INSPECTION_READY',
+      '아직 검수할 수 없는 박스예요. 관리자에게 확인해 주세요.',
+    ],
+    [
+      'SHIPMENT_SESSION_NOT_ACTIVE',
+      '배치 재고 기록을 확인해야 해요. 관리자에게 문의해 주세요.',
+    ],
+    [
+      'SHIPMENT_PACKER_LEASE_REQUIRED',
+      '이 박스의 작업자 확인이 맞지 않아요. 관리자에게 확인해 주세요.',
+    ],
+  ])('%s', (code, text) => {
+    // 실행기는 저장된 거절을 ConflictError 가 아닌 ApiError 로 다시 만든다
+    expect(errorMessage(new ApiError('m', 409, code), 'outbound')).toBe(text);
+    expect(errorMessage(new ConflictError('m', code), 'outbound')).toBe(text);
+  });
+});
+
+describe('출고 저장 경로에서 반영되지 않은 409 문구', () => {
+  const scanPath = '/shipments/s1/simple-outbound-scans';
+  const rejectedAt = (code: string) => [
+    // 실행기가 저장된 거절으로 다시 만든 오류와 처음 받은 오류 둘 다
+    new ApiError('m', 409, code, undefined, undefined, undefined, undefined, scanPath),
+    new ConflictError('m', code, undefined, undefined, scanPath),
+  ];
+
+  it.each([
+    ['PICKING_COMPONENT_CHANGED_RETRY', '방금 박스 상태가 바뀌어 반영하지 못했어요. 한 번 더 해 주세요.'],
+    ['SHIPMENT_COMPONENT_CHANGED_RETRY', '방금 박스 상태가 바뀌어 반영하지 못했어요. 한 번 더 해 주세요.'],
+    ['SHIPMENT_WORK_ITEM_CHANGED', '방금 박스 상태가 바뀌어 반영하지 못했어요. 한 번 더 해 주세요.'],
+    ['SHIPMENT_SESSION_CHANGED', '방금 박스 상태가 바뀌어 반영하지 못했어요. 한 번 더 해 주세요.'],
+    ['WORK_ITEM_STALE_LEASE_VERSION', '방금 박스 상태가 바뀌어 반영하지 못했어요. 한 번 더 해 주세요.'],
+    ['SHIPMENT_WORK_ITEM_MISSING', '이 박스의 배치 작업 기록을 찾지 못했어요. 송장을 다시 스캔하고, 같으면 관리자에게 확인해 주세요.'],
+    ['SHIPMENT_SESSION_MISSING', '이 박스의 배치 작업 기록을 찾지 못했어요. 송장을 다시 스캔하고, 같으면 관리자에게 확인해 주세요.'],
+    ['WORK_ITEM_NOT_CLAIMABLE', '이 박스의 배치 작업 기록을 찾지 못했어요. 송장을 다시 스캔하고, 같으면 관리자에게 확인해 주세요.'],
+    ['SHIPMENT_INSPECTION_LINE_UNKNOWN', '검수 기록이 맞지 않아 반영하지 못했어요. 담은 상품은 그대로 두고 관리자에게 확인해 주세요.'],
+    ['SHIPMENT_LINE_OVER_INSPECTED', '검수 기록이 맞지 않아 반영하지 못했어요. 담은 상품은 그대로 두고 관리자에게 확인해 주세요.'],
+    ['SHIPMENT_INSPECTION_BARCODE_UNKNOWN', '검수 기록이 맞지 않아 반영하지 못했어요. 담은 상품은 그대로 두고 관리자에게 확인해 주세요.'],
+    ['SHIPMENT_INSPECTION_SKU_MISMATCH', '검수 기록이 맞지 않아 반영하지 못했어요. 담은 상품은 그대로 두고 관리자에게 확인해 주세요.'],
+    ['SHIPMENT_INSPECTION_CUSTODY_SHORT', '검수 기록이 맞지 않아 반영하지 못했어요. 담은 상품은 그대로 두고 관리자에게 확인해 주세요.'],
+    ['SHIPMENT_INSPECTION_INCOMPLETE', '검수 기록이 맞지 않아 반영하지 못했어요. 담은 상품은 그대로 두고 관리자에게 확인해 주세요.'],
+    ['SHIPMENT_DISPATCH_ALLOCATION_MISMATCH', '출고 수량과 재고 기록이 맞지 않아 출고하지 못했어요. 담은 상품은 그대로 두고 관리자에게 확인해 주세요.'],
+    ['SHIPMENT_DISPATCH_CUSTODY_MISMATCH', '출고 수량과 재고 기록이 맞지 않아 출고하지 못했어요. 담은 상품은 그대로 두고 관리자에게 확인해 주세요.'],
+    ['SHIPMENT_TOTE_NOT_RELEASED', '바구니 배정이 남아 있어 출고하지 못했어요. 관리자에게 바구니 배정을 풀어 달라고 해 주세요.'],
+    ['SHIPMENT_INVOICE_NOT_READY', '이 박스의 송장이 출고할 상태가 아니에요. 관리자에게 송장 상태를 확인해 달라고 해 주세요.'],
+    ['WORK_ITEM_HANDOFF_REQUIRED', '다른 작업자가 맡은 박스예요. 관리자에게 넘겨 달라고 해 주세요.'],
+    ['PICKING_BATCH_STRATEGY_MISMATCH', '이 배치의 피킹 방식을 확인해야 해요. 관리자에게 문의해 주세요.'],
+    ['PICKING_STRATEGY_PROVIDER_MISMATCH', '이 배치의 피킹 방식을 확인해야 해요. 관리자에게 문의해 주세요.'],
+    ['WORK_ITEM_WAITING_OPERATION_CONFLICT', '이 박스에 처리 중인 변경(취소·합포장 등)이 있어요. 관리자에게 확인해 주세요.'],
+    ['WORK_ITEM_WAITING_OPERATION_MISSING', '이 박스에 처리 중인 변경(취소·합포장 등)이 있어요. 관리자에게 확인해 주세요.'],
+  ])('%s', (code, text) => {
+    for (const error of rejectedAt(code)) {
+      expect(error.outcome).toBe('rejected');
+      expect(errorMessage(error, 'outbound')).toBe(text);
+    }
+  });
+
+  it('문구가 없는 코드는 반영되지 않았다고 알리고 코드를 보인다', () => {
+    for (const error of rejectedAt('SOMETHING_NEW'))
+      expect(errorMessage(error, 'outbound')).toBe(
+        '반영되지 않았어요. 관리자에게 이 코드를 알려 주세요: SOMETHING_NEW'
+      );
+  });
+
+  it('다른 경로의 모르는 409 문구는 그대로다', () => {
+    expect(errorMessage(new ConflictError('m', 'SOMETHING_NEW'), 'outbound')).toBe(
+      '다른 작업자가 먼저 변경했어요. 새로고침 후 다시 시도해 주세요.'
+    );
   });
 });

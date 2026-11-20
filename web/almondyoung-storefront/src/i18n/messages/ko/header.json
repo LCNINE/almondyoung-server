@@ -10,7 +10,8 @@
     "shipping": "주문배송"
   },
   "userInfo": {
-    "logout": "로그아웃"
+    "logout": "로그아웃",
+    "nameSuffix": "님"
   },
   "categoryDropdown": {
     "trigger": "카테고리",

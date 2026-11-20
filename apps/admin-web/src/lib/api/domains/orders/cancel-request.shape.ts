@@ -40,6 +40,8 @@ export interface CancelRequestView {
   /** 확정 뒤 정산 중일 때만(core 가 settling 에만 싣는다). 옛 응답은 null */
   settlement: SettlementView | null;
   refundMode: 'auto' | 'manual' | null;
+  /** 이 요청이 취소하는 판매 줄과 수량. 옛 core 응답엔 없어 빈 배열이다 */
+  lines: Array<{ salesOrderLineId: string; quantity: number }>;
 }
 
 export type AdminCancelResponse =
@@ -252,7 +254,33 @@ export function toCancelRequestView(value: unknown): CancelRequestView | null {
     outcome: outcomeOf(value.outcome),
     settlement: toSettlementView(value.settlement),
     refundMode: value.refundMode === 'auto' || value.refundMode === 'manual' ? value.refundMode : null,
+    lines: requestLinesOf(value.lines),
   };
+}
+
+function requestLinesOf(value: unknown): CancelRequestView['lines'] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((line) =>
+    isRecord(line) && typeof line.salesOrderLineId === 'string' && typeof line.quantity === 'number' && line.quantity > 0
+      ? [{ salesOrderLineId: line.salesOrderLineId, quantity: line.quantity }]
+      : []
+  );
+}
+
+/**
+ * 주문 줄 하나에 이 요청이 걸려 있는지. 요청 줄을 모르면(옛 응답) 모든 줄에 걸린 것으로 본다 —
+ * `quantity` 는 그 줄에서 취소하는 수량(모르면 null), `first` 는 정산 버튼을 둘 줄인지다.
+ */
+export function cancelRequestOnLine(
+  view: CancelRequestView | null,
+  lineId: string,
+  isFirstOfOrder: boolean
+): { quantity: number | null; first: boolean } | null {
+  if (!view) return null;
+  if (view.lines.length === 0) return { quantity: null, first: isFirstOfOrder };
+  const index = view.lines.findIndex((line) => line.salesOrderLineId === lineId);
+  if (index < 0) return null;
+  return { quantity: view.lines[index].quantity, first: index === 0 };
 }
 
 /** 변경 기록 행(`GET /sales-orders/:id/amendments`)에서 같은 뷰를 만든다. 취소 요청 행이 아니면 null. */

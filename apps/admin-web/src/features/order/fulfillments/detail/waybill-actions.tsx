@@ -38,6 +38,12 @@ import type {
   ShipmentWaybillHistory,
 } from '@/lib/types/dto/fulfillment';
 import { carrierLabel, waybillStatusLabel } from './fulfillment-labels';
+import { OperationReasonFields } from './operation-reason-fields';
+import {
+  canSubmitOperationReason,
+  toOperationReasonPayload,
+  type OperationReasonValue,
+} from './operation-reasons';
 import { waybillErrorMessage } from './stuck-waybill';
 import {
   activeBatchId,
@@ -62,6 +68,8 @@ const SUBMIT_LABEL: Record<Action, string> = {
 };
 
 const SUPPORTED_CARRIERS_TEXT = '지금은 한진택배만 발급할 수 있어요.';
+
+const EMPTY_REASON: OperationReasonValue = { otherText: '', note: '' };
 
 function activeVoidableWaybill(
   waybills: ShipmentWaybillHistory[]
@@ -91,6 +99,20 @@ export function WaybillActions({
   const [lastKey, setLastKey] = useState<string | null>(null);
   const [lastKind, setLastKind] = useState<'issue' | 'reissue' | 'manual' | null>(null);
   const [pendingNotice, setPendingNotice] = useState<string | null>(null);
+  const [reasonValue, setReasonValue] = useState<OperationReasonValue>(EMPTY_REASON);
+  const [showReasonErrors, setShowReasonErrors] = useState(false);
+
+  const openWithReason = (next: 'void' | 'reissue') => {
+    setReasonValue(EMPTY_REASON);
+    setShowReasonErrors(false);
+    if (next === 'reissue') {
+      setCarrier('HANJIN');
+      setLastKey(null);
+      setLastKind(null);
+      setPendingNotice(null);
+    }
+    setAction(next);
+  };
 
   const voidTarget = activeVoidableWaybill(shipment.waybills ?? []);
   const shown = shownWaybillActions(
@@ -161,6 +183,10 @@ export function WaybillActions({
       toast.error(SUPPORTED_CARRIERS_TEXT);
       return;
     }
+    if (kind === 'reissue' && !canSubmitOperationReason('waybill_reissue', reasonValue)) {
+      setShowReasonErrors(true);
+      return;
+    }
     const key = createIdempotentCommand({}, originalKey ?? undefined)
       .idempotencyKey;
     setLastKey(key);
@@ -173,7 +199,11 @@ export function WaybillActions({
       const result =
         kind === 'issue'
           ? await issue.mutateAsync({ shipmentId: shipment.id, data, idempotencyKey: key })
-          : await reissue.mutateAsync({ shipmentId: shipment.id, data, idempotencyKey: key });
+          : await reissue.mutateAsync({
+              shipmentId: shipment.id,
+              data: { ...data, ...toOperationReasonPayload('waybill_reissue', reasonValue) },
+              idempotencyKey: key,
+            });
       reflectStatus(result.status, kind);
     } catch (error) {
       toast.error(
@@ -222,8 +252,8 @@ export function WaybillActions({
       toast.error('무효로 할 수 있는 송장이 없어요.');
       return;
     }
-    if (!reason.trim()) {
-      toast.error('무효로 하는 이유를 입력하세요.');
+    if (!canSubmitOperationReason('waybill_void', reasonValue)) {
+      setShowReasonErrors(true);
       return;
     }
     const key = createIdempotentCommand({}).idempotencyKey;
@@ -231,7 +261,7 @@ export function WaybillActions({
       await voidWaybill.mutateAsync({
         waybillId: voidTarget.id,
         shipmentId: shipment.id,
-        data: { reason: reason.trim() },
+        data: toOperationReasonPayload('waybill_void', reasonValue),
         idempotencyKey: key,
       });
       toast.success('송장을 무효로 했어요.');
@@ -277,13 +307,7 @@ export function WaybillActions({
             size="sm"
             variant="outline"
             disabled={!!voidLockedReason}
-            onClick={() => {
-              setCarrier('HANJIN');
-              setLastKey(null);
-              setLastKind(null);
-              setPendingNotice(null);
-              setAction('reissue');
-            }}
+            onClick={() => openWithReason('reissue')}
           >
             재발급
           </Button>
@@ -291,12 +315,10 @@ export function WaybillActions({
         {shown.includes('void') && canRun(useVoidWaybill) && (
           <Button
             size="sm"
-            variant="destructive"
+            // 취소를 기다리는 상자는 다 빠지면 송장이 저절로 무효가 된다 — 직접 무효화는 보조로 둔다
+            variant={shipment.pendingCancellation ? 'outline' : 'destructive'}
             disabled={!voidTarget || !!voidLockedReason}
-            onClick={() => {
-              setReason('');
-              setAction('void');
-            }}
+            onClick={() => openWithReason('void')}
           >
             무효화
           </Button>
@@ -374,11 +396,38 @@ export function WaybillActions({
             </div>
           )}
 
-          {(action === 'manual' || action === 'void') && (
+          {action === 'void' && inBatch && (
+            <Alert className="border-amber-300 bg-amber-50 dark:bg-amber-950/20">
+              <AlertDescription className="space-y-2">
+                <p>
+                  이 상자는 출고 배치에 들어 있어요. 송장을 무효로 하면 새 송장을 받을 때까지
+                  현장에서 이 배치를 시작하거나 이 상자를 출고할 수 없어요.
+                </p>
+                {shown.includes('reissue') && canRun(useReissueWaybill) && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => openWithReason('reissue')}
+                  >
+                    무효로 하고 바로 새로 발급하기
+                  </Button>
+                )}
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {(action === 'void' || action === 'reissue') && (
+            <OperationReasonFields
+              type={action === 'void' ? 'waybill_void' : 'waybill_reissue'}
+              value={reasonValue}
+              onChange={setReasonValue}
+              showErrors={showReasonErrors}
+            />
+          )}
+
+          {action === 'manual' && (
             <div className="space-y-1.5">
-              <Label htmlFor="waybill-reason">
-                사유{action === 'void' ? ' (필수)' : ' (선택)'}
-              </Label>
+              <Label htmlFor="waybill-reason">사유 (선택)</Label>
               <Input
                 id="waybill-reason"
                 value={reason}

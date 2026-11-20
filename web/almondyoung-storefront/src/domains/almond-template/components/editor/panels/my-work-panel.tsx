@@ -209,7 +209,7 @@ export function MyWorkPanel({ editor }: { editor: AlmondEditor }) {
             </div>
             {menuId === item.id && (
               <ul className="absolute top-full right-0 z-20 w-[170px] rounded-[5px] bg-white py-3 shadow-[1px_2px_8px_rgba(0,0,0,0.15)]">
-                {designer && (
+                {designer && item.status === "published" && (
                   <li>
                     <button
                       type="button"
@@ -220,7 +220,7 @@ export function MyWorkPanel({ editor }: { editor: AlmondEditor }) {
                       }}
                       className="h-10 w-full pl-[52px] text-left text-[14px] font-medium text-[#555] hover:text-[#111]"
                     >
-                      {item.status === "published" ? "게시 내리기" : "게시하기"}
+                      게시 내리기
                     </button>
                   </li>
                 )}

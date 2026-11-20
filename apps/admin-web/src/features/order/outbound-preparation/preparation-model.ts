@@ -1,12 +1,121 @@
 import type {
   OutboundPreparationSummary,
   PlannedShipment,
+  PreparationBatchReturn,
   PreparationBucket,
   PreparationShipmentDto,
+  PreparationShortPickLine,
 } from '@/lib/types/dto/fulfillment';
 
 // 한 번에 출고 준비하는 상자 수 상한. 서버 BulkShipmentIdsDto 의 ArrayMaxSize(100) 과 같아야 한다.
 export const PREPARATION_BATCH_LIMIT = 100;
+
+// 고른 상자로 할 일이 있는 분류. 출고불가·정보 부족은 고칠 곳으로 보낼 뿐 고를 것이 없다.
+export const SELECTABLE_BUCKETS: ReadonlySet<PreparationBucket> = new Set([
+  'ready',
+  'partial',
+  'resume',
+  'mergeable',
+]);
+
+// 한꺼번에 고를 상자. 결품으로 돌아온 상자는 자리 수량을 확인한 뒤 하나씩 고른다.
+export function bulkSelectableShipments(
+  shipments: PreparationShipmentDto[]
+): PreparationShipmentDto[] {
+  return shipments
+    .filter((shipment) => !shipment.shortPick)
+    .slice(0, PREPARATION_BATCH_LIMIT);
+}
+
+export function shortPickText(lines: PreparationShortPickLine[]): string {
+  return `결품 — ${lines
+    .map(
+      (line) => `${line.name} ${line.shortQty}개 모자람 (${line.locationCode})`
+    )
+    .join(', ')}`;
+}
+
+const KST_MINUTE = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'Asia/Seoul',
+  month: 'numeric',
+  day: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+});
+
+function kstMinuteText(iso: string): string {
+  const parts = Object.fromEntries(
+    KST_MINUTE.formatToParts(new Date(iso)).map((part) => [
+      part.type,
+      part.value,
+    ])
+  );
+
+  return `${parts.month}월 ${parts.day}일 ${parts.hour}:${parts.minute}`;
+}
+
+export type ShipmentGroup = 'short_pick' | 'batch_return' | 'other';
+
+export function shipmentGroupOf(
+  shipment: Pick<PreparationShipmentDto, 'shortPick' | 'batchReturn'>
+): ShipmentGroup {
+  if (shipment.shortPick) {
+    return 'short_pick';
+  }
+
+  return shipment.batchReturn ? 'batch_return' : 'other';
+}
+
+// 상자 상세로 가 볼 까닭이 있는 행. 고칠 것이 있거나, 송장 오류가 있거나, 배치에서 돌아와
+// 무엇을 뺐는지·무엇이 남았는지를 상세의 작업 기록으로 확인하는 상자다.
+export function showsShipmentDetailLink(
+  bucket: PreparationBucket,
+  shipment: Pick<PreparationShipmentDto, 'shortPick' | 'batchReturn' | 'reason'>
+): boolean {
+  if (bucket === 'needs_info') return true;
+  if (bucket === 'resume' && shipment.reason) return true;
+  return shipmentGroupOf(shipment) !== 'other';
+}
+
+// 언제·어느 배치에서·어디서 뺐는지. 사유는 따로 보인다.
+export function batchReturnText(batchReturn: PreparationBatchReturn): string {
+  return [
+    kstMinuteText(batchReturn.exitedAt),
+    `${batchReturn.batchNumber}에서 뺌`,
+    batchReturn.place,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+// 배치에서 빠져 돌아온 상자를 이 내역에서 다시 보내려면 무엇을 하면 되는지. 송장 오류처럼
+// 서버가 이미 다음 할 일을 적어 준 상자와 결품 상자는 그 안내를 따른다.
+export function batchReturnNextStep(
+  bucket: PreparationBucket,
+  shipment: Pick<PreparationShipmentDto, 'shortPick' | 'batchReturn' | 'reason'>
+): string | null {
+  if (!shipment.batchReturn || shipment.shortPick || shipment.reason) {
+    return null;
+  }
+
+  switch (bucket) {
+    case 'resume':
+      return shipment.batchReturn.needsNewWaybill
+        ? '«이어서 출고 준비»를 누르면 새 송장을 받아 다시 배치에 담아요'
+        : '«이어서 출고 준비»를 누르면 지금 송장으로 다시 배치에 담아요';
+    case 'ready':
+      return '«출고 준비»를 누르면 다시 배치에 담아요';
+    case 'mergeable':
+      return '같이 보낼 주문과 합치거나 «따로 보내기»로 다시 준비해요';
+    case 'partial':
+      return '재고가 모자라요 — «있는 것만 먼저 보내기»로 나누거나 재고를 채운 뒤 다시 준비해요';
+    case 'unavailable':
+      return '재고가 모자라요 — 재고를 채운 뒤 다시 준비해요';
+    default:
+      return null;
+  }
+}
 
 export function plannedOrderText(
   shipment: Pick<PlannedShipment, 'shipmentId' | 'orderNos'>

@@ -106,3 +106,35 @@ describe('buildPlan — [치명] 파일 간 중복이 단일상품을 옵션상�
     expect(item.barcode).toBe('10579820000');
   });
 });
+
+describe('바코드번호2 (#1356)', () => {
+  const HEADER2 = [...HEADER, '바코드번호2'];
+  const rows2 = (...rs: string[][]): string[][] => [HEADER2, ...rs];
+
+  it('바코드번호2 를 따로 읽고 수식 꼴은 벗긴다', () => {
+    const [item] = parseFile(rows2(['P1', '100', '상품1', 'I1', '', '="B1"', '="S1"']), 'f.csv', true);
+
+    expect(item).toMatchObject({ barcode: 'B1', barcode2: 'S1' });
+  });
+
+  it('바코드번호2 열이 없으면 빈 값', () => {
+    const [item] = parseFile(rows(['P1', '100', '상품1', 'I1', '', 'B1']), 'f.xls', true);
+
+    expect(item.barcode2).toBe('');
+  });
+
+  it('buildPlan 이 barcode2 를 SKU 로 넘긴다', () => {
+    const items = parseFile(
+      rows2(
+        ['', '800', '단일', 'U1', '단일상품', 'B1', 'S1'],
+        ['', '801', '옵션상품', 'O1', '빨강', 'B2', 'S2'],
+        ['', '801', '옵션상품', 'O2', '파랑', 'B3', ''],
+      ),
+      'f.csv',
+      true,
+    );
+    const { skus } = buildPlan(dedupeByItemCode(items));
+
+    expect(Object.fromEntries(skus.map((s) => [s.code, s.barcode2]))).toEqual({ U1: 'S1', O1: 'S2', O2: '' });
+  });
+});

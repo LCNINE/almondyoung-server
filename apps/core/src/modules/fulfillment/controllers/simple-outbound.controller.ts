@@ -18,6 +18,7 @@ import { PermissionCheckpoints, User, RequirePermission, RequireAnyPermission } 
 import { ForceSimpleOutboundDto, SimpleOutboundScanDto, SimpleOutboundStateDto } from '../dto/simple-outbound.dto';
 import { ShipmentWaybillReader, ShipmentByWaybillResult } from '../reader/shipment-waybill.reader';
 import { SimpleOutboundService } from '../services/simple-outbound.service';
+import { RecordsOutboundRejection } from '../scan-rejections/outbound-rejection.interceptor';
 
 type AuthenticatedUser = { id?: string; userId?: string; sub?: string; roles?: string[] } | undefined;
 
@@ -51,6 +52,7 @@ export class SimpleOutboundController {
 
   @RequirePermission('fulfillment.warehouse.operate')
   @Post(':shipmentId/simple-outbound-scans')
+  @RecordsOutboundRejection('shipment.simple_outbound.scan')
   @ApiHeader({ name: 'Idempotency-Key', required: true })
   @ApiOperation({ summary: '단순출고 스캔 — 피킹·검수·자동 출고를 한 트랜잭션에서 처리' })
   async scan(
@@ -71,6 +73,7 @@ export class SimpleOutboundController {
 
   @RequireAnyPermission('fulfillment.dispatch.force', 'fulfillment.dispatch.station_force')
   @Post(':shipmentId/simple-outbound-forces')
+  @RecordsOutboundRejection('shipment.simple_outbound.force')
   @ApiHeader({ name: 'Idempotency-Key', required: true })
   @ApiOperation({ summary: '단순출고 강제완료 — 미피킹 수량을 채우고 강제 출고' })
   async force(

@@ -15,7 +15,7 @@ export class OutboundPreparationService {
 
   summarize(
     warehouseId: string,
-    page?: Pick<OutboundPreparationQueryDto, 'bucket' | 'offset'>,
+    page?: Pick<OutboundPreparationQueryDto, 'bucket' | 'offset' | 'holders'>,
     tx?: DbTx,
   ): Promise<OutboundPreparationSummaryDto> {
     return this.reader.summarize(warehouseId, page, tx);

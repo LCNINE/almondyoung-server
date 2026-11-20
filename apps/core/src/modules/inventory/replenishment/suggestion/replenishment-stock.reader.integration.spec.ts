@@ -228,6 +228,18 @@ describeIfDb('ReplenishmentStockReader (DB integration)', () => {
     });
   });
 
+  it('위탁 업체 화주의 SKU 는 목록에서 빠진다', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const [consignment] = await trx
+        .insert(wmsTables.holders)
+        .values({ name: `it-vendor-${randomUUID().slice(0, 8)}`, isOurAsset: false })
+        .returning();
+      const { skuId } = await seedSku(trx, consignment.id);
+      const reader = new ReplenishmentStockReader(boundDbService(trx));
+      expect(await reader.listSkuMasters(trx, [skuId])).toEqual([]);
+    });
+  });
+
   it('판매 창고가 정확히 하나여야 한다', async () => {
     await inRollbackTx(db, async (trx) => {
       // 롤백 트랜잭션 안에서 기존 판매 창고를 전부 끄고 하나만 켠다

@@ -15,6 +15,7 @@ export interface PreparationFailure {
   stage: PreparationStage;
   message: string;
   retryable: boolean;
+  code?: string;
 }
 
 export interface PreparationProgress {
@@ -67,6 +68,7 @@ type StageResult = {
   shipmentId: string;
   outcome: 'success' | 'failed' | 'retry' | 'immediate';
   message?: string;
+  code?: string;
 };
 
 function bulkResults(result: BulkShipmentResult): StageResult[] {
@@ -79,6 +81,7 @@ function bulkResults(result: BulkShipmentResult): StageResult[] {
         shipmentId: failure.shipmentId,
         outcome: failure.transient ? 'retry' : 'failed',
         message: failure.message,
+        code: failure.code,
       })
     ),
   ];
@@ -225,7 +228,13 @@ export async function runOutboundPreparation(
         } else if (result?.outcome === 'retry') {
           delayed.set(shipmentId, message);
         } else {
-          failures.push({ shipmentId, stage, message, retryable: false });
+          failures.push({
+            shipmentId,
+            stage,
+            message,
+            retryable: false,
+            code: result?.code,
+          });
         }
       }
 

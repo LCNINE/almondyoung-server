@@ -115,10 +115,45 @@ bash scripts/sellmate/run.sh live build-location-master            # dry-run
 bash scripts/sellmate/run.sh live build-location-master --apply    # 반영
 ```
 
+## 컷오버: 입고기본존 재고를 선반으로 (`move-stock-to-shelf.ts`, #1236)
+
+**T 당일, 마지막 `sync-stock`·`load-shelf-positions` 직후에 한 번만.** 셀메이트 위치 텍스트가 선반 로케이션 하나로 읽히는 SKU 의
+입고기본존 재고를 그 선반으로 MOVE(원장 이벤트)한다. 나머지는 사유와 함께 CSV 로 남겨 컷오버 뒤 실사 대상이 된다.
+
+- 판정은 `apps/core/src/modules/inventory/core/shelf-move-verdict.ts`(컷오버 판정 «로케이션 2» 와 같은 함수). 남기는 사유: 위치 없음·낡은 위치 행·못 읽는 텍스트·고쳐 읽은 코드(스위치 꺼짐)·로케이션 없음·다른 선반에 재고·배정 걸림·적치 대기·불일치.
+- `--positions-since` 는 T 당일 `load-shelf-positions` 를 돌리기 **직전** 시각이다. 그보다 앞서 쓰인 위치 행은 셀메이트에서 지워졌을 수 있어 믿지 않는다(적재는 지우지 않는다).
+- 고쳐 읽은 코드(`CC-4-1` → `CC-04-01` 등)는 현장 확인 전까지 꺼져 있다. `--include-rule=zero-pad,dash-position,custom-bin` 로 규칙마다 켠다.
+- 며칠 뒤 다시 돌리지 않는다 — 묶이지 않은 앱 입고분까지 쓸어 간다.
+
+```bash
+bash scripts/sellmate/run.sh live move-stock-to-shelf --positions-since=<시각>            # dry-run
+bash scripts/sellmate/run.sh live move-stock-to-shelf --positions-since=<시각> --apply    # 반영
+# 판매 창고가 둘 이상이면 --warehouse-id=<부천 창고 id> 를 붙인다
+# 동시 처리 기본 4(--concurrency). 11-18 라이브에서 8·16 은 sst 터널을 죽였다. 4 로 dry-run 약 3분, apply 는 그보다 몇 배 길다
+```
+
+## 바코드번호2 백필 (`backfill-barcode2.ts`, #1356)
+
+셀메이트 «현재고 전체» CSV 의 `바코드번호2` 를 이미 적재된 SKU 에 보조 바코드(`is_primary=false`)로 넣는다.
+T 부터 스캔은 core 가 `sku_barcodes` 에서 찾으므로, 셀메이트에서 스캔되던 바코드번호2 가 없으면 «모르는 바코드»가 된다.
+새로 가져오는 SKU 는 `import-products` 가 같은 규칙(`barcode2-plan.ts`)으로 함께 넣는다.
+
+- 보조 바코드만 넣는다. SKU·그룹·대표 바코드는 건드리지 않는다. 대표 바코드와 같은 값·빈 값은 건너뛴다.
+- 이미 같은 SKU 에 달린 값(대표든 보조든)은 그대로 두고, 다른 SKU 가 쓰는 값은 넣지 않고 충돌로 보고한다. 같은 값을 다른 품목의 대표가 원하면 대표가 이긴다.
+- 출력: 넣을 것 / 이미 같은 SKU / 충돌 / core 에 SKU 없음. 넣을 것·충돌에는 재고 있는 SKU 수를 붙인다.
+- 기본은 dry-run(읽기 전용 트랜잭션). `--apply` 로 반영. 다시 돌려도 안전하다. 셀메이트는 테넌트 1 의 것이라 기본 `DB_NAME=core` 에만 돈다.
+- **`--apply` 직전에 «현재고 전체» 를 다시 받는다** — 받은 뒤에 생긴 SKU 는 파일에 없어 빠진다.
+- 끝: 다시 돌린 dry-run 의 «core 에 넣을 것» 이 0. 충돌 목록은 사람이 정한다. 그 다음 아래 `register-missing-barcodes` 를 돌린다.
+
+```bash
+DRY_RUN=1 bash scripts/sellmate/run.sh live backfill-barcode2 ~/다운로드/01_현재고_전체_YYYYMMDD.csv           # dry-run
+bash scripts/sellmate/run.sh live backfill-barcode2 ~/다운로드/01_현재고_전체_YYYYMMDD.csv --apply              # 반영
+```
+
 ## 바코드 없는 SKU 에 SKU 코드 등록 (`register-missing-barcodes.ts`, #1281)
 
 `sku_barcodes` 행이 하나도 없는 SKU 에 `skus.code` 를 대표 바코드(`is_primary`)로 넣는다. 스테이션 SKU 라벨이 바코드 없이 찍히지 않게 하는 일회성 보충이다.
-**#1356 백필 뒤에** 돌린다(백필이 채울 수 있는 SKU 를 먼저 채워야 이 스크립트가 건드릴 SKU 가 줄어든다). 항상 dry-run 으로 먼저 본다.
+**#1356 백필(`backfill-barcode2`, 위) 뒤에** 돌린다(백필이 채울 수 있는 SKU 를 먼저 채워야 이 스크립트가 건드릴 SKU 가 줄어든다). 항상 dry-run 으로 먼저 본다.
 
 - 기본은 dry-run(읽기 전용 트랜잭션). `--apply` 로 반영. 이미 바코드가 있는 SKU 는 건드리지 않고, 그 코드를 다른 SKU 가 쓰면 넣지 않고 충돌로 보고한다. 다시 돌려도 안전하다.
 - 등록 대상 SKU 코드 목록을 출력하고 재고(`stock_ledgers.qty` 합)가 있는 SKU 는 ★ 로 먼저 보인다 — T 전에 스티커를 뽑을 대상이다. dry-run 에서도 같은 목록이 나온다.
@@ -181,9 +216,9 @@ bash scripts/sellmate/run.sh live evening-reconcile close apps/core/tmp/<다시 
 
 ### 첫 live `--apply` 전에 사람이 확인할 것
 
-- [ ] 재고 수정 업로드가 **바코드번호 1~3·글로벌바코드 중 어느 것**과 맞추는지. 시험 상품 1개의 값을 바꿔 올리고 되돌려 본다. 결과에 따라 CSV 바코드 열을 정한다(`COL_*` 환경변수로 덮는다).
-- [ ] 마켓에 보내는 숫자에 **안정재고**가 끼는지. 끼면 `U` 의 정의를 고친다.
-- [ ] 셀메이트 미발송 주문 목록 export 에 **판매처와 주문번호** 열이 있는지, 자사몰 주문번호가 `YYYYMMDD-display_id` 꼴로 남는지.
-- [ ] 재고 현황 CSV 양식에 바코드 열이 있는지. 없으면 «개발팀 데이터 내보내기용» 양식에 더한다.
+- [x] 재고 수정 업로드가 **바코드번호 1~3·글로벌바코드 중 어느 것**과 맞추는지 — 2026-11-19 라이브 시험: **바코드번호(숫자, 재고 CSV 의 `바코드번호(서식)` 값)** 로 맞추고 바코드번호2 는 «찾을 수 없습니다». 업로드 CSV 가 이미 그 값을 쓰므로 `COL_*` 는 그대로(바코드번호3·글로벌바코드는 시험 못 함). 절차·화면은 컷오버 런북 `docs/runbooks/sellmate-cutover-phase1.md` §1.
+- [x] 마켓에 보내는 숫자에 **안정재고**가 끼는지 — 2026-11-19 운영자 확인: 끼지 않는다(셀메이트 안의 발주용 필터 값). `U` 그대로.
+- [x] 셀메이트 미발송 주문 목록 export 에 **판매처와 주문번호** 열이 있는지 — 기본 양식의 `판매처명`·`판매처주문번호`. «추가주문생성» 주문의 `셀-…-NN` 번호는 원 주문 번호로 읽는다. 파일은 비밀번호가 걸려 받아진다 — 두 열만 뽑아 넘긴다(런북 §3).
+- [x] 재고 현황 CSV 양식에 바코드 열이 있는지 — «개발팀 데이터 내보내기용» 에 있다. 이 양식의 상품별 `합계` 행은 파서가 건너뛴다.
 
 컷오버 사전 점검(`scripts/ops/cutover-preflight/index.ts`)의 «재고 1. 저녁 맞추기» 절(`checks/reconcile.ts`)이 본다.

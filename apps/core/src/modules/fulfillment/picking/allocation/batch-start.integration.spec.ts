@@ -273,6 +273,30 @@ describeIfDb('배치 시작 (startBatchPicking)', () => {
     });
   });
 
+  it('막힌 박스마다 그 박스에 든 주문번호를 싣는다 — 표시 번호가 없으면 채널 주문번호', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { first } = await seedTwoBoxBatch(tx, 1, 5);
+      await tx.update(wmsTables.waybills).set({ status: 'voided' }).where(eq(wmsTables.waybills.id, first.waybillId));
+      await tx.execute(rawSql`
+        UPDATE sales_orders SET display_order_no = NULL, channel_order_id = 'acme-2'
+        WHERE id IN (
+          SELECT fo.sales_order_id FROM shipment_lines sl
+          JOIN fulfillment_order_items foi ON foi.id = sl.fulfillment_order_item_id
+          JOIN fulfillment_orders fo ON fo.id = foi.fulfillment_order_id
+          WHERE sl.shipment_id = ${first.shipmentId})`);
+      const { picking } = assembleOutbound(tx);
+      const error = await tx
+        .transaction((trx) =>
+          picking.start({ batchId: first.batchId, actorId: first.actorId, idempotencyKey: `s-${randomUUID()}` }, trx),
+        )
+        .catch((e: unknown) => e);
+      const errors = (error as { response: { errors: Array<Record<string, unknown>> } }).response.errors;
+      expect(errors).toEqual([
+        expect.objectContaining({ shipmentId: first.shipmentId, reason: 'WAYBILL_NOT_READY', orderNos: ['acme-2'] }),
+      ]);
+    });
+  });
+
   it('E8: 한 로케이션에서 전량 가능한 곳이 있으면 코드가 앞선 1개짜리 로케이션을 쓰지 않는다', async () => {
     await inRollbackTx(db, async (tx) => {
       const box = await seedPickableShipment(tx, 2);

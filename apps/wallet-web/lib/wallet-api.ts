@@ -459,12 +459,20 @@ export async function cancelPaymentIntent(intentId: string): Promise<void> {
  * checkout). Releases provider-side holds and returns the intent to CREATED so
  * it can be retried/reused. Best-effort: callers ignore failures.
  */
-export async function abandonPaymentIntent(intentId: string): Promise<void> {
+export interface CheckoutFailure {
+  code: string | null;
+  message: string | null;
+}
+
+/** failure 는 로그용이다. 토스 결제창이 리다이렉트 없이 오류를 던지고 끝났을 때 그 사유를 서버 로그에 남긴다. */
+export async function abandonPaymentIntent(intentId: string, failure?: CheckoutFailure): Promise<void> {
   const res = await fetchWithAuthBounce(paymentIntentRoute(intentId, 'abandon'), {
     method: 'POST',
     headers: {
       'Idempotency-Key': createRequestId(),
+      ...(failure ? { 'Content-Type': 'application/json' } : {}),
     },
+    body: failure ? JSON.stringify(failure) : undefined,
     credentials: 'include',
   });
   if (!res.ok) {

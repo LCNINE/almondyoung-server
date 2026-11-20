@@ -36,6 +36,6 @@ import { OAuthService } from './oauth.service';
   ],
   controllers: [OAuthController],
   providers: [OAuthService, OAuthManager, OAuthReader, OAuthRepository],
-  exports: [OAuthRepository],
+  exports: [OAuthRepository, OAuthService],
 })
 export class OAuthModule {}

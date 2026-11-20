@@ -14,7 +14,7 @@ import { useScanner } from '../../core/hardware/scan/useScanner';
 import type { PrintRaw } from '../../core/hardware/print/labelPrinter';
 import { WarehousePicker } from '../warehouse/WarehousePicker';
 import { BatchLabelPrintButton } from './BatchLabelPrintButton';
-import { StartBatchButton } from './StartBatchButton';
+import { RemovedOnStartNotice, StartBatchButton, type RemovedOnStart } from './StartBatchButton';
 import { batchNameOf } from './batchStatus';
 import { JoinBoxPanel } from './JoinBoxPanel';
 import { RemoveBoxPanel } from './RemoveBoxPanel';
@@ -57,6 +57,7 @@ function OutboundQueueContent({
     setPrintingBatch(running ? batchId : null);
   };
   const [panel, setPanel] = useState<{ kind: 'join' | 'remove'; batchId: string } | null>(null);
+  const [removedOnStart, setRemovedOnStart] = useState<Record<string, RemovedOnStart>>({});
   // 패널이 열려 있으면 스캔은 패널이 받는다 — 같은 스캔이 박스 열기로도 가면 안 된다.
   const panelOpen = useRef(false);
   panelOpen.current = panel !== null;
@@ -250,8 +251,12 @@ function OutboundQueueContent({
               {batch.withdrawingItems > 0 && (
                 <p className="text-sm text-amber-700">빠지는 중 {batch.withdrawingItems}</p>
               )}
+              {removedOnStart[batch.id] ? <RemovedOnStartNotice outcome={removedOnStart[batch.id]} /> : null}
               {batch.startedAt === null ? (
-                <StartBatchButton batchId={batch.id} />
+                <StartBatchButton
+                  batchId={batch.id}
+                  onStarted={(outcome) => setRemovedOnStart((prev) => ({ ...prev, [batch.id]: outcome }))}
+                />
               ) : (
                 <div className="flex flex-wrap gap-2">
                   {labelPrinting && (

@@ -3,6 +3,7 @@ import { ModuleRef } from '@nestjs/core';
 import { DbTx } from '../../inventory/schema/inventory.schema';
 import { WaybillManager, type Actor, type IssueOpts } from './waybill.manager';
 import type { BatchResultItem, WaybillRow, WaybillView } from './waybill.types';
+import { withdrawalVoidKey } from '../services/waybill-void-keys';
 
 export function toView(row: WaybillRow): WaybillView {
   return {
@@ -71,7 +72,7 @@ export class WaybillService {
 
     // 외부 tx는 아직 커밋 전이다. 운영자 취소가 커밋된 뒤에만 별도 트랜잭션으로 재개한다.
     if (!tx) {
-      await this.resumeAfterVoid(row.shipmentId);
+      await this.afterVoid(row);
     }
 
     return toView(row);
@@ -89,7 +90,7 @@ export class WaybillService {
 
       if (!waybill) return false;
 
-      await this.void(waybill.id, { reason: 'withdrawn:excluded' }, `withdrawal-void:${workItemId}:${waybill.id}`, {
+      await this.void(waybill.id, { reason: 'withdrawn:excluded' }, withdrawalVoidKey(workItemId, waybill.id), {
         id: waybill.actorId,
         roles: [],
       });
@@ -102,16 +103,33 @@ export class WaybillService {
     }
   }
 
-  private async resumeAfterVoid(shipmentId: string): Promise<void> {
+  private async afterVoid({ shipmentId, voidedAt }: WaybillRow): Promise<void> {
+    if ((await this.resumeAfterVoid(shipmentId)) || !voidedAt) {
+      return;
+    }
+
+    try {
+      await this.manager.returnIdleToDraft(shipmentId, voidedAt);
+    } catch (error) {
+      this.logger.warn(`Failed to return shipment to draft after waybill void: shipmentId=${shipmentId}`, error);
+    }
+  }
+
+  // 무효화를 기다리던 합포장·취소가 있었는지. 있으면 상자 상태는 그쪽이 정한다
+  private async resumeAfterVoid(shipmentId: string): Promise<boolean> {
+    let pending = false;
+
     try {
       const { ConsolidationService } = await import('../services/consolidation.service');
       const consolidation = this.moduleRef.get(ConsolidationService, { strict: false });
       const operationId = await consolidation.findPendingOperationIdForSource(shipmentId);
 
       if (operationId) {
+        pending = true;
         await consolidation.tryResumePending(operationId);
       }
     } catch (error) {
+      pending = true;
       this.logger.warn(`Failed to resume consolidation after waybill void: shipmentId=${shipmentId}`, error);
     }
 
@@ -121,11 +139,15 @@ export class WaybillService {
       const operationId = await planning.findPendingCancellationOperationId(shipmentId);
 
       if (operationId) {
+        pending = true;
         await planning.tryResumePendingCancellation(operationId);
       }
     } catch (error) {
+      pending = true;
       this.logger.warn(`Failed to resume cancellation after waybill void: shipmentId=${shipmentId}`, error);
     }
+
+    return pending;
   }
 
   async voidForRecall(
@@ -138,8 +160,29 @@ export class WaybillService {
     return toView(await this.manager.voidForRecall(shipmentId, dto, idemKey, actor, tx));
   }
 
-  async reissue(shipmentId: string, opts: IssueOpts, idemKey: string, actor: Actor): Promise<WaybillView> {
-    return toView(await this.manager.reissue(shipmentId, opts, idemKey, actor));
+  async reissue(
+    shipmentId: string,
+    opts: IssueOpts,
+    idemKey: string,
+    actor: Actor,
+    reason?: { reason: string; reasonCode?: string; requestChannel?: string; note?: string },
+  ): Promise<WaybillView> {
+    return toView(await this.manager.reissue(shipmentId, opts, idemKey, actor, reason));
+  }
+
+  /** 관리자 화면의 무효화 — 자동 무효화와 달리 작업 기록을 남긴다. */
+  async voidByOperator(
+    waybillId: string,
+    dto: { reason: string; reasonCode?: string; requestChannel?: string; note?: string },
+    idemKey: string,
+    actor: Actor,
+  ): Promise<WaybillView> {
+    const row = await this.manager.void(waybillId, { reason: dto.reason }, idemKey, actor, undefined, {
+      type: 'waybill_void',
+      ...dto,
+    });
+    await this.afterVoid(row);
+    return toView(row);
   }
 
   async getActiveWaybill(shipmentId: string, tx?: DbTx): Promise<WaybillView | null> {

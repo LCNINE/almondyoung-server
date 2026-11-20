@@ -66,7 +66,52 @@ export const WAYBILL_LABEL_NOT_ALLOCATED_MESSAGE =
 
 export const SHIPMENT_WITHDRAWN_MESSAGE = '빠진 박스예요. 송장은 버려 주세요.';
 
+// 출고 저장 경로(스캔·강제출고)가 저장점 안에서 거절한 코드를 현장이 할 일로 묶는다.
+const RETRY_OUTBOUND_MESSAGE = '방금 박스 상태가 바뀌어 반영하지 못했어요. 한 번 더 해 주세요.';
+const BATCH_RECORD_MISSING_MESSAGE =
+  '이 박스의 배치 작업 기록을 찾지 못했어요. 송장을 다시 스캔하고, 같으면 관리자에게 확인해 주세요.';
+const INSPECTION_MISMATCH_MESSAGE =
+  '검수 기록이 맞지 않아 반영하지 못했어요. 담은 상품은 그대로 두고 관리자에게 확인해 주세요.';
+const DISPATCH_MISMATCH_MESSAGE =
+  '출고 수량과 재고 기록이 맞지 않아 출고하지 못했어요. 담은 상품은 그대로 두고 관리자에게 확인해 주세요.';
+const PICKING_METHOD_MESSAGE = '이 배치의 피킹 방식을 확인해야 해요. 관리자에게 문의해 주세요.';
+const WAITING_OPERATION_MESSAGE =
+  '이 박스에 처리 중인 변경(취소·합포장 등)이 있어요. 관리자에게 확인해 주세요.';
+
+const SAVE_POINT_OUTBOUND_MESSAGES: Record<string, string> = {
+  PICKING_COMPONENT_CHANGED_RETRY: RETRY_OUTBOUND_MESSAGE,
+  SHIPMENT_COMPONENT_CHANGED_RETRY: RETRY_OUTBOUND_MESSAGE,
+  SHIPMENT_WORK_ITEM_CHANGED: RETRY_OUTBOUND_MESSAGE,
+  SHIPMENT_SESSION_CHANGED: RETRY_OUTBOUND_MESSAGE,
+  WORK_ITEM_STALE_LEASE_VERSION: RETRY_OUTBOUND_MESSAGE,
+  SHIPMENT_WORK_ITEM_MISSING: BATCH_RECORD_MISSING_MESSAGE,
+  SHIPMENT_SESSION_MISSING: BATCH_RECORD_MISSING_MESSAGE,
+  WORK_ITEM_NOT_CLAIMABLE: BATCH_RECORD_MISSING_MESSAGE,
+  SHIPMENT_INSPECTION_LINE_UNKNOWN: INSPECTION_MISMATCH_MESSAGE,
+  SHIPMENT_LINE_OVER_INSPECTED: INSPECTION_MISMATCH_MESSAGE,
+  SHIPMENT_INSPECTION_BARCODE_UNKNOWN: INSPECTION_MISMATCH_MESSAGE,
+  SHIPMENT_INSPECTION_SKU_MISMATCH: INSPECTION_MISMATCH_MESSAGE,
+  SHIPMENT_INSPECTION_CUSTODY_SHORT: INSPECTION_MISMATCH_MESSAGE,
+  SHIPMENT_INSPECTION_INCOMPLETE: INSPECTION_MISMATCH_MESSAGE,
+  SHIPMENT_DISPATCH_ALLOCATION_MISMATCH: DISPATCH_MISMATCH_MESSAGE,
+  SHIPMENT_DISPATCH_CUSTODY_MISMATCH: DISPATCH_MISMATCH_MESSAGE,
+  SHIPMENT_TOTE_NOT_RELEASED:
+    '바구니 배정이 남아 있어 출고하지 못했어요. 관리자에게 바구니 배정을 풀어 달라고 해 주세요.',
+  SHIPMENT_INVOICE_NOT_READY:
+    '이 박스의 송장이 출고할 상태가 아니에요. 관리자에게 송장 상태를 확인해 달라고 해 주세요.',
+  WORK_ITEM_HANDOFF_REQUIRED: '다른 작업자가 맡은 박스예요. 관리자에게 넘겨 달라고 해 주세요.',
+  PICKING_BATCH_STRATEGY_MISMATCH: PICKING_METHOD_MESSAGE,
+  PICKING_STRATEGY_PROVIDER_MISMATCH: PICKING_METHOD_MESSAGE,
+  PICKING_STRATEGY_REGISTRY_UNAVAILABLE: PICKING_METHOD_MESSAGE,
+  WORK_ITEM_WAITING_OPERATION_CONFLICT: WAITING_OPERATION_MESSAGE,
+  WORK_ITEM_WAITING_OPERATION_INVALID: WAITING_OPERATION_MESSAGE,
+  WORK_ITEM_WAITING_OPERATION_MISSING: WAITING_OPERATION_MESSAGE,
+  WORK_ITEM_WAITING_OPERATION_UNSUPPORTED: WAITING_OPERATION_MESSAGE,
+};
+
 const OUTBOUND_CONFLICT_MESSAGES: Record<string, string> = {
+  SHIPMENT_HANDED_OVER_TO_SELLMATE:
+    '셀메이트가 내보내는 주문의 박스예요. 이 박스는 두고 다음으로 넘어가 주세요.',
   LOCATION_OUTBOUND_FORCE_PERMISSION_UNAVAILABLE:
     '강제출고 권한을 확인하지 못했어요. 연결과 로그인을 확인해 주세요.',
   LOCATION_OUTBOUND_FORCE_PERMISSION_REQUIRED:
@@ -124,6 +169,14 @@ const OUTBOUND_CONFLICT_MESSAGES: Record<string, string> = {
     '방금 작업이 시작된 배치예요. 다시 넣어 주세요.',
   PICKING_SESSION_NOT_ACTIVE:
     '배치 재고 기록을 확인해야 해요. 관리자에게 문의해 주세요.',
+  SHIPMENT_NOT_DISPATCHABLE:
+    '지금 출고할 수 없는 박스예요. 주문이 취소되거나 바뀌었을 수 있어요. 담은 상품은 그대로 두고 관리자에게 확인해 주세요.',
+  SHIPMENT_NOT_INSPECTION_READY:
+    '아직 검수할 수 없는 박스예요. 관리자에게 확인해 주세요.',
+  SHIPMENT_SESSION_NOT_ACTIVE:
+    '배치 재고 기록을 확인해야 해요. 관리자에게 문의해 주세요.',
+  SHIPMENT_PACKER_LEASE_REQUIRED:
+    '이 박스의 작업자 확인이 맞지 않아요. 관리자에게 확인해 주세요.',
 };
 
 const INBOUND_WORKFLOW_MESSAGES: Record<string, string> = {
@@ -209,6 +262,11 @@ export function errorMessage(error: unknown, context?: ErrorContext): string {
     OUTBOUND_CONFLICT_MESSAGES[error.code]
   )
     return OUTBOUND_CONFLICT_MESSAGES[error.code];
+  if (error instanceof ApiError && context === 'outbound' && error.notApplied && error.code)
+    return (
+      SAVE_POINT_OUTBOUND_MESSAGES[error.code] ??
+      `반영되지 않았어요. 관리자에게 이 코드를 알려 주세요: ${error.code}`
+    );
   if (error instanceof ConflictError) {
     if (error.code === 'STOCKTAKING_COUNT_REQUIRED')
       return '아직 세지 않은 상품이 있어요. 모든 수량을 확인해 주세요.';

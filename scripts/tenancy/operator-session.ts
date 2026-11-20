@@ -7,7 +7,7 @@ import { signInStaff } from './staff-token';
 
 const TOKEN_REUSE_MS = 10 * 60_000;
 
-function ask(question: string, hidden: boolean): Promise<string> {
+export function ask(question: string, hidden: boolean): Promise<string> {
   let muted = false;
   const output = new Writable({
     write(chunk: Buffer, _enc, done) {

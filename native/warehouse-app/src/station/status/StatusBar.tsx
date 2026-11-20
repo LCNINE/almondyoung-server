@@ -5,6 +5,8 @@ import { localStoragePrefs, type DevicePrefs } from '../../core/data/devicePrefs
 import { currentServerReach, subscribeServerReach } from '../../core/data/serverStatus';
 import { readLabelPrinter } from '../../core/hardware/print/labelPrinter';
 import { lastPrintFailed, printerStatusVersion, subscribePrintOutcome } from '../../core/hardware/print/printerStatus';
+import { BoxChecks } from '../../core/operations/BoxCheckList';
+import { useHostBoxChecks } from '../../core/operations/boxChecks';
 import { useWorkRuntime } from '../../core/operations/OperationContext';
 import type { StoredOperation } from '../../core/operations/operationStore';
 import type { TabKey } from '../keys';
@@ -47,6 +49,7 @@ export function StatusBar({ tab, prefs = localStoragePrefs }: { tab: TabKey | nu
   const online = useSyncExternalStore(subscribeOnline, isOnline);
   const server = online ? reach : 'down';
   const unsent = useUnsentCount();
+  useHostBoxChecks();
   const batch = useCurrentBatchProgress();
   const items = statusBarItems({
     printer: { configured: readLabelPrinter(prefs) !== null, lastFailed: printFailed },
@@ -76,6 +79,7 @@ export function StatusBar({ tab, prefs = localStoragePrefs }: { tab: TabKey | nu
           </span>
         )
       )}
+      <BoxChecks compact keys />
     </footer>
   );
 }

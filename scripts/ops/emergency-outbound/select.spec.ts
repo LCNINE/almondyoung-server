@@ -1,0 +1,202 @@
+import type { BatchListItem, PreparationShipment, WorkItem, WorkItemStatus } from './core-api';
+import { selectTargets } from './select';
+
+const ship = (id: string, reason: string | null = null): PreparationShipment => ({
+  shipmentId: id,
+  orderNos: [`acme-${id}`],
+  itemSummary: 'x',
+  totalQty: 1,
+  single: true,
+  reason,
+  lines: [],
+  split: null,
+});
+const batch = (id: string, pickingMethod: string, started: boolean): BatchListItem => ({
+  id,
+  batchNumber: id,
+  name: id,
+  warehouseId: 'wh-acme',
+  status: started ? 'in_progress' : 'planned',
+  pickingMethod,
+  cartCapacity: 1,
+  totalItems: 1,
+  totalQty: 1,
+  withdrawingItems: 0,
+  scheduledPickingAt: '2026-11-18T00:00:00Z',
+  startedAt: started ? '2026-11-18T01:00:00Z' : null,
+  createdAt: '2026-11-18T00:00:00Z',
+});
+const wi = (batchId: string, shipmentId: string, status: WorkItemStatus): WorkItem => ({
+  id: `wi-${shipmentId}`,
+  batchId,
+  shipmentId,
+  status,
+});
+const base = { ready: [], resume: [], otherBuckets: [], batches: [] };
+
+describe('selectTargets', () => {
+  it('ready -> draft', () => {
+    expect(selectTargets({ ...base, ready: [ship('s1')] }).targets).toEqual([{ shipmentId: 's1', from: 'draft' }]);
+  });
+  it('resume -> planned', () => {
+    expect(selectTargets({ ...base, resume: [ship('s1')] }).targets).toEqual([{ shipmentId: 's1', from: 'planned' }]);
+  });
+  it('started individual picking -> location', () => {
+    const r = selectTargets({
+      ...base,
+      batches: [
+        {
+          batch: batch('b1', 'individual', true),
+          workItems: [wi('b1', 's1', 'picking'), wi('b1', 's2', 'queued')],
+        },
+      ],
+    });
+    expect(r.targets).toEqual([
+      { shipmentId: 's1', from: 'batch', batchId: 'b1', route: 'location' },
+      { shipmentId: 's2', from: 'batch', batchId: 'b1', route: 'location' },
+    ]);
+  });
+  it('packing in total_picking -> force', () => {
+    const r = selectTargets({
+      ...base,
+      batches: [
+        {
+          batch: batch('b1', 'total_picking', true),
+          workItems: [wi('b1', 's1', 'packing'), wi('b1', 's2', 'ready_to_pack')],
+        },
+      ],
+    });
+    expect(r.targets).toEqual([
+      { shipmentId: 's1', from: 'batch', batchId: 'b1', route: 'force' },
+      { shipmentId: 's2', from: 'batch', batchId: 'b1', route: 'force' },
+    ]);
+  });
+  it('queued in total_picking -> skipped', () => {
+    const r = selectTargets({
+      ...base,
+      batches: [{ batch: batch('b1', 'total_picking', true), workItems: [wi('b1', 's1', 'queued')] }],
+    });
+    expect(r.targets).toEqual([]);
+    expect(r.skipped).toEqual([{ shipmentId: 's1', reason: '다른 피킹 방식 배치에서 피킹 중' }]);
+  });
+  it('queued in not-started individual -> skipped', () => {
+    const r = selectTargets({
+      ...base,
+      batches: [{ batch: batch('b1', 'individual', false), workItems: [wi('b1', 's1', 'queued')] }],
+    });
+    expect(r.targets).toEqual([]);
+    expect(r.skipped[0].reason).toBe('시작 전 배치 — 앱/화면에서 시작하거나 배치에서 뺀 뒤 다시');
+  });
+  it("treats the run's own not-started batch as resumable", () => {
+    const r = selectTargets({
+      ...base,
+      ownBatchId: 'b1',
+      batches: [
+        {
+          batch: batch('b1', 'individual', false),
+          workItems: [wi('b1', 's1', 'queued'), wi('b1', 's2', 'picking')],
+        },
+        { batch: batch('b2', 'individual', false), workItems: [wi('b2', 's3', 'queued')] },
+      ],
+    });
+    expect(r.targets).toEqual([
+      { shipmentId: 's1', from: 'batch', batchId: 'b1', route: 'location' },
+      { shipmentId: 's2', from: 'batch', batchId: 'b1', route: 'location' },
+    ]);
+    expect(r.skipped.map((s) => s.shipmentId)).toEqual(['s3']);
+  });
+  it('mergeable -> skipped with 합칠 수 있는', () => {
+    const r = selectTargets({
+      ...base,
+      otherBuckets: [{ bucket: 'mergeable', shipments: [ship('s1')] }],
+    });
+    expect(r.skipped[0].reason).toContain('합칠 수 있는');
+    expect(r.skipped[0].orderNos).toEqual(['acme-s1']);
+  });
+  it('other buckets use a Korean bucket label and the core reason when there is one', () => {
+    const r = selectTargets({
+      ...base,
+      otherBuckets: [{ bucket: 'unavailable', shipments: [ship('s1', '재고 부족')] }],
+    });
+    expect(r.skipped[0].reason).toBe('재고 없음 — 재고 부족');
+  });
+  it('core 가 사유를 비워 보내도 버킷 뜻은 찍는다(2026-11-19 라이브: partial·unavailable 의 reason 이 null)', () => {
+    const r = selectTargets({
+      ...base,
+      otherBuckets: [
+        { bucket: 'partial', shipments: [ship('s1')] },
+        { bucket: 'unavailable', shipments: [ship('s2')] },
+        { bucket: 'needs_info', shipments: [ship('s3')] },
+      ],
+    });
+    expect(r.skipped.map((s) => s.reason)).toEqual([
+      '일부만 낼 수 있는 상자(재고가 모자란 줄이 있다)',
+      '재고 없음',
+      '정보 부족',
+    ]);
+  });
+  it('completed ignored; withdrawing and short_pick_recovery reported', () => {
+    const r = selectTargets({
+      ...base,
+      batches: [
+        {
+          batch: batch('b1', 'individual', true),
+          workItems: [
+            wi('b1', 's1', 'completed'),
+            wi('b1', 's2', 'excluded'),
+            wi('b1', 's3', 'withdrawing'),
+            wi('b1', 's4', 'short_pick_recovery'),
+          ],
+        },
+      ],
+    });
+    expect(r.targets).toEqual([]);
+    expect(r.skipped.map((s) => s.shipmentId)).toEqual(['s3', 's4']);
+  });
+  it('a shipment never appears twice (batch wins)', () => {
+    const r = selectTargets({
+      ...base,
+      ready: [ship('s1')],
+      resume: [ship('s1'), ship('s2')],
+      otherBuckets: [{ bucket: 'mergeable', shipments: [ship('s1')] }],
+      batches: [{ batch: batch('b1', 'individual', true), workItems: [wi('b1', 's1', 'picking')] }],
+    });
+    expect(r.targets).toEqual([
+      { shipmentId: 's1', from: 'batch', batchId: 'b1', route: 'location' },
+      { shipmentId: 's2', from: 'planned' },
+    ]);
+    expect(r.skipped).toEqual([]);
+  });
+  it('leaves the boxes of another emergency run to that run', () => {
+    const r = selectTargets({
+      ...base,
+      batches: [
+        {
+          batch: batch('b-morning', 'individual', true),
+          workItems: [
+            wi('b-morning', 's1', 'queued'),
+            wi('b-morning', 's2', 'picking'),
+            wi('b-morning', 's3', 'packing'),
+            wi('b-morning', 's4', 'completed'),
+          ],
+        },
+        {
+          batch: batch('b-app', 'individual', true),
+          workItems: [wi('b-app', 's5', 'picking'), wi('b-app', 's6', 'packing')],
+        },
+      ],
+      foreign: {
+        batches: new Map([['b-morning', '20261118-0830']]),
+        shipments: new Map([['s5', '20261118-0830']]),
+      },
+    });
+    expect(r.targets).toEqual([{ shipmentId: 's6', from: 'batch', batchId: 'b-app', route: 'force' }]);
+    const reason = '앞 실행 20261118-0830 의 상자 — 그 실행의 dispatch 로';
+    expect(r.skipped).toEqual([
+      { shipmentId: 's1', reason },
+      { shipmentId: 's2', reason },
+      { shipmentId: 's3', reason },
+      { shipmentId: 's5', reason },
+    ]);
+  });
+});

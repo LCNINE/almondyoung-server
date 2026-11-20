@@ -1,5 +1,5 @@
 import type { PgUpdateSetSource } from 'drizzle-orm/pg-core';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { FulfillmentInvariantService } from '../services/fulfillment-invariant.service';
 import {
@@ -10,6 +10,7 @@ import {
   ShipmentRow,
 } from '../services/shipment-aggregate';
 import type { ShipmentReservationService } from '../services/shipment-reservation.service';
+import { compatibleShippingProfileId } from '../services/shipping-profile';
 import {
   insertShipment,
   insertShipmentLine,
@@ -169,6 +170,14 @@ export async function editShipmentManifest<T>(
   const result = await body(writer, aggregates);
   closed = true;
 
+  // 줄이 바뀐 draft 창고 상자는 담긴 상품의 배송 프로필로 칸을 맞춘다(모두 같으면 그 값, 아니면 비움).
+  // 확정된 상자의 프로필은 확정이 정한 값이라 건드리지 않는다.
+  const resynced = await syncDraftShippingProfiles(
+    tx,
+    [...existingIds, ...created].filter((id) => lineChanged.has(id)),
+  );
+  for (const id of resynced) labelChanged.add(id);
+
   const now = edit.at ?? new Date();
   for (const id of existingIds) {
     if (!lineChanged.has(id) && !labelChanged.has(id)) continue;
@@ -178,4 +187,39 @@ export async function editShipmentManifest<T>(
     if (lineChanged.has(id)) await deps.reservations.recompute(id, tx, edit.at);
   }
   return result;
+}
+
+/** 바꾼 상자 id 를 돌려준다. */
+async function syncDraftShippingProfiles(tx: DbTx, shipmentIds: readonly string[]): Promise<string[]> {
+  if (shipmentIds.length === 0) return [];
+  const S = wmsTables.shipments;
+  const L = wmsTables.shipmentLines;
+  const boxes = await tx
+    .select({ id: S.id, status: S.status, warehouseId: S.warehouseId, shippingProfileId: S.shippingProfileId })
+    .from(S)
+    .where(inArray(S.id, [...shipmentIds]));
+  const drafts = boxes.filter((box) => box.status === 'draft' && box.warehouseId !== null);
+  if (drafts.length === 0) return [];
+
+  const lines = await tx
+    .select({ shipmentId: L.shipmentId, profileId: wmsTables.skus.deliveryProfileId })
+    .from(L)
+    .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, L.skuId))
+    .where(
+      inArray(
+        L.shipmentId,
+        drafts.map((box) => box.id),
+      ),
+    );
+
+  const changed: string[] = [];
+  for (const box of drafts) {
+    const profileId = compatibleShippingProfileId(
+      lines.filter((line) => line.shipmentId === box.id).map((line) => line.profileId),
+    );
+    if (profileId === box.shippingProfileId) continue;
+    await tx.update(S).set({ shippingProfileId: profileId }).where(eq(S.id, box.id));
+    changed.push(box.id);
+  }
+  return changed;
 }

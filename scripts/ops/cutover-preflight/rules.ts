@@ -1,6 +1,10 @@
 // DB·파일을 읽지 않는 판정 규칙. 여기만 유닛 테스트한다(rules.spec.ts).
 import { PERMISSION_CATALOG } from '../../../libs/authorization/src/permissions/permission-catalog';
 import { readShelfCode } from '../../../apps/core/src/modules/inventory/core/shelf-code-reading';
+import type {
+  ShelfKeepReason,
+  ShelfMoveVerdict,
+} from '../../../apps/core/src/modules/inventory/core/shelf-move-verdict';
 
 /** 카탈로그가 «첫 등록 때» 그 역할에 주게 적어 둔 권한 키. 라이브 부여의 기대값이다. */
 export function catalogGrantsFor(role: string): string[] {
@@ -57,6 +61,36 @@ export function orderSourceWired(adapterModuleText: string, sourceClass: string)
   return new RegExp(`createOrderProvider\\(\\s*\\w+\\s*,\\s*translator\\s*\\)`).test(adapterModuleText)
     ? new RegExp(`inject:\\s*\\[[^\\]]*\\b${sourceClass}\\b`).test(adapterModuleText)
     : false;
+}
+
+/**
+ * «로케이션 2»(#1236) — 입고기본존에 재고가 있는 SKU 마다 판정을 두 번 받는다: 고쳐 읽기 규칙 없이(이동 스크립트 기본값),
+ * 규칙을 다 켜고. 두 목록은 같은 순서의 SKU 쌍이다. 판정 스크립트는 신선도 기준을 모르므로 stale 은 0 으로 나온다.
+ */
+export function shelfMoveSummary(
+  verdicts: readonly ShelfMoveVerdict[],
+  verdictsAllRules: readonly ShelfMoveVerdict[],
+): { move: number; byReason: Record<ShelfKeepReason, number>; unlockedByRules: number } {
+  if (verdicts.length !== verdictsAllRules.length)
+    throw new Error('판정 목록 두 개의 길이가 다르다 — SKU 마다 한 쌍이어야 한다');
+  const byReason: Record<ShelfKeepReason, number> = {
+    'no-position': 0,
+    stale: 0,
+    unreadable: 0,
+    unconfirmed: 0,
+    'no-location': 0,
+    elsewhere: 0,
+  };
+  let move = 0;
+  let unlockedByRules = 0;
+  verdicts.forEach((v, i) => {
+    if (v.kind === 'move') move += 1;
+    else {
+      byReason[v.reason] += 1;
+      if (verdictsAllRules[i].kind === 'move') unlockedByRules += 1;
+    }
+  });
+  return { move, byReason, unlockedByRules };
 }
 
 /**
@@ -187,6 +221,38 @@ export type ReconcileFacts = {
 };
 
 export type Verdict = { level: 'ok' | 'bad' | 'dayOf' | 'info'; msg: string; fix?: string };
+
+/**
+ * 셀메이트 재고 sync 가 «금지선» 뒤에 돌았나 (#1251). sync-stock 은 절대값이라 한 번만 더 돌아도 core 원장을 되돌린다.
+ *
+ * 금지선은 T 가 아니라 저녁 맞추기 init 이다. 당일 순서가 «CSV 스냅샷 → 마지막 sync → init» 이고 T ≥ 스냅샷(#1247)이라,
+ * 마지막 sync 는 정상 컷오버에서도 T 뒤에 찍힌다 — T 와 비교하면 매번 빨갛다(11-19 로컬 리허설).
+ * init 이 생긴 뒤엔 sync-stock 이 스스로 거절하므로, init 뒤 sync 는 가드를 우회한 사고다.
+ * init 이 없으면 마지막 실행과 사고를 가를 수 없어 T 로 보수적으로 본다.
+ */
+export function judgeSellmateSyncAfterCutover(i: {
+  cutoverAt: Date | null;
+  lastSyncAt: Date | null;
+  initAt: Date | null;
+}): Verdict | null {
+  if (!i.cutoverAt) return null;
+  if (i.initAt) {
+    if (i.lastSyncAt && i.lastSyncAt > i.initAt)
+      return {
+        level: 'bad',
+        msg: `셀메이트 재고 sync 가 저녁 맞추기 init(${i.initAt.toISOString()}) 뒤(${i.lastSyncAt.toISOString()})에 돌았다 — 원장이 셀메이트 값으로 덮였다`,
+        fix: '즉시 sync 를 멈추고, 그 뒤의 앱 출고·입고분을 원장과 대조한다 (#1251 런북)',
+      };
+    return { level: 'ok', msg: `저녁 맞추기 init(${i.initAt.toISOString()}) 뒤 셀메이트 재고 sync 없음` };
+  }
+  if (i.lastSyncAt && i.lastSyncAt > i.cutoverAt)
+    return {
+      level: 'bad',
+      msg: `셀메이트 재고 sync 가 컷오버 시각 뒤(${i.lastSyncAt.toISOString()})에 돌았는데 저녁 맞추기 init 이 없다 — 마지막 실행인지 사고인지 가를 수 없다`,
+      fix: '마지막 sync 였으면 런북 §4-4 evening-reconcile init 을 먼저 한다. 그 뒤에도 돌았으면 sync 를 멈추고 원장을 대조한다 (#1251 런북)',
+    };
+  return { level: 'ok', msg: '컷오버 시각 뒤 셀메이트 재고 sync 없음' };
+}
 
 const RECONCILE_CMD = 'WITH_MEDUSA=1 bash scripts/sellmate/run.sh live evening-reconcile';
 /** 열린 회차가 이 시간을 넘기면 어제 저녁에 닫지 않은 것이다. */

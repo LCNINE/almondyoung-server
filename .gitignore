@@ -176,6 +176,8 @@ final-summary.md
 !apps/ai/src/db/*.sql
 !apps/ai/src/db/meta/
 !apps/ai/src/db/meta/*.json
+# 컷오버 런북(#1251)이 sql.ts 로 돌리는 읽기 전용 조회 — 덤프가 아니다.
+!scripts/ops/cutover-preflight/sql/*.sql
 
 # SSL certificates
 *.pem

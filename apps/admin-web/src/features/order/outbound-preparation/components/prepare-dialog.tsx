@@ -2,7 +2,7 @@
 
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Check, Loader2 } from 'lucide-react';
+import { Check, CircleAlert, Loader2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Can } from '@/components/auth/can';
 import { cn } from '@/lib/utils/ui';
@@ -32,6 +32,9 @@ import {
   type PreparationInput,
   type PreparationProgress,
 } from '@/lib/services/orders/outbound-preparation-runner';
+
+// 셀메이트가 마저 내보내는 상자는 다시 시도해도 같은 이유로 막힌다
+const SELLMATE_HANDED_OVER = 'SHIPMENT_HANDED_OVER_TO_SELLMATE';
 
 export function PrepareDialog({
   input,
@@ -199,6 +202,8 @@ export function PrepareDialog({
     failures.some((failure) => failure.stage === 'join');
   const handedOver = batch ? inBatch.size : (progress?.joined ?? 0);
   const closed = batch?.status === 'completed' || batch?.status === 'canceled';
+  // 담긴 상자가 하나도 없다고 확신할 때만 — 현장에 넘길 배치가 없으니 성공처럼 보이는 배치 열기를 숨긴다
+  const nothingSent = !!progress && !busy && handedOver === 0 && !unsure;
 
   return (
     <Dialog
@@ -225,15 +230,27 @@ export function PrepareDialog({
       >
         <DialogHeader>
           <DialogTitle>
-            {!progress
-              ? source === 'mergeable'
-                ? `합칠 수 있는 ${shipments.length}건을 따로 출고 준비할까요?`
-                : `${source === 'resume' ? '이어서 처리' : '완전출고'} ${shipments.length}건을 출고 준비할까요?`
-              : busy
-                ? '출고 준비 중이에요'
-                : handedOver === progress.total
-                  ? `${progress.total}상자 출고 준비를 마쳤어요`
-                  : `${progress.total}상자 중 ${handedOver}상자를 준비했어요`}
+            {!progress ? (
+              source === 'mergeable' ? (
+                `합칠 수 있는 ${shipments.length}건을 따로 출고 준비할까요?`
+              ) : (
+                `${source === 'resume' ? '이어서 처리' : '완전출고'} ${shipments.length}건을 출고 준비할까요?`
+              )
+            ) : busy ? (
+              '출고 준비 중이에요'
+            ) : nothingSent ? (
+              <span className="flex items-center gap-2">
+                <CircleAlert
+                  className="size-5 text-destructive"
+                  aria-label="실패"
+                />
+                {progress.total}상자를 준비하지 못했어요
+              </span>
+            ) : handedOver === progress.total ? (
+              `${progress.total}상자 출고 준비를 마쳤어요`
+            ) : (
+              `${progress.total}상자 중 ${handedOver}상자를 준비했어요`
+            )}
           </DialogTitle>
           <DialogDescription>
             {!progress
@@ -244,7 +261,7 @@ export function PrepareDialog({
                   ? `송장 ${progress.waybilled}장을 발급하고 출고 배치에 담았어요. 아래 순서대로 현장에 넘겨 주세요.`
                   : progress.batchId && closed
                     ? '출고 배치를 확인해 주세요.'
-                    : '출고 배치에 담은 상자가 없어요.'}
+                    : '출고 배치에 담긴 상자가 없어요. 현장에 넘길 것이 없어요.'}
           </DialogDescription>
         </DialogHeader>
         {progress ? (
@@ -270,6 +287,7 @@ export function PrepareDialog({
                 label="출고 배치에 담기"
                 count={busy ? progress.joined : handedOver}
                 total={progress.total}
+                failed={nothingSent}
                 active={
                   busy &&
                   (progress.stage === 'batch' || progress.stage === 'join')
@@ -297,15 +315,17 @@ export function PrepareDialog({
               </p>
             )}
             {progress.failures.length > 0 && (
-              <div className="max-h-64 space-y-2 overflow-y-auto rounded-md border p-3">
-                <p className="text-sm font-semibold">
-                  {failureHeading({
-                    total: failures.length,
-                    inBatch: failedInBatch.length,
-                    handedOver: handedOver > 0 && !!progress.batchId,
-                    unsure,
-                  })}
-                </p>
+              <div className="max-h-64 space-y-2 overflow-y-auto rounded-md border border-destructive/30 bg-destructive/5 p-3">
+                {!nothingSent && (
+                  <p className="text-sm font-semibold">
+                    {failureHeading({
+                      total: failures.length,
+                      inBatch: failedInBatch.length,
+                      handedOver: handedOver > 0 && !!progress.batchId,
+                      unsure,
+                    })}
+                  </p>
+                )}
                 {progress.failures.map((failure) => {
                   const shipment = shipments.find(
                     (item) => item.shipmentId === failure.shipmentId
@@ -335,7 +355,7 @@ export function PrepareDialog({
                             응답은 받지 못했지만 이 상자는 배치에 들어가 있어요.
                           </p>
                         )}
-                        <p className="text-muted-foreground">
+                        <p className="font-medium text-destructive">
                           {failure.message}
                         </p>
                       </div>
@@ -353,16 +373,18 @@ export function PrepareDialog({
                             </Link>
                           </Button>
                         )}
-                        <Can run={useRunOutboundPreparation}>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={busy}
-                            onClick={() => void run(failure)}
-                          >
-                            다시 시도
-                          </Button>
-                        </Can>
+                        {failure.code !== SELLMATE_HANDED_OVER && (
+                          <Can run={useRunOutboundPreparation}>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={busy}
+                              onClick={() => void run(failure)}
+                            >
+                              다시 시도
+                            </Button>
+                          </Can>
+                        )}
                       </div>
                     </div>
                   );
@@ -378,7 +400,11 @@ export function PrepareDialog({
           </p>
         )}
         <DialogFooter>
-          <Button variant="outline" disabled={busy} onClick={onClose}>
+          <Button
+            variant={nothingSent ? 'default' : 'outline'}
+            disabled={busy}
+            onClick={onClose}
+          >
             {progress ? '닫기' : '취소'}
           </Button>
           {!progress && (
@@ -388,7 +414,7 @@ export function PrepareDialog({
               </Button>
             </Can>
           )}
-          {progress?.batchId && !busy && (
+          {progress?.batchId && !busy && !nothingSent && (
             <Button asChild>
               <Link
                 href={`/order/outbound-batches?batchId=${encodeURIComponent(progress.batchId)}`}
@@ -543,13 +569,24 @@ function Step({
   count,
   total,
   active,
+  failed = false,
 }: {
   label: string;
   count: number;
   total: number;
   active: boolean;
+  failed?: boolean;
 }) {
   const done = count === total;
+
+  if (failed) {
+    return (
+      <li className="flex items-center gap-1.5 font-semibold text-destructive">
+        <X className="size-4" aria-hidden />
+        {label} {count}/{total}
+      </li>
+    );
+  }
 
   return (
     <li

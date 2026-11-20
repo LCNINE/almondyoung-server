@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { RequirePermission } from '@app/authorization';
 import { CreateDeliveryProfileDto } from '../dto/create-delivery-profile.dto';
@@ -41,5 +41,15 @@ export class DeliveryProfileController {
   @ApiResponse({ status: 404, description: '배송 프로필을 찾을 수 없습니다.' })
   update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateDeliveryProfileDto): Promise<DeliveryProfileDto> {
     return this.service.update(id, dto);
+  }
+
+  @RequirePermission('inventory.master.write')
+  @Delete(':id')
+  @HttpCode(204)
+  @ApiOperation({ summary: '배송 프로필 삭제 — 쓰는 SKU·출고 상자가 있으면 409' })
+  @ApiResponse({ status: 404, description: '배송 프로필을 찾을 수 없습니다.' })
+  @ApiResponse({ status: 409, description: '쓰는 SKU 나 출고 상자가 있습니다.' })
+  remove(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
+    return this.service.remove(id);
   }
 }

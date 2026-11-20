@@ -1,18 +1,28 @@
-"use server"
+import "server-only"
 
 import { api } from "@/lib/api/api"
 
+export interface WalletHandoffCodeRequest {
+  redirectUri: string
+  codeChallenge: string
+  nonce?: string
+  scope?: string
+}
+
 /**
- * 결제창(wallet-web) 핸드오프 토큰 발급.
+ * 결제창(wallet-web) 진입 인가 코드 발급.
  *
- * 인증된 고객 세션으로 user-service `/auth/payment-handoff` 를 호출해 단기(120s) 1회용 토큰을 받는다.
- * 결제 진입 시 이 토큰을 wallet-web `/auth/handoff` 로 넘기면, wallet-web 이 별도 서브도메인에서
- * OIDC silent-SSO / 부모도메인 쿠키 공유에 의존하지 않고 자기 세션을 확보한다 — 인앱브라우저·iOS
- * Safari(ITP) 에서 결제창이 안 넘어가던 문제의 근본 우회.
+ * 쇼핑몰에 로그인된 고객 몫으로 wallet-web 의 인가 코드를 user-service 에서 받는다. 코드는 wallet-web 이
+ * 만든 PKCE challenge 에 묶이고 한 번만 교환되므로, 이 코드를 받은 브라우저(wallet-web state 쿠키를 가진)
+ * 밖에서는 쓸 수 없다.
  */
-export async function mintPaymentHandoffToken(): Promise<string> {
-  const res = await api<{ handoffToken: string }>("users", "/auth/payment-handoff", {
+export async function issueWalletHandoffCode(
+  input: WalletHandoffCodeRequest
+): Promise<string> {
+  const res = await api<{ code: string }>("users", "/auth/payment-handoff", {
     method: "POST",
+    body: { ...input, codeChallengeMethod: "S256" },
   })
-  return res.handoffToken
+
+  return res.code
 }

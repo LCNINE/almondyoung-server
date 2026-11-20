@@ -143,7 +143,7 @@ describeIfDb('SalesOrdersService.planCancellation (DB integration, rollback-only
         .where(eq(wmsTables.customerReturns.id, customerReturnId));
       // 취소된 반품은 상한을 잡지 않는다 — 같은 요청이 상한을 지나 다음 판정(나간 수량은 회수·반품으로)에서 걸린다
       await expect(w.salesOrders.planCancellation(seed.salesOrderId, whole, tx)).rejects.toThrow(
-        'includes shipped or already canceled quantity',
+        '이미 출고됐거나 취소된 수량이 있어',
       );
     });
   });

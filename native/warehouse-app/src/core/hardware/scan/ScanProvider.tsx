@@ -23,8 +23,11 @@ interface ScanBus {
    * 일반 구독자(출고 화면은 모든 스캔을 송장으로 연다)에게는 어떤 경우에도 가지 않는다.
    */
   setCommandHandler(h: CommandHandler): () => void;
-  /** 사람이 친 키(스펙 §5.6) — 수량 입력·결품 창·직접 입력. 스캐너 묶음과 그 끝 Enter 는 오지 않는다. */
-  subscribeKeys(h: KeyHandler): () => void;
+  /**
+   * 사람이 친 키(스펙 §5.6) — 수량 입력·결품 창·직접 입력. 스캐너 묶음과 그 끝 Enter 는 오지 않는다.
+   * `exclusive` 면 구독하는 동안 그 처리기만 받는다(마지막에 건 것) — 뒤 화면이 같은 숫자를 함께 받지 않게 창이 건다.
+   */
+  subscribeKeys(h: KeyHandler, exclusive?: boolean): () => void;
   emit(e: ScanEvent): void;
 }
 
@@ -34,6 +37,7 @@ export function ScanProvider({ children }: { children: React.ReactNode }) {
   const handlers = useRef(new Set<Handler>());
   const observers = useRef(new Set<Handler>());
   const keyHandlers = useRef(new Set<KeyHandler>());
+  const exclusiveKeyHandlers = useRef<KeyHandler[]>([]);
   const commandHandler = useRef<CommandHandler | null>(null);
 
   const bus = useMemo<ScanBus>(
@@ -52,9 +56,15 @@ export function ScanProvider({ children }: { children: React.ReactNode }) {
           if (commandHandler.current === h) commandHandler.current = null;
         };
       },
-      subscribeKeys(h) {
-        keyHandlers.current.add(h);
-        return () => keyHandlers.current.delete(h);
+      subscribeKeys(h, exclusive = false) {
+        if (!exclusive) {
+          keyHandlers.current.add(h);
+          return () => keyHandlers.current.delete(h);
+        }
+        exclusiveKeyHandlers.current = [...exclusiveKeyHandlers.current, h];
+        return () => {
+          exclusiveKeyHandlers.current = exclusiveKeyHandlers.current.filter((x) => x !== h);
+        };
       },
       emit(e) {
         if (isCommandCode(e.code)) {
@@ -73,7 +83,11 @@ export function ScanProvider({ children }: { children: React.ReactNode }) {
     const human = createHumanKeyDetector();
     let flushTimer: ReturnType<typeof setTimeout> | undefined;
     const emitKeys = (keys: string[]) =>
-      keys.forEach((key) => keyHandlers.current.forEach((h) => h(key)));
+      keys.forEach((key) => {
+        const owner = exclusiveKeyHandlers.current.at(-1);
+        if (owner) owner(key);
+        else keyHandlers.current.forEach((h) => h(key));
+      });
     const reset = () => {
       buffer.reset();
       human.reset();

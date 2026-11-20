@@ -1,0 +1,1 @@
+ALTER TABLE "waybills" ADD COLUMN "sender_snapshot" jsonb;

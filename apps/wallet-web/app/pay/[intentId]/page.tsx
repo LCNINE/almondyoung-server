@@ -1,4 +1,4 @@
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { notFound, redirect } from 'next/navigation';
 import { isAccessTokenUsable, selfOrigin } from '@/lib/auth/access-token';
 import { SESSION_COOKIE_NAMES, backendAuthCookieFromToken } from '@/lib/auth/session-cookies';
@@ -19,19 +19,42 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { CheckCircle2, XCircle } from 'lucide-react';
+import { createWebLogger } from '@packages/web-observability';
 
 // 쿠키 기반 인증 가드 + 결제별 동적 데이터라 CloudFront/Next 캐시 금지.
 // (이게 없으면 엣지가 옛 HTML 을 캐시해 옛 청크를 가리키는 stale 페이지가 서빙됨)
 export const dynamic = 'force-dynamic';
 
+const logger = createWebLogger({ component: 'wallet-web.payment.pay', route: '/pay/[intentId]' });
+
 interface Props {
   params: Promise<{ intentId: string }>;
-  searchParams: Promise<{ region?: string; toss_fail?: string; brandpay_error?: string }>;
+  searchParams: Promise<{
+    region?: string;
+    toss_fail?: string;
+    brandpay_error?: string;
+    code?: string;
+    message?: string;
+    orderId?: string;
+  }>;
 }
 
 export default async function PayPage({ params, searchParams }: Props) {
   const { intentId } = await params;
-  const { region, toss_fail, brandpay_error } = await searchParams;
+  const { region, toss_fail, brandpay_error, code, message, orderId } = await searchParams;
+
+  // 토스 failUrl 이 붙여 보내는 실패 사유. 인증 가드가 쿼리를 떨어뜨리므로 그 전에 남긴다.
+  if (toss_fail === '1' && code) {
+    logger.warn('wallet.toss_fail.returned', {
+      attributes: {
+        intent_id: intentId,
+        order_id: orderId ?? null,
+        code,
+        toss_message: message ?? null,
+        user_agent: (await headers()).get('user-agent'),
+      },
+    });
+  }
 
   const cookieStore = await cookies();
 

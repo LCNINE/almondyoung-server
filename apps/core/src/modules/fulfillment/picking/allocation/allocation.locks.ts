@@ -362,6 +362,29 @@ export async function describeStartBlockers(trx: DbTx, blockers: StartBlocker[])
         notInArray(wmsTables.waybills.status, [...WAYBILL_TERMINAL_STATUSES]),
       ),
     );
+  const orders = await trx
+    .selectDistinct({
+      shipmentId: wmsTables.shipmentLines.shipmentId,
+      displayOrderNo: wmsTables.salesOrders.displayOrderNo,
+      channelOrderId: wmsTables.salesOrders.channelOrderId,
+    })
+    .from(wmsTables.shipmentLines)
+    .innerJoin(
+      wmsTables.fulfillmentOrderItems,
+      eq(wmsTables.fulfillmentOrderItems.id, wmsTables.shipmentLines.fulfillmentOrderItemId),
+    )
+    .innerJoin(
+      wmsTables.fulfillmentOrders,
+      eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId),
+    )
+    .innerJoin(wmsTables.salesOrders, eq(wmsTables.salesOrders.id, wmsTables.fulfillmentOrders.salesOrderId))
+    .where(inArray(wmsTables.shipmentLines.shipmentId, shipmentIds));
+  const orderNosByShipment = new Map<string, string[]>();
+  for (const row of orders) {
+    const orderNo = row.displayOrderNo ?? row.channelOrderId;
+    const known = orderNosByShipment.get(row.shipmentId) ?? [];
+    if (!known.includes(orderNo)) orderNosByShipment.set(row.shipmentId, [...known, orderNo]);
+  }
   const skuById = new Map(skus.map((sku) => [sku.id, sku]));
   const trackingByShipment = new Map(waybills.map((row) => [row.shipmentId, row.trackingNo]));
   const order: Record<StartBlockReason, number> = {
@@ -372,6 +395,7 @@ export async function describeStartBlockers(trx: DbTx, blockers: StartBlocker[])
   return blockers
     .map((blocker) => ({
       ...blocker,
+      orderNos: [...(orderNosByShipment.get(blocker.shipmentId) ?? [])].sort(),
       trackingNo: trackingByShipment.get(blocker.shipmentId) ?? null,
       skuCode: blocker.skuId ? (skuById.get(blocker.skuId)?.code ?? null) : null,
       skuName: blocker.skuId ? (skuById.get(blocker.skuId)?.name ?? null) : null,

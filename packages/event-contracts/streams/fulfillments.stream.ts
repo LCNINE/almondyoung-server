@@ -226,7 +226,7 @@ const FulfillmentReturnedSchema = z.object({
  * 적재를 공용 `enqueue` 로 회수하면서 계약에 올렸고, 그와 함께 zod 를 타게 됐다.
  *
  * 스키마는 실제로 실려 나가던 모양 그대로다(`{ orderId }` 하나). **소비자는 0곳**이다 —
- * 이 토픽의 `@On` 은 channel-adapter 의 `FulfillmentShipped`/`Delivered`/`Cancelled` 셋뿐이다.
+ * 이 토픽의 `@On` 은 #1452 에서 channel-adapter 의 옛 투영 소비자를 지운 뒤 하나도 없다.
  * 목적지 재검토는 소비자 분석이 필요한 별도 결정이라 여기서 하지 않는다.
  */
 const OrderCreatedNoticeSchema = z.object({

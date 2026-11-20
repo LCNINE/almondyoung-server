@@ -141,6 +141,8 @@ export interface StartBlocker {
 
 /** 응답용 — 현장이 읽을 수 있게 송장 번호·SKU 코드·이름을 붙인다. */
 export interface StartBlockerView extends StartBlocker {
+  /** 그 박스에 든 주문의 주문번호(쇼핑몰 표시 번호, 없으면 채널 주문번호). 현장은 박스 id 를 모른다. */
+  orderNos: string[];
   trackingNo: string | null;
   skuCode: string | null;
   skuName: string | null;

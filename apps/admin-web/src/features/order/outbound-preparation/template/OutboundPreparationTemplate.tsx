@@ -45,6 +45,8 @@ import {
   type PickingMethod,
 } from '@/lib/utils/picking-method';
 import {
+  bulkSelectableShipments,
+  SELECTABLE_BUCKETS,
   locatePreparationTarget,
   PREPARATION_BATCH_LIMIT,
   preparationAddress,
@@ -125,7 +127,14 @@ function PreparationWarehouse({
   const shipmentRead = useCan(['fulfillment.shipment.read']);
   const canRead = shipmentRead.status === 'ready' && shipmentRead.allowed;
 
-  const summary = useOutboundPreparationSummary(warehouseId, canRead);
+  // 화주(= 송장 보내는 분)로 거른다. 여럿 고르면 같은 업체의 여러 판매처 상자를 한 번에 본다
+  const [holderFilter, setHolderFilter] = useState<string[]>([]);
+  const summary = useOutboundPreparationSummary(
+    warehouseId,
+    canRead,
+    'always',
+    holderFilter
+  );
   const split = useSplitUnreservedMany();
   const { canRun } = usePermissionCheck();
 
@@ -141,6 +150,13 @@ function PreparationWarehouse({
   const [sheetShipmentId, setSheetShipmentId] = useState('');
   const [target, setTarget] = useState(initialTarget);
   const [targetNotice, setTargetNotice] = useState<string | null>(null);
+  const holderOptions = summary.data?.holders ?? [];
+
+  // 가려진 상자가 선택된 채 출고 준비로 넘어가지 않게 고른 것을 비운다
+  const pickHolders = (next: string[]) => {
+    setHolderFilter(next);
+    setSelections({});
+  };
 
   useEffect(() => {
     if (initialTarget && !target) {
@@ -230,10 +246,17 @@ function PreparationWarehouse({
       [];
     const selected = selections[key];
 
+    if (!SELECTABLE_BUCKETS.has(key)) {
+      return [];
+    }
+
+    // 합칠 주문은 합치는 게 목적이라, 따로 보낼 상자는 사람이 하나씩 고른다
     return selected === undefined
-      ? shipments
-          .slice(0, PREPARATION_BATCH_LIMIT)
-          .map((shipment) => shipment.shipmentId)
+      ? key === 'mergeable'
+        ? []
+        : bulkSelectableShipments(shipments).map(
+            (shipment) => shipment.shipmentId
+          )
       : shipments
           .filter((shipment) => selected.includes(shipment.shipmentId))
           .map((shipment) => shipment.shipmentId);
@@ -265,13 +288,25 @@ function PreparationWarehouse({
       return;
     }
 
+    const shipments = bucket?.shipments ?? [];
+    // 결품으로 돌아온 상자는 하나씩 고른 것이라 전체 선택·해제가 건드리지 않는다
+    const returned = new Set(
+      shipments
+        .filter((shipment) => shipment.shortPick)
+        .map((shipment) => shipment.shipmentId)
+    );
+    const kept = selectedIds(activeBucket).filter((id) => returned.has(id));
+
     setSelections((previous) => ({
       ...previous,
-      [activeBucket]: checked
-        ? (bucket?.shipments ?? [])
-            .slice(0, PREPARATION_BATCH_LIMIT)
-            .map((shipment) => shipment.shipmentId)
-        : [],
+      [activeBucket]: [
+        ...kept,
+        ...(checked
+          ? bulkSelectableShipments(shipments)
+              .slice(0, PREPARATION_BATCH_LIMIT - kept.length)
+              .map((shipment) => shipment.shipmentId)
+          : []),
+      ],
     }));
   };
 
@@ -422,6 +457,50 @@ function PreparationWarehouse({
             </SelectContent>
           </Select>
         </div>
+        {(holderOptions.length > 1 || holderFilter.length > 0) && (
+          <div className="space-y-1.5">
+            <span className="text-sm font-medium leading-none">화주</span>
+            <div
+              role="group"
+              aria-label="화주"
+              className="flex flex-wrap gap-1.5"
+            >
+              <Button
+                type="button"
+                size="sm"
+                variant={holderFilter.length === 0 ? 'default' : 'outline'}
+                aria-pressed={holderFilter.length === 0}
+                disabled={busy}
+                onClick={() => pickHolders([])}
+              >
+                전체
+              </Button>
+              {holderOptions.map((holder) => {
+                const on = holderFilter.includes(holder.key);
+
+                return (
+                  <Button
+                    key={holder.key}
+                    type="button"
+                    size="sm"
+                    variant={on ? 'default' : 'outline'}
+                    aria-pressed={on}
+                    disabled={busy}
+                    onClick={() =>
+                      pickHolders(
+                        on
+                          ? holderFilter.filter((key) => key !== holder.key)
+                          : [...holderFilter, holder.key]
+                      )
+                    }
+                  >
+                    {holder.name} {holder.count}
+                  </Button>
+                );
+              })}
+            </div>
+          </div>
+        )}
         <div className="space-y-1.5">
           <Label htmlFor="preparation-picking">피킹 방식</Label>
           <Select
@@ -516,10 +595,12 @@ function PreparationWarehouse({
               }}
               onPrepare={prepare}
               onSplit={() => setConfirmingSplit(true)}
+              holders={holderFilter}
             />
             {bucket && (
               <BucketList
                 bucket={bucket}
+                warehouseId={warehouseId}
                 selectedIds={selectedIds(bucket.bucket)}
                 busy={busy}
                 onToggle={toggle}
@@ -581,9 +662,6 @@ function PreparationWarehouse({
             if (!open) {
               setSheetShipmentId('');
             }
-          }}
-          onRequested={() => {
-            void summary.refetch();
           }}
           onPrepare={(shipmentId) => {
             setSheetShipmentId('');

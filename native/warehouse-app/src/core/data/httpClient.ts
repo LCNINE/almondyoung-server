@@ -43,6 +43,39 @@ export function parsePreparationRejection(
   return { reasonCode, recovery: value.recovery };
 }
 
+/**
+ * core 가 명령 기록과 처리를 한 저장점 안에서 하는 출고 저장 경로. 여기서 받은 409 는
+ * 아무것도 남기지 않은 거절이라, 코드가 목록에 없어도 결과 모름으로 두지 않는다.
+ */
+export const SAVE_POINT_OUTBOUND_ROUTES = [
+  'simple-outbound-scans',
+  'simple-outbound-forces',
+  'location-outbound-scans',
+  'location-outbound-forces',
+] as const;
+const savePointOutboundPath = new RegExp(
+  `^/shipments/[^/]+/(${SAVE_POINT_OUTBOUND_ROUTES.join('|')})$`
+);
+/** 저장점에 들어가기 전에 나는 409 — 같은 키의 앞 요청이 남긴 것이 있을 수 있다. */
+const SAVE_POINT_UNSETTLED_CODES = [
+  'FULFILLMENT_COMMAND_IN_PROGRESS',
+  'FULFILLMENT_IDEMPOTENCY_MISMATCH',
+];
+
+function isSavePointRejection(
+  status: number,
+  code: string | undefined,
+  path: string | undefined
+): boolean {
+  return (
+    status === 409 &&
+    !!code &&
+    !!path &&
+    savePointOutboundPath.test(path) &&
+    !SAVE_POINT_UNSETTLED_CODES.includes(code)
+  );
+}
+
 export function readRequiredPermissions(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.filter((key): key is string => typeof key === 'string');
@@ -60,6 +93,8 @@ export class ApiError extends Error {
   readonly requiredPermissions?: readonly string[];
   /** 400 본문의 `message` 그대로 — 서버가 현장 문구로 쓰라고 만든 거절 사유(범위 표기 등). */
   readonly serverMessage?: string;
+  /** 출고 저장 경로의 409 — 서버에 반영된 것이 없다고 말할 수 있다. */
+  readonly notApplied: boolean;
   constructor(
     message: string,
     status: number,
@@ -67,9 +102,11 @@ export class ApiError extends Error {
     preparation?: PreparationRejection,
     errors?: unknown,
     requiredPermissions?: readonly string[],
-    serverMessage?: string
+    serverMessage?: string,
+    path?: string
   ) {
     super(message);
+    this.notApplied = isSavePointRejection(status, code, path);
     this.status = status;
     if (serverMessage) this.serverMessage = serverMessage;
     this.errors = errors;
@@ -118,7 +155,13 @@ export class ApiError extends Error {
         'WITHDRAWAL_WAYBILL_NOT_VOIDABLE',
         'SHIPMENT_LINE_INSPECTION_STALE',
         'WORKER_ACTIVE_CLAIM_EXISTS',
+        // 마지막 스캔의 출고 판정 — 스캔과 같은 트랜잭션에서 거절돼 아무것도 남지 않는다
+        'SHIPMENT_NOT_DISPATCHABLE',
+        'SHIPMENT_NOT_INSPECTION_READY',
+        'SHIPMENT_SESSION_NOT_ACTIVE',
+        'SHIPMENT_PACKER_LEASE_REQUIRED',
       ].includes(code) ||
+        this.notApplied ||
         /^(SIMPLE_OUTBOUND_(BARCODE_UNKNOWN|PLAN_INVALIDATED|SKU_NOT_IN_SHIPMENT|OVERSCAN|WORK_ITEM_MISSING|CLAIMED_BY_OTHER|METHOD_UNSUPPORTED)|STOCKTAKING_(RECOUNT_REQUIRED|REVISION_CONFLICT|PREVIEW_STALE|PREVIEW_CHANGED|COUNT_REQUIRED|INCOMPLETE)|LOCATION_OUTBOUND_(WAREHOUSE_MISMATCH|SOURCE_MISMATCH|OVERSCAN|PROGRESS_CHANGED|FORCE_NOT_APPLIED)|CLIENT_UPDATE_REQUIRED)$/.test(
           code
         ));
@@ -150,9 +193,10 @@ export class ConflictError extends ApiError {
     message: string,
     code?: string,
     preparation?: PreparationRejection,
-    errors?: unknown
+    errors?: unknown,
+    path?: string
   ) {
-    super(message, 409, code, preparation, errors);
+    super(message, 409, code, preparation, errors, undefined, undefined, path);
   }
 }
 
@@ -244,7 +288,8 @@ export function createApiClient(deps: {
           body.message ?? 'version conflict',
           body.code ?? body.error,
           parsePreparationRejection(body.details),
-          body.errors
+          body.errors,
+          o.path
         );
       }
       if (!res.ok) {

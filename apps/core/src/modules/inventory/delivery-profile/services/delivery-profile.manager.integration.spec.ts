@@ -2,13 +2,15 @@ import * as postgres from 'postgres';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { eq } from 'drizzle-orm';
 import { DbService } from '@app/db';
-import { NotFoundError } from '@app/shared';
+import { BadRequestError, ConflictError, NotFoundError } from '@app/shared';
 import { wmsSchema, wmsTables, DbTx } from '../../schema/inventory.schema';
 import { makeDb, inRollbackTx, seedHolder, seedSku } from '../../../fulfillment/services/__support__';
 import { assertProfileComplete } from '../../../fulfillment/picking/allocation/allocation.queries';
 import { CreateDeliveryProfileDto } from '../dto/create-delivery-profile.dto';
 import { DeliveryProfileReader } from './delivery-profile.reader';
 import { DeliveryProfileManager } from './delivery-profile.manager';
+import { HolderService } from '../../core/services/holder.service';
+import { BadRequestException } from '@nestjs/common';
 
 /**
  * 실행: COMPOSE_PROJECT_NAME=almondyoung-server npm run test:core:integration:local -- 'delivery-profile\.manager\.integration\.spec\.ts$'
@@ -38,13 +40,17 @@ describeIfDb('DeliveryProfileManager (DB integration)', () => {
     await client.end();
   });
 
-  function build(trx: DbTx): { reader: DeliveryProfileReader; manager: DeliveryProfileManager } {
+  function build(trx: DbTx): {
+    reader: DeliveryProfileReader;
+    manager: DeliveryProfileManager;
+    holders: HolderService;
+  } {
     const dbService = {
       db,
       run: <T>(fn: (t: DbTx) => Promise<T>, tx?: DbTx): Promise<T> => fn(tx ?? trx),
     } as unknown as DbService<typeof wmsSchema>;
     const reader = new DeliveryProfileReader(dbService);
-    return { reader, manager: new DeliveryProfileManager(dbService) };
+    return { reader, manager: new DeliveryProfileManager(dbService), holders: new HolderService(dbService) };
   }
 
   // 이 API 로 만든 프로필은 계획 확정·배치 편입의 완전성 검사를 통과해야 한다 — 그게 이 기능의 목적이다.
@@ -94,6 +100,44 @@ describeIfDb('DeliveryProfileManager (DB integration)', () => {
       const missing = '99999999-9999-4999-8999-999999999999';
       await expect(reader.findOne(missing, trx)).rejects.toBeInstanceOf(NotFoundError);
       await expect(manager.update(missing, { name: 'x' }, trx)).rejects.toBeInstanceOf(NotFoundError);
+    });
+  });
+
+  it('화주를 연결하고, 없는 화주는 BadRequestError', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const { manager } = build(trx);
+      const { holderId } = await seedHolder(trx);
+      const created = await manager.create({ ...input, holderId }, trx);
+      expect(created.holderId).toBe(holderId);
+      await expect(
+        manager.update(created.id, { holderId: '99999999-9999-4999-8999-999999999999' }, trx),
+      ).rejects.toBeInstanceOf(BadRequestError);
+    });
+  });
+
+  it('쓰는 SKU 가 있으면 지우지 않고, 없으면 지운다', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const { reader, manager } = build(trx);
+      const { holderId } = await seedHolder(trx);
+      const { skuId } = await seedSku(trx, holderId);
+      const created = await manager.create(input, trx);
+      await trx.update(wmsTables.skus).set({ deliveryProfileId: created.id }).where(eq(wmsTables.skus.id, skuId));
+
+      await expect(manager.remove(created.id, trx)).rejects.toBeInstanceOf(ConflictError);
+
+      await trx.update(wmsTables.skus).set({ isDeleted: true }).where(eq(wmsTables.skus.id, skuId));
+      await manager.remove(created.id, trx);
+      await expect(reader.findOne(created.id, trx)).rejects.toBeInstanceOf(NotFoundError);
+      await expect(manager.remove(created.id, trx)).rejects.toBeInstanceOf(NotFoundError);
+    });
+  });
+
+  it('배송 프로필이 쓰는 화주는 지우지 않는다', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const { manager, holders } = build(trx);
+      const { holderId } = await seedHolder(trx);
+      await manager.create({ ...input, holderId }, trx);
+      await expect(holders.deleteHolder(holderId, trx)).rejects.toBeInstanceOf(BadRequestException);
     });
   });
 });

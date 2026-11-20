@@ -27,6 +27,8 @@ import {
   WorkArea,
   useWorkAreaBlocked,
 } from '../../core/operations/WorkBoundary';
+import { useBoxChecks } from '../../core/operations/workArea';
+import { BoxCheckingExit } from './BoxCheckingExit';
 import { clearLastBox } from './lastBox';
 import {
   useLocationOutbound,
@@ -205,29 +207,38 @@ function LocationWork({
       off?.();
     };
   }, [draft.ready, runtime, readStartOperation]);
-  const queue = useWorkScanQueue<ScanInput>(async (input, id) => {
-    if (!stateUnavailableRef.current && workRef.current?.status === 'shipped') {
-      setNotice(
-        '출고가 이미 완료되어 남은 스캔은 반영되지 않았어요. 포장 수량을 다시 확인해 주세요.'
-      );
-      return;
-    }
-    try {
-      await operations.scan.mutateAsync({
-        shipmentId,
-        ...input,
-        idempotencyKey: id,
-      });
-      // A confirmed queue replay returns its original response snapshot.
-      // Only the current GET may project completion or release this queue head.
-      await refresh();
-      setNotice(null);
-    } catch (e) {
-      setNotice(errorMessage(e, 'outbound'));
-      if (!(e instanceof ApiError && e.outcome === 'rejected')) throw e;
-      await refresh();
-    }
-  }, `location-outbound-scans:${shipmentId}`);
+  const queue = useWorkScanQueue<ScanInput>(
+    async (input, id) => {
+      if (
+        !stateUnavailableRef.current &&
+        workRef.current?.status === 'shipped'
+      ) {
+        setNotice(
+          '출고가 이미 완료되어 남은 스캔은 반영되지 않았어요. 포장 수량을 다시 확인해 주세요.'
+        );
+        return;
+      }
+      try {
+        await operations.scan.mutateAsync({
+          shipmentId,
+          ...input,
+          idempotencyKey: id,
+        });
+        // A confirmed queue replay returns its original response snapshot.
+        // Only the current GET may project completion or release this queue head.
+        await refresh();
+        setNotice(null);
+      } catch (e) {
+        setNotice(errorMessage(e, 'outbound'));
+        if (!(e instanceof ApiError && e.outcome === 'rejected')) throw e;
+        await refresh();
+      }
+    },
+    `location-outbound-scans:${shipmentId}`,
+    () => checkingRef.current
+  );
+  const checkingRef = useRef(false);
+  checkingRef.current = useBoxChecks(shipmentId).length > 0;
   const source = work?.sources.find(
     (item) => item.sourceLocationId === draft.value.sourceId
   );
@@ -239,7 +250,7 @@ function LocationWork({
         sourceLocationId: source.sourceLocationId,
       }
     : undefined;
-  const areaBlocked = useWorkAreaBlocked('outbound');
+  const areaBlocked = useWorkAreaBlocked('outbound', undefined, shipmentId);
   const scanAreaBlocked = useWorkAreaBlocked('outbound', scanAllowance);
   const intakeBlocked =
     busy ||
@@ -358,9 +369,14 @@ function LocationWork({
     );
   return (
     <div className="space-y-4">
-      <WorkArea kind="outbound">
+      <WorkArea kind="outbound" shipmentId={shipmentId}>
         <ScreenHeader title="출고작업" backTo="/outbound" />
       </WorkArea>
+      <BoxCheckingExit
+        shipmentId={shipmentId}
+        trackingNo={shipment.trackingNo}
+        lines={shipment.lines}
+      />
       <p>
         {shipment.carrier} {shipment.trackingNo} · {shipment.recipientMasked}
       </p>
@@ -393,7 +409,7 @@ function LocationWork({
       )}
       {!work ? (
         startRejection?.preparation?.recovery === 'review_batch' ? (
-          <WorkArea kind="outbound">
+          <WorkArea kind="outbound" shipmentId={shipmentId}>
             <Link to="/outbound" disabled={blocked}>
               배치와 송장 확인
             </Link>
@@ -459,7 +475,7 @@ function LocationWork({
       ) : work.status === 'shipped' && !stateUnavailable ? (
         <section>
           <p className="text-xl font-semibold">출고완료</p>
-          <WorkArea kind="outbound">
+          <WorkArea kind="outbound" shipmentId={shipmentId}>
             <Link to="/outbound" disabled={blocked}>
               <Button disabled={blocked}>다음 송장 스캔</Button>
             </Link>
@@ -479,7 +495,7 @@ function LocationWork({
               </li>
             ))}
           </ul>
-          <WorkArea kind="outbound">
+          <WorkArea kind="outbound" shipmentId={shipmentId}>
             {mode === 'location' ? (
               <OutboundSourcePicker
                 sources={work.sources}
@@ -505,7 +521,11 @@ function LocationWork({
               </div>
             )}
           </WorkArea>
-          <WorkArea kind="outbound" scanAllowance={scanAllowance}>
+          <WorkArea
+            kind="outbound"
+            scanAllowance={scanAllowance}
+            shipmentId={shipmentId}
+          >
             <QuantityInput
               label="다음 스캔 수량"
               value={quantity}
@@ -519,7 +539,7 @@ function LocationWork({
               onSubmit={acceptProduct}
             />
           </WorkArea>
-          <WorkArea kind="outbound">
+          <WorkArea kind="outbound" shipmentId={shipmentId}>
             {canForce ? (
               <Button
                 disabled={blocked || stateUnavailable || !canConfirm}
@@ -558,7 +578,7 @@ function LocationWork({
         </>
       )}
       {forceOpen && work && (
-        <WorkArea kind="outbound">
+        <WorkArea kind="outbound" shipmentId={shipmentId}>
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
             <section
               role="dialog"
