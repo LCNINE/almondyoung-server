@@ -32,7 +32,7 @@ const byItem = (items: ArrivalBody['items']) =>
 async function openByScan(barcode: string) {
   await listed();
   scan(barcode);
-  return screen.findByRole('region', { name: '소포 세기' });
+  return opened();
 }
 
 /** 목록 행을 눌러 연다 — 아무것도 세지 않은 채로 */
@@ -41,7 +41,14 @@ async function openReturn(orderNo: string) {
   const row = screen.getAllByRole('option').find((option) => option.getAttribute('data-order-no') === orderNo);
   if (!row) throw new Error(`row ${orderNo} not found`);
   fireEvent.click(within(row).getByRole('button'));
-  return screen.findByRole('region', { name: '소포 세기' });
+  return opened();
+}
+
+/** 소포 세기가 열리고 스캔 구독이 걸린 뒤 — 바로 찍은 스캔이 효과보다 먼저 와 사라지지 않게 */
+async function opened() {
+  const region = await screen.findByRole('region', { name: '소포 세기' });
+  await act(async () => {});
+  return region;
 }
 
 /** 같은 SKU 가 두 줄에 — 세트 구성품과 낱개 */
