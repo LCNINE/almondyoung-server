@@ -21,6 +21,14 @@ const submitSearch = (value: string) => {
 };
 
 describe('도착 대기 목록', () => {
+  it('머리글을 두고 행마다 반품·교환을 구분한다', async () => {
+    setupReturns({ returns: [{ ...AWAITING, kind: 'exchange' }, PARTIAL] });
+    await listed();
+    expect(screen.getByText('주문번호').parentElement).toHaveTextContent('주문번호종류받는 분사유상품수량단계');
+    expect(row(AWAITING.orderNo).querySelector('[data-col="kind"]')).toHaveTextContent('교환');
+    expect(row(PARTIAL.orderNo).querySelector('[data-col="kind"]')).toHaveTextContent('반품');
+  });
+
   it.each([
     ['change_of_mind', '단순 변심', false],
     ['defective', '상품 하자', true],

@@ -24,6 +24,8 @@ export function view(
 ): ReturnView {
   return {
     id: 'r1',
+    kind: 'return',
+    exchangeReleasedAt: null,
     status: 'expected',
     reason: 'change_of_mind',
     feeBearer: 'customer',

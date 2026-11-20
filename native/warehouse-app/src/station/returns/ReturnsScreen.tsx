@@ -54,7 +54,7 @@ function Returns({ warehouseId }: { warehouseId: string }) {
 
   /** 단계대로 연다 — 끝난 반품이면 한 줄 안내 뒤 목록(N8). 열 때마다 새로 마운트한다(소포 키·센 수량이 새로) */
   const enter = useCallback(
-    (view: ReturnView, next: ReturnsNotice | null) => {
+    (view: ReturnView, next: ReturnsNotice | null, firstScan?: string) => {
       const stage = receivingStageOf(view);
       if (stage.kind === 'closed') {
         toList({ text: CLOSED_MESSAGE[stage.reason], tone: 'error' });
@@ -62,7 +62,7 @@ function Returns({ warehouseId }: { warehouseId: string }) {
       }
       say(next);
       setMount((n) => n + 1);
-      setCurrent({ kind: stage.kind, view });
+      setCurrent(stage.kind === 'receive' ? { kind: 'receive', view, firstScan } : { kind: 'inspect', view });
     },
     [toList, say]
   );
@@ -72,11 +72,11 @@ function Returns({ warehouseId }: { warehouseId: string }) {
    * 그 사유를 싣는다. 끝난 반품이면 그 안내가 대신한다
    */
   const open = useCallback(
-    async (id: string, next: ReturnsNotice | null = null) => {
+    async (id: string, next: ReturnsNotice | null = null, firstScan?: string) => {
       if (opening.current) return;
       opening.current = true;
       try {
-        enter(await fetchReturn(api, id), next);
+        enter(await fetchReturn(api, id), next, firstScan);
       } catch (error) {
         say({ text: errorMessage(error), tone: 'error' });
       } finally {
@@ -94,7 +94,7 @@ function Returns({ warehouseId }: { warehouseId: string }) {
     },
     [enter, toList]
   );
-  const openFromList = useCallback((id: string) => void open(id), [open]);
+  const openFromList = useCallback((id: string, scanned?: string) => void open(id, null, scanned), [open]);
   const clearNotice = useCallback(() => setNotice(null), []);
 
   let body: ReactNode;
@@ -104,6 +104,7 @@ function Returns({ warehouseId }: { warehouseId: string }) {
         <ParcelWork
           key={mount}
           view={current.view}
+          firstScan={current.firstScan}
           warehouseId={warehouseId}
           open={open}
           onArrived={arrived}

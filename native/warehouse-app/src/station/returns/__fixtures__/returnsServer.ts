@@ -1,7 +1,7 @@
 /* 스테이션 반품 화면 테스트의 가짜 core — 엔드포인트 모양과 거절 규칙은 실제(customer-return-receiving.manager.ts·
  * customer-return.reader.ts listForReceiving)와 같고 상태는 메모리에 둔다. 테스트 전용 */
 import { ApiError, ConflictError, type ApiClient } from '../../../core/data/httpClient';
-import type { ReceivingItem, ReturnView } from '../../../domains/customer-returns/types';
+import type { ReceivingItem, ReturnKind, ReturnView } from '../../../domains/customer-returns/types';
 import { WAREHOUSE_ID } from '../../outbound/__fixtures__/outboundServer';
 
 type Req = Parameters<ApiClient['request']>[0];
@@ -37,6 +37,10 @@ export interface FakeReturn {
   customerName: string;
   channelOrderId?: string;
   status: FakeReturnStatus;
+  /** 기본 return */
+  kind?: ReturnKind;
+  /** 교환 상자를 연 시각 — 검수 확정(보류 없음)이 연다 */
+  exchangeReleasedAt?: string | null;
   reason?: string;
   feeBearer?: string;
   note?: string | null;
@@ -57,6 +61,8 @@ interface LiveItem extends Required<FakeReturnItem> {
 }
 
 interface LiveReturn extends Omit<FakeReturn, 'lines'> {
+  kind: ReturnKind;
+  exchangeReleasedAt: string | null;
   deliveredBy: string[];
   warehouseId: string | null;
   missingClosed: boolean;
@@ -80,6 +86,8 @@ export interface Failure {
   applied?: boolean;
   /** 이 메서드의 요청만 실패시킨다 — 목록 재조회(GET)가 먼저 가져가지 않게 */
   method?: 'GET' | 'POST';
+  /** 이 쓰기만 실패시킨다 — 도착 뒤 이어 보내는 검수만 끊을 때 */
+  write?: 'arrivals' | 'inspection';
 }
 
 /** core maskName(recipient-snapshot.ts) — 뒤 절반을 가린다 */
@@ -103,6 +111,8 @@ const badRequest = (path: string, message: string) => {
 function live(init: FakeReturn): LiveReturn {
   return {
     ...init,
+    kind: init.kind ?? 'return',
+    exchangeReleasedAt: init.exchangeReleasedAt ?? null,
     deliveredBy: init.deliveredBy ?? [WAREHOUSE_ID],
     warehouseId: init.warehouseId ?? (init.status === 'expected' ? null : WAREHOUSE_ID),
     missingClosed: init.missingClosed ?? false,
@@ -159,6 +169,8 @@ export function createReturnsServer(init: { returns: FakeReturn[] }) {
   function view(r: LiveReturn): ReturnView {
     return {
       id: r.id,
+      kind: r.kind,
+      exchangeReleasedAt: r.exchangeReleasedAt,
       status: r.status,
       reason: r.reason ?? 'change_of_mind',
       feeBearer: r.feeBearer ?? 'customer',
@@ -186,6 +198,7 @@ export function createReturnsServer(init: { returns: FakeReturn[] }) {
       id: r.id,
       orderNo: r.orderNo,
       customerMasked: maskName(r.customerName),
+      kind: r.kind,
       reason: r.reason ?? 'change_of_mind',
       productSummary: r.lines.length > 1 ? `${first} 외 ${r.lines.length - 1}건` : first,
       expectedQty,
@@ -308,6 +321,9 @@ export function createReturnsServer(init: { returns: FakeReturn[] }) {
       item.heldQty = result.held;
     }
     r.status = body.items.some((item) => item.held > 0) ? 'held' : 'inspected';
+    if (r.kind === 'exchange' && r.status === 'inspected' && !r.exchangeReleasedAt) {
+      r.exchangeReleasedAt = '2026-10-28T00:00:00.000Z';
+    }
     inspections.push({ returnId: r.id, body });
     return view(r);
   }
@@ -343,7 +359,12 @@ export function createReturnsServer(init: { returns: FakeReturn[] }) {
     requests.push(o);
     const method = o.method ?? 'GET';
     if (method !== 'GET' && writeGate) await writeGate;
-    const fail = failure && (failure.method === undefined || failure.method === method) ? failure : null;
+    const fail =
+      failure &&
+      (failure.method === undefined || failure.method === method) &&
+      (failure.write === undefined || (method === 'POST' && o.path.endsWith(`/${failure.write}`)))
+        ? failure
+        : null;
     if (fail) failure = null;
     if (fail && !fail.applied) throw failureError(fail, o);
     const value = handle(o);
