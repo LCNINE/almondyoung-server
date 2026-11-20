@@ -214,12 +214,6 @@ const BATCH_BLOCKER_TEXT = {
       '출고 상세에서 송장 상태를 확인하고 발급(재발급)한 뒤 다시 시작하거나, 배치 상세에서 이 박스를 빼고 시작하세요.',
     join: '출고 상세에서 송장 상태를 확인하고 발급(재발급)한 뒤 다시 넣어 주세요.',
   },
-  CANCEL_REQUESTED: {
-    title: '취소 처리 중인 주문',
-    start:
-      '취소 처리가 끝날 때까지 이 박스는 출고할 수 없어요. 배치 상세에서 이 박스를 빼고 시작하세요.',
-    join: '취소가 끝날 때까지 이 박스는 넣을 수 없어요.',
-  },
 };
 
 const text = (value: unknown) =>
@@ -228,6 +222,13 @@ const quantity = (value: unknown) =>
   typeof value === 'number' && Number.isFinite(value) && value >= 0
     ? value
     : '?';
+
+function blockerOrderNos(blocker: Record<string, unknown>): string {
+  const orderNos = Array.isArray(blocker.orderNos)
+    ? blocker.orderNos.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    : [];
+  return orderNos.length ? `주문번호 ${orderNos.join(', ')}` : '주문번호 확인 필요';
+}
 
 const INCOMPLETE_BLOCKER_MESSAGE = '일부 박스의 상세 사유를 확인하지 못했어요. 배치와 해당 박스의 출고 상태를 확인해 주세요.';
 
@@ -252,7 +253,7 @@ function batchBlockedToastMessage(error: ParsedServerError): string {
       const trackingNo = text(blocker.trackingNo);
       const skuName = text(blocker.skuName);
       const skuCode = text(blocker.skuCode);
-      const row = [shipmentId ? `박스 ${shipmentId}` : '박스 확인 필요'];
+      const row = [blockerOrderNos(blocker)];
 
       if (trackingNo) row.push(`송장 ${trackingNo}`);
       if (skuName || skuCode)
@@ -276,16 +277,15 @@ function batchBlockedToastMessage(error: ParsedServerError): string {
 
 function batchBlockerRow(blocker: Record<string, unknown>): string {
   const trackingNo = text(blocker.trackingNo);
+  const orderLabel = blockerOrderNos(blocker);
   const tracking = trackingNo
-    ? trackingNo.replace(/^(\d{4})(\d{4})(\d{4})$/, '$1-$2-$3')
-    : `박스 ${String(blocker.shipmentId).slice(0, 8)}`;
+    ? ` · 송장 ${trackingNo.replace(/^(\d{4})(\d{4})(\d{4})$/, '$1-$2-$3')}`
+    : '';
 
   if (blocker.reason === 'WAYBILL_NOT_READY')
-    return `${tracking} · 송장 재발급 필요`;
-  if (blocker.reason === 'CANCEL_REQUESTED')
-    return `${tracking} · 취소 처리 중`;
+    return `${orderLabel}${tracking} · 송장 재발급 필요`;
 
-  return `${tracking} · ${text(blocker.skuName) ?? text(blocker.skuCode) ?? '상품'} ${quantity(blocker.requiredQty)}개 중 ${quantity(blocker.shortQty)}개 부족`;
+  return `${orderLabel}${tracking} · ${text(blocker.skuName) ?? text(blocker.skuCode) ?? '상품'} ${quantity(blocker.requiredQty)}개 중 ${quantity(blocker.shortQty)}개 부족`;
 }
 
 export function getBatchBlockerGroups(error: ParsedServerError) {

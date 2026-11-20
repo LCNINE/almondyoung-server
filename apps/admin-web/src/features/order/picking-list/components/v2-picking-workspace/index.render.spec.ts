@@ -97,6 +97,7 @@ const blockedError = {
     errors: [
       {
         shipmentId: 'box-1',
+        orderNos: ['ORDER-START'],
         trackingNo: '123456789012',
         reason: 'STOCK_SHORT',
         skuId: 'sku-1',
@@ -191,7 +192,7 @@ describe('피킹 시작 오류 안내', () => {
       name: '재고 부족 상세 목록',
       error: blockedError,
       summary: '시작하지 못했어요 — 아래 박스를 먼저 처리해 주세요',
-      details: ['재고 부족', '재고가 부족한 상품', '3개 중 1개 부족'],
+      details: ['재고 부족', '주문번호 ORDER-START', '재고가 부족한 상품', '3개 중 1개 부족'],
     },
   ])(
     '$name 안내는 재시도 중 유지하고 성공하면 없애며 토스트를 띄우지 않는다',
@@ -261,7 +262,8 @@ describe('피킹 시작 오류 안내', () => {
       throw new Error('오류 토스트가 없습니다.');
     const title = String(receivedToast.title);
     expect(title).toContain('차단 항목 1건');
-    expect(title).toContain('박스 box-1');
+    expect(title).toContain('주문번호 ORDER-START');
+    expect(title).not.toContain('박스 box-1');
     expect(title).toContain('3개 중 1개 부족');
   });
 

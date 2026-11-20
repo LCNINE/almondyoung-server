@@ -237,6 +237,7 @@ describe('배치 상세에 남는 상자 추가 결과', () => {
       errors: [
         {
           shipmentId: 'box-A',
+          orderNos: ['ORDER-JOIN'],
           reason: 'STOCK_SHORT',
           shipmentLineId: 'line-A',
           skuId: 'sku-A',
@@ -460,6 +461,7 @@ describe('배치 상세에 남는 상자 추가 결과', () => {
     await render();
     await add('box-A');
     await act(async () => first.reject(blocked));
+    expect(noticeTexts('alert').join('')).toContain('주문번호 ORDER-JOIN');
     expect(noticeTexts('alert').join('')).toContain('상품 A 3개 중 1개 부족');
     expect(toast.getToasts()).toHaveLength(0);
     expect(
@@ -518,6 +520,7 @@ describe('배치 상세에 남는 상자 추가 결과', () => {
       if (!('title' in receivedToast)) throw new Error('오류 토스트가 없습니다.');
       const title = String(receivedToast.title);
       expect(title).toContain('차단 항목 1건');
+      expect(title).toContain('주문번호 ORDER-JOIN');
       expect(title).toContain('123456789012');
       expect(title).toContain('SKU-A');
       expect(title).toContain('3개 중 1개 부족');
@@ -545,7 +548,8 @@ describe('배치 상세에 남는 상자 추가 결과', () => {
     const title = String(receivedToast.title);
     expect(title).toContain('요청 배치 batch-1:');
     expect(title).toContain('차단 항목 1건');
-    expect(title).toContain('박스 box-A');
+    expect(title).toContain('주문번호 ORDER-JOIN');
+    expect(title).not.toContain('박스 box-A');
     expect(title).toContain('SKU-A');
   });
 
@@ -614,6 +618,7 @@ describe('배치 상세에 남는 상자 추가 결과', () => {
     const title = String(receivedToast.title);
     expect(title).toContain('요청 배치 batch-1:');
     expect(title).toContain('차단 항목 1건');
-    expect(title).toContain('박스 box-A');
+    expect(title).toContain('주문번호 ORDER-JOIN');
+    expect(title).not.toContain('박스 box-A');
   });
 });

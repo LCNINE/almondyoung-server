@@ -215,6 +215,7 @@ describe('batch blocker toast fallback', () => {
   const blockers = [
     {
       shipmentId: 'shipment-full-id',
+      orderNos: ['ORDER-100', 'ORDER-101'],
       reason: 'STOCK_SHORT',
       shipmentLineId: 'line-a',
       skuId: 'sku-a',
@@ -227,6 +228,7 @@ describe('batch blocker toast fallback', () => {
     },
     {
       shipmentId: 'shipment-full-id',
+      orderNos: ['ORDER-100', 'ORDER-101'],
       reason: 'STOCK_SHORT',
       shipmentLineId: 'line-b',
       skuId: 'sku-b',
@@ -251,7 +253,8 @@ describe('batch blocker toast fallback', () => {
       };
       const message = getServerDenyMessage({ statusCode: 409, response: body });
       expect(message).toContain('차단 항목 2건');
-      expect(message).toContain('shipment-full-id');
+      expect(message).toContain('주문번호 ORDER-100, ORDER-101');
+      expect(message).not.toContain('shipment-full-id');
       expect(message).toContain('상품 A');
       expect(message).toContain('SKU-A');
       expect(message).toContain('SKU-B');
@@ -272,6 +275,7 @@ describe('batch blocker toast fallback', () => {
         errors: [
           {
             shipmentId: 'shipment-full-id',
+            orderNos: ['ORDER-NEW'],
             reason: 'NEW_REASON',
             trackingNo: '123456789012',
             skuName: '상품 A',
@@ -283,6 +287,7 @@ describe('batch blocker toast fallback', () => {
       },
     });
 
+    expect(message).toContain('주문번호 ORDER-NEW');
     expect(message).toContain('123456789012');
     expect(message).toContain('상품 A');
     expect(message).toContain('SKU-A');
@@ -294,6 +299,7 @@ describe('batch blocker toast fallback', () => {
     const exception = joinBlocked('shipment-full-id', [
       {
         shipmentId: 'shipment-full-id',
+        orderNos: ['ORDER-WAYBILL'],
         reason: 'WAYBILL_NOT_READY',
         shipmentLineId: null,
         skuId: null,
@@ -310,6 +316,7 @@ describe('batch blocker toast fallback', () => {
       response: exception.getResponse(),
     });
 
+    expect(message).toContain('주문번호 ORDER-WAYBILL');
     expect(message).toContain('송장 123456789012');
     expect(message).toContain('송장 미발급·재발급 필요');
     expect(message).not.toContain('WAYBILL_STALE: manifest changed');
@@ -516,6 +523,30 @@ describe('batch blocker groups', () => {
       parseServerError({ response: { status: 409, data: { code, errors } } })
     );
   }
+
+  it('주문번호가 비어 있으면 내부 박스 ID를 패널과 토스트에 표시하지 않는다', () => {
+    const blocker = {
+      shipmentId: 'box-uuid',
+      orderNos: [],
+      reason: 'STOCK_SHORT',
+      requiredQty: 1,
+      shortQty: 1,
+    };
+    const panelRow = group([blocker]).groups[0].rows[0];
+    const toastMessage = getServerDenyMessage({
+      statusCode: 409,
+      response: {
+        code: 'BATCH_START_BLOCKED',
+        message: 'Batch cannot start',
+        errors: [blocker],
+      },
+    });
+    expect(panelRow).toContain('주문번호 확인 필요');
+    expect(panelRow).not.toContain('box-uuid');
+    expect(toastMessage).toContain('주문번호 확인 필요');
+    expect(toastMessage).not.toContain('box-uuid');
+  });
+
   it.each([
     ['INBOUND_PENDING', 'BATCH_START_BLOCKED', '창고 담당자에게 적치 완료를 요청한 뒤 다시 「피킹 시작」을 누르거나, 배치 상세에서 이 박스를 빼고 시작하세요.'],
     ['INBOUND_PENDING', 'BATCH_JOIN_BLOCKED', '창고 담당자에게 적치 완료를 요청한 뒤 다시 넣어 주세요.'],
@@ -523,7 +554,6 @@ describe('batch blocker groups', () => {
     ['STOCK_SHORT', 'BATCH_JOIN_BLOCKED', '재고가 모자라 이 배치에 넣을 수 없어요. 재고를 확인해 주세요.'],
     ['WAYBILL_NOT_READY', 'BATCH_START_BLOCKED', '출고 상세에서 송장 상태를 확인하고 발급(재발급)한 뒤 다시 시작하거나, 배치 상세에서 이 박스를 빼고 시작하세요.'],
     ['WAYBILL_NOT_READY', 'BATCH_JOIN_BLOCKED', '출고 상세에서 송장 상태를 확인하고 발급(재발급)한 뒤 다시 넣어 주세요.'],
-    ['CANCEL_REQUESTED', 'BATCH_START_BLOCKED', '취소 처리가 끝날 때까지 이 박스는 출고할 수 없어요. 배치 상세에서 이 박스를 빼고 시작하세요.'],
   ])('guides the administrator for %s in %s', (reason, code, expected) => {
     const result = group([{ shipmentId: 'box-1', reason, requiredQty: 1, shortQty: 1 }], code);
     expect(result.groups[0].guidance).toBe(expected);
@@ -533,6 +563,7 @@ describe('batch blocker groups', () => {
     const result = group([
       {
         shipmentId: 'box-1',
+        orderNos: ['ORDER-1', 'ORDER-1B'],
         reason: 'STOCK_SHORT',
         trackingNo: '123456789012',
         skuName: '상품 A',
@@ -541,6 +572,7 @@ describe('batch blocker groups', () => {
       },
       {
         shipmentId: 'box-2',
+        orderNos: ['ORDER-2'],
         reason: 'INBOUND_PENDING',
         skuCode: 'SKU-B',
         requiredQty: 2,
@@ -548,6 +580,7 @@ describe('batch blocker groups', () => {
       },
       {
         shipmentId: 'box-3',
+        orderNos: ['ORDER-3'],
         reason: 'WAYBILL_NOT_READY',
         requiredQty: null,
         shortQty: null,
@@ -557,17 +590,17 @@ describe('batch blocker groups', () => {
       result.groups
         .map((g) => [g.title, ...g.rows, g.guidance].join(' '))
         .join(' ')
-    ).toContain('1234-5678-9012 · 상품 A 3개 중 1개 부족');
+    ).toContain('주문번호 ORDER-1, ORDER-1B · 송장 1234-5678-9012 · 상품 A 3개 중 1개 부족');
     expect(
       result.groups
         .map((g) => [g.title, ...g.rows, g.guidance].join(' '))
         .join(' ')
-    ).toContain('박스 box-2 · SKU-B 2개 중 2개 부족');
+    ).toContain('주문번호 ORDER-2 · SKU-B 2개 중 2개 부족');
     expect(
       result.groups
         .map((g) => [g.title, ...g.rows, g.guidance].join(' '))
         .join(' ')
-    ).toContain('박스 box-3 · 송장 재발급 필요');
+    ).toContain('주문번호 ORDER-3 · 송장 재발급 필요');
     expect(result.groups.map((g) => g.reason)).toEqual([
       'INBOUND_PENDING',
       'STOCK_SHORT',
