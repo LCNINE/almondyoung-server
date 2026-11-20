@@ -67,6 +67,19 @@ const COLUMNS: Record<PrintKind | "default", string> = {
   default: "grid-cols-1 md:grid-cols-4",
 }
 
+// 가로·세로 크기가 섞이면 grid 는 줄 높이를 가장 긴 카드에 맞춰 빈칸이 생겨서 다단으로 빼곡히 쌓는다
+const MASONRY_COLUMNS: Record<PrintKind | "default", string> = {
+  pet: "columns-2 px-[14px] md:columns-6 md:px-0",
+  mini: "columns-2 px-[14px] md:columns-6 md:px-0",
+  window: "columns-1 md:columns-2",
+  card: "columns-1 md:columns-4",
+  bizcard: "columns-1 md:columns-4",
+  nail: "columns-1 md:columns-4",
+  menu: "columns-1 md:columns-4",
+  diploma: "columns-1 md:columns-4",
+  default: "columns-1 md:columns-4",
+}
+
 const SHORT_NAMES: Record<PrintKind, string> = {
   pet: "배너",
   mini: "미니배너",
@@ -203,10 +216,17 @@ export function AlmondTemplateGallery({
   const startHref = canDesign
     ? `/${countryCode}/almond-template?${startParams}`
     : `/${countryCode}/almond-template/edit?${startParams}`
-  const columns = kind ? COLUMNS[kind] : COLUMNS.default
+  const sizes = new Set(visible.map((item) => item.size))
+  if (page === 1) sizes.add(startSize)
+  const masonry = sizes.size > 1
+  const columnKey = kind || "default"
+  const columns = masonry
+    ? MASONRY_COLUMNS[columnKey]
+    : cn("grid items-start", COLUMNS[columnKey])
   const itemClass = cn(
     kind === "pet" || kind === "mini" ? "px-[6px] pt-5" : "px-[30px] pt-[30px]",
-    "text-center md:px-[7px] md:pt-0 md:pb-5"
+    "text-center md:px-[7px] md:pt-0 md:pb-5",
+    masonry && "break-inside-avoid"
   )
   const chip = (active: boolean) =>
     cn(
@@ -587,7 +607,7 @@ export function AlmondTemplateGallery({
             시안 목록을 불러오지 못했습니다. 페이지를 새로고침해 주세요.
           </div>
         ) : (
-          <ul className={cn("grid items-start", columns)}>
+          <ul className={columns}>
             {page === 1 && (
               <li className={itemClass}>
                 <a href={startHref} className="block">
