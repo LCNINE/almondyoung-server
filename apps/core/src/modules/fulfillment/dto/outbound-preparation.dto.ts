@@ -56,6 +56,8 @@ export class PreparationElsewhereDto {
 }
 
 export class PreparationLineStockDto {
+  // 이 줄의 SKU. 보충 제안의 그 상품으로 잇는다
+  skuId: string;
   // 이 창고 재고(ON_HAND)와 그중 다른 상자가 잡은 수량
   onHand: number;
   reservedByOthers: number;
