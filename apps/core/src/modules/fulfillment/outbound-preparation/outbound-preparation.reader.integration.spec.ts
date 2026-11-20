@@ -10,6 +10,7 @@ import * as postgres from 'postgres';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import {
+  CONSOLIDATION_RECIPIENT,
   consolidationBase,
   createConsolidationSource,
   inRollbackTx,
@@ -472,6 +473,9 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
       expect((await planning.getShipmentDetail(source.shipment.id, tx)).needsInfo).toEqual([
         { kind: 'recipient_incomplete', fields: ['recipientName', 'phone', 'postalCode', 'roadAddress'] },
       ]);
+      expect(
+        missingRecipient.buckets.find(({ bucket }) => bucket === 'needs_info')?.shipments[0].profileSplit,
+      ).toBeUndefined();
 
       await tx.update(wmsTables.skus).set({ deliveryProfileId: null }).where(eq(wmsTables.skus.id, base.skuId));
 
@@ -495,6 +499,82 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
       expect(missingProfile.buckets.find(({ bucket }) => bucket === 'needs_info')?.shipments[0].needsInfo?.[0]).toEqual(
         { kind: 'shipping_profile_missing', skus: [sku] },
       );
+    });
+  });
+
+  it('배송 프로필이 섞인 정보 부족 상자에만 그 자리에서 나눌 줄과 상자 버전을 싣는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const base = await consolidationBase(tx);
+      const kept = await createConsolidationSource(tx, wired, base, { quantity: 1, customerId: randomUUID() });
+      const moved = await createConsolidationSource(tx, wired, base, { quantity: 2, customerId: randomUUID() });
+      const [baseSku] = await tx.select().from(wmsTables.skus).where(eq(wmsTables.skus.id, base.skuId));
+      const [cold] = await tx
+        .insert(wmsTables.deliveryProfiles)
+        .values({ name: `it-cold-${randomUUID().slice(0, 8)}`, sourceType: 'in_house' })
+        .returning();
+      const [coldSku] = await tx
+        .insert(wmsTables.skus)
+        .values({
+          name: 'it-cold-sku',
+          code: `IT-COLD-${randomUUID()}`,
+          holderId: baseSku.holderId,
+          deliveryProfileId: cold.id,
+        })
+        .returning();
+      // 다른 프로필의 상품 줄을 한 상자에 둔다(분할 전 섞인 상자)
+      await tx
+        .update(wmsTables.fulfillmentOrderItems)
+        .set({ skuId: coldSku.id })
+        .where(eq(wmsTables.fulfillmentOrderItems.id, moved.fulfillmentOrderItemId));
+      await tx
+        .update(wmsTables.shipmentLines)
+        .set({ shipmentId: kept.shipment.id, skuId: coldSku.id })
+        .where(eq(wmsTables.shipmentLines.id, moved.shipmentLineId));
+      const [baseProfile] = await tx
+        .select({ id: wmsTables.deliveryProfiles.id, name: wmsTables.deliveryProfiles.name })
+        .from(wmsTables.deliveryProfiles)
+        .where(eq(wmsTables.deliveryProfiles.id, baseSku.deliveryProfileId ?? ''));
+
+      const summary = await reader.summarize(base.warehouseId, undefined, tx);
+      const row = summary.buckets
+        .find(({ bucket }) => bucket === 'needs_info')
+        ?.shipments.find(({ shipmentId }) => shipmentId === kept.shipment.id);
+
+      expect(row?.needsInfo?.[0].kind).toBe('shipping_profile_mixed');
+      expect(row?.profileSplit).toEqual({
+        manifestVersion: kept.shipment.manifestVersion,
+        lines: expect.arrayContaining([
+          {
+            id: kept.shipmentLineId,
+            lineVersion: kept.line.lineVersion,
+            qty: 1,
+            skuId: base.skuId,
+            skuName: baseSku.name,
+            skuCode: baseSku.code,
+            deliveryProfile: baseProfile,
+          },
+          {
+            id: moved.shipmentLineId,
+            lineVersion: moved.line.lineVersion,
+            qty: 2,
+            skuId: coldSku.id,
+            skuName: 'it-cold-sku',
+            skuCode: coldSku.code,
+            deliveryProfile: { id: cold.id, name: cold.name },
+          },
+        ]),
+      });
+      expect(row?.profileSplit?.lines).toHaveLength(2);
+      // 받는 분 정보는 싣지 않는다
+      expect(JSON.stringify(row?.profileSplit)).not.toContain(CONSOLIDATION_RECIPIENT.recipientName);
+
+      // 프로필이 하나로 맞으면 정보 부족이 아니고, 나눌 줄도 없다
+      await tx.update(wmsTables.skus).set({ deliveryProfileId: cold.id }).where(eq(wmsTables.skus.id, base.skuId));
+      const fixed = await reader.summarize(base.warehouseId, undefined, tx);
+      expect(
+        fixed.buckets.flatMap(({ shipments }) => shipments).find(({ shipmentId }) => shipmentId === kept.shipment.id)
+          ?.profileSplit,
+      ).toBeUndefined();
     });
   });
 

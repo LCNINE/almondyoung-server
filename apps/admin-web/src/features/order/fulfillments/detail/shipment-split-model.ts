@@ -7,7 +7,9 @@ export function lineOrderNo(line: ShipmentAdminLine): string | null {
 }
 
 /** 상품명(옵션). 이름을 싣지 않는 응답이면 SKU 앞자리 */
-export function splitLineName(line: ShipmentAdminLine): string {
+export function splitLineName(
+  line: Pick<ShipmentAdminLine, 'skuName' | 'skuId'>
+): string {
   return line.skuName ?? `SKU ${line.skuId.slice(0, 8)}`;
 }
 

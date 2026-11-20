@@ -71,6 +71,7 @@ export class OutboundPreparationReader {
           id: wmsTables.shipments.id,
           status: wmsTables.shipments.status,
           recipientSnapshot: wmsTables.shipments.recipientSnapshot,
+          manifestVersion: wmsTables.shipments.manifestVersion,
         })
         .from(wmsTables.shipments)
         .where(
@@ -119,7 +120,7 @@ export class OutboundPreparationReader {
         ),
       );
       const activeIds = new Set(workItems.map((item) => item.shipmentId));
-      const needsInfoTargets: { id: string; recipientSnapshot: unknown }[] = [];
+      const needsInfoTargets: { id: string; recipientSnapshot: unknown; manifestVersion: number }[] = [];
       const linesByShipment = new Map<string, OptionLine[]>();
 
       for (const line of lines) {
@@ -185,7 +186,11 @@ export class OutboundPreparationReader {
         }
 
         if (bucketName === 'needs_info') {
-          needsInfoTargets.push({ id: shipment.id, recipientSnapshot: shipment.recipientSnapshot });
+          needsInfoTargets.push({
+            id: shipment.id,
+            recipientSnapshot: shipment.recipientSnapshot,
+            manifestVersion: shipment.manifestVersion,
+          });
         }
 
         const names = shipmentLines.map((line) => line.skuName);
@@ -244,7 +249,10 @@ export class OutboundPreparationReader {
   private async fillNeedsInfo(
     trx: DbTx,
     shipments: PreparationBucketDto['shipments'],
-    input: { targets: { id: string; recipientSnapshot: unknown }[]; untrusted: Map<string, Set<string>> },
+    input: {
+      targets: { id: string; recipientSnapshot: unknown; manifestVersion: number }[];
+      untrusted: Map<string, Set<string>>;
+    },
   ): Promise<void> {
     if (shipments.length === 0) {
       return;
@@ -254,17 +262,34 @@ export class OutboundPreparationReader {
       trx,
       shipments.map((shipment) => shipment.shipmentId),
     );
-    const recipients = new Map(input.targets.map((target) => [target.id, target.recipientSnapshot]));
+    const targets = new Map(input.targets.map((target) => [target.id, target]));
 
     for (const shipment of shipments) {
+      const target = targets.get(shipment.shipmentId);
+      const shipmentLines = lines.get(shipment.shipmentId) ?? [];
       const issues = needsInfoIssues({
-        lines: lines.get(shipment.shipmentId) ?? [],
-        recipientSnapshot: recipients.get(shipment.shipmentId),
+        lines: shipmentLines,
+        recipientSnapshot: target?.recipientSnapshot,
         untrustedSkuIds: input.untrusted.get(shipment.shipmentId) ?? new Set(),
       });
 
       shipment.needsInfo = issues;
       shipment.reason = issues[0] ? needsInfoReasonText(issues[0]) : null;
+
+      if (target && issues.some((issue) => issue.kind === 'shipping_profile_mixed')) {
+        shipment.profileSplit = {
+          manifestVersion: target.manifestVersion,
+          lines: shipmentLines.map((line) => ({
+            id: line.lineId,
+            lineVersion: line.lineVersion,
+            qty: line.qty,
+            skuId: line.skuId,
+            skuName: line.skuName,
+            skuCode: line.skuCode,
+            deliveryProfile: line.profileId ? { id: line.profileId, name: line.profileName ?? '' } : null,
+          })),
+        };
+      }
     }
   }
 

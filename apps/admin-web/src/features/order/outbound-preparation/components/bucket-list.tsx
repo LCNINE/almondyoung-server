@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Fragment } from 'react';
+import { Fragment, useState } from 'react';
 import { Can } from '@/components/auth/can';
 import { splitShareText } from '@/features/order/fulfillments/detail/consolidation-sheet-model';
 import { Button } from '@/components/ui/button';
@@ -17,6 +17,7 @@ import {
 import {
   useCreateShipmentConsolidation,
   useRunOutboundPreparation,
+  useSplitShipment,
 } from '@/lib/services/orders';
 import type { PreparationBucketDto } from '@/lib/types/dto/fulfillment';
 import {
@@ -35,6 +36,7 @@ import {
 import { incomingText, shortageLineText } from '../blocked-copy';
 import { BUCKET_LABELS } from './bucket-table';
 import { NeedsInfoList } from './needs-info-list';
+import { ProfileSplitDialog } from './profile-split-dialog';
 
 export function BucketList({
   bucket,
@@ -57,6 +59,10 @@ export function BucketList({
   canPrepare: boolean;
   onPrepareSeparately: () => void;
 }) {
+  const [splitting, setSplitting] = useState<{
+    shipmentId: string;
+    orderText: string;
+  } | null>(null);
   const selected = new Set(selectedIds);
   const choosable = SELECTABLE_BUCKETS.has(bucket.bucket);
   const columns = choosable ? 6 : 5;
@@ -255,6 +261,23 @@ export function BucketList({
                           </Button>
                         </Can>
                       )}
+                      {bucket.bucket === 'needs_info' &&
+                        shipment.profileSplit && (
+                          <Can run={useSplitShipment}>
+                            <Button
+                              size="sm"
+                              disabled={busy}
+                              onClick={() =>
+                                setSplitting({
+                                  shipmentId: shipment.shipmentId,
+                                  orderText: plannedOrderText(shipment),
+                                })
+                              }
+                            >
+                              배송 프로필별로 나누기
+                            </Button>
+                          </Can>
+                        )}
                       {bucket.bucket === 'unavailable' && (
                         <Button size="sm" variant="outline" asChild>
                           <Link href="/inventory/inbound">입고 화면</Link>
@@ -277,6 +300,19 @@ export function BucketList({
           </TableBody>
         </Table>
       </div>
+      {splitting && (
+        <ProfileSplitDialog
+          key={splitting.shipmentId}
+          shipmentId={splitting.shipmentId}
+          orderText={splitting.orderText}
+          split={
+            bucket.shipments.find(
+              (shipment) => shipment.shipmentId === splitting.shipmentId
+            )?.profileSplit ?? null
+          }
+          onClose={() => setSplitting(null)}
+        />
+      )}
     </section>
   );
 }

@@ -88,6 +88,27 @@ export class NeedsInfoIssueDto {
   fields?: string[];
 }
 
+export class PreparationDeliveryProfileDto {
+  id: string;
+  name: string;
+}
+
+export class PreparationProfileSplitLineDto {
+  id: string;
+  lineVersion: number;
+  qty: number;
+  skuId: string;
+  skuName: string;
+  skuCode: string;
+  // SKU 에 지정된 배송 프로필
+  deliveryProfile: PreparationDeliveryProfileDto | null;
+}
+
+export class PreparationProfileSplitDto {
+  manifestVersion: number;
+  lines: PreparationProfileSplitLineDto[];
+}
+
 export class PreparationShortPickLineDto {
   name: string;
   locationCode: string;
@@ -121,6 +142,8 @@ export class PreparationShipmentDto {
   owner: PreparationOwnerDto | null;
   // 정보 부족 상자만: 고쳐야 할 것 전부(첫 항목이 사유)
   needsInfo?: NeedsInfoIssueDto[];
+  // 배송 프로필이 섞인 정보 부족 상자만: 그 자리에서 프로필별로 나누는 데 쓰는 줄(받는 분 정보 없음)
+  profileSplit?: PreparationProfileSplitDto;
 }
 
 export class PreparationOwnerDto {

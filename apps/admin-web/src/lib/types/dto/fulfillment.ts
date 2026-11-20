@@ -1116,6 +1116,21 @@ export interface PreparationShipmentDto {
   owner?: { id: string; name: string } | null;
   // 정보 부족 상자만: 고쳐야 할 것 전부. 서버가 주기 전 응답에는 없다
   needsInfo?: NeedsInfoIssue[];
+  /** 배송 프로필이 섞인 정보 부족 상자만 — 그 자리에서 나누는 데 쓰는 줄. 옛 core 응답엔 없다 */
+  profileSplit?: PreparationProfileSplit;
+}
+
+export interface PreparationProfileSplit {
+  manifestVersion: number;
+  lines: {
+    id: string;
+    lineVersion: number;
+    qty: number;
+    skuId: string;
+    skuName: string;
+    skuCode: string;
+    deliveryProfile: { id: string; name: string } | null;
+  }[];
 }
 
 export interface PreparationBatchReturn {

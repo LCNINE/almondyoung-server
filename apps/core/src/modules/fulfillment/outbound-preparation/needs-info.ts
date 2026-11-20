@@ -28,6 +28,13 @@ export interface NeedsInfoLine {
   profileName: string | null;
 }
 
+/** 정보 부족 판정 줄에 그 상자 줄 자체(나누기 요청에 쓰는 id·버전·수량)를 더한 것 */
+export interface NeedsInfoShipmentLine extends NeedsInfoLine {
+  lineId: string;
+  lineVersion: number;
+  qty: number;
+}
+
 /**
  * 상자 확정이 거절할 «정보 부족» 문제를 모두 고른다. 출고 준비 분류와 같은 판정(배송 프로필 → 수령인 → 쇼핑몰 품목 번호)
  * 순서로 내므로 첫 항목이 목록의 사유다.
@@ -98,8 +105,11 @@ function uniqueBySku(lines: NeedsInfoLine[]): NeedsInfoLine[] {
 }
 
 /** 상자마다 «정보 부족» 판정에 필요한 줄(SKU 코드·배송 프로필 이름). */
-export async function loadNeedsInfoLines(trx: DbTx, shipmentIds: string[]): Promise<Map<string, NeedsInfoLine[]>> {
-  const byShipment = new Map<string, NeedsInfoLine[]>();
+export async function loadNeedsInfoLines(
+  trx: DbTx,
+  shipmentIds: string[],
+): Promise<Map<string, NeedsInfoShipmentLine[]>> {
+  const byShipment = new Map<string, NeedsInfoShipmentLine[]>();
 
   if (shipmentIds.length === 0) {
     return byShipment;
@@ -108,6 +118,9 @@ export async function loadNeedsInfoLines(trx: DbTx, shipmentIds: string[]): Prom
   const rows = await trx
     .select({
       shipmentId: wmsTables.shipmentLines.shipmentId,
+      lineId: wmsTables.shipmentLines.id,
+      lineVersion: wmsTables.shipmentLines.lineVersion,
+      qty: wmsTables.shipmentLines.qty,
       skuId: wmsTables.skus.id,
       skuName: wmsTables.skus.name,
       skuCode: wmsTables.skus.code,
