@@ -324,7 +324,7 @@ export class OutboundPreparationReader {
         return skuId
           ? {
               ...line,
-              stock: shortageStockOf(stock.get(skuId), pipeline.get(skuId), line.reservedQty, scope),
+              stock: { skuId, ...shortageStockOf(stock.get(skuId), pipeline.get(skuId), line.reservedQty, scope) },
             }
           : line;
       });

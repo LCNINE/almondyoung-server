@@ -666,7 +666,7 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
         name: expect.any(String),
         qty: 5,
         reservedQty: 0,
-        stock: { onHand: 4, reservedByOthers: reserved, incoming: null, elsewhere: null },
+        stock: { skuId: base.skuId, onHand: 4, reservedByOthers: reserved, incoming: null, elsewhere: null },
       });
 
       // 판매 창고가 여럿이면 이 창고로 들어올 수량은 모르고, 판매하지 않는 창고 보유·발주만 안다
@@ -677,6 +677,7 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
       await seedWarehouseWithZone(tx);
 
       expect(lineOf(await reader.summarize(base.warehouseId, undefined, tx))?.stock).toEqual({
+        skuId: base.skuId,
         onHand: 4,
         reservedByOthers: reserved,
         incoming: null,
@@ -689,6 +690,7 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
         .where(not(eq(wmsTables.warehouses.id, base.warehouseId)));
 
       expect(lineOf(await reader.summarize(base.warehouseId, undefined, tx))?.stock).toEqual({
+        skuId: base.skuId,
         onHand: 4,
         reservedByOthers: reserved,
         incoming: { inTransit: 0, inTransitEta: null, ordered: 0, inboundShipment: 0, inboundShipmentEta: null },

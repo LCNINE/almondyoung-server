@@ -1088,6 +1088,8 @@ export interface PreparationElsewhere {
 }
 
 export interface PreparationLineStock {
+  // 옛 응답에는 없다
+  skuId?: string;
   onHand: number;
   reservedByOthers: number;
   // 판매 창고가 이 창고 하나일 때만 안다

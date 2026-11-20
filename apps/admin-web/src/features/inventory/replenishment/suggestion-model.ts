@@ -73,6 +73,12 @@ export function toTransferPayload(
   };
 }
 
+// 다른 화면이 «?sku=<SKU id>» 로 그 상품의 판정을 바로 연다
+export const SKU_PARAM = 'sku';
+
+export const replenishmentSkuHref = (skuId: string) =>
+  `/inventory/replenishment?${SKU_PARAM}=${encodeURIComponent(skuId)}`;
+
 export function urgencyLabel(row: ReplenishmentSuggestionRowDto): string {
   const gap = row.sellable.position - row.sellable.reorderPoint;
   return gap < 0 ? `부족 ${-gap}` : `여유 ${gap}`;

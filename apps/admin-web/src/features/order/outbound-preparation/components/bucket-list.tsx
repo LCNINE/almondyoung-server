@@ -3,6 +3,8 @@
 import Link from 'next/link';
 import { Fragment, useState } from 'react';
 import { Can } from '@/components/auth/can';
+import { replenishmentSkuHref } from '@/features/inventory/replenishment/suggestion-model';
+import { useCanOpen } from '@/hooks/use-permission';
 import { splitShareText } from '@/features/order/fulfillments/detail/consolidation-sheet-model';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -325,7 +327,10 @@ function ReasonCell({
   shipment: PreparationBucketDto['shipments'][number];
 }) {
   const nextStep = batchReturnNextStep(bucket, shipment);
-  const blocked = blockedReason(bucket, shipment);
+  const replenishment = useCanOpen('/inventory/replenishment');
+  const canOpenReplenishment =
+    replenishment.status === 'ready' && replenishment.allowed;
+  const blocked = blockedReason(bucket, shipment, canOpenReplenishment);
 
   if (!shipment.shortPick?.length && !shipment.batchReturn) {
     return blocked ?? <>{shipment.reason ?? '-'}</>;
@@ -359,7 +364,8 @@ function ReasonCell({
 // 출고불가는 모자란 상품이 언제·어디서 오는지, 정보 부족은 고칠 것과 고치는 곳
 function blockedReason(
   bucket: PreparationBucketDto['bucket'],
-  shipment: PreparationBucketDto['shipments'][number]
+  shipment: PreparationBucketDto['shipments'][number],
+  canOpenReplenishment: boolean
 ) {
   if (bucket === 'needs_info' && shipment.needsInfo?.length) {
     return <NeedsInfoList issues={shipment.needsInfo} />;
@@ -379,6 +385,19 @@ function blockedReason(
             <span className="font-medium text-foreground">{line.name}: </span>
           )}
           {line.stock && incomingText(line.stock)}
+          {canOpenReplenishment &&
+            line.stock?.skuId &&
+            (line.stock.elsewhere?.onHand ?? 0) > 0 && (
+              <>
+                {' '}
+                <Link
+                  href={replenishmentSkuHref(line.stock.skuId)}
+                  className="whitespace-nowrap text-primary underline underline-offset-2"
+                >
+                  보충 제안에서 보기
+                </Link>
+              </>
+            )}
         </li>
       ))}
     </ul>

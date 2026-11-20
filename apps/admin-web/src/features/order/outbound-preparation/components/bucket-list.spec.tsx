@@ -25,6 +25,16 @@ jest.mock('./profile-split-dialog', () => ({
 jest.mock('@/components/auth/can', () => ({
   Can: ({ children }: { children: React.ReactNode }) => children,
 }));
+const mockOpen = { replenishment: true };
+jest.mock('@/hooks/use-permission', () => ({
+  useCanOpen: (screen: string) => ({
+    status: 'ready',
+    allowed: screen === '/inventory/replenishment' && mockOpen.replenishment,
+  }),
+}));
+beforeEach(() => {
+  mockOpen.replenishment = true;
+});
 
 const shipment = (shipmentId: string, reason: string | null) => ({
   shipmentId,
@@ -368,4 +378,53 @@ it('나누기 줄을 받은 정보 부족 상자에만 그 자리에서 나누�
   expect(screen.getByRole('dialog').textContent).toBe(
     '#MIXED mixed v4 나누기 창'
   );
+});
+
+const awayStock = (skuId: string | undefined, awayOnHand: number) => ({
+  ...(skuId ? { skuId } : {}),
+  onHand: 0,
+  reservedByOthers: 0,
+  incoming: null,
+  elsewhere: { onHand: awayOnHand, ordered: 0, orderedEta: null },
+});
+
+function unavailable(
+  lines: { name: string; stock: ReturnType<typeof awayStock> }[]
+) {
+  return list({
+    bucket: 'unavailable',
+    count: 1,
+    singleCount: 0,
+    multiCount: 1,
+    shipments: [
+      {
+        ...shipment('s1', null),
+        lines: lines.map((line) => ({ ...line, qty: 2, reservedQty: 0 })),
+      },
+    ],
+  });
+}
+
+it('다른 창고에 재고가 있는 상품만 보충 제안의 그 상품으로 잇는다', () => {
+  render(
+    unavailable([
+      { name: '상품 A', stock: awayStock('sku a', 6) },
+      { name: '상품 B', stock: awayStock('sku-b', 0) },
+      { name: '상품 C', stock: awayStock(undefined, 3) },
+    ])
+  );
+
+  expect(
+    screen
+      .getAllByRole('link', { name: '보충 제안에서 보기' })
+      .map((link) => link.getAttribute('href'))
+  ).toEqual(['/inventory/replenishment?sku=sku%20a']);
+});
+
+it('보충 제안 화면을 볼 수 없으면 링크를 보이지 않는다', () => {
+  mockOpen.replenishment = false;
+  render(unavailable([{ name: '상품 A', stock: awayStock('sku-a', 6) }]));
+
+  expect(screen.getByText(/다른 창고에 6개 — 옮겨 와야 해요/)).toBeTruthy();
+  expect(screen.queryByRole('link', { name: '보충 제안에서 보기' })).toBeNull();
 });

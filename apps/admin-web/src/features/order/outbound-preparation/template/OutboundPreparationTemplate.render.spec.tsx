@@ -115,6 +115,7 @@ jest.mock('@/hooks/use-permission', () => ({
         mockConsolidationAllowed),
   }),
   usePermissionCheck: () => ({ canRun: () => mockAllowed }),
+  useCanOpen: () => ({ status: 'ready', allowed: true }),
 }));
 
 jest.mock('@/features/order/fulfillments/detail/consolidation-sheet', () => ({
