@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { errorMessage } from './errorMessage';
-import { ApiError, ConflictError, NetworkError } from './httpClient';
+import {
+  ApiError,
+  ConflictError,
+  NetworkError,
+  type PreparationRejection,
+} from './httpClient';
 
 describe('errorMessage', () => {
   it('maps a ConflictError to a retry message', () => {
@@ -444,5 +449,72 @@ describe('출고 저장 경로에서 반영되지 않은 409 문구', () => {
     expect(errorMessage(new ConflictError('m', 'SOMETHING_NEW'), 'outbound')).toBe(
       '다른 작업자가 먼저 변경했어요. 새로고침 후 다시 시도해 주세요.'
     );
+  });
+});
+
+describe('관리자 화면에 남은 출고 저장 거절 문구', () => {
+  const scanPath = '/shipments/s1/simple-outbound-scans';
+  const notice = '관리자 화면에 이 박스가 표시됐어요. 관리자를 불러 주세요.';
+  const recorded = (code: string, preparation?: PreparationRejection) => [
+    new ApiError('m', 409, code, preparation, undefined, undefined, undefined, scanPath, true),
+    new ConflictError('m', code, preparation, undefined, scanPath, true),
+  ];
+
+  it.each([
+    ['SHIPMENT_TOTE_NOT_RELEASED', '바구니 배정이 남아 있어 출고하지 못했어요.'],
+    ['SHIPMENT_INVOICE_NOT_READY', '이 박스의 송장이 출고할 상태가 아니에요.'],
+    ['WORK_ITEM_HANDOFF_REQUIRED', '다른 작업자가 맡은 박스예요.'],
+    ['SIMPLE_OUTBOUND_CLAIMED_BY_OTHER', '다른 작업자가 맡은 박스예요.'],
+    ['SHIPMENT_WORK_ITEM_MISSING', '이 박스의 배치 작업 기록을 찾지 못했어요.'],
+    ['SIMPLE_OUTBOUND_WORK_ITEM_MISSING', '이 박스의 배치 작업 기록을 찾지 못했어요.'],
+    ['SHIPMENT_INSPECTION_INCOMPLETE', '검수 기록이 맞지 않아 반영하지 못했어요. 담은 상품은 그대로 두세요.'],
+    ['SHIPMENT_DISPATCH_CUSTODY_MISMATCH', '출고 수량과 재고 기록이 맞지 않아 출고하지 못했어요. 담은 상품은 그대로 두세요.'],
+    ['PICKING_BATCH_STRATEGY_MISMATCH', '이 배치의 피킹 방식을 확인해야 해요.'],
+    ['SIMPLE_OUTBOUND_METHOD_UNSUPPORTED', '이 배치의 피킹 방식을 확인해야 해요.'],
+    ['WORK_ITEM_WAITING_OPERATION_CONFLICT', '이 박스에 처리 중인 변경(취소·합포장 등)이 있어요.'],
+    ['SHIPMENT_NOT_DISPATCHABLE', '지금 출고할 수 없는 박스예요. 주문이 취소되거나 바뀌었을 수 있어요. 담은 상품은 그대로 두세요.'],
+    ['SHIPMENT_NOT_INSPECTION_READY', '아직 검수할 수 없는 박스예요.'],
+    ['SHIPMENT_SESSION_MISSING', '배치 재고 기록을 확인해야 해요.'],
+    ['SHIPMENT_SESSION_NOT_ACTIVE', '배치 재고 기록을 확인해야 해요.'],
+    ['PICKING_SESSION_NOT_ACTIVE', '배치 재고 기록을 확인해야 해요.'],
+    ['SHIPMENT_PACKER_LEASE_REQUIRED', '이 박스의 작업자 확인이 맞지 않아요.'],
+    ['WAYBILL_STALE', '주문(주소·상품)이 바뀌어 이 송장은 쓸 수 없어요.'],
+    ['WAYBILL_NOT_DISPATCHABLE', '한진 등록이 끝나지 않은 송장이에요.'],
+    ['SIMPLE_OUTBOUND_PLAN_INVALIDATED', '출고 계획이 바뀌었어요.'],
+    ['SOMETHING_NEW', '반영되지 않았어요.'],
+  ])('%s', (code, reason) => {
+    for (const error of recorded(code))
+      expect(errorMessage(error, 'outbound')).toBe(`${reason} ${notice}`);
+  });
+
+  it.each([
+    [{ reasonCode: 'SOURCE_STOCK_CHANGED', recovery: 'review_batch' }, '출고 대상이나 작업 상태가 바뀌었어요.'],
+    [{ reasonCode: 'SOURCE_INSUFFICIENT', recovery: 'retry_preparation' }, '출고할 재고가 부족해요.'],
+    [{ reasonCode: 'REPLAN_LIMIT_REACHED', recovery: 'retry_preparation' }, '출고 준비를 여러 번 다시 했지만 맞추지 못했어요.'],
+  ] as const)('준비가 막힌 거절도 남았으면 같은 꼬리를 단다: %o', (preparation, reason) => {
+    for (const error of recorded('SIMPLE_OUTBOUND_PLAN_INVALIDATED', preparation))
+      expect(errorMessage(error, 'outbound')).toBe(`${reason} ${notice}`);
+  });
+
+  it.each([
+    'SHIPMENT_COMPONENT_CHANGED_RETRY',
+    'SHIPMENT_HANDED_OVER_TO_SELLMATE',
+    'LOCATION_OUTBOUND_FORCE_PERMISSION_REQUIRED',
+  ])('작업자가 그 자리에서 할 일이 있는 %s 는 원래 안내를 둔다', (code) => {
+    const plain = errorMessage(
+      new ApiError('m', 409, code, undefined, undefined, undefined, undefined, scanPath),
+      'outbound'
+    );
+    expect(plain).not.toContain('관리자 화면');
+    for (const error of recorded(code)) expect(errorMessage(error, 'outbound')).toBe(plain);
+  });
+
+  it('남기지 않은 거절은 지금 문구 그대로다', () => {
+    expect(
+      errorMessage(new ConflictError('m', 'SOMETHING_NEW', undefined, undefined, scanPath), 'outbound')
+    ).toBe('반영되지 않았어요. 관리자에게 이 코드를 알려 주세요: SOMETHING_NEW');
+    expect(
+      errorMessage(new ConflictError('m', 'SHIPMENT_TOTE_NOT_RELEASED', undefined, undefined, scanPath), 'outbound')
+    ).toBe('바구니 배정이 남아 있어 출고하지 못했어요. 관리자에게 바구니 배정을 풀어 달라고 해 주세요.');
   });
 });

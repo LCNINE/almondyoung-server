@@ -95,6 +95,8 @@ export class ApiError extends Error {
   readonly serverMessage?: string;
   /** 출고 저장 경로의 409 — 서버에 반영된 것이 없다고 말할 수 있다. */
   readonly notApplied: boolean;
+  /** 출고 저장 경로가 이 거절을 관리자 화면에 남겼다. */
+  readonly rejectionRecorded: boolean;
   constructor(
     message: string,
     status: number,
@@ -103,10 +105,12 @@ export class ApiError extends Error {
     errors?: unknown,
     requiredPermissions?: readonly string[],
     serverMessage?: string,
-    path?: string
+    path?: string,
+    rejectionRecorded?: boolean
   ) {
     super(message);
     this.notApplied = isSavePointRejection(status, code, path);
+    this.rejectionRecorded = this.notApplied && rejectionRecorded === true;
     this.status = status;
     if (serverMessage) this.serverMessage = serverMessage;
     this.errors = errors;
@@ -194,9 +198,20 @@ export class ConflictError extends ApiError {
     code?: string,
     preparation?: PreparationRejection,
     errors?: unknown,
-    path?: string
+    path?: string,
+    rejectionRecorded?: boolean
   ) {
-    super(message, 409, code, preparation, errors, undefined, undefined, path);
+    super(
+      message,
+      409,
+      code,
+      preparation,
+      errors,
+      undefined,
+      undefined,
+      path,
+      rejectionRecorded
+    );
   }
 }
 
@@ -283,13 +298,15 @@ export function createApiClient(deps: {
           code?: string;
           details?: unknown;
           errors?: unknown;
+          rejectionRecorded?: unknown;
         };
         throw new ConflictError(
           body.message ?? 'version conflict',
           body.code ?? body.error,
           parsePreparationRejection(body.details),
           body.errors,
-          o.path
+          o.path,
+          body.rejectionRecorded === true
         );
       }
       if (!res.ok) {
