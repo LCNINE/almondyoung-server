@@ -41,11 +41,15 @@ import type {
 } from '@/lib/types/dto/fulfillment';
 import { ExcludeShipmentDialog } from '../exclude-shipment-dialog';
 import { pendingCancellationItems } from '@/lib/api/domains/orders/pending-cancellation.shape';
-import type { PendingCancellation } from '@/lib/types/dto/fulfillment';
+import type {
+  PendingCancellation,
+  ScanRejection,
+} from '@/lib/types/dto/fulfillment';
 import { BatchStatusBadge } from '../batch-status-badge';
 import { useWarehouseCommandRetry } from '../../warehouse-command-retry';
 import { PICKING_METHOD_LABELS } from '@/lib/utils/picking-method';
 import { useOperatorNames } from '@/features/order/fulfillments/detail/operation-operator';
+import { ScanRejectionNotice } from '@/features/order/fulfillments/detail/scan-rejection-notice';
 import {
   HandoffDialog,
   type HandoffClaim,
@@ -110,6 +114,7 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
     (batch?.workItems ?? []).flatMap((item) => [
       item.pickerClaim.workerId,
       item.packerClaim.workerId,
+      item.scanRejection?.actorId,
     ])
   );
   const canAdd = canRun(useAddShipmentToBatch);
@@ -447,6 +452,41 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                               </p>
                             </div>
                           )}
+                          {item.scanRejection && (
+                            <ScanRejectionNotice
+                              compact
+                              rejection={item.scanRejection}
+                              workerName={workerName(item.scanRejection.actorId)}
+                            >
+                              <ScanRejectionBatchStep
+                                rejection={item.scanRejection}
+                                shipmentId={item.shipmentId}
+                                tote={
+                                  batch.toteAssignments.find(
+                                    (tote) =>
+                                      tote.shipmentId === item.shipmentId &&
+                                      !tote.releasedAt
+                                  )?.toteBarcode
+                                }
+                                canHandoff={
+                                  canWorkItemAction &&
+                                  !item.pendingCancellation &&
+                                  ((canHandoffPicker &&
+                                    !!handoffOwnerOf(
+                                      'picker',
+                                      item,
+                                      !!batch.inventorySession
+                                    )) ||
+                                  (canHandoff &&
+                                    !!handoffOwnerOf(
+                                      'packer',
+                                      item,
+                                      !!batch.inventorySession
+                                    )))
+                                }
+                              />
+                            </ScanRejectionNotice>
+                          )}
                         </TableCell>
                         <TableCell className="text-xs" title={item.pickerClaim.workerId ?? undefined}>
                           {claimText(item.pickerClaim, workerName)}
@@ -779,3 +819,36 @@ const CLAIM_STATE_LABEL: Record<string, string> = {
   expired: '시간 지남',
   released: '놓음',
 };
+
+/** 배치 상세에서 물류앱 막힘을 푸는 곳 — 담당은 이 줄의 넘기기, 바구니는 아래 바구니 목록, 나머지는 상자 상세 */
+function ScanRejectionBatchStep({
+  rejection,
+  shipmentId,
+  tote,
+  canHandoff,
+}: {
+  rejection: ScanRejection;
+  shipmentId: string;
+  tote?: string;
+  canHandoff: boolean;
+}) {
+  if (rejection.action === 'release_tote' && tote) {
+    return (
+      <p className="break-keep">
+        아래 바구니 목록에서 <span className="font-mono">{tote}</span> 를
+        확인해 주세요.
+      </p>
+    );
+  }
+  if (rejection.action === 'handoff_worker' && canHandoff) {
+    return <p className="break-keep">이 줄의 «넘기기»로 담당을 바꿔 주세요.</p>;
+  }
+  return (
+    <Link
+      className="whitespace-nowrap underline underline-offset-2"
+      href={`/order/fulfillments?shipmentId=${encodeURIComponent(shipmentId)}`}
+    >
+      상자 상세에서 확인
+    </Link>
+  );
+}
