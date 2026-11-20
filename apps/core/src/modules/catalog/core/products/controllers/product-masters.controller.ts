@@ -184,6 +184,12 @@ export class ProductMastersController {
     description: '품절 상태 필터. in_stock=판매가능, partial=부분품절, sold_out=전체품절. all/미지정=필터 없음.',
   })
   @ApiQuery({
+    name: 'skuLink',
+    required: false,
+    enum: ['all', 'linked', 'unlinked', 'void'],
+    description: 'SKU 연결 필터. unlinked=연결 안 된 품목이 있음, linked=모두 연결됨, void=전부 재고 안 씀.',
+  })
+  @ApiQuery({
     name: 'status',
     required: false,
     enum: ['active', 'inactive', 'draft'],
@@ -214,6 +220,7 @@ export class ProductMastersController {
       sort: query.sort,
       order: query.order,
       stock: query.stock,
+      skuLink: query.skuLink,
       deleted: query.deleted ?? false,
       ids: query.ids && query.ids.length > 0 ? query.ids : undefined,
     };
@@ -259,6 +266,7 @@ export class ProductMastersController {
       createdFrom: query.createdFrom,
       createdTo: query.createdTo,
       stock: query.stock,
+      skuLink: query.skuLink,
       deleted: query.deleted ?? false,
       ids: query.ids && query.ids.length > 0 ? query.ids : undefined,
     });

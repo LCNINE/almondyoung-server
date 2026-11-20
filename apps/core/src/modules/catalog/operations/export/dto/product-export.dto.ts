@@ -33,6 +33,11 @@ export class ProductExportFiltersDto {
   @IsIn(['all', 'in_stock', 'partial', 'sold_out'])
   stock?: 'all' | 'in_stock' | 'partial' | 'sold_out';
 
+  @ApiProperty({ required: false, enum: ['all', 'linked', 'unlinked', 'void'] })
+  @IsOptional()
+  @IsIn(['all', 'linked', 'unlinked', 'void'])
+  skuLink?: 'all' | 'linked' | 'unlinked' | 'void';
+
   @ApiProperty({ required: false }) @IsOptional() @IsUUID() createdBy?: string;
 
   @ApiProperty({

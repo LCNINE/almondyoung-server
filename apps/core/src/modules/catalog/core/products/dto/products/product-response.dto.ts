@@ -161,6 +161,15 @@ export class VariantPreviewDto {
 
   @ApiProperty({ description: '품목 상태', example: 'active' })
   status: string;
+
+  @ApiProperty({
+    description: 'SKU 연결 상태. linked=재고 연결됨, unlinked=연결 안 됨(주문이 매칭 대기로 남는다), void=재고를 쓰지 않음',
+    enum: ['linked', 'unlinked', 'void'],
+  })
+  skuLinkState: 'linked' | 'unlinked' | 'void';
+
+  @ApiProperty({ description: '연결된 SKU 종류 수. linked 가 아니면 0' })
+  skuCount: number;
 }
 
 export class ProductSummaryDto {
@@ -241,4 +250,7 @@ export class ProductSummaryDto {
     enum: ['none', 'partial', 'all'],
   })
   soldOutState: 'none' | 'partial' | 'all';
+
+  @ApiProperty({ description: 'SKU 가 연결 안 된 품목 수 (미리보기 상한과 무관하게 전 품목 기준)' })
+  unlinkedVariantCount: number;
 }
