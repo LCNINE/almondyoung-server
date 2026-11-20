@@ -18,6 +18,8 @@ import { grantedPermissionDecision } from './__support__/force-dispatch-decision
 import { addSecondSimpleOutboundLine } from './__support__/simple-outbound-fixtures';
 import * as wiring from './__support__/simple-outbound-wiring';
 import { assembleLabels } from '../waybill/__support__/label-fixtures';
+import { OutboundScanRejectionManager } from '../scan-rejections/outbound-scan-rejection.manager';
+import { BarcodeService } from '../../inventory/shared/services/barcode.service';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -662,6 +664,13 @@ describeIfDb('LocationOutboundService — real inventory', () => {
           { provide: LocationOutboundService, useValue: service },
           { provide: SimpleOutboundService, useValue: wiring.assembleSimpleOutbound(tx) },
           {
+            provide: OutboundScanRejectionManager,
+            useValue: new OutboundScanRejectionManager(
+              wiring.ambientDbService(tx),
+              new BarcodeService(wiring.ambientDbService(tx)),
+            ),
+          },
+          {
             provide: ShipmentWaybillReader,
             useValue: new ShipmentWaybillReader(
               wiring.ambientDbService(tx),
@@ -711,6 +720,14 @@ describeIfDb('LocationOutboundService — real inventory', () => {
           code: 'LOCATION_OUTBOUND_OVERSCAN',
           error: 'LOCATION_OUTBOUND_OVERSCAN',
         });
+        // 수량만 고치면 되는 거절이라 관리자 화면에 남기지 않는다.
+        expect(rejected.body).not.toHaveProperty('rejectionRecorded');
+        expect(
+          await tx
+            .select()
+            .from(wmsTables.outboundScanRejections)
+            .where(eq(wmsTables.outboundScanRejections.shipmentId, f.shipmentId)),
+        ).toEqual([]);
         const key = randomUUID();
         const picked = await request(server).post(`${prefix}-scans`).set('Idempotency-Key', key).send(scan).expect(201);
         expect(picked.body).toHaveProperty(

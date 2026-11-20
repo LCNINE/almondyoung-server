@@ -72,6 +72,8 @@ import { LocationOutboundService } from './services/location-outbound.service';
 import { LocationOutboundController } from './controllers/location-outbound.controller';
 import { ReturnBinService } from './services/return-bin.service';
 import { SimpleOutboundService } from './services/simple-outbound.service';
+import { OutboundScanRejectionManager } from './scan-rejections/outbound-scan-rejection.manager';
+import { OutboundRejectionInterceptor } from './scan-rejections/outbound-rejection.interceptor';
 import { ShipmentWaybillReader } from './reader/shipment-waybill.reader';
 import { RefillPendingReader } from './reader/refill-pending.reader';
 import { OutboundRefillController } from './controllers/outbound-refill.controller';
@@ -214,6 +216,8 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     AggregateThenSortPickingStrategy,
     PickToTotePickingStrategy,
     SimpleOutboundService,
+    OutboundScanRejectionManager,
+    OutboundRejectionInterceptor,
     LocationOutboundService,
     ReturnBinService,
     ShipmentWaybillReader,

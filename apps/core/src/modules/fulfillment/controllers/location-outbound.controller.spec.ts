@@ -1,13 +1,14 @@
 import { Server } from 'http';
 import { Request } from 'express';
 import { Test } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { ConflictException, INestApplication, ValidationPipe } from '@nestjs/common';
 import { enforcedPermissionProvidersForTesting } from '@app/authorization';
 import * as request from 'supertest';
 import { randomUUID } from 'crypto';
 import { GlobalExceptionFilter } from '@app/shared/filters/http-exception.filter';
 import { LocationOutboundController } from './location-outbound.controller';
 import { LocationOutboundService } from '../services/location-outbound.service';
+import { OutboundScanRejectionManager } from '../scan-rejections/outbound-scan-rejection.manager';
 
 // 역할별 권한 구성
 const byRole: Record<string, readonly string[]> = {
@@ -21,6 +22,7 @@ describe('location outbound HTTP authorization and validation', () => {
   const warehouseId = randomUUID();
   const shipmentId = randomUUID();
   const sourceLocationId = randomUUID();
+  const record = jest.fn<Promise<boolean>, unknown[]>().mockResolvedValue(true);
   beforeAll(async () => {
     const module = await Test.createTestingModule({
       controllers: [LocationOutboundController],
@@ -31,6 +33,7 @@ describe('location outbound HTTP authorization and validation', () => {
           provide: LocationOutboundService,
           useValue: { start: mutation, getState: mutation, scan: mutation, force: mutation, resolveForce: mutation },
         },
+        { provide: OutboundScanRejectionManager, useValue: { record } },
       ],
     }).compile();
     app = module.createNestApplication();
@@ -44,7 +47,42 @@ describe('location outbound HTTP authorization and validation', () => {
     await app.init();
   });
   afterAll(() => app.close());
-  beforeEach(() => mutation.mockClear());
+  beforeEach(() => {
+    mutation.mockClear();
+    record.mockClear();
+  });
+  it('관리자 손이 필요한 스캔 거절은 기록을 남기고 응답에 그 사실을 싣는다', async () => {
+    mutation.mockRejectedValueOnce(new ConflictException({ code: 'SHIPMENT_TOTE_NOT_RELEASED', message: 'tote' }));
+    const response = await request(app.getHttpServer() as Server)
+      .post(`/shipments/${shipmentId}/location-outbound-scans`)
+      .set('x-test-role', 'worker')
+      .set('Idempotency-Key', 'scan-1')
+      .send({ warehouseId, sourceLocationId, barcode: '8800', quantity: 1 })
+      .expect(409);
+    expect(response.body).toMatchObject({ code: 'SHIPMENT_TOTE_NOT_RELEASED', rejectionRecorded: true });
+    expect(record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        commandType: 'shipment.location_outbound.scan',
+        shipmentId,
+        idempotencyKey: 'scan-1',
+        barcode: '8800',
+        quantity: 1,
+        rejection: { code: 'SHIPMENT_TOTE_NOT_RELEASED', reasonCode: null },
+      }),
+    );
+  });
+  it('작업자가 고칠 스캔 거절은 기록하지 않는다', async () => {
+    mutation.mockRejectedValueOnce(new ConflictException({ code: 'LOCATION_OUTBOUND_OVERSCAN', message: 'over' }));
+    const response = await request(app.getHttpServer() as Server)
+      .post(`/shipments/${shipmentId}/location-outbound-scans`)
+      .set('x-test-role', 'worker')
+      .set('Idempotency-Key', 'scan-2')
+      .send({ warehouseId, sourceLocationId, barcode: '8800', quantity: 1 })
+      .expect(409);
+    expect(response.body).toMatchObject({ code: 'LOCATION_OUTBOUND_OVERSCAN' });
+    expect(response.body).not.toHaveProperty('rejectionRecorded');
+    expect(record).not.toHaveBeenCalled();
+  });
   it.each(['starts', 'scans', 'forces', 'force-resolutions'])(
     'requires an authenticated caller for %s',
     async (suffix) => {

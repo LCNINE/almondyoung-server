@@ -2,7 +2,7 @@ import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsBoolean, IsDate, IsIn, IsInt, IsNotEmpty, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
 import { pickingMethodValues, type PickingMethodEnum } from '../../inventory/schema/enum-values';
-import { PendingCancellationResponseDto } from './shipment-planning.dto';
+import { PendingCancellationResponseDto, ScanRejectionResponseDto } from './shipment-planning.dto';
 
 export type OutboundBatchActor = {
   id: string;
@@ -115,6 +115,12 @@ export class OutboundBatchWorkItemResponseDto {
     description: '현장에서 빠지기를 기다리는 취소. 배치 상세 응답에만 싣는다',
   })
   pendingCancellation?: PendingCancellationResponseDto | null;
+  @ApiPropertyOptional({
+    type: ScanRejectionResponseDto,
+    nullable: true,
+    description: '물류앱에서 막혀 아직 풀리지 않은 거절. 배치 상세 응답에만 싣는다',
+  })
+  scanRejection?: ScanRejectionResponseDto | null;
 }
 
 export class OutboundBatchCommandResponseDto {

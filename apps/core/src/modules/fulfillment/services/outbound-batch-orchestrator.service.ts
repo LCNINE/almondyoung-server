@@ -44,6 +44,7 @@ import { isAppPrintable } from '../waybill/waybill-label-content.assembler';
 import { WAYBILL_TERMINAL_STATUSES } from '../waybill/waybill.constants';
 import { maskName, readRecipientName } from '../reader/shipment-waybill.reader';
 import { loadPendingCancellations, PendingCancellation } from '../reader/pending-cancellations';
+import { loadOpenScanRejections, OpenScanRejection } from '../reader/scan-rejections';
 import { PermissionCheckpoints } from '@app/authorization';
 import { authzSubjectOf } from '../../../platform/auth/system-actor';
 import { warehouseIdOf } from '../shipment/shipment-owner';
@@ -857,9 +858,12 @@ export class OutboundBatchOrchestrator {
         completedAt: batch.completedAt ?? undefined,
         workItems: await withShipmentLabels(
           trx,
-          await withPendingCancellations(
+          await withScanRejections(
             trx,
-            workItems.map((row) => this.workItemResponse(row)),
+            await withPendingCancellations(
+              trx,
+              workItems.map((row) => this.workItemResponse(row)),
+            ),
           ),
         ),
         warehouse: {
@@ -1677,6 +1681,21 @@ async function withPendingCancellations<T extends { shipmentId: string; waitingO
       ...row,
       pendingCancellation: found && found.operationId === row.waitingOperationId ? found : null,
     };
+  });
+}
+
+/** 물류앱에서 막힌 상자 — 그 작업 항목에서 남은 거절만 싣는다(다른 배치 시절 기록은 싣지 않는다) */
+async function withScanRejections<T extends { id: string; shipmentId: string }>(
+  trx: DbTx,
+  rows: T[],
+): Promise<(T & { scanRejection: OpenScanRejection | null })[]> {
+  const open = await loadOpenScanRejections(
+    trx,
+    rows.map((row) => row.shipmentId),
+  );
+  return rows.map((row) => {
+    const found = open.get(row.shipmentId);
+    return { ...row, scanRejection: found && found.workItemId === row.id ? found : null };
   });
 }
 

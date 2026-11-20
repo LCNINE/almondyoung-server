@@ -402,6 +402,39 @@ export class PendingCancellationResponseDto {
   lines: PendingCancellationItemResponseDto[];
 }
 
+/** 물류앱 출고 저장이 관리자 손이 필요한 사유로 거절돼 막힌 상자 */
+export class ScanRejectionResponseDto {
+  @ApiProperty({ description: '거절 코드' })
+  code: string;
+
+  @ApiProperty({ nullable: true, type: String, description: '출고 준비가 막힌 경우의 세부 사유' })
+  reasonCode: string | null;
+
+  @ApiProperty({ description: '관리자에게 보일 사유 문장' })
+  message: string;
+
+  @ApiProperty({ enum: ['release_tote', 'check_waybill', 'handoff_worker', 'review_box'] })
+  action: 'release_tote' | 'check_waybill' | 'handoff_worker' | 'review_box';
+
+  @ApiProperty({ enum: ['simple_scan', 'simple_force', 'location_scan', 'location_force'] })
+  route: 'simple_scan' | 'simple_force' | 'location_scan' | 'location_force';
+
+  @ApiProperty({ nullable: true, type: String })
+  barcode: string | null;
+
+  @ApiProperty({ nullable: true, type: String, description: '찍은 바코드의 상품 이름' })
+  skuName: string | null;
+
+  @ApiProperty({ nullable: true, type: Number })
+  quantity: number | null;
+
+  @ApiProperty({ description: '거절된 작업자' })
+  actorId: string;
+
+  @ApiProperty()
+  rejectedAt: Date;
+}
+
 export class ShipmentDetailResponseDto {
   @ApiProperty()
   id: string;
@@ -443,6 +476,9 @@ export class ShipmentDetailResponseDto {
 
   @ApiProperty({ type: PendingCancellationResponseDto, nullable: true })
   pendingCancellation: PendingCancellationResponseDto | null;
+
+  @ApiProperty({ type: ScanRejectionResponseDto, nullable: true, description: '물류앱에서 막혀 아직 풀리지 않은 거절' })
+  scanRejection: ScanRejectionResponseDto | null;
 
   @ApiProperty({
     type: [NeedsInfoIssueDto],

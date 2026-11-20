@@ -74,6 +74,7 @@ import { missingRecipientFields } from './recipient-completeness';
 import { isUntrustedExternalLine } from './external-line-identity';
 import { loadSellmateShipmentIds } from './sellmate-handed-over-shipments';
 import { loadPendingCancellations } from '../reader/pending-cancellations';
+import { loadOpenScanRejections } from '../reader/scan-rejections';
 import { loadNeedsInfoLines, loadUntrustedLineSkus, needsInfoIssues } from '../outbound-preparation/needs-info';
 import {
   classifyOperationReason,
@@ -1317,6 +1318,7 @@ export class ShipmentPlanningService {
           }),
         })),
         pendingCancellation,
+        scanRejection: (await loadOpenScanRejections(trx, [shipmentId])).get(shipmentId) ?? null,
         needsInfo,
       };
     }, tx);
