@@ -3,6 +3,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { toast } from 'sonner';
 import type {
+  ScanRejection,
   BatchClaimState,
   EligibleShipmentV2,
   OutboundBatchV2,
@@ -801,5 +802,105 @@ describe('취소를 기다리는 상자', () => {
 
     await waitFor(() => expect(mockExclude).toHaveBeenCalledTimes(1));
     expect(mockExclude.mock.calls[0][0]).toMatchObject({ reason });
+  });
+});
+
+describe('물류앱에서 막힌 상자', () => {
+  const rejection = (over: Partial<ScanRejection> = {}): ScanRejection => ({
+    shipmentId: 'ship-1',
+    workItemId: 'item-1',
+    code: 'SHIPMENT_TOTE_NOT_RELEASED',
+    reasonCode: null,
+    message: '바구니 배정이 남아 있어 출고하지 못했어요.',
+    action: 'release_tote',
+    route: 'simple_scan',
+    barcode: '880000000001',
+    skuName: '상품 A',
+    quantity: 2,
+    actorId: 'worker-b',
+    rejectedAt: '2026-01-02T03:04:05.000Z',
+    ...over,
+  });
+
+  it('사유 문장·찍은 상품·작업자를 그 상자 줄에 보이고, 바구니면 남은 바구니를 가리킨다', () => {
+    mockBatch = {
+      ...batchWith([{ ...picking, scanRejection: rejection() }]),
+      toteAssignments: [
+        {
+          id: 'ta-1',
+          toteId: 'tote-1',
+          toteBarcode: 'TOTE-7',
+          shipmentId: 'ship-1',
+          toteStatus: 'in_use',
+          assignedBy: 'worker-a',
+          assignedAt: '2026-01-02T00:00:00.000Z',
+          releasedAt: null,
+        },
+      ],
+    };
+    renderDrawer();
+    const row = screen.getAllByRole('row')[1];
+    const notice = within(row).getByRole('region', { name: '물류앱에서 막힘' });
+
+    expect(
+      within(notice).getByText(
+        '물류앱에서 막힘 — 바구니 배정이 남아 있어 출고하지 못했어요.'
+      )
+    ).toBeTruthy();
+    expect(
+      within(notice).getByText(/출고 검수 스캔 · 상품 A ×2 · .* · 이두리/)
+    ).toBeTruthy();
+    expect(within(notice).getByText('TOTE-7')).toBeTruthy();
+  });
+
+  it('담당 때문이면 이 줄의 넘기기로 보내고, 넘길 수 없으면 상자 상세로 잇는다', () => {
+    mockCanHandoff = true;
+    mockBatch = batchWith([
+      { ...picking, scanRejection: rejection({ action: 'handoff_worker' }) },
+    ]);
+    const { unmount } = renderDrawer();
+    let row = screen.getAllByRole('row')[1];
+    expect(
+      within(row).getByText(/이 줄의 «넘기기»로 담당을 바꿔 주세요/)
+    ).toBeTruthy();
+    expect(
+      within(row).getByRole('button', { name: '피킹 넘기기' })
+    ).toBeTruthy();
+    unmount();
+
+    mockCanHandoff = false;
+    renderDrawer();
+    row = screen.getAllByRole('row')[1];
+    expect(within(row).queryByText(/이 줄의 «넘기기»/)).toBeNull();
+    expect(
+      within(row)
+        .getByRole('link', { name: '상자 상세에서 확인' })
+        .getAttribute('href')
+    ).toBe('/order/fulfillments?shipmentId=ship-1');
+  });
+
+  it('송장·상자 확인이면 상자 상세로 잇는다', () => {
+    mockBatch = batchWith([
+      { ...picking, scanRejection: rejection({ action: 'check_waybill' }) },
+    ]);
+    renderDrawer();
+
+    expect(
+      screen
+        .getByRole('link', { name: '상자 상세에서 확인' })
+        .getAttribute('href')
+    ).toBe('/order/fulfillments?shipmentId=ship-1');
+  });
+
+  it('풀린 상자(서버가 싣지 않음)와 옛 응답에는 아무것도 보이지 않는다', () => {
+    mockBatch = batchWith([
+      { ...picking, scanRejection: null },
+      workItem({ id: 'item-2', shipmentId: 'ship-2' }),
+    ]);
+    renderDrawer();
+
+    expect(
+      screen.queryByRole('region', { name: '물류앱에서 막힘' })
+    ).toBeNull();
   });
 });

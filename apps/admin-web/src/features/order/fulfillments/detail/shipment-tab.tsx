@@ -36,6 +36,7 @@ import type {
   ConsolidationProgressResponse,
   FulfillmentOrderDetail,
   PendingCancellation,
+  ScanRejection,
   ShipmentAdminDetail,
   ShipmentAdminSummary,
 } from '@/lib/types/dto/fulfillment';
@@ -78,6 +79,7 @@ import {
 import { StuckWaybillPanel } from './stuck-waybill-panel';
 import { pendingCancellationItems } from '@/lib/api/domains/orders/pending-cancellation.shape';
 import { NeedsInfoList } from '@/features/order/outbound-preparation/components/needs-info-list';
+import { ScanRejectionNotice } from './scan-rejection-notice';
 
 const STATUS_VARIANT = (
   status: string
@@ -323,7 +325,10 @@ function ShipmentDetailView({
   retiredShipmentId?: string;
 }) {
   const operations = shipment.operations ?? [];
-  const operatorName = useOperatorNames(operations.map((o) => o.operatorId));
+  const operatorName = useOperatorNames([
+    ...operations.map((o) => o.operatorId),
+    shipment.scanRejection?.actorId,
+  ]);
   const waybills = shipment.waybills ?? [];
   const attempts = shipment.dispatchAttempts ?? [];
   const channelDispatch = useChannelDispatchViewModel(shipment);
@@ -385,6 +390,18 @@ function ShipmentDetailView({
             pending={shipment.pendingCancellation}
             workItems={shipment.workItems ?? []}
           />
+        )}
+
+        {shipment.scanRejection && (
+          <ScanRejectionNotice
+            rejection={shipment.scanRejection}
+            workerName={operatorName(shipment.scanRejection.actorId)}
+          >
+            <ScanRejectionDetailStep
+              rejection={shipment.scanRejection}
+              workItems={shipment.workItems ?? []}
+            />
+          </ScanRejectionNotice>
         )}
 
         {shipment.needsInfo && shipment.needsInfo.length > 0 && (
@@ -640,6 +657,40 @@ const ACTIVE_WORK_ITEM_STATUSES = new Set([
   'packing',
   'withdrawing',
 ]);
+
+/** 상자 상세에서 물류앱 막힘을 푸는 곳 — 바구니·담당은 배치 상세에, 송장은 이 화면 아래에 있다 */
+function ScanRejectionDetailStep({
+  rejection,
+  workItems,
+}: {
+  rejection: ScanRejection;
+  workItems: ShipmentAdminDetail['workItems'];
+}) {
+  if (rejection.action === 'check_waybill') {
+    return <p className="break-keep">아래 송장 칸에서 상태를 확인해 주세요.</p>;
+  }
+  if (rejection.action === 'review_box') return null;
+  const batchId = workItems.find(
+    (item) => item.id === rejection.workItemId
+  )?.batchId;
+  if (!batchId) return null;
+  return (
+    <div className="flex flex-wrap items-end justify-between gap-2">
+      <p className="break-keep">
+        {rejection.action === 'release_tote'
+          ? '배치 상세에서 이 상자의 바구니를 확인해 주세요.'
+          : '배치 상세에서 이 상자의 담당을 넘기거나 풀어 주세요.'}
+      </p>
+      <Button size="sm" variant="outline" asChild>
+        <Link
+          href={`/order/outbound-batches?batchId=${encodeURIComponent(batchId)}`}
+        >
+          배치 상세 열기
+        </Link>
+      </Button>
+    </div>
+  );
+}
 
 /** 배치에서 작업 중인 상자를 부분 취소하면, 현장에서 상자가 빠져야 취소가 끝난다 */
 function CancelWaitingNotice({

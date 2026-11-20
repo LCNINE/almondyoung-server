@@ -807,6 +807,23 @@ export interface ShipmentWorkItemHistory {
   leaseVersion?: number;
 }
 
+/** 물류앱 출고 저장이 관리자 손이 필요한 사유로 거절된 뒤 아직 풀리지 않은 것 */
+export interface ScanRejection {
+  shipmentId: string;
+  workItemId: string | null;
+  code: string;
+  reasonCode: string | null;
+  /** 서버가 정한 관리자용 사유 문장 */
+  message: string;
+  action: 'release_tote' | 'check_waybill' | 'handoff_worker' | 'review_box';
+  route: 'simple_scan' | 'simple_force' | 'location_scan' | 'location_force';
+  barcode: string | null;
+  skuName: string | null;
+  quantity: number | null;
+  actorId: string;
+  rejectedAt: string;
+}
+
 /** 상자가 현장에서 빠지기를 기다리는 취소 */
 export interface PendingCancellation {
   operationId: string;
@@ -842,6 +859,8 @@ export interface ShipmentAdminDetail {
   pendingCancellation?: PendingCancellation | null;
   /** 준비 전 상자가 상자 확정에서 거절될 정보 부족 문제. 옛 core 응답엔 없다 */
   needsInfo?: NeedsInfoIssue[];
+  /** 물류앱에서 막힌 출고 저장. 옛 core 응답엔 없다 */
+  scanRejection?: ScanRejection | null;
 }
 
 /** 응답을 받지 못한 요청이 서버에서 처리됐는지(요청 키 기준) */
@@ -1356,6 +1375,8 @@ export interface OutboundBatchWorkItemV2 {
   itemSummary?: string;
   /** 현장에서 빠지기를 기다리는 취소. 배치 상세에만 있고 옛 core 응답엔 없다 */
   pendingCancellation?: PendingCancellation | null;
+  /** 물류앱에서 막힌 출고 저장 — 이 작업 항목 것만. 옛 core 응답엔 없다 */
+  scanRejection?: ScanRejection | null;
 }
 
 export interface EligibleShipmentV2 {
