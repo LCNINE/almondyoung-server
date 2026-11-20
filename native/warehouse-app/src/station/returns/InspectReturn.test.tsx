@@ -281,6 +281,26 @@ describe('검수 확정 F10 — 두 번', () => {
     expect(server.view(TWO.id).status).toBe('inspected');
   });
 
+  it('교환이면 «한 번 더 누르면 교환품 출고를 지시해요» — 환불이라고 하지 않는다', async () => {
+    const { server } = setupReturns({ returns: [{ ...TWO, kind: 'exchange' }] });
+    await openByScan('8805001');
+    press('F10');
+    expect(await screen.findByText('한 번 더 누르면 교환품 출고를 지시해요')).toBeInTheDocument();
+    expect(screen.queryByText(REFUND_PROMPT)).toBeNull();
+    press('F10');
+    await waitFor(() => expect(server.inspectionCalls).toHaveLength(1));
+    expect(server.view(TWO.id).exchangeReleasedAt).not.toBeNull();
+  });
+
+  it('교환품을 이미 보낸 교환이면 확정만 한다고 알린다', async () => {
+    setupReturns({ returns: [{ ...TWO, kind: 'exchange', exchangeReleasedAt: '2026-10-26T00:00:00.000Z' }] });
+    await openByScan('8805001');
+    press('F10');
+    expect(
+      await screen.findByText('한 번 더 누르면 검수를 확정해요 — 교환품은 이미 출고 지시됐어요')
+    ).toBeInTheDocument();
+  });
+
   it('보류가 있으면 «한 번 더 누르면 CS 확인으로 넘겨요»', async () => {
     const { server } = setupReturns({ returns: [TWO] });
     await openByScan('8805001');
