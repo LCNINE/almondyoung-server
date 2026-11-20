@@ -420,3 +420,41 @@ describe('출고 저장 경로의 409', () => {
     expect(error.notApplied).toBe(false);
   });
 });
+
+describe('관리자 화면에 남긴 거절', () => {
+  const failure = async (path: string, body: unknown) => {
+    const error = await createApiClient({
+      baseUrl: 'https://api.test',
+      getToken: async () => 'TOK',
+      authMode: 'bearer',
+      doFetch: async () => jsonResponse(409, body),
+    })
+      .request({ method: 'POST', path })
+      .catch((e: unknown) => e);
+    if (!(error instanceof ApiError)) throw new Error('Expected ApiError');
+    return error;
+  };
+
+  it('출고 저장 경로가 남겼다고 알리면 그 사실을 들고 온다', async () => {
+    const error = await failure('/shipments/s1/simple-outbound-scans', {
+      code: 'SHIPMENT_TOTE_NOT_RELEASED',
+      rejectionRecorded: true,
+    });
+    expect(error.rejectionRecorded).toBe(true);
+  });
+
+  it('알리지 않았으면 남기지 않은 것으로 본다', async () => {
+    const error = await failure('/shipments/s1/simple-outbound-scans', {
+      code: 'SHIPMENT_TOTE_NOT_RELEASED',
+    });
+    expect(error.rejectionRecorded).toBe(false);
+  });
+
+  it('출고 저장 경로가 아니면 표시가 있어도 믿지 않는다', async () => {
+    const error = await failure('/shipments/s1/location-outbound-starts', {
+      code: 'SHIPMENT_TOTE_NOT_RELEASED',
+      rejectionRecorded: true,
+    });
+    expect(error.rejectionRecorded).toBe(false);
+  });
+});
