@@ -46,7 +46,7 @@ export function ProductsListMatchingDrawer({
         </DrawerHeader>
 
         {variants.length > 1 && (
-          <div className="flex flex-wrap gap-1.5 px-4 pb-3">
+          <div className="flex max-h-40 shrink-0 flex-wrap gap-1.5 overflow-y-auto px-4 pb-3">
             {variants.map((v) => (
               <button
                 key={v.variantId}
@@ -57,8 +57,11 @@ export function ProductsListMatchingDrawer({
                   v.variantId === variantId
                     ? 'border-primary bg-primary text-primary-foreground'
                     : 'hover:bg-muted',
-                  v.skuLinkState === 'unlinked' &&
-                    v.variantId !== variantId &&
+                  v.variantId !== variantId &&
+                    v.skuLinkState === 'linked' &&
+                    'border-[#bbf7d0] text-[#15803d]',
+                  v.variantId !== variantId &&
+                    v.skuLinkState === 'unlinked' &&
                     'border-[#fecaca] text-[#b91c1c]'
                 )}
               >
@@ -80,6 +83,7 @@ export function ProductsListMatchingDrawer({
               variantId={selected.variantId}
               variantName={selected.name || master.name}
               masterId={master.masterId}
+              productName={master.name}
               onSaved={() =>
                 queryClient.invalidateQueries({
                   queryKey: productQueryKeys.mastersSummaryLists(),
