@@ -60,6 +60,7 @@ export class ProductMasterMapper {
       thumbnail?: string | null; // product_images에서 가져온 primary 이미지 fileId
       priceSummary?: PriceSummaryDto | null;
       soldOutState?: 'none' | 'partial' | 'all';
+      unlinkedVariantCount?: number;
     },
   ): ProductSummaryDto {
     // thumbnail은 product_images에서 가져온 값 사용
@@ -88,6 +89,7 @@ export class ProductMasterMapper {
       variantPreviews: entity.variantPreviews ?? [],
       priceSummary: entity.priceSummary ?? null,
       soldOutState: entity.soldOutState ?? 'none',
+      unlinkedVariantCount: entity.unlinkedVariantCount ?? 0,
     };
   }
 

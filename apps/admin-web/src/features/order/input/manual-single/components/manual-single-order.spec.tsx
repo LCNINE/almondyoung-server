@@ -77,6 +77,8 @@ const preview = (
   basePrice,
   membershipPrice: null,
   status: 'active',
+  skuLinkState: 'linked',
+  skuCount: 1,
 });
 
 const master = (over: Partial<MasterSummaryDto>): MasterSummaryDto =>

@@ -76,6 +76,11 @@ export class ListProductMastersQueryDto {
   @IsIn(['all', 'in_stock', 'partial', 'sold_out'])
   stock?: 'all' | 'in_stock' | 'partial' | 'sold_out';
 
+  /** SKU 연결 필터. unlinked=연결 안 된 품목이 있음, linked=모두 연결됨(재고 안 씀 섞임 허용), void=전부 재고 안 씀. */
+  @IsOptional()
+  @IsIn(['all', 'linked', 'unlinked', 'void'])
+  skuLink?: 'all' | 'linked' | 'unlinked' | 'void';
+
   @IsOptional()
   @Transform(({ value }) => value === 'true' || value === true)
   @IsBoolean()

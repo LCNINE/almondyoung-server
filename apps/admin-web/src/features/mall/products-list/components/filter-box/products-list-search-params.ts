@@ -14,6 +14,7 @@ export type SearchParamsInput = {
   brand: string;
   status?: string;
   stock?: string;
+  skuLink?: string;
   /** createdAt 파라미터로 실릴 JSON 문자열. 범위가 없으면 undefined. */
   createdAt?: string;
   datePreset: string;
@@ -41,6 +42,7 @@ export function buildSearchParams(
   if (input.createdBy) params.set('createdBy', input.createdBy);
   if (input.status) params.set('status', input.status);
   if (input.stock) params.set('stock', input.stock);
+  if (input.skuLink) params.set('skuLink', input.skuLink);
   if (input.createdAt) params.set('createdAt', input.createdAt);
   if (input.datePreset !== 'all') params.set('datePreset', input.datePreset);
 

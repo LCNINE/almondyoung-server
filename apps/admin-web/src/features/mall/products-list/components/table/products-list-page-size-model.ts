@@ -23,6 +23,7 @@ const FILTER_KEYS = [
   'createdBy',
   'status',
   'stock',
+  'skuLink',
   'createdAt',
 ] as const;
 

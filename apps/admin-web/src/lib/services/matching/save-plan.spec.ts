@@ -93,6 +93,18 @@ describe('planMatchingSave (#1016 12번)', () => {
     ).toEqual({ ok: true, steps: [{ kind: 'upsert', changedLinks: true }] });
   });
 
+  it('비매칭 상태에서 전략 칸은 그대로 두고 재고만 붙여도 upsert 로 연결한다', () => {
+    expect(
+      planMatchingSave({
+        currentStrategy: 'void',
+        strategy: 'void',
+        linkCount: 1,
+        ...none,
+        changedLinks: true,
+      })
+    ).toEqual({ ok: true, steps: [{ kind: 'upsert', changedLinks: true }] });
+  });
+
   it('void 유지 + 정책만 바뀌면 링크 없는 upsert', () => {
     expect(
       planMatchingSave({

@@ -40,6 +40,13 @@ import { buildSearchParams } from './products-list-search-params';
 
 const ALL = 'all';
 
+const SKU_LINK_OPTIONS = [
+  { value: '', label: '전체' },
+  { value: 'unlinked', label: '연결 안 된 옵션 있음' },
+  { value: 'linked', label: '모두 연결됨' },
+  { value: 'void', label: '재고 안 씀' },
+] as const;
+
 /** 필터 행에 쓰는 토글 칩. 분류(단일)·공급처(다중) 가 같은 모양을 공유한다. */
 function FilterChip({
   active,
@@ -78,6 +85,7 @@ type FilterState = {
   classification: Classification;
   q: string;
   brand: string;
+  skuLink: string;
 };
 
 export function ProductsListFilterBox() {
@@ -143,6 +151,7 @@ export function ProductsListFilterBox() {
       ),
       q: searchParams.get('q') ?? '',
       brand: searchParams.get('brand') ?? '',
+      skuLink: searchParams.get('skuLink') ?? '',
     };
   });
 
@@ -171,6 +180,7 @@ export function ProductsListFilterBox() {
         createdBy: filters.createdBy === ALL ? '' : filters.createdBy,
         status,
         stock,
+        skuLink: filters.skuLink,
         createdAt:
           from || to
             ? JSON.stringify({
@@ -201,6 +211,7 @@ export function ProductsListFilterBox() {
       classification: 'all',
       q: '',
       brand: '',
+      skuLink: '',
     });
     // 값을 문자열로 이어붙이면 URL 에서 읽은 size 안의 '&' 가 그대로 살아나
     // 초기화로 지웠어야 할 파라미터가 되돌아온다. URLSearchParams 가 인코딩하게 둔다.
@@ -300,6 +311,18 @@ export function ProductsListFilterBox() {
             key={option.value}
             active={filters.classification === option.value}
             onClick={() => patch({ classification: option.value })}
+          >
+            {option.label}
+          </FilterChip>
+        ))}
+      </FilterRow>
+
+      <FilterRow label="SKU 연결">
+        {SKU_LINK_OPTIONS.map((option) => (
+          <FilterChip
+            key={option.value}
+            active={filters.skuLink === option.value}
+            onClick={() => patch({ skuLink: option.value })}
           >
             {option.label}
           </FilterChip>
