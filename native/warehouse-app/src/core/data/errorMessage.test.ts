@@ -412,9 +412,10 @@ describe('출고 저장 경로에서 반영되지 않은 409 문구', () => {
     ['SHIPMENT_COMPONENT_CHANGED_RETRY', '방금 박스 상태가 바뀌어 반영하지 못했어요. 한 번 더 해 주세요.'],
     ['SHIPMENT_WORK_ITEM_CHANGED', '방금 박스 상태가 바뀌어 반영하지 못했어요. 한 번 더 해 주세요.'],
     ['SHIPMENT_SESSION_CHANGED', '방금 박스 상태가 바뀌어 반영하지 못했어요. 한 번 더 해 주세요.'],
+    ['FULFILLMENT_INVARIANT_COMPONENT_CHANGED_RETRY', '방금 박스 상태가 바뀌어 반영하지 못했어요. 한 번 더 해 주세요.'],
     ['WORK_ITEM_STALE_LEASE_VERSION', '방금 박스 상태가 바뀌어 반영하지 못했어요. 한 번 더 해 주세요.'],
     ['SHIPMENT_WORK_ITEM_MISSING', '이 박스의 배치 작업 기록을 찾지 못했어요. 송장을 다시 스캔하고, 같으면 관리자에게 확인해 주세요.'],
-    ['SHIPMENT_SESSION_MISSING', '이 박스의 배치 작업 기록을 찾지 못했어요. 송장을 다시 스캔하고, 같으면 관리자에게 확인해 주세요.'],
+    ['SHIPMENT_SESSION_MISSING', '배치 재고 기록을 확인해야 해요. 관리자에게 문의해 주세요.'],
     ['WORK_ITEM_NOT_CLAIMABLE', '이 박스의 배치 작업 기록을 찾지 못했어요. 송장을 다시 스캔하고, 같으면 관리자에게 확인해 주세요.'],
     ['SHIPMENT_INSPECTION_LINE_UNKNOWN', '검수 기록이 맞지 않아 반영하지 못했어요. 담은 상품은 그대로 두고 관리자에게 확인해 주세요.'],
     ['SHIPMENT_LINE_OVER_INSPECTED', '검수 기록이 맞지 않아 반영하지 못했어요. 담은 상품은 그대로 두고 관리자에게 확인해 주세요.'],
@@ -498,6 +499,7 @@ describe('관리자 화면에 남은 출고 저장 거절 문구', () => {
 
   it.each([
     'SHIPMENT_COMPONENT_CHANGED_RETRY',
+    'FULFILLMENT_INVARIANT_COMPONENT_CHANGED_RETRY',
     'SHIPMENT_HANDED_OVER_TO_SELLMATE',
     'LOCATION_OUTBOUND_FORCE_PERMISSION_REQUIRED',
   ])('작업자가 그 자리에서 할 일이 있는 %s 는 원래 안내를 둔다', (code) => {
