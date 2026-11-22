@@ -44,6 +44,7 @@ describe('관리자 화면에 남길 출고 저장 거절', () => {
     'SIMPLE_OUTBOUND_SKU_NOT_IN_SHIPMENT',
     'SIMPLE_OUTBOUND_OVERSCAN',
     'WORK_ITEM_STALE_LEASE_VERSION',
+    'FULFILLMENT_INVARIANT_COMPONENT_CHANGED_RETRY',
     'LABEL_REPRINT_REQUIRED',
   ])('작업자가 풀 거절 %s 는 남기지 않는다', (code) => {
     expect(recordableRejection(new ConflictException({ code, message: 'x' }))).toBeNull();
