@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { differenceInDays } from 'date-fns';
+import { differenceInDays, subDays } from 'date-fns';
 import { BadRequestError } from '@app/shared';
 import * as schema from '../../shared/schemas/entities/schema';
 import { SubscriptionContractReader } from './subscription-contract.reader';
@@ -93,18 +93,38 @@ export class CancellationContextReader {
     // 주기 시작은 '마지막 결제 성공 시각'이 원천이다. endsAt 역산은 관리자 기간 조정·일시정지 재개로
     // endsAt 가 밀리면 함께 밀려 청약철회 7일 창을 되살린다. 결제 기록이 없는 옛 계약만 역산으로 폴백.
     if (hasPayment) {
-      return (
-        (await this.contractReader.findLastChargeSuccessAt(contract.id)) ??
-        this.refundPolicy.resolvePaidPeriodStart({
-          periodEndsAt: new Date(entitlement.endsAt),
-          durationDays: plan.durationDays,
-          hasPayment,
-          billingDate: contract.billingDate ? new Date(contract.billingDate) : null,
-        })
-      );
+      const lastChargeAt = await this.contractReader.findLastChargeSuccessAt(contract.id);
+      if (lastChargeAt) {
+        return this.earlierInvoiceGrantStart(contract, plan, lastChargeAt);
+      }
+
+      return this.refundPolicy.resolvePaidPeriodStart({
+        periodEndsAt: new Date(entitlement.endsAt),
+        durationDays: plan.durationDays,
+        hasPayment,
+        billingDate: contract.billingDate ? new Date(contract.billingDate) : null,
+      });
     }
     // 수금 전 선지급은 결제일이 없다. 청약철회 창은 재화 공급일(=자격 개시일)부터 센다.
     return contract.billingPath === 'INVOICE' ? new Date(entitlement.startsAt) : null;
+  }
+
+  // 인보이스 경로는 자격을 먼저 주고 출금이 며칠 뒤에 확정된다. 출금 시각부터 세면 그 사이의 멤버십가 구매가
+  // 혜택 사용에서 빠지고 청약철회 창도 늦게 열린다. 선지급한 주기의 시작이 더 이르면 그날부터 센다.
+  // 자격 행의 startsAt 은 갱신마다 첫 가입일로 이어지므로 쓰지 않는다.
+  private async earlierInvoiceGrantStart(contract: Contract, plan: Plan, lastChargeAt: Date): Promise<Date> {
+    if (contract.billingPath !== 'INVOICE') {
+      return lastChargeAt;
+    }
+
+    const periodEnd = await this.contractReader.findLatestInvoiceGrantPeriodEnd(contract.id);
+    if (!periodEnd) {
+      return lastChargeAt;
+    }
+
+    const grantStart = subDays(new Date(`${periodEnd}T00:00:00Z`), plan.durationDays);
+
+    return grantStart < lastChargeAt ? grantStart : lastChargeAt;
   }
 
   /**
