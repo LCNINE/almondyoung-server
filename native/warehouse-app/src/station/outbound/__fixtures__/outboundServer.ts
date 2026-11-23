@@ -11,6 +11,7 @@ import type {
   WithdrawalRemoval,
 } from '../../../domains/outbound/types';
 import type { LabelState } from '../../../domains/outbound/waybillLabel';
+import type { BatchPickList } from '../../../domains/outbound/pickList';
 
 type Req = Parameters<ApiClient['request']>[0];
 
@@ -65,12 +66,19 @@ export interface OutboundServerConfig {
   refillsFail: boolean;
   batches: { picking: OutboundBatchSummary[]; created: OutboundBatchSummary[] };
   batchesFail: boolean;
+  /** 이 상태의 배치 목록만 실패시킨다(503) */
+  batchesFailStatus: 'created' | 'picking' | null;
   /** 배치 박스 목록에 작업 상태·송장번호·받는 분을 싣지 않는 옛 core */
   legacyBatchStates: boolean;
   /** 내 되돌림 바구니 조회를 실패시킨다(503) */
   returnBinFail: boolean;
   /** 상자 밖 상품의 이름(바코드별) — 이 상자에 없는 상품을 찍으면 409 에 싣는다. 비어 있으면 옛 core 처럼 싣지 않는다 */
   skuNames: Record<string, string>;
+  /** 배치별 피킹 목록 응답. 없는 배치는 404, pickListFail 이면 503 */
+  pickLists: Record<string, BatchPickList>;
+  pickListFail: boolean;
+  /** 있으면 피킹 목록 응답을 이 약속이 풀릴 때까지 붙잡는다 */
+  pickListGate: Promise<void> | null;
 }
 
 export function batchSummary(
@@ -105,9 +113,13 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
     refillsFail: false,
     batches: { picking: [], created: [] },
     batchesFail: false,
+    batchesFailStatus: null,
     legacyBatchStates: false,
     returnBinFail: false,
     skuNames: {},
+    pickLists: {},
+    pickListFail: false,
+    pickListGate: null,
   };
   /** 내 되돌림 바구니 — 상자에서 꺼낸 상품이 쌓인다 */
   const returnBin: Array<{ skuId: string; skuCode: string; skuName: string; sourceLocationId: string; locationCode: string; qty: number }> = [];
@@ -436,7 +448,16 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
     if (path === '/outbound-batches/v2') {
       if (listGate) await listGate;
       if (config.batchesFail) throw new ApiError(`GET ${o.path} → 503`, 503);
+      if (config.batchesFailStatus === params.get('status')) throw new ApiError(`GET ${o.path} → 503`, 503);
       return reply(params.get('status') === 'created' ? config.batches.created : config.batches.picking);
+    }
+    const pickList = /^\/outbound-batches\/([^/]+)\/pick-list$/.exec(path);
+    if (pickList) {
+      if (config.pickListGate) await config.pickListGate;
+      if (config.pickListFail) throw new ApiError(`GET ${o.path} → 503`, 503);
+      const found = config.pickLists[pickList[1]];
+      if (!found) throw new ApiError(`GET ${o.path} → 404`, 404);
+      return reply(found);
     }
     const items = /^\/outbound-batches\/([^/]+)\/work-items$/.exec(path);
     if (items)
