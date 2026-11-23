@@ -65,6 +65,46 @@ export function mergeBatches(
   });
 }
 
+type BatchSize = Pick<OutboundBatchSummary, 'totalItems' | 'totalBoxes'>;
+
+/** 상자가 있는가 — 옛 core 는 상자 수가 없어 줄 수로 본다(둘 다 빠진 상자는 세지 않는다) */
+const hasBoxes = (batch: BatchSize) => (batch.totalBoxes ?? batch.totalItems) > 0;
+
+/** 시작하지 않았고 상자가 있는 배치 — 현장이 이어서 시작해야 하는 일이다 */
+export function isNewBatch(batch: Pick<OutboundBatchSummary, 'startedAt'> & BatchSize): boolean {
+  return batch.startedAt === null && hasBoxes(batch);
+}
+
+export interface ArrangedBatches {
+  /** 새 배치(최근 것 먼저) → 진행 중 → 시작했지만 아직 손대지 않은 배치 */
+  active: OutboundBatchSummary[];
+  /** 상자가 하나도 없는 시작 전 배치 — 기본 목록에서 내려 접어 둔다 */
+  empty: OutboundBatchSummary[];
+}
+
+/** 배치 현황 목록 순서. 서버는 상태마다 만든 시각 역순으로 준다 */
+export function arrangeBatches(
+  picking: readonly OutboundBatchSummary[] | undefined,
+  created: readonly OutboundBatchSummary[] | undefined
+): ArrangedBatches {
+  const all = mergeBatches(picking, created);
+  const empty = all.filter((batch) => batch.startedAt === null && !hasBoxes(batch));
+  const rest = all.filter((batch) => !empty.includes(batch));
+  return { active: [...rest.filter(isNewBatch), ...rest.filter((batch) => !isNewBatch(batch))], empty };
+}
+
+/** 상단 알림의 «시작 전 배치 N개 · M상자». 옛 core 면 상자 수를 모른다(null) */
+export function newBatchSummary(created: readonly OutboundBatchSummary[] | undefined): {
+  batches: number;
+  boxes: number | null;
+} {
+  const fresh = (created ?? []).filter(isNewBatch);
+  const boxes = fresh.every((batch) => batch.totalBoxes !== undefined)
+    ? fresh.reduce((sum, batch) => sum + (batch.totalBoxes ?? 0), 0)
+    : null;
+  return { batches: fresh.length, boxes };
+}
+
 export interface BoxRow {
   shipmentId: string;
   trackingNo: string;

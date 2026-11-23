@@ -425,6 +425,14 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
       if (config.refillsFail) throw new ApiError(`GET ${o.path} → 503`, 503);
       return reply(config.refills);
     }
+    if (method === 'POST' && path === '/picking/v2/starts') {
+      // 실제 서버처럼 시작만 하고 아무 박스도 건드리지 않은 배치는 created 목록에 남는다(startedAt 만 찍힌다)
+      const { batchId } = o.body as { batchId: string };
+      config.batches.created = config.batches.created.map((batch) =>
+        batch.id === batchId ? { ...batch, startedAt: '2026-10-02T05:00:00.000Z' } : batch
+      );
+      return reply({ state: 'started', batchId, sessionId: `ps-${batchId}` });
+    }
     if (path === '/outbound-batches/v2') {
       if (listGate) await listGate;
       if (config.batchesFail) throw new ApiError(`GET ${o.path} → 503`, 503);

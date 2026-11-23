@@ -15,14 +15,17 @@ const BOX3: FakeBox = {
   lines: [{ id: 'l-30', skuId: 'sku-30', name: '빗', qty: 1, barcode: '8801030' }],
 };
 
+const UNPRINTED_BOX3: FakeBox = { ...BOX3, labelState: 'never_printed' };
+
+/** 관리자가 막 만든 시작 전 배치 */
+const NEW_B3 = batchSummary({ id: 'b-3', batchNumber: 'B-1004', status: 'created', startedAt: null, totalItems: 1, totalBoxes: 1 });
+
 function setupBatches(
   opts: { boxes?: FakeBox[]; picking?: OutboundBatchSummary[]; created?: OutboundBatchSummary[]; legacy?: boolean; fail?: boolean } = {}
 ) {
   const server = createOutboundServer({ boxes: opts.boxes ?? [BOX1, { ...BOX2, shipped: true }, BOX3] });
   server.config.batches.picking = opts.picking ?? [batchSummary({ id: 'b-1', batchNumber: 'B-1002' })];
-  server.config.batches.created = opts.created ?? [
-    batchSummary({ id: 'b-3', batchNumber: 'B-1004', status: 'created', startedAt: null, totalItems: 1 }),
-  ];
+  server.config.batches.created = opts.created ?? [];
   server.config.legacyBatchStates = opts.legacy ?? false;
   server.config.batchesFail = opts.fail ?? false;
   const runtime = createTestRuntime(server);
@@ -35,25 +38,97 @@ function setupBatches(
 const detail = () => screen.getByRole('region', { name: '배치 상세' });
 
 describe('F2 배치 현황(스펙 §8, 목업 ⑤)', () => {
-  it('배치 표 — 진행 중 먼저, 시작 전 다음, 진행 완료/전체', async () => {
-    setupBatches();
+  it('배치 표 — 상자가 있는 시작 전 배치를 «새 배치»로 맨 위에, 진행 중 다음, 진행 완료/전체', async () => {
+    setupBatches({ created: [NEW_B3] });
     const table = await screen.findByRole('table');
     await waitFor(() => expect(within(table).getAllByRole('row')).toHaveLength(3));
     const [first, second] = within(table).getAllByRole('row').slice(1);
-    expect(first).toHaveTextContent('B-1002');
-    expect(first).toHaveTextContent('진행 중');
-    await waitFor(() => expect(first).toHaveTextContent('1/2'));
-    expect(second).toHaveTextContent('B-1004');
-    expect(second).toHaveTextContent('시작 전');
+    expect(first).toHaveTextContent('B-1004');
+    expect(first).toHaveTextContent('새 배치');
+    expect(second).toHaveTextContent('B-1002');
+    expect(second).toHaveTextContent('진행 중');
+    await waitFor(() => expect(second).toHaveTextContent('1/2'));
+    expect(within(detail()).getByRole('heading', { name: 'B-1004' })).toBeInTheDocument();
+  });
+
+  it('상자가 없는 시작 전 배치는 아래에 접어 두고, 누르면 펼친다', async () => {
+    const empty = batchSummary({ id: 'b-9', batchNumber: 'B-1009', status: 'created', startedAt: null, totalItems: 0, totalBoxes: 0 });
+    setupBatches({ created: [empty, NEW_B3] });
+    const table = await screen.findByRole('table');
+    await screen.findByRole('button', { name: 'B-1004' });
+    expect(within(table).queryByRole('button', { name: 'B-1009' })).toBeNull();
+    fireEvent.click(within(table).getByRole('button', { name: /빈 배치 1개 보기/ }));
+    const last = within(table).getAllByRole('row').at(-1);
+    expect(last).toHaveTextContent('B-1009');
+    expect(last).toHaveTextContent('빈 배치');
+    fireEvent.click(within(table).getByRole('button', { name: '빈 배치 1개 접기' }));
+    expect(within(table).queryByRole('button', { name: 'B-1009' })).toBeNull();
+  });
+
+  it('고른 빈 배치를 접으면 보이는 맨 위 배치를 본다', async () => {
+    const empty = batchSummary({ id: 'b-9', batchNumber: 'B-1009', status: 'created', startedAt: null, totalItems: 0, totalBoxes: 0 });
+    setupBatches({ created: [empty] });
+    await screen.findByRole('button', { name: 'B-1002' });
+    fireEvent.click(screen.getByRole('button', { name: /빈 배치 1개 보기/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'B-1009' }));
+    await waitFor(() => expect(within(detail()).getByRole('heading', { name: 'B-1009' })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: '빈 배치 1개 접기' }));
+    await waitFor(() => expect(within(detail()).getByRole('heading', { name: 'B-1002' })).toBeInTheDocument());
+  });
+
+  it('빈 배치만 있을 때 보던 빈 배치는 진행할 배치가 새로 들어와도 그대로 본다', async () => {
+    const empty = batchSummary({ id: 'b-9', batchNumber: 'B-1009', status: 'created', startedAt: null, totalItems: 0, totalBoxes: 0 });
+    const { server, queryClient } = setupBatches({ picking: [], created: [empty] });
+    await waitFor(() => expect(within(detail()).getByRole('heading', { name: 'B-1009' })).toBeInTheDocument());
+    server.config.batches.created = [empty, NEW_B3];
+    await queryClient.refetchQueries({ queryKey: ['outbound-batches'] });
+    await screen.findByRole('button', { name: 'B-1004' });
+    expect(within(detail()).getByRole('heading', { name: 'B-1009' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'B-1009' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '빈 배치 1개 접기' })).toBeInTheDocument();
+  });
+
+  it('진행할 배치가 없으면 빈 배치를 접지 않고 그대로 보인다', async () => {
+    const empty = batchSummary({ id: 'b-9', batchNumber: 'B-1009', status: 'created', startedAt: null, totalItems: 0, totalBoxes: 0 });
+    setupBatches({ picking: [], created: [empty] });
+    expect(await screen.findByRole('button', { name: 'B-1009' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /빈 배치 1개/ })).toBeNull();
+  });
+
+  it('보던 배치는 새 배치가 맨 위로 들어와도 바뀌지 않는다', async () => {
+    const { server, queryClient } = setupBatches();
+    await waitFor(() => expect(within(detail()).getByRole('heading', { name: 'B-1002' })).toBeInTheDocument());
+    server.config.batches.created = [NEW_B3];
+    await queryClient.refetchQueries({ queryKey: ['outbound-batches'] });
+    await screen.findByRole('button', { name: 'B-1004' });
+    expect(within(detail()).getByRole('heading', { name: 'B-1002' })).toBeInTheDocument();
+  });
+
+  it('상단에 시작 전 배치와 상자 수를 알리고, 누르면 배치 현황으로 간다', async () => {
+    setupBatches({ created: [NEW_B3, batchSummary({ id: 'b-4', batchNumber: 'B-1005', status: 'created', startedAt: null, totalItems: 5, totalBoxes: 3 })] });
+    const notice = await screen.findByRole('link', { name: /시작 전 배치 2개 · 4상자/ });
+    expect(notice).toHaveAttribute('href', '/outbound/batches');
+  });
+
+  it('옛 core(상자 수 없음)면 알림에 배치 수만 — 줄 수를 상자로 세지 않는다', async () => {
+    setupBatches({ created: [batchSummary({ id: 'b-3', batchNumber: 'B-1004', status: 'created', startedAt: null, totalItems: 2 })] });
+    const notice = await screen.findByRole('link', { name: /시작 전 배치 1개/ });
+    expect(notice).not.toHaveTextContent('상자');
+  });
+
+  it('시작 전 배치가 없으면 알림을 띄우지 않는다', async () => {
+    setupBatches();
+    await screen.findByRole('button', { name: 'B-1002' });
+    expect(screen.queryByRole('link', { name: /시작 전 배치/ })).toBeNull();
   });
 
   it('배치 코드 옆에 관리자 화면의 배치 이름을 함께 보여 준다', async () => {
-    setupBatches({ created: [batchSummary({ id: 'b-3', batchNumber: 'B-1004', name: '11/12 개별피킹 17:13:48', status: 'created', startedAt: null, totalItems: 1 })] });
+    setupBatches({ created: [{ ...NEW_B3, name: '11/12 개별피킹 17:13:48' }] });
     const table = await screen.findByRole('table');
     await waitFor(() => expect(within(table).getAllByRole('row')).toHaveLength(3));
     const [first, second] = within(table).getAllByRole('row').slice(1);
-    expect(first).toHaveTextContent('오전');
-    expect(second).toHaveTextContent('11/12 개별피킹 17:13:48');
+    expect(first).toHaveTextContent('11/12 개별피킹 17:13:48');
+    expect(second).toHaveTextContent('오전');
     fireEvent.click(screen.getByRole('button', { name: 'B-1004' }));
     await waitFor(() => expect(within(detail()).getByRole('heading', { name: 'B-1004' })).toBeInTheDocument());
     expect(detail()).toHaveTextContent('11/12 개별피킹 17:13:48');
@@ -93,12 +168,44 @@ describe('F2 배치 현황(스펙 §8, 목업 ⑤)', () => {
     expect(second).toHaveTextContent('4210-3388-1915');
   });
 
-  it('배치를 누르면 그 배치를 본다 — 시작 전 배치엔 「작업 시작」만', async () => {
-    setupBatches();
-    fireEvent.click(await screen.findByRole('button', { name: 'B-1004' }));
+  it('배치를 누르면 그 배치를 본다 — 시작 전 배치엔 시작 단추만', async () => {
+    setupBatches({ created: [NEW_B3] });
+    fireEvent.click(await screen.findByRole('button', { name: 'B-1002' }));
+    await waitFor(() => expect(within(detail()).getByRole('heading', { name: 'B-1002' })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'B-1004' }));
     await waitFor(() => expect(within(detail()).getByRole('heading', { name: 'B-1004' })).toBeInTheDocument());
-    expect(screen.getByRole('button', { name: '작업 시작' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '작업 시작하고 송장 인쇄' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '박스 넣기' })).toBeNull();
+  });
+
+  it('「작업 시작하고 송장 인쇄」 한 번으로 시작하고 확인창 없이 송장을 뽑아 F1 으로 이어 준다', async () => {
+    const { server } = setupBatches({ boxes: [BOX1, UNPRINTED_BOX3], created: [NEW_B3] });
+    fireEvent.click(await screen.findByRole('button', { name: '작업 시작하고 송장 인쇄' }));
+    expect(await screen.findByText('이제 F1 «출고 검수»에서 송장을 찍으세요.')).toBeInTheDocument();
+    expect(server.requests.filter((r) => r.path === '/picking/v2/starts')).toHaveLength(1);
+    expect(server.confirmedPrints).toEqual(['s-3']);
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('이미 나간 송장이 있으면 시작 뒤 인쇄 전에 확인창으로 묻는다', async () => {
+    const { server } = setupBatches({ boxes: [BOX1, { ...BOX3, labelState: 'current' }], created: [NEW_B3] });
+    fireEvent.click(await screen.findByRole('button', { name: '작업 시작하고 송장 인쇄' }));
+    expect(await screen.findByText(/이미 인쇄한 송장이 1건 있어요/)).toBeInTheDocument();
+    expect(server.confirmedPrints).toEqual([]);
+  });
+
+  it('시작해서 뽑은 배치를 다른 배치로 갔다 돌아와도 다시 뽑지 않는다', async () => {
+    const { server } = setupBatches({ boxes: [BOX1, UNPRINTED_BOX3], created: [NEW_B3] });
+    fireEvent.click(await screen.findByRole('button', { name: '작업 시작하고 송장 인쇄' }));
+    await screen.findByText('이제 F1 «출고 검수»에서 송장을 찍으세요.');
+    fireEvent.click(screen.getByRole('button', { name: 'B-1002' }));
+    await waitFor(() => expect(within(detail()).getByRole('heading', { name: 'B-1002' })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'B-1004' }));
+    await waitFor(() => expect(within(detail()).getByRole('heading', { name: 'B-1004' })).toBeInTheDocument());
+    expect(await screen.findByRole('button', { name: '송장 인쇄' })).toBeInTheDocument();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(server.confirmedPrints).toEqual(['s-3']);
   });
 
   it('송장을 인쇄한 배치를 기기에 남긴다 — 출고 검수가 송장을 찍기 전에도 지금 배치를 보인다', async () => {
@@ -182,6 +289,5 @@ describe('F2 배치 현황(스펙 §8, 목업 ⑤)', () => {
     await queryClient.refetchQueries({ queryKey: ['outbound-batches'] });
     expect(await screen.findByRole('alert')).toHaveTextContent('마지막으로 불러온');
     expect(screen.getByRole('button', { name: 'B-1002' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'B-1004' })).toBeInTheDocument();
   });
 });

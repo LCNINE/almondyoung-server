@@ -95,7 +95,10 @@ export interface OutboundBatchSummary {
   batchNumber: string;
   name: string;
   status: string;
+  /** 상자마다 줄 수를 더한 값 — 상자 수가 아니다 */
   totalItems: number;
+  /** 빠진 상자를 뺀 상자 수. 옛 core 면 없다 */
+  totalBoxes?: number;
   totalQty: number;
   /** 「작업 시작」을 누른 시각. null 이면 아직 시작 전이다. */
   startedAt: string | null;
