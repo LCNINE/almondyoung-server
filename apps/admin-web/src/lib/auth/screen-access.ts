@@ -164,7 +164,7 @@ export const SCREEN_ACCESS: Readonly<Record<string, ScreenAccess>> = {
   // 결제
   '/payments': any('payment.payment.read'),
   '/payments/refunds': any('payment.refund.read'),
-  '/payments/refund-requests': any('payment.refund.read'),
+  '/payments/refund-requests': any('payment.refund.read', 'membership.billing.read'),
 
   // 멤버십
   '/membership': any('membership.member.read'),

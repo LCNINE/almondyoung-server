@@ -31,10 +31,16 @@ jest.mock('@/lib/services/business-licenses', () => ({
   useBusinessLicenses: mockQueue(),
 }));
 
+jest.mock('@/lib/services/membership', () => ({
+  ...jest.requireActual('@/lib/services/membership'),
+  useMembershipMembers: mockQueue(),
+}));
+
 const QUEUE_HOOKS: ReadonlyArray<readonly [string, string]> = [
   ['@/lib/services/orders', 'useOrderStats'],
   ['@/lib/services/wallet', 'usePendingBankTransfers'],
   ['@/lib/services/wallet', 'useRefundRequests'],
+  ['@/lib/services/membership', 'useMembershipMembers'],
   ['@/lib/services/customer-returns', 'useCustomerReturns'],
   ['@/lib/services/qna', 'useQuestions'],
   ['@/lib/services/review', 'useReviews'],
@@ -95,6 +101,8 @@ describe('admin home queues the viewer cannot read', () => {
     'order.claim.read',
     'payment.payment.read',
     'payment.refund.read',
+    'membership.billing.read',
+    'membership.member.read',
     'cs.inquiry.read',
     'cs.review.read',
     'customer.profile.read',
@@ -104,7 +112,9 @@ describe('admin home queues the viewer cannot read', () => {
     const html = render(['analytics.report.read']);
     // 주문 통계 칩 3 · 반품 2 · 입금 · 환불 · 문의 · 리뷰 · 사업자 (교환 칩은 K8 PR 10 에서 걷었다)
     expect(html.match(/>가림</g)).toHaveLength(10);
-    for (const key of QUEUE_PERMISSIONS) expect(html).toContain(`${permissionLabel(key)} 권한이 있어야 보입니다`);
+    for (const key of QUEUE_PERMISSIONS.filter((permission) => !permission.startsWith('membership.'))) {
+      expect(html).toContain(`${permissionLabel(key)} 권한이 있어야 보입니다`);
+    }
   });
 
   beforeEach(() => jest.clearAllMocks());

@@ -14,10 +14,8 @@ import {
   useKeywordStatistics,
   useZeroHitKeywords,
 } from '@/lib/services/search';
-import {
-  usePendingBankTransfers,
-  useRefundRequests,
-} from '@/lib/services/wallet';
+import { usePendingBankTransfers } from '@/lib/services/wallet';
+import { useRefundRequestCounts } from '@/features/payments/hooks/use-refund-request-counts';
 import { SalesBoard } from '@/features/main/sales/SalesBoard';
 import { RealtimeBoard } from '@/features/main/RealtimeBoard';
 import {
@@ -77,14 +75,13 @@ export default function MainTemplate() {
   // 칩마다 그 큐의 조회 권한이 따로 있다 — 없으면 요청하지 않고 «가림»으로 그린다.
   const orderGate = useReadGate(['order.order.read']);
   const paymentGate = useReadGate(['payment.payment.read']);
-  const refundGate = useReadGate(['payment.refund.read']);
   const claimGate = useReadGate(['order.claim.read']);
   const inquiryGate = useReadGate(['cs.inquiry.read']);
   const reviewGate = useReadGate(['cs.review.read']);
   const profileGate = useReadGate(['customer.profile.read']);
   const orderStats = useOrderStats({ enabled: orderGate.enabled });
   const bankTransfers = usePendingBankTransfers(1, 1, { enabled: paymentGate.enabled });
-  const refundRequests = useRefundRequests(1, 1, { enabled: refundGate.enabled });
+  const refundRequests = useRefundRequestCounts();
   const customerReturns = useCustomerReturns({ bucket: 'open', limit: 1 }, { enabled: claimGate.enabled });
   const unansweredQna = useQuestions(
     { status: 'active', page: 1, limit: 1 },
@@ -168,9 +165,11 @@ export default function MainTemplate() {
       id: 'refund-requests',
       tone: 'etc',
       label: '환불 신청',
-      count: refundRequests.data?.total,
+      count: refundRequests.count,
       href: '/payments/refund-requests',
-      ...chipState(refundGate, refundRequests),
+      isLoading: refundRequests.isLoading,
+      isError: refundRequests.isError,
+      hiddenReason: refundRequests.hiddenReason,
     },
     {
       id: 'unanswered-qna',
