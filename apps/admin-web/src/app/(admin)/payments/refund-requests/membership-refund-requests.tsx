@@ -44,8 +44,8 @@ function MembershipRefundRow({
   const refund = manualRefundState(matchesContract ? detail : undefined);
   const account = matchesContract ? detail?.manualRefundAccount : null;
   const cancelledAt =
-    member.cancellation?.requestedAt ??
     member.cancelledAt ??
+    member.cancellation?.requestedAt ??
     member.recurringCancelledAt;
 
   const handleComplete = async () => {
