@@ -131,6 +131,12 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
     handingOff && handoffItem
       ? handoffOwnerOf(handingOff.claim, handoffItem, !!batch?.inventorySession)
       : null;
+  // 담당 때문에 막혔고 아직 넘기지 않았으면 막힌 그 작업자가 받을 사람일 때가 많다
+  const handoffSuggestion =
+    handoffItem?.scanRejection?.action === 'handoff_worker' &&
+    !handoffItem.scanRejection.handedOff
+      ? handoffItem.scanRejection.actorId
+      : null;
   useEffect(() => {
     if (handingOff && batch && !handoffOwner) setHandingOff(null);
   }, [handingOff, batch, handoffOwner]);
@@ -244,6 +250,7 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
           itemLabel={orderLabel(handoffItem)}
           ownerId={handoffOwner}
           ownerName={workerName(handoffOwner) || '이름을 모르는 작업자'}
+          suggestedWorkerId={handoffSuggestion}
           submitting={handoffSubmitting}
           onClose={() => setHandingOff(null)}
           onConfirm={(target, reason) => void handOff(target, reason)}
