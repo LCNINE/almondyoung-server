@@ -86,6 +86,7 @@ export function HandoffDialog({
   itemLabel,
   ownerId,
   ownerName,
+  suggestedWorkerId = null,
   submitting,
   onClose,
   onConfirm,
@@ -94,6 +95,8 @@ export function HandoffDialog({
   itemLabel: string;
   ownerId: string;
   ownerName: string;
+  /** 물류앱에서 담당 때문에 막힌 작업자 — 받을 수 있는 사람이면 미리 골라 둔다 */
+  suggestedWorkerId?: string | null;
   submitting: boolean;
   onClose: () => void;
   onConfirm: (target: HandoffTarget, reason: string) => void;
@@ -104,17 +107,34 @@ export function HandoffDialog({
     ownerId,
     keyword
   );
-  const [target, setTarget] = useState<HandoffTarget | null>(null);
+  // 사람이 고른 받을 사람. 고르기 전에는 막힌 작업자를 미리 골라 보인다
+  const [picked, setPicked] = useState<HandoffTarget | null>(null);
   const [reason, setReason] = useState(HANDOFF_REASONS[0]);
   const word = CLAIM_WORD[claim];
 
-  const matches = keyword
+  const filtered = keyword
     ? candidates.filter(
         (user) =>
           user.name.toLowerCase().includes(keyword) ||
           user.loginId.toLowerCase().includes(keyword)
       )
     : candidates;
+  // 지금 목록에 보이는 사람만 미리 고른다 — 찾는 중이거나 검색으로 가려졌으면 고르지 않는다
+  const suggested =
+    suggestedWorkerId && !loading
+      ? filtered.find((user) => user.id === suggestedWorkerId)
+      : undefined;
+  const target: HandoffTarget | null =
+    picked ??
+    (suggested
+      ? { id: suggested.id, label: `${suggested.name} (${suggested.loginId})` }
+      : null);
+  const matches = suggested
+    ? [
+        ...filtered.filter((user) => user.id === suggested.id),
+        ...filtered.filter((user) => user.id !== suggested.id),
+      ]
+    : filtered;
 
   const listMessage = blockedReason
     ? blockedReason
@@ -161,7 +181,7 @@ export function HandoffDialog({
                     key={user.id}
                     value={user.id}
                     onSelect={() =>
-                      setTarget({
+                      setPicked({
                         id: user.id,
                         label: `${user.name} (${user.loginId})`,
                       })
@@ -174,6 +194,11 @@ export function HandoffDialog({
                       <span className="text-muted-foreground">
                         ({user.loginId})
                       </span>
+                      {user.id === suggested?.id && (
+                        <span className="ml-2 text-xs text-red-700">
+                          물류앱에서 막힌 작업자
+                        </span>
+                      )}
                     </span>
                     {target?.id === user.id && (
                       <Check className="size-4" aria-label="선택됨" />
