@@ -125,15 +125,15 @@ it('상품 환불이 0이면 멤버십을 먼저 열고 확인 후 계약 한 �
   ).toBe('_blank');
   expect(screen.getByText('테스트 고객')).toBeTruthy();
 
-  await user.click(screen.getByRole('button', { name: '송금 완료 처리' }));
+  await user.click(screen.getByRole('button', { name: '이체했어요' }));
   const dialog = screen.getByRole('alertdialog');
 
   expect(dialog.textContent).toContain('123456789 (테스트)로 12,000원');
-  expect(dialog.textContent).toContain('돈을 보내지 않고');
+  expect(dialog.textContent).toContain('돈을 보내지 않아요');
   expect(complete).not.toHaveBeenCalled();
 
   await user.click(
-    within(dialog).getByRole('button', { name: '송금 완료 처리' })
+    within(dialog).getByRole('button', { name: '네, 이체했어요' })
   );
 
   expect(complete).toHaveBeenCalledTimes(1);
@@ -202,7 +202,7 @@ it('결제 이력이 없는 행은 상세 조회도 하지 않는다', () => {
   render(<RefundRequestsContent />);
 
   expect(useMemberDetail).not.toHaveBeenCalled();
-  expect(screen.queryByRole('button', { name: '송금 완료 처리' })).toBeNull();
+  expect(screen.queryByRole('button', { name: '이체했어요' })).toBeNull();
 });
 
 it.each([
@@ -216,7 +216,7 @@ it.each([
   detail = { ...detail, ...change };
   render(<RefundRequestsContent />);
 
-  expect(screen.queryByRole('button', { name: '송금 완료 처리' })).toBeNull();
+  expect(screen.queryByRole('button', { name: '이체했어요' })).toBeNull();
   expect(complete).not.toHaveBeenCalled();
 });
 
@@ -247,7 +247,7 @@ it('환불 쓰기 권한이 없으면 완료 버튼을 숨긴다', () => {
   canMutate = false;
   render(<RefundRequestsContent />);
 
-  expect(screen.queryByRole('button', { name: '송금 완료 처리' })).toBeNull();
+  expect(screen.queryByRole('button', { name: '이체했어요' })).toBeNull();
 });
 
 it.each([

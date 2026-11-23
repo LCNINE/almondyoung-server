@@ -9,7 +9,8 @@ export const membershipQueryKeys = {
   memberAxisList: (axis: string, query: Record<string, unknown>) =>
     [...membershipQueryKeys.members(), 'axis', axis, query] as const,
   memberArrears: (userId: string) => [...membershipQueryKeys.all, 'memberArrears', userId] as const,
-  memberDetail: (userId: string) => [...membershipQueryKeys.all, 'memberDetail', userId] as const,
+  memberDetail: (userId: string, contractId?: string) =>
+    [...membershipQueryKeys.all, 'memberDetail', userId, contractId ?? 'latest'] as const,
   billingEvents: (userId: string) =>
     [...membershipQueryKeys.all, 'billingEvents', userId] as const,
   contractEvents: (userId: string) =>

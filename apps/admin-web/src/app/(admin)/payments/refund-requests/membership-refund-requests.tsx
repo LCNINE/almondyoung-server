@@ -33,7 +33,11 @@ function MembershipRefundRow({
   member: AdminMemberListItem;
   user?: UserInfo;
 }) {
-  const { data: detail, isLoading, isError } = useMemberDetail(member.userId);
+  const {
+    data: detail,
+    isLoading,
+    isError,
+  } = useMemberDetail(member.userId, member.contractId);
   const complete = useCompleteManualRefund();
   const { canRun } = usePermissionCheck();
 
@@ -41,8 +45,8 @@ function MembershipRefundRow({
   const refund = manualRefundState(matchesContract ? detail : undefined);
   const account = matchesContract ? detail?.manualRefundAccount : null;
   const cancelledAt =
-    member.cancellation?.requestedAt ??
     member.cancelledAt ??
+    member.cancellation?.requestedAt ??
     member.recurringCancelledAt;
 
   const handleComplete = async () => {
@@ -63,6 +67,21 @@ function MembershipRefundRow({
       );
     }
   };
+
+  const handleCopyAccount = async (accountNumber: string) => {
+    try {
+      await navigator.clipboard.writeText(accountNumber);
+      toast.success('계좌번호를 복사했어요.');
+    } catch {
+      toast.error('복사하지 못했어요. 직접 선택해서 복사해 주세요.');
+    }
+  };
+
+  const amountText = `${(detail?.eligibleRefundAmount ?? 0).toLocaleString('ko-KR')}원`;
+  const accountText = account
+    ? `${bankName(account.bank)} ${account.accountNumber} (${account.holderName})`
+    : '고객 계좌';
+  const buttonLabel = refund.pgAlreadyRefunded ? refund.label : '이체했어요';
 
   return (
     <tr className="border-t">
@@ -88,6 +107,14 @@ function MembershipRefundRow({
             {bankName(account.bank)}{' '}
             <span className="font-mono">{account.accountNumber}</span> ·{' '}
             {account.holderName}
+            <Button
+              size="sm"
+              variant="ghost"
+              className="ml-1 h-7 px-2 text-xs"
+              onClick={() => handleCopyAccount(account.accountNumber)}
+            >
+              계좌번호 복사
+            </Button>
           </>
         ) : isLoading ? (
           '불러오는 중이에요.'
@@ -111,23 +138,46 @@ function MembershipRefundRow({
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button size="sm" variant="outline" disabled={complete.isPending}>
-                {complete.isPending ? '처리 중...' : refund.label}
+                {complete.isPending ? '기록하는 중이에요' : buttonLabel}
               </Button>
             </AlertDialogTrigger>
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>{refund.label}</AlertDialogTitle>
-                <AlertDialogDescription>
-                  {refund.question}
+                <AlertDialogTitle>
+                  {refund.pgAlreadyRefunded ? refund.label : '이체를 마쳤나요?'}
+                </AlertDialogTitle>
+                <AlertDialogDescription asChild>
+                  {refund.pgAlreadyRefunded ? (
+                    <p>{refund.question}</p>
+                  ) : (
+                    <div className="space-y-2">
+                      <p>
+                        <span className="font-semibold text-foreground">
+                          {accountText}
+                        </span>
+                        로{' '}
+                        <span className="font-semibold text-foreground">
+                          {amountText}
+                        </span>
+                        을 회사 계좌에서 이체했을 때만 눌러 주세요.
+                      </p>
+                      <p>
+                        이 버튼은 돈을 보내지 않아요. 이체했다는 기록만 남겨요.
+                      </p>
+                      <p>기록하면 되돌릴 수 없어요.</p>
+                    </div>
+                  )}
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
-                <AlertDialogCancel>취소</AlertDialogCancel>
+                <AlertDialogCancel>
+                  {refund.pgAlreadyRefunded ? '취소' : '아직이에요'}
+                </AlertDialogCancel>
                 <AlertDialogAction
                   onClick={handleComplete}
                   disabled={complete.isPending}
                 >
-                  {refund.label}
+                  {refund.pgAlreadyRefunded ? refund.label : '네, 이체했어요'}
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
@@ -163,12 +213,12 @@ export function MembershipRefundRequests() {
         <p className="text-sm text-muted-foreground">
           효성 CMS 자동이체 결제는 PG 환불이 안 돼요.
         </p>
-        <p className="text-sm text-muted-foreground">
-          회사 계좌에서 아래 환불 계좌로 직접 이체한 뒤 송금 완료 처리를 눌러
-          주세요.
-        </p>
+        <ol className="list-decimal space-y-0.5 pl-5 text-sm text-muted-foreground">
+          <li>계좌번호를 복사해서 회사 계좌에서 이체해 주세요.</li>
+          <li>이체가 끝나면 이체했어요를 눌러 기록을 남겨 주세요.</li>
+        </ol>
         <p className="text-sm font-semibold text-foreground">
-          이 버튼은 돈을 보내지 않고 완료 기록만 남겨요.
+          이체했어요 버튼은 돈을 보내지 않아요.
         </p>
       </div>
       {isLoading ? (
@@ -193,7 +243,7 @@ export function MembershipRefundRequests() {
                 <th className="p-3">환불 금액</th>
                 <th className="p-3">환불 계좌</th>
                 <th className="p-3">해지 일시</th>
-                <th className="p-3 text-right">처리</th>
+                <th className="p-3 text-right">이체 후 기록</th>
               </tr>
             </thead>
             <tbody>
