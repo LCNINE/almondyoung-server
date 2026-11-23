@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { batchNameOf, batchProgressOf, boxCountsOf, boxRowOf, hasCancelPending, mergeBatches, sortBoxRows } from './batchStatus';
+import {
+  arrangeBatches,
+  batchNameOf,
+  batchProgressOf,
+  boxCountsOf,
+  boxRowOf,
+  hasCancelPending,
+  mergeBatches,
+  newBatchSummary,
+  sortBoxRows,
+} from './batchStatus';
 import type { OutboundBatchSummary } from './types';
 
 const item = (status: string, i = 0) => ({ id: `wi-${status}-${i}`, shipmentId: `s-${status}-${i}`, status });
@@ -36,6 +46,44 @@ describe('배치 집계', () => {
     });
     expect(mergeBatches([b('p1'), b('x')], [b('x'), b('c1')]).map((x) => x.id)).toEqual(['p1', 'x', 'c1']);
     expect(mergeBatches(undefined, undefined)).toEqual([]);
+  });
+});
+
+describe('배치 목록 순서와 시작 전 배치 알림', () => {
+  const b = (id: string, patch: Partial<OutboundBatchSummary> = {}): OutboundBatchSummary => ({
+    id,
+    batchNumber: id,
+    name: '',
+    status: 'created',
+    totalItems: 2,
+    totalBoxes: 1,
+    totalQty: 2,
+    startedAt: null,
+    withdrawingItems: 0,
+    ...patch,
+  });
+  const started = { startedAt: '2026-10-02T00:00:00.000Z' };
+
+  it('새 배치(상자 있는 시작 전) → 진행 중 → 시작했지만 손대지 않은 배치, 빈 시작 전 배치는 따로', () => {
+    const picking = [b('p1', { status: 'picking', ...started })];
+    const created = [b('empty', { totalItems: 0, totalBoxes: 0 }), b('new2'), b('untouched', started), b('new1')];
+    const { active, empty } = arrangeBatches(picking, created);
+    expect(active.map((x) => x.id)).toEqual(['new2', 'new1', 'p1', 'untouched']);
+    expect(empty.map((x) => x.id)).toEqual(['empty']);
+  });
+
+  it('옛 core(상자 수 없음)면 줄 수로 빈 배치를 가른다', () => {
+    const { empty } = arrangeBatches([], [b('old', { totalBoxes: undefined, totalItems: 0 }), b('old2', { totalBoxes: undefined })]);
+    expect(empty.map((x) => x.id)).toEqual(['old']);
+  });
+
+  it('알림은 상자 있는 시작 전 배치만 세고 상자 수를 더한다', () => {
+    expect(newBatchSummary([b('a', { totalBoxes: 3, totalItems: 5 }), b('b', { totalBoxes: 2 }), b('s', started), b('e', { totalBoxes: 0, totalItems: 0 })])).toEqual({
+      batches: 2,
+      boxes: 5,
+    });
+    expect(newBatchSummary([b('a', { totalBoxes: undefined })])).toEqual({ batches: 1, boxes: null });
+    expect(newBatchSummary(undefined)).toEqual({ batches: 0, boxes: 0 });
   });
 });
 

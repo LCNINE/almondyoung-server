@@ -961,6 +961,7 @@ export class OutboundBatchOrchestrator {
             pickingMethod: batch.pickingMethod,
             cartCapacity: batch.cartCapacity,
             totalItems: workload?.totalItems ?? 0,
+            totalBoxes: workItems.filter((item) => item.status !== 'excluded').length,
             totalQty: workload?.totalQty ?? 0,
             withdrawingItems: workload?.withdrawing.size ?? 0,
             scheduledPickingAt: batch.scheduledPickingAt,

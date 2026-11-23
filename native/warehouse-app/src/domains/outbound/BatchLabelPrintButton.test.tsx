@@ -37,6 +37,7 @@ function mount(opts: {
   statesFail?: () => boolean;
   /** 첫 판정 응답을 이 약속이 풀릴 때까지 붙잡는다 — 그때의 판정으로 */
   holdFirstStates?: Promise<void>;
+  autoPrint?: boolean;
 }) {
   let statesCalls = 0;
   const paths: string[] = [];
@@ -81,7 +82,7 @@ function mount(opts: {
       </QueryClientProvider>
     </SessionProvider>
   );
-  render(
+  const { unmount } = render(
     <BatchLabelPrintButton
       batchId="b-1"
       prefs={prefs}
@@ -89,10 +90,11 @@ function mount(opts: {
       now={() => NOW}
       onRunningChange={opts.onRunningChange}
       afterPrinted={opts.afterPrinted}
+      autoPrint={opts.autoPrint}
     />,
     { wrapper }
   );
-  return { paths, print, prefs, confirms };
+  return { paths, print, prefs, confirms, unmount };
 }
 
 const items: Item[] = [
@@ -561,5 +563,58 @@ describe('BatchLabelPrintButton', () => {
     fail = false;
     await userEvent.click(screen.getByRole('button', { name: '바뀐·미출력 송장만 다시' }));
     expect(await screen.findByRole('dialog', { name: '송장 1건을 인쇄할까요?' })).toBeInTheDocument();
+  });
+
+  describe('처음 그릴 때 바로 인쇄(autoPrint)', () => {
+    const fresh = () => [
+      { shipmentId: 'a', state: 'never_printed' },
+      { shipmentId: 'c', state: 'never_printed' },
+    ];
+
+    it('아무것도 나가지 않았으면 확인창 없이 뽑는다', async () => {
+      const { print } = mount({ workItems: items, states: fresh, autoPrint: true });
+      expect(await screen.findByText(/보냄 2/)).toBeInTheDocument();
+      expect(print).toHaveBeenCalledTimes(2);
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
+
+    it('판정을 받지 못하면 확인창으로 묻는다', async () => {
+      const { print } = mount({ workItems: items, statesFail: () => true, autoPrint: true });
+      expect(await screen.findByRole('dialog', { name: '송장 2건을 인쇄할까요?' })).toHaveTextContent('확인하지 못했어요');
+      expect(print).not.toHaveBeenCalled();
+    });
+
+    it('이 기기에서 이미 뽑은 배치면 확인창으로 묻는다', async () => {
+      const prefs = createMemoryPrefs({ [LABEL_PRINTER_KEY]: 'spooler://XP', [BATCH_KEY]: NOW.toISOString() });
+      const { print } = mount({ workItems: items, states: fresh, prefs, autoPrint: true });
+      expect(await screen.findByRole('dialog', { name: '송장 2건을 인쇄할까요?' })).toHaveTextContent('이 기기에서');
+      expect(print).not.toHaveBeenCalled();
+    });
+
+    it('대상을 받는 동안 다른 배치로 옮기면(화면에서 빠지면) 뽑지 않는다', async () => {
+      let release = () => {};
+      let asked = false;
+      const held = new Promise<void>((resolve) => (release = resolve));
+      const { print, unmount } = mount({
+        workItems: async () => {
+          asked = true;
+          await held;
+          return items;
+        },
+        states: fresh,
+        autoPrint: true,
+      });
+      await vi.waitFor(() => expect(asked).toBe(true));
+      unmount();
+      release();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(print).not.toHaveBeenCalled();
+    });
+
+    it('프린터가 없으면 뽑지 않고 안내한다', async () => {
+      const { print } = mount({ workItems: items, states: fresh, prefs: createMemoryPrefs(), autoPrint: true });
+      expect(await screen.findByRole('alert')).toBeInTheDocument();
+      expect(print).not.toHaveBeenCalled();
+    });
   });
 });

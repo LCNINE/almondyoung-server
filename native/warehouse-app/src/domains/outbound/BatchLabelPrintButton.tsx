@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '../../core/design/Button';
 import { ConfirmDialog } from '../../core/design/ConfirmDialog';
@@ -77,6 +77,8 @@ export function BatchLabelPrintButton({
   disabled = false,
   onRunningChange,
   afterPrinted,
+  autoPrint = false,
+  onAutoPrintStarted,
 }: {
   batchId: string;
   prefs?: DevicePrefs;
@@ -87,6 +89,9 @@ export function BatchLabelPrintButton({
   onRunningChange?: (running: boolean) => void;
   /** 송장이 한 장이라도 나간 뒤 이어서 할 일 */
   afterPrinted?: string;
+  /** 처음 그릴 때 바로 인쇄를 시작한다 — 「작업 시작하고 송장 인쇄」 뒤. 이미 나간 송장이 있으면 확인창을 띄운다 */
+  autoPrint?: boolean;
+  onAutoPrintStarted?: () => void;
 }) {
   const api = useApiClient();
   const queryClient = useQueryClient();
@@ -119,8 +124,10 @@ export function BatchLabelPrintButton({
     });
   };
 
-  const prepare = async (retry = false) => {
+  const prepare = async (retry = false, auto = false) => {
     if (busy.current || disabled) return;
+    // 확인 없이 바로 보낼 대상 — busy 를 놓은 뒤에 start 한다
+    let direct: string[] | null = null;
     setNotice(null);
     // 새로 시작하면 지난 요약은 더 이상 지금 상태가 아니다 — 새 안내 옆에 남기지 않는다(취소하면 last 로 돌아간다).
     if (!retry) setPhase({ kind: 'idle' });
@@ -154,12 +161,16 @@ export function BatchLabelPrintButton({
       const printed = states ? new Set(states.filter(wasPrinted).map((state) => state.shipmentId)) : null;
       const alreadyPrinted = printed ? shipmentIds.filter((id) => printed.has(id)).length : null;
       const retryable = states !== null && reprintTargets(states).length > 0;
-      setPhase({ kind: 'confirm', shipmentIds, last: lastResult, retry: false, alreadyPrinted, retryable });
+      // 방금 시작한 배치라도 다른 기기가 뽑았거나 판정을 못 받았으면 묻는다 — 같은 번호 송장이 두 장 나오지 않게
+      if (auto && alreadyPrinted === 0 && !readBatchPrintedAt(prefs, batchId)) direct = shipmentIds;
+      else setPhase({ kind: 'confirm', shipmentIds, last: lastResult, retry: false, alreadyPrinted, retryable });
     } catch (error) {
       setNotice(errorMessage(error));
     } finally {
       busy.current = false;
     }
+    // 판정을 받는 동안 다른 배치로 옮겼으면 화면에 없는 배치의 송장을 뽑지 않는다
+    if (direct && mounted.current) await start(direct);
   };
 
   const start = async (shipmentIds: string[]) => {
@@ -193,6 +204,23 @@ export function BatchLabelPrintButton({
       void queryClient.invalidateQueries({ queryKey: statesKey });
     }
   };
+
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  // 한 번만 — 다시 그려져도(배치를 오갔다 돌아와도) 또 뽑지 않게 부모가 autoPrint 를 거둔다
+  const autoStarted = useRef(false);
+  useEffect(() => {
+    if (!autoPrint || autoStarted.current) return;
+    autoStarted.current = true;
+    onAutoPrintStarted?.();
+    void prepare(false, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 그릴 때 한 번
+  }, [autoPrint]);
 
   const printedAt = readBatchPrintedAt(prefs, batchId);
   const reprintCount = states ? reprintTargets(states).length : 0;

@@ -8,6 +8,7 @@ import { ShellChromeContext } from '../core/design/shellChrome';
 import { useDeveloperMode } from '../core/diagnostics/DeveloperModeProvider';
 import { useCommandScans } from '../core/hardware/scan/useScanner';
 import { ActionRegistryProvider, useRegistryApi, useStationActions } from './ActionRegistry';
+import { NewBatchNotice } from './batches/NewBatchNotice';
 import { TAB_ACTION_PREFIX, type StationAction } from './actions';
 import { parseCommand } from './commandCode';
 import { FeedbackProvider, useFeedback, useFlash } from './feedback/FeedbackProvider';
@@ -130,6 +131,7 @@ function ShellFrame() {
           })}
         </nav>
         <div className="ml-auto flex items-center gap-4 text-[13px] text-[#A9AFBB]">
+          <NewBatchNotice />
           {developer.enabled && (
             <Link to="/diagnostics" aria-label="개발자 진단" className="hover:text-white">
               <Wrench className="h-4 w-4" aria-hidden />
