@@ -23,15 +23,30 @@ import {
   reprintTargets,
   runBatchLabelPrint,
   writeBatchPrintedAt,
+  type BatchLabelState,
   type BatchPrintResult,
 } from './waybillLabel';
+
+const SECONDARY = 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-50';
 
 type Phase =
   | { kind: 'idle' }
   // retry: 「바뀐·미출력 송장만 다시」 — 대상이 서버 판정상 지금 내용으로 안 나온 건뿐이라 중복 경고를 띄우지 않는다.
-  | { kind: 'confirm'; shipmentIds: string[]; last: BatchPrintResult | null; retry: boolean }
+  // alreadyPrinted: 서버 판정상 이미 나간 송장 수 — 다른 기기에서 뽑은 것도 센다. null = 판정을 받지 못했다
+  // retryable: 새 판정에 «다시» 로 뽑을 송장이 있다 — 확인창이 그 단추를 안내해도 되는가
+  | {
+      kind: 'confirm';
+      shipmentIds: string[];
+      last: BatchPrintResult | null;
+      retry: boolean;
+      alreadyPrinted: number | null;
+      retryable: boolean;
+    }
   | { kind: 'running'; done: number; total: number }
   | { kind: 'done'; result: BatchPrintResult };
+
+/** 서버 판정상 한 번이라도 나간 송장 */
+const wasPrinted = (state: BatchLabelState) => state.state === 'current' || state.state === 'reprint_required';
 
 function formatPrintedAt(iso: string): string {
   return new Date(iso).toLocaleString('ko-KR', {
@@ -61,6 +76,7 @@ export function BatchLabelPrintButton({
   now = () => new Date(),
   disabled = false,
   onRunningChange,
+  afterPrinted,
 }: {
   batchId: string;
   prefs?: DevicePrefs;
@@ -69,6 +85,8 @@ export function BatchLabelPrintButton({
   /** 다른 배치가 인쇄 중이면 부모가 막는다 — 프린터가 한 대라 라벨이 섞인다. */
   disabled?: boolean;
   onRunningChange?: (running: boolean) => void;
+  /** 송장이 한 장이라도 나간 뒤 이어서 할 일 */
+  afterPrinted?: string;
 }) {
   const api = useApiClient();
   const queryClient = useQueryClient();
@@ -90,6 +108,17 @@ export function BatchLabelPrintButton({
 
   const lastResult = phase.kind === 'done' ? phase.result : null;
 
+  // 판정을 새로 받는다 — fetchQuery 는 화면을 열 때 시작된 조회가 아직 돌면 그 옛 응답을 돌려주므로 먼저 끊는다.
+  // 새 조회도 같은 키로 받아, 실패하면 화면의 판정(배치 상세)도 실패 상태로 남고 다음 갱신이 다시 받는다
+  const freshStates = async () => {
+    await queryClient.cancelQueries({ queryKey: statesKey });
+    return queryClient.fetchQuery({
+      queryKey: statesKey,
+      queryFn: () => fetchBatchLabelStates(api, batchId),
+      staleTime: 0,
+    });
+  };
+
   const prepare = async (retry = false) => {
     if (busy.current || disabled) return;
     setNotice(null);
@@ -103,26 +132,29 @@ export function BatchLabelPrintButton({
     try {
       if (retry) {
         // 방금 끝난 인쇄가 반영된 서버 판정을 새로 받는다 — 캐시가 낡았을 수 있다.
-        const fresh = reprintTargets(
-          await queryClient.fetchQuery({
-            queryKey: statesKey,
-            queryFn: () => fetchBatchLabelStates(api, batchId),
-            staleTime: 0,
-          })
-        );
+        const fresh = reprintTargets(await freshStates());
         if (fresh.length === 0) {
           setNotice('다시 인쇄할 송장이 없어요.');
           return;
         }
-        setPhase({ kind: 'confirm', shipmentIds: fresh, last: lastResult, retry: true });
+        setPhase({ kind: 'confirm', shipmentIds: fresh, last: lastResult, retry: true, alreadyPrinted: 0, retryable: true });
         return;
       }
-      const shipmentIds = printableShipmentIds(await fetchBatchWorkItems(api, batchId));
+      // 판정도 새로 받는다 — 화면을 연 뒤 다른 기기가 뽑았으면 확인창이 알리고, «다시» 단추도 그 판정으로 나타난다.
+      // 판정을 못 받아도 인쇄는 막지 않는다 — 확인창이 확인하지 못했다고 알린다
+      const [workItems, states] = await Promise.all([
+        fetchBatchWorkItems(api, batchId),
+        freshStates().catch(() => null),
+      ]);
+      const shipmentIds = printableShipmentIds(workItems);
       if (shipmentIds.length === 0) {
         setNotice('인쇄할 박스가 없어요.');
         return;
       }
-      setPhase({ kind: 'confirm', shipmentIds, last: lastResult, retry: false });
+      const printed = states ? new Set(states.filter(wasPrinted).map((state) => state.shipmentId)) : null;
+      const alreadyPrinted = printed ? shipmentIds.filter((id) => printed.has(id)).length : null;
+      const retryable = states !== null && reprintTargets(states).length > 0;
+      setPhase({ kind: 'confirm', shipmentIds, last: lastResult, retry: false, alreadyPrinted, retryable });
     } catch (error) {
       setNotice(errorMessage(error));
     } finally {
@@ -164,22 +196,29 @@ export function BatchLabelPrintButton({
 
   const printedAt = readBatchPrintedAt(prefs, batchId);
   const reprintCount = states ? reprintTargets(states).length : 0;
+  // 아직 한 장도 안 나간 배치면 «다시» 는 «송장 인쇄» 와 같은 일이다 — 주 버튼을 하나로 둔다
+  const showRetry = reprintCount > 0 && (states ?? []).some(wasPrinted) && phase.kind !== 'running';
   const skippedGroups = lastResult ? groupSkipped(lastResult) : [];
   const confirmMessage =
     phase.kind !== 'confirm'
       ? ''
       : phase.retry
         ? `바뀌었거나 인쇄되지 않은 ${phase.shipmentIds.length}건만 다시 보내요. 인쇄가 끝날 때까지 이 화면을 떠나지 마세요.`
-        : printedAt
-          ? `이 기기에서 ${formatPrintedAt(printedAt)} 에 이미 인쇄했어요. 같은 번호의 송장이 한 번 더 나와요.`
-          : '인쇄가 끝날 때까지 이 화면을 떠나지 마세요.';
+        : phase.alreadyPrinted !== null && phase.alreadyPrinted > 0
+          ? `이미 인쇄한 송장이 ${phase.alreadyPrinted}건 있어요. 같은 번호의 송장이 한 번 더 나와요.` +
+            (phase.retryable ? ' 안 나온 것만 뽑으려면 취소하고 «바뀐·미출력 송장만 다시»를 눌러 주세요.' : '')
+          : printedAt
+            ? `이 기기에서 ${formatPrintedAt(printedAt)} 에 이미 인쇄했어요. 같은 번호의 송장이 한 번 더 나와요.`
+            : phase.alreadyPrinted === null
+              ? '이미 인쇄한 송장이 있는지 확인하지 못했어요. 같은 번호의 송장이 한 번 더 나올 수 있어요.'
+              : '인쇄가 끝날 때까지 이 화면을 떠나지 마세요.';
 
   return (
     <div className="mt-2 space-y-1">
       <div className="flex gap-2">
         <Button
           type="button"
-          className="border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+          className={showRetry ? SECONDARY : undefined}
           disabled={disabled || phase.kind === 'running'}
           onClick={() => void prepare()}
         >
@@ -188,7 +227,7 @@ export function BatchLabelPrintButton({
         {phase.kind === 'running' && (
           <Button
             type="button"
-            className="border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+            className={SECONDARY}
             disabled={stopping}
             onClick={() => {
               stopRequested.current = true;
@@ -200,12 +239,12 @@ export function BatchLabelPrintButton({
         )}
         {/* 서버 판정(바뀐 송장·안 나온 송장)이 있으면 이 기기에서 인쇄한 적이 없어도 보인다 — 다른 PC 의 출력,
             작업 중 바뀐 송장도 여기서 다시 뽑는다(스펙 §10.5). 대상은 누를 때 서버에서 새로 받는다. */}
-        {reprintCount > 0 && phase.kind !== 'running' && (
+        {showRetry && (
           <Button type="button" disabled={disabled} onClick={() => void prepare(true)}>
             바뀐·미출력 송장만 다시
           </Button>
         )}
-        {reprintCount > 0 && phase.kind !== 'running' && (
+        {showRetry && (
           <span className="self-center text-sm text-red-600">재출력 필요 {reprintCount}</span>
         )}
       </div>
@@ -225,6 +264,10 @@ export function BatchLabelPrintButton({
           {/* 스풀러가 받았다는 뜻일 뿐이다 — 꺼지거나 걸린 USB 프린터도 대개 작업을 받아 준다. */}
           {phase.result.printed.length > 0 && (
             <p className="text-xs text-gray-500">프린터에서 {phase.result.sheets}장이 나왔는지 확인해 주세요.</p>
+          )}
+          {/* 확인 기록만 실패한 송장도 종이는 나갔다(sheets 에 센다) */}
+          {phase.result.sheets > 0 && afterPrinted !== undefined && (
+            <p className="text-base font-semibold text-blue-700">{afterPrinted}</p>
           )}
           {phase.result.printerError !== undefined && (
             <p role="alert">

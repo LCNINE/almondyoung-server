@@ -11,7 +11,7 @@ import { requestBoxChecksOpen } from '../../core/operations/boxChecks';
 import { useBoxChecks } from '../../core/operations/workArea';
 import { useHumanKeys, useScanEmit, useScanner } from '../../core/hardware/scan/useScanner';
 import { batchNameOf, batchProgressOf, useBatchWorkItems } from '../../domains/outbound/batchStatus';
-import { classifyInspectScan, inspectionGateOf, isNotFound } from '../../domains/outbound/inspection';
+import { classifyInspectScan, inspectionGateOf, isNotFound, lineOfBarcode } from '../../domains/outbound/inspection';
 import { clearLastBox, readLastBatch, readLastBox, writeLastBox } from '../../domains/outbound/lastBox';
 import { fetchShipmentByWaybill, useOutboundBatches } from '../../domains/outbound/queries';
 import type { ShortPickResult } from '../../domains/outbound/shortPick';
@@ -63,6 +63,7 @@ const REFILLED_ELSEWHERE_MESSAGE = '앞 박스의 결품이 반영돼 새 송장
 const WITHDRAWN_ELSEWHERE_MESSAGE = '박스를 뺐어요. 그 송장을 다시 찍어 주세요.';
 
 const WITHDRAWN_SCAN_MESSAGE = '이미 다 뺀 상자예요. 다음 송장을 찍어 주세요.';
+const NEW_WAYBILL_FIRST_MESSAGE = '새 송장을 먼저 찍어 주세요.';
 export const LEFT_BATCH_MESSAGE = '이 상자는 배치에서 빠졌어요. 방금 찍은 상품은 담지 말고, 담아 둔 상품을 꺼내 찍어 주세요.';
 
 /** 스테이션 F1 출고 검수(스펙 §6) — 송장 스캔 즉시 시작, 상품 스캔 = +1, 마지막 스캔 = 출고, 다음 송장 */
@@ -399,6 +400,26 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
       });
       return;
     }
+    if (current.kind === 'reprint') {
+      // 새 송장을 기다리는 중 — 상품을 찍었으면 «운송장을 찾을 수 없어요» 대신 할 일을 다시 말한다.
+      // 송장과 길이가 같은 상품 바코드(12자리)도 있어 이 상자의 상품 바코드인지도 본다
+      void run(async () => {
+        try {
+          await show(await lookup(code));
+        } catch (error) {
+          // 출력이 실패했으면 찍을 새 송장이 없다 — 다시 출력하라는 큰 칸이 이미 떠 있으니 원래 거절대로
+          if (
+            !isNotFound(error) ||
+            current.print.kind === 'failed' ||
+            (classifyInspectScan(code, current.box.trackingNo) !== 'product' &&
+              lineOfBarcode(current.box.lines, code) === null)
+          )
+            throw error;
+          reject(NEW_WAYBILL_FIRST_MESSAGE, code);
+        }
+      });
+      return;
+    }
     if (current.kind !== 'inspect' && current.kind !== 'withdraw') {
       void open(code);
       return;
@@ -575,6 +596,8 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
     run(async () => {
       const current = viewRef.current;
       if (current.kind !== 'reprint') return;
+      // 지난 거절은 지난 송장 때의 일이다 — 다시 뽑는 동안·실패했을 때 남기지 않는다
+      setAlert(null);
       go({ ...current, print: { kind: 'printing' } });
       const status = await printFor(current.box.shipmentId);
       settlePrint(current.box.shipmentId, status);
@@ -661,8 +684,9 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
           left={
             <>
               <BoxCard trackingNo={view.box.trackingNo} recipient={view.box.recipientMasked} ownerName={view.box.ownerName} />
-              {/* 방금 찍은 것의 거절 사유가 출력 상태보다 먼저다(§6.2 «오류음 + 사유 한 줄») */}
-              {alert ? (
+              {/* 방금 찍은 것의 거절 사유가 출력 상태보다 먼저다(§6.2 «오류음 + 사유 한 줄»).
+                  새 송장을 먼저 찍으라는 거절만은 새 송장 안내를 남기고 그 아래에 한 줄로 — 할 일이 그대로다 */}
+              {alert && alert.message !== NEW_WAYBILL_FIRST_MESSAGE ? (
                 <BigPanel content={{ kind: 'alert', ...alert }} />
               ) : view.print.kind === 'failed' ? (
                 <BigPanel content={{ kind: 'alert', message: view.print.message }} />
@@ -675,6 +699,12 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
                   }}
                 />
               )}
+              {alert && alert.message === NEW_WAYBILL_FIRST_MESSAGE ? (
+                <p role="alert" className="shrink-0 rounded-[10px] border-2 border-[#C8202F] bg-[#FDE8EA] p-3 font-semibold text-[#9E1320]">
+                  {alert.message}
+                  <span className="ml-2 font-mono font-normal">{alert.detail}</span>
+                </p>
+              ) : null}
             </>
           }
           right={

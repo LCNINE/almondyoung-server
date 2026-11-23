@@ -119,6 +119,21 @@ describe('F2 배치 현황(스펙 §8, 목업 ⑤)', () => {
     expect(await screen.findByText('이 배치에서 박스 빼기')).toBeInTheDocument();
   });
 
+  it('시작된 배치에서 다음 할 일인 송장 인쇄가 주 버튼이고, 박스 넣기·빼기는 보조다', async () => {
+    setupBatches();
+    const printButton = await screen.findByRole('button', { name: '송장 인쇄' });
+    expect(printButton.className).not.toContain('bg-white');
+    expect(screen.getByRole('button', { name: '박스 넣기' }).className).toContain('bg-white');
+    expect(screen.getByRole('button', { name: '박스 빼기' }).className).toContain('bg-white');
+  });
+
+  it('송장을 인쇄하면 F1 출고 검수에서 송장을 찍으라고 이어 준다', async () => {
+    setupBatches();
+    fireEvent.click(await screen.findByRole('button', { name: '송장 인쇄' }));
+    fireEvent.click(await screen.findByRole('button', { name: '인쇄' }));
+    expect(await screen.findByText('이제 F1 «출고 검수»에서 송장을 찍으세요.')).toBeInTheDocument();
+  });
+
   it('옛 core(송장번호 없음)면 박스 목록 없이 건수만', async () => {
     setupBatches({ legacy: true });
     await waitFor(() => expect(within(detail()).getByLabelText('완료')).toHaveTextContent('1'));
