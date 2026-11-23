@@ -115,6 +115,7 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
       item.pickerClaim.workerId,
       item.packerClaim.workerId,
       item.scanRejection?.actorId,
+      item.scanRejection?.handedOff?.workerId,
     ])
   );
   const canAdd = canRun(useAddShipmentToBatch);
@@ -457,6 +458,9 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                               compact
                               rejection={item.scanRejection}
                               workerName={workerName(item.scanRejection.actorId)}
+                              handoffWorkerName={workerName(
+                                item.scanRejection.handedOff?.workerId
+                              )}
                             >
                               <ScanRejectionBatchStep
                                 rejection={item.scanRejection}

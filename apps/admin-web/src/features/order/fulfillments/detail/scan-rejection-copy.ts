@@ -26,9 +26,23 @@ export function scanRejectionWhen(
   return workerName ? `${at} · ${workerName}` : at;
 }
 
+/** «11. 20. 오후 3:10에 김현장에게 넘겼어요» — 받은 작업자 이름을 모르면 시각만 */
+export function scanRejectionHandoffText(
+  handedOff: NonNullable<ScanRejection['handedOff']>,
+  workerName: string
+): string {
+  const at = new Date(handedOff.at).toLocaleString('ko-KR');
+  return workerName
+    ? `${at}에 ${workerName}에게 넘겼어요`
+    : `${at}에 담당을 넘겼어요`;
+}
+
 /** 바구니는 배정이 풀리는 순간 지난 일이 되지만, 나머지는 고친 뒤 다시 찍어 반영돼야 서버가 지난 일로 본다 */
 export function scanRejectionClears(rejection: ScanRejection): string | null {
   if (rejection.action === 'release_tote') return null;
+  if (rejection.handedOff) {
+    return '넘겨받은 작업자가 물류앱에서 다시 찍어 반영되면 이 표시는 사라져요.';
+  }
   // 배치 작업 항목이 없던 거절은 뺄 배치가 없다
   return rejection.workItemId
     ? '고친 뒤 작업자가 다시 찍어 반영되거나 상자를 배치에서 빼면 이 표시는 사라져요.'

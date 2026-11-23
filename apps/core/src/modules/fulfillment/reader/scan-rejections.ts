@@ -11,6 +11,9 @@ import { ACTIVE_WORK_ITEM_STATUSES } from '../services/work-item-status';
 
 type ReadDb = DbTx | DbService<typeof wmsSchema>['db'];
 
+/** 배치 상세 «넘기기» 명령 — 거절 뒤 이 명령이 끝났으면 관리자 할 일은 끝났다. */
+const HANDOFF_COMMANDS = ['outbound_batch.work_item.picker.handoff', 'outbound_batch.work_item.packer.handoff'];
+
 /** 거절을 남기는 출고 저장 명령 — 이 명령이 그 뒤 반영되면 막힘이 풀린 것이다. */
 export const OUTBOUND_SAVE_COMMANDS = {
   'shipment.simple_outbound.scan': 'simple_scan',
@@ -39,9 +42,29 @@ export interface OpenScanRejection {
   quantity: number | null;
   actorId: string;
   rejectedAt: Date;
+  /** 거절 뒤 관리자가 담당을 넘겼으면 — 이제 받은 작업자가 다시 찍기만 남았다 */
+  handedOff: { at: Date; workerId: string | null } | null;
 }
 
 const ROUTES: ReadonlyMap<string, OutboundSaveRoute> = new Map(Object.entries(OUTBOUND_SAVE_COMMANDS));
+
+/**
+ * 넘기기는 받은 쪽 담당 시각을 넘긴 시각과 같게 찍는다. 그 뒤 담당이 또 바뀌었으면(만료 뒤 다시 맡기 등)
+ * 지금 담당자는 넘겨받은 사람이 아니므로 모른다고 둔다.
+ */
+function handedOffTo(
+  item: {
+    pickerId: string | null;
+    pickerClaimedAt: Date | null;
+    packerId: string | null;
+    packerClaimedAt: Date | null;
+  },
+  at: Date,
+): string | null {
+  if (item.pickerClaimedAt?.getTime() === at.getTime()) return item.pickerId;
+  if (item.packerClaimedAt?.getTime() === at.getTime()) return item.packerId;
+  return null;
+}
 
 /** 상자마다 가장 최근 거절이 아직 풀리지 않았으면 싣는다. */
 export async function loadOpenScanRejections(
@@ -76,10 +99,22 @@ export async function loadOpenScanRejections(
 
   const candidates = [...latest.keys()];
   const workItemIds = [...latest.values()].flatMap((row) => (row.workItemId ? [row.workItemId] : []));
+  // 넘기기는 담당 사유로 막힌 상자에만 의미가 있다 — 그런 거절이 없으면 명령 기록을 읽지 않는다.
+  const handoffWorkItemIds = [...latest.values()].flatMap((row) =>
+    row.workItemId && scanRejectionReason(row.code).action === 'handoff_worker' ? [row.workItemId] : [],
+  );
   const commands = wmsTables.fulfillmentCommandRequests;
   const workItems = workItemIds.length
     ? await trx
-        .select({ id: wmsTables.outboundBatchWorkItems.id, status: wmsTables.outboundBatchWorkItems.status })
+        .select({
+          id: wmsTables.outboundBatchWorkItems.id,
+          status: wmsTables.outboundBatchWorkItems.status,
+          pickerId: wmsTables.outboundBatchWorkItems.pickerId,
+          pickerClaimedAt: wmsTables.outboundBatchWorkItems.pickerClaimedAt,
+          packerId: wmsTables.outboundBatchWorkItems.packerId,
+          packerClaimedAt: wmsTables.outboundBatchWorkItems.packerClaimedAt,
+          handedOffAt: wmsTables.outboundBatchWorkItems.handedOffAt,
+        })
         .from(wmsTables.outboundBatchWorkItems)
         .where(inArray(wmsTables.outboundBatchWorkItems.id, workItemIds))
     : [];
@@ -113,22 +148,37 @@ export async function loadOpenScanRejections(
         ),
       ),
   ]);
+  // 거절 시각과 같은 시계(앱)로 찍힌 명령 완료 시각으로 «거절 뒤에 넘겼는지»를 본다.
+  const handoffs = handoffWorkItemIds.length
+    ? await trx
+        .select({ workItemId: commands.resourceId, lastHandedOffAt: max(commands.completedAt) })
+        .from(commands)
+        .where(
+          and(
+            eq(commands.resourceType, 'outbound_batch_work_item'),
+            inArray(commands.resourceId, handoffWorkItemIds),
+            inArray(commands.commandType, HANDOFF_COMMANDS),
+            eq(commands.status, 'completed'),
+          ),
+        )
+        .groupBy(commands.resourceId)
+    : [];
   const statusOf = new Map(shipments.map((row) => [row.id, row.status]));
-  const workItemStatusOf = new Map(workItems.map((row) => [row.id, row.status]));
+  const workItemOf = new Map(workItems.map((row) => [row.id, row]));
   const appliedAt = new Map(applied.map((row) => [row.shipmentId, row.lastAppliedAt]));
   const holdingTote = new Set(totes.map((row) => row.shipmentId));
+  const handedOffAt = new Map(handoffs.map((row) => [row.workItemId, row.lastHandedOffAt]));
 
   for (const row of latest.values()) {
     const route = ROUTES.get(row.commandType);
     if (!route || statusOf.get(row.shipmentId) !== row.shipmentStatus) continue;
-    if (row.workItemId) {
-      const status = workItemStatusOf.get(row.workItemId);
-      if (!status || !BLOCKING_WORK_ITEM_STATUSES.has(status)) continue;
-    }
+    const workItem = row.workItemId ? workItemOf.get(row.workItemId) : undefined;
+    if (row.workItemId && (!workItem || !BLOCKING_WORK_ITEM_STATUSES.has(workItem.status))) continue;
     const last = appliedAt.get(row.shipmentId);
     if (last && last >= row.createdAt) continue;
     if (row.code === 'SHIPMENT_TOTE_NOT_RELEASED' && !holdingTote.has(row.shipmentId)) continue;
     const reason = scanRejectionReason(row.code);
+    const handoffAt = row.workItemId ? handedOffAt.get(row.workItemId) : null;
     result.set(row.shipmentId, {
       shipmentId: row.shipmentId,
       workItemId: row.workItemId,
@@ -142,6 +192,10 @@ export async function loadOpenScanRejections(
       quantity: row.quantity,
       actorId: row.actorId,
       rejectedAt: row.createdAt,
+      handedOff:
+        reason.action === 'handoff_worker' && workItem && handoffAt && handoffAt > row.createdAt
+          ? { at: handoffAt, workerId: workItem.handedOffAt ? handedOffTo(workItem, workItem.handedOffAt) : null }
+          : null,
     });
   }
   return result;

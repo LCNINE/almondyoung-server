@@ -402,6 +402,14 @@ export class PendingCancellationResponseDto {
   lines: PendingCancellationItemResponseDto[];
 }
 
+export class ScanRejectionHandoffResponseDto {
+  @ApiProperty()
+  at: Date;
+
+  @ApiProperty({ nullable: true, type: String, description: '넘겨받은 작업자' })
+  workerId: string | null;
+}
+
 /** 물류앱 출고 저장이 관리자 손이 필요한 사유로 거절돼 막힌 상자 */
 export class ScanRejectionResponseDto {
   @ApiProperty({ description: '거절 코드' })
@@ -433,6 +441,13 @@ export class ScanRejectionResponseDto {
 
   @ApiProperty()
   rejectedAt: Date;
+
+  @ApiProperty({
+    type: ScanRejectionHandoffResponseDto,
+    nullable: true,
+    description: '거절 뒤 담당을 넘겼으면 그 시각과 받은 작업자 — 작업자가 다시 찍기를 기다린다',
+  })
+  handedOff: ScanRejectionHandoffResponseDto | null;
 }
 
 export class ShipmentDetailResponseDto {
