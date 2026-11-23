@@ -6,6 +6,36 @@ import type {
   PreparationShipmentDto,
   PreparationShortPickLine,
 } from '@/lib/types/dto/fulfillment';
+import { formatDwell } from '@/lib/utils/format-dwell';
+
+// 이보다 오래 기다린 주문은 눈에 띄게 그린다 — 정체 보드의 계획 대기 기준(1일)과 같은 길이
+export const LONG_WAIT_MS = 24 * 60 * 60 * 1000;
+
+export interface OrderAge {
+  dateText: string;
+  waitText: string;
+  long: boolean;
+}
+
+// 주문일이 없으면(판매 주문이 없는 상자·옛 응답) null
+export function orderAgeOf(
+  orderedAt: string | null | undefined,
+  now: Date
+): OrderAge | null {
+  if (!orderedAt) return null;
+
+  const at = new Date(orderedAt);
+
+  if (Number.isNaN(at.getTime())) return null;
+
+  const waited = Math.max(0, now.getTime() - at.getTime());
+
+  return {
+    dateText: kstMinuteText(orderedAt),
+    waitText: waited < 60_000 ? '방금' : `${formatDwell(waited)} 지남`,
+    long: waited > LONG_WAIT_MS,
+  };
+}
 
 // 한 번에 출고 준비하는 상자 수 상한. 서버 BulkShipmentIdsDto 의 ArrayMaxSize(100) 과 같아야 한다.
 export const PREPARATION_BATCH_LIMIT = 100;

@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Fragment, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { Can } from '@/components/auth/can';
 import { replenishmentSkuHref } from '@/features/inventory/replenishment/suggestion-model';
 import { useCanOpen } from '@/hooks/use-permission';
@@ -27,6 +27,7 @@ import {
   batchReturnText,
   bulkSelectableShipments,
   lineSplitText,
+  orderAgeOf,
   PREPARATION_BATCH_LIMIT,
   plannedOrderText,
   SELECTABLE_BUCKETS,
@@ -67,7 +68,9 @@ export function BucketList({
   } | null>(null);
   const selected = new Set(selectedIds);
   const choosable = SELECTABLE_BUCKETS.has(bucket.bucket);
-  const columns = choosable ? 6 : 5;
+  const showsRecipient = bucket.bucket === 'ready';
+  const columns = 6 + (choosable ? 1 : 0) + (showsRecipient ? 1 : 0);
+  const now = useNow();
   const shortPicks = bucket.shipments.filter((shipment) => shipment.shortPick);
   // 하나씩 고른 결품 상자만큼 전체 선택이 담을 수 있는 상자가 줄어든다
   const keptCount = shortPicks.filter((shipment) =>
@@ -162,6 +165,8 @@ export function BucketList({
                 </TableHead>
               )}
               <TableHead>주문번호</TableHead>
+              <TableHead>주문일</TableHead>
+              {showsRecipient && <TableHead>받는 분</TableHead>}
               <TableHead>상품</TableHead>
               <TableHead>수량</TableHead>
               <TableHead>사유</TableHead>
@@ -210,6 +215,14 @@ export function BucketList({
                       </span>
                     )}
                   </TableCell>
+                  <TableCell className="whitespace-nowrap tabular-nums">
+                    <OrderAgeCell orderedAt={shipment.orderedAt} now={now} />
+                  </TableCell>
+                  {showsRecipient && (
+                    <TableCell className="whitespace-nowrap">
+                      {shipment.recipient?.name ?? '-'}
+                    </TableCell>
+                  )}
                   <TableCell>
                     {bucket.bucket === 'partial' && shipment.lines?.length ? (
                       <ul role="list" className="space-y-1 whitespace-normal">
@@ -401,5 +414,45 @@ function blockedReason(
         </li>
       ))}
     </ul>
+  );
+}
+
+// 경과 시간이 화면을 열어 둔 동안에도 흐르게 한다
+function useNow() {
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 60_000);
+
+    return () => clearInterval(id);
+  }, []);
+
+  return now;
+}
+
+function OrderAgeCell({
+  orderedAt,
+  now,
+}: {
+  orderedAt: string | null | undefined;
+  now: Date;
+}) {
+  const age = orderAgeOf(orderedAt, now);
+
+  if (!age) return <>-</>;
+
+  return (
+    <>
+      <span className="block">{age.dateText}</span>
+      <span
+        className={
+          age.long
+            ? 'block text-xs font-semibold text-amber-700'
+            : 'block text-xs text-muted-foreground'
+        }
+      >
+        {age.waitText}
+      </span>
+    </>
   );
 }

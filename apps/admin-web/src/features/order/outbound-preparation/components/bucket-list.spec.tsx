@@ -428,3 +428,91 @@ it('보충 제안 화면을 볼 수 없으면 링크를 보이지 않는다', ()
   expect(screen.getByText(/다른 창고에 6개 — 옮겨 와야 해요/)).toBeTruthy();
   expect(screen.queryByRole('link', { name: '보충 제안에서 보기' })).toBeNull();
 });
+
+describe('주문일·경과·받는 분', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-01-10T12:00:00Z'));
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  const bucketOf = (
+    bucket: PreparationBucketDto['bucket'],
+    shipments: PreparationBucketDto['shipments']
+  ): PreparationBucketDto => ({
+    bucket,
+    count: shipments.length,
+    singleCount: shipments.length,
+    multiCount: 0,
+    shipments,
+  });
+
+  it('완전출고는 주문일·지난 시간·받는 분을 보이고, 하루 넘게 기다린 주문을 강조한다', () => {
+    render(
+      list(
+        bucketOf('ready', [
+          {
+            ...shipment('s1', null),
+            orderedAt: '2026-01-08T12:00:00Z',
+            recipient: { shipmentId: 's1', name: '김*수' },
+          },
+          {
+            ...shipment('s2', null),
+            orderedAt: '2026-01-10T09:30:00Z',
+            recipient: { shipmentId: 's2', name: '이*희' },
+          },
+        ])
+      )
+    );
+
+    screen.getByRole('columnheader', { name: '받는 분' });
+    screen.getByText('김*수');
+    screen.getByText('이*희');
+    expect(screen.getByText('2일 지남').className).toContain('text-amber-700');
+    expect(screen.getByText('2시간 30분 지남').className).not.toContain(
+      'text-amber-700'
+    );
+  });
+
+  it('완전출고 밖 분류는 받는 분 칸이 없고, 주문일이 없으면 빈 표시를 한다', () => {
+    render(
+      list(
+        bucketOf('partial', [
+          { ...shipment('s3', null), orderedAt: '2026-01-10T11:00:00Z' },
+          { ...shipment('s4', null), orderedAt: null },
+        ])
+      )
+    );
+
+    expect(screen.queryByRole('columnheader', { name: '받는 분' })).toBeNull();
+    screen.getByRole('columnheader', { name: '주문일' });
+    screen.getByText('1시간 지남');
+    expect(screen.getAllByText('지남', { exact: false })).toHaveLength(1);
+  });
+
+  it('화면을 열어 둔 동안에도 지난 시간이 흐른다', () => {
+    render(
+      list(
+        bucketOf('ready', [
+          {
+            ...shipment('s5', null),
+            orderedAt: '2026-01-09T12:30:00Z',
+            recipient: { shipmentId: 's5', name: '박*민' },
+          },
+        ])
+      )
+    );
+
+    expect(screen.getByText('23시간 30분 지남').className).not.toContain(
+      'text-amber-700'
+    );
+
+    React.act(() => {
+      jest.advanceTimersByTime(31 * 60_000);
+    });
+
+    expect(screen.getByText('1일 지남').className).toContain('text-amber-700');
+  });
+});
