@@ -661,7 +661,7 @@ export class AdminMembersReader {
     return { data, total, page, limit };
   }
 
-  async findDetailByUserId(userId: string): Promise<AdminMemberDetail | null> {
+  async findDetailByUserId(userId: string, contractId?: string): Promise<AdminMemberDetail | null> {
     const rows = await this.dbService.db
       .select({
         contractId: schema.subscriptionContracts.id,
@@ -688,7 +688,12 @@ export class AdminMembersReader {
       .from(schema.subscriptionContracts)
       .innerJoin(schema.plan, eq(schema.subscriptionContracts.planId, schema.plan.id))
       .innerJoin(schema.tiers, eq(schema.plan.tierId, schema.tiers.id))
-      .where(eq(schema.subscriptionContracts.userId, userId))
+      .where(
+        and(
+          eq(schema.subscriptionContracts.userId, userId),
+          contractId ? eq(schema.subscriptionContracts.id, contractId) : undefined,
+        ),
+      )
       .orderBy(desc(schema.subscriptionContracts.createdAt))
       .limit(1);
 

@@ -27,10 +27,10 @@ export const useMembershipMembersSummary = () => {
   });
 };
 
-export const useMemberDetail = (userId: string | null) => {
+export const useMemberDetail = (userId: string | null, contractId?: string) => {
   return useQuery({
-    queryKey: membershipQueryKeys.memberDetail(userId ?? ''),
-    queryFn: () => membershipApi.getMemberDetail(userId!),
+    queryKey: membershipQueryKeys.memberDetail(userId ?? '', contractId),
+    queryFn: () => membershipApi.getMemberDetail(userId!, contractId),
     enabled: !!userId,
     // 멤버십 미가입 회원은 404 — 정상 결과라 재시도하면 로딩만 길어진다
     retry: (count, error) =>

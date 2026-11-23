@@ -33,7 +33,10 @@ function MembershipRefundRow({
   member: AdminMemberListItem;
   user?: UserInfo;
 }) {
-  const { data: detail, isLoading, isError } = useMemberDetail(member.userId);
+  const { data: detail, isLoading, isError } = useMemberDetail(
+    member.userId,
+    member.contractId
+  );
   const complete = useCompleteManualRefund();
   const { canRun } = usePermissionCheck();
 

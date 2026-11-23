@@ -233,8 +233,8 @@ export class AdminOperationsService {
     return this.insightsReader.arrearsDetailExtras(userId);
   }
 
-  async getMemberDetail(userId: string) {
-    return this.adminMembersReader.findDetailByUserId(userId);
+  async getMemberDetail(userId: string, contractId?: string) {
+    return this.adminMembersReader.findDetailByUserId(userId, contractId);
   }
 
   async getMemberBillingEvents(contractId: string): Promise<BillingEventItem[]> {

@@ -339,9 +339,13 @@ export const membershipApi = {
     return res.data;
   },
 
-  getMemberDetail: async (userId: string): Promise<AdminMemberDetail> => {
+  getMemberDetail: async (
+    userId: string,
+    contractId?: string
+  ): Promise<AdminMemberDetail> => {
     const res = await client.get(
-      `${MEMBERSHIP_SERVICE_BASE_URL}/admin/members/${encodeURIComponent(userId)}`
+      `${MEMBERSHIP_SERVICE_BASE_URL}/admin/members/${encodeURIComponent(userId)}`,
+      contractId ? { params: { contractId } } : undefined
     );
     return res.data;
   },

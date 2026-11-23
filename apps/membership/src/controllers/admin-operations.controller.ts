@@ -17,7 +17,7 @@ import {
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody, ApiQuery } from '@nestjs/swagger';
 import { ApplicationException } from '@app/shared';
 import { PermissionCheckpoints, RequirePermission, PiiResponse } from '@app/authorization';
 import { IdempotentAdminOp } from '../shared/idempotency/idempotent-admin-op.decorator';
@@ -1034,9 +1034,14 @@ export class AdminOperationsController {
   @Get('members/:userId')
   @ApiOperation({ summary: '멤버십 회원 상세 조회' })
   @UseGuards(JwtAuthGuard)
-  async getMemberDetail(@Param('userId') userId: string) {
+  @ApiQuery({
+    name: 'contractId',
+    required: false,
+    description: '이 계약 기준으로 조회(재가입 회원의 옛 계약 환불 처리용)',
+  })
+  async getMemberDetail(@Param('userId') userId: string, @Query('contractId') contractId?: string) {
     try {
-      const result = await this.adminOperationsService.getMemberDetail(userId);
+      const result = await this.adminOperationsService.getMemberDetail(userId, contractId);
       if (!result) {
         throw new NotFoundException(`멤버십 회원을 찾을 수 없습니다: ${userId}`);
       }
