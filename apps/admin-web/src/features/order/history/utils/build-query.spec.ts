@@ -5,6 +5,7 @@ const base: OrderHistoryFilter = {
   type: 'pending',
   excludeTerminal: true,
   refundIssueOnly: false,
+  channels: [],
   quickDate: 'today',
   dateFrom: '2026-09-10',
   dateTo: '2026-09-10',
@@ -12,8 +13,21 @@ const base: OrderHistoryFilter = {
 };
 
 describe('buildQuery — 주문내역 조회 조건', () => {
+  it('판매처를 선택하지 않으면 채널 필터를 보내지 않는다', () => {
+    expect(buildQuery(base, 0).channels).toBeUndefined();
+  });
+
+  it('여러 판매처를 함께 보낸다', () => {
+    expect(
+      buildQuery({ ...base, channels: ['naver', 'coupang'] }, 0).channels
+    ).toEqual(['naver', 'coupang']);
+  });
+
   it('주문번호 검색은 기간·구분·취소제외를 걸지 않는다', () => {
-    const q = buildQuery({ ...base, keywordType: '주문번호', keyword: '20260910-3900' }, 0);
+    const q = buildQuery(
+      { ...base, keywordType: '주문번호', keyword: '20260910-3900' },
+      0
+    );
     expect(q.startDate).toBeUndefined();
     expect(q.endDate).toBeUndefined();
     expect(q.typeGroup).toBeUndefined();
@@ -22,15 +36,21 @@ describe('buildQuery — 주문내역 조회 조건', () => {
     expect(q.keywordType).toBe('orderNo');
   });
 
-  it('주문번호 «유형»만 골라 두고 검색어가 비면 평소 조건 그대로다', () => {
-    const q = buildQuery({ ...base, keywordType: '주문번호', keyword: '   ' }, 0);
+  it('주문번호 유형만 골라 두고 검색어가 비면 평소 조건 그대로다', () => {
+    const q = buildQuery(
+      { ...base, keywordType: '주문번호', keyword: '   ' },
+      0
+    );
     expect(q.startDate).toBe('2026-09-10');
     expect(q.typeGroup).toBe('pending');
     expect(q.keyword).toBeUndefined();
   });
 
   it('다른 키워드 유형은 종전대로 기간·구분을 유지한다', () => {
-    const q = buildQuery({ ...base, keywordType: '수령자', keyword: '홍길동' }, 0);
+    const q = buildQuery(
+      { ...base, keywordType: '수령자', keyword: '홍길동' },
+      0
+    );
     expect(q.startDate).toBe('2026-09-10');
     expect(q.endDate).toBe('2026-09-10');
     expect(q.typeGroup).toBe('pending');
@@ -39,7 +59,9 @@ describe('buildQuery — 주문내역 조회 조건', () => {
 
   it('취소/타임아웃 제외는 구분이 전체일 때만 보낸다 (기존 동작)', () => {
     expect(buildQuery({ ...base, type: 'all' }, 0).excludeTerminal).toBe(true);
-    expect(buildQuery({ ...base, type: 'pending' }, 0).excludeTerminal).toBeUndefined();
+    expect(
+      buildQuery({ ...base, type: 'pending' }, 0).excludeTerminal
+    ).toBeUndefined();
   });
 
   it('환불이슈 모드는 구분·취소제외를 무시한다 (기존 동작)', () => {
@@ -53,7 +75,12 @@ describe('buildQuery — 주문내역 조회 조건', () => {
 
   it('환불이슈 모드가 켜져 있으면 주문번호 검색이라도 기간을 풀지 않는다', () => {
     const q = buildQuery(
-      { ...base, refundIssueOnly: true, keywordType: '주문번호', keyword: '3900' },
+      {
+        ...base,
+        refundIssueOnly: true,
+        keywordType: '주문번호',
+        keyword: '3900',
+      },
       0
     );
     expect(q.startDate).toBe('2026-09-10');

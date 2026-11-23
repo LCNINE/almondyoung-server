@@ -109,6 +109,42 @@ describeIfDb('SalesOrdersService.list — server-side filters (DB integration, r
   const listByKeyword = (svc: SalesOrdersService, tx: DbTx, extra: Partial<SalesOrderFilterDto>) =>
     svc.list({ limit: 100, offset: 0, keyword: undefined, ...extra } as SalesOrderFilterDto, tx);
 
+  it('판매처 합집합을 목록과 주문·라인 건수에 동일하게 적용한다', async () => {
+    await run(async (tx, svc, tag) => {
+      const medusa = await insertOrder(tx, { channelOrderId: `${tag}-medusa`, salesChannel: 'medusa' });
+      const naver = await insertOrder(tx, { channelOrderId: `${tag}-naver`, salesChannel: 'naver' });
+      const coupang = await insertOrder(tx, { channelOrderId: `${tag}-coupang`, salesChannel: 'coupang' });
+      const manual = await insertOrder(tx, { channelOrderId: `${tag}-3pl`, salesChannel: '3pl' });
+      await insertLine(tx, medusa);
+      await insertLine(tx, naver);
+      await insertLine(tx, naver);
+      await insertLine(tx, coupang);
+      await insertLine(tx, manual);
+
+      const cases: { filter: Partial<SalesOrderFilterDto>; ids: string[]; lineTotal: number }[] = [
+        { filter: { channels: ['naver', 'coupang'] }, ids: [naver, coupang], lineTotal: 3 },
+        { filter: { channel: 'medusa' }, ids: [medusa], lineTotal: 1 },
+        { filter: { channel: 'naver', channels: ['naver', 'coupang'] }, ids: [naver, coupang], lineTotal: 3 },
+        { filter: { channel: 'medusa', channels: ['naver', 'coupang'] }, ids: [medusa, naver, coupang], lineTotal: 4 },
+        { filter: { channels: [] }, ids: [medusa, naver, coupang, manual], lineTotal: 5 },
+      ];
+
+      for (const { filter, ids, lineTotal } of cases) {
+        const result = await listByKeyword(svc, tx, { keyword: tag, ...filter });
+
+        expect(result.data.map((order) => order.id).sort()).toEqual(ids.sort());
+        expect(result.total).toBe(ids.length);
+        expect(result.lineTotal).toBe(lineTotal);
+      }
+
+      const page = await listByKeyword(svc, tx, { keyword: tag, channels: ['naver', 'coupang'], limit: 1 });
+
+      expect(page.data).toHaveLength(1);
+      expect(page.total).toBe(2);
+      expect(page.lineTotal).toBe(3);
+    });
+  });
+
   it('KST 달력일 경계로 필터한다 (00:30 KST 포함, 익일 00:30 제외)', async () => {
     await run(async (tx, svc, tag) => {
       // KST 2026-07-22 00:30 == UTC 2026-07-21 15:30

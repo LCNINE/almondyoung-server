@@ -7,6 +7,8 @@ import {
   useOrderHistoryFilter,
 } from './filter.context';
 
+import FilterBox from '../components/filter-box';
+
 let mockParams = new URLSearchParams();
 const mockReplace = jest.fn((url: string) => {
   mockParams = new URLSearchParams(url.split('?')[1] ?? '');
@@ -32,6 +34,7 @@ function Probe() {
         {filter.type}|{filter.keywordType}|{filter.keyword ?? ''}|{page}|
         {searchToken}
       </p>
+      <output aria-label="선택한 판매처">{filter.channels.join(',')}</output>
       <button onClick={() => setPage(2)}>3쪽</button>
       <button onClick={() => setPage(3)}>4쪽</button>
     </div>
@@ -51,6 +54,109 @@ beforeEach(() => {
 });
 
 describe('주문내역 조건과 주소', () => {
+  it('여러 판매처를 토글하고 검색할 때 적용하며 전체는 선택을 비운다', () => {
+    render(
+      <OrderHistoryFilterProvider>
+        <FilterBox />
+        <Probe />
+      </OrderHistoryFilterProvider>
+    );
+
+    expect(screen.getByRole('checkbox', { name: '전체' })).toHaveProperty(
+      'checked',
+      true
+    );
+    expect(
+      screen
+        .getAllByRole('checkbox')
+        .slice(0, 5)
+        .map((input) => input.parentElement?.textContent)
+    ).toEqual(['전체', '자사몰', '네이버 스마트스토어', '쿠팡', '수기·기타']);
+
+    act(() =>
+      screen.getByRole('checkbox', { name: '네이버 스마트스토어' }).click()
+    );
+    act(() => screen.getByRole('checkbox', { name: '쿠팡' }).click());
+
+    expect(screen.getByRole('checkbox', { name: '전체' })).toHaveProperty(
+      'checked',
+      false
+    );
+    expect(screen.getByLabelText('선택한 판매처').textContent).toBe('');
+
+    act(() => screen.getByRole('button', { name: '검색' }).click());
+
+    expect(screen.getByLabelText('선택한 판매처').textContent).toBe(
+      'naver,coupang'
+    );
+    expect(mockParams.get('channels')).toBe('naver,coupang');
+
+    act(() =>
+      screen.getByRole('checkbox', { name: '네이버 스마트스토어' }).click()
+    );
+    act(() => screen.getByRole('button', { name: '검색' }).click());
+
+    expect(mockParams.get('channels')).toBe('coupang');
+
+    act(() => screen.getByRole('checkbox', { name: '전체' }).click());
+    act(() => screen.getByRole('button', { name: '검색' }).click());
+
+    expect(screen.getByRole('checkbox', { name: '전체' })).toHaveProperty(
+      'checked',
+      true
+    );
+    expect(screen.getByRole('checkbox', { name: '쿠팡' })).toHaveProperty(
+      'checked',
+      false
+    );
+    expect(mockParams.has('channels')).toBe(false);
+  });
+
+  it('주소의 다중 판매처를 복원하고 외부 주소 변경도 입력칸에 반영한다', () => {
+    mockParams = new URLSearchParams('channels=naver,coupang');
+    const content = (
+      <OrderHistoryFilterProvider>
+        <FilterBox />
+        <Probe />
+      </OrderHistoryFilterProvider>
+    );
+    const { rerender } = render(content);
+
+    expect(screen.getByLabelText('선택한 판매처').textContent).toBe(
+      'naver,coupang'
+    );
+    expect(
+      screen.getByRole('checkbox', { name: '네이버 스마트스토어' })
+    ).toHaveProperty('checked', true);
+    expect(screen.getByRole('checkbox', { name: '쿠팡' })).toHaveProperty(
+      'checked',
+      true
+    );
+
+    mockParams = new URLSearchParams('channels=medusa,3pl');
+    rerender(
+      <OrderHistoryFilterProvider>
+        <FilterBox />
+        <Probe />
+      </OrderHistoryFilterProvider>
+    );
+
+    expect(screen.getByLabelText('선택한 판매처').textContent).toBe(
+      'medusa,3pl'
+    );
+    expect(
+      screen.getByRole('checkbox', { name: '네이버 스마트스토어' })
+    ).toHaveProperty('checked', false);
+    expect(screen.getByRole('checkbox', { name: '자사몰' })).toHaveProperty(
+      'checked',
+      true
+    );
+    expect(screen.getByRole('checkbox', { name: '수기·기타' })).toHaveProperty(
+      'checked',
+      true
+    );
+  });
+
   it('주소의 조건과 쪽으로 시작하고, 쪽을 옮기면 주소에 남긴다', () => {
     mockParams = new URLSearchParams(
       'range=today&from=2026-03-10&to=2026-03-10&type=all&page=2'

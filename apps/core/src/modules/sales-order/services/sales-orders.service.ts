@@ -864,9 +864,12 @@ export class SalesOrdersService {
         // KST 달력일 23:59:59.999 까지 (inclusive)
         conditions.push(lte(S.salesOrders.orderDate, kstDayEndInclusive(params.endDate)));
       }
-      if (params.channel) {
-        conditions.push(eq(S.salesOrders.salesChannel, params.channel));
+      const channels = [...new Set([...(params.channels ?? []), ...(params.channel ? [params.channel] : [])])];
+
+      if (channels.length > 0) {
+        conditions.push(inArray(S.salesOrders.salesChannel, channels));
       }
+
       if (params.status) {
         conditions.push(eq(S.salesOrders.status, params.status));
       }

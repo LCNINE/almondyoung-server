@@ -71,6 +71,7 @@ export function defaultHistoryFilter(today: string): OrderHistoryFilter {
     type: 'pending',
     excludeTerminal: true,
     refundIssueOnly: false,
+    channels: [],
     quickDate: 'today',
     dateFrom: today,
     dateTo: today,
@@ -107,7 +108,7 @@ export function historyStateFromParams(
   if (hasRange) {
     dateFrom = from;
     dateTo = to;
-    // 공유받은 날이 달라 빠른 선택의 기간과 어긋나면 «임의기간»으로 보인다
+    // 공유받은 날이 달라 빠른 선택의 기간과 어긋나면 임의기간으로 보인다
     const range =
       quick && quick !== 'custom' ? quickDateRange(quick, today) : null;
     quickDate =
@@ -127,8 +128,10 @@ export function historyStateFromParams(
       type: oneOf(TYPES, params.get('type')) ?? base.type,
       excludeTerminal: params.get('terminal') !== 'include',
       refundIssueOnly: params.get('refund') === '1',
-      channelCategory: params.get('cat') || undefined,
-      channel: params.get('channel') || undefined,
+      channels: (params.get('channels') ?? params.get('channel') ?? '')
+        .split(',')
+        .map((channel) => channel.trim())
+        .filter(Boolean),
       quickDate,
       dateFrom,
       dateTo,
@@ -151,8 +154,8 @@ export function historyParams(
   if (filter.type !== 'pending') params.set('type', filter.type);
   if (!filter.excludeTerminal) params.set('terminal', 'include');
   if (filter.refundIssueOnly) params.set('refund', '1');
-  if (filter.channelCategory) params.set('cat', filter.channelCategory);
-  if (filter.channel) params.set('channel', filter.channel);
+  if (filter.channels.length > 0)
+    params.set('channels', filter.channels.join(','));
   if (filter.keyword) {
     params.set('kt', filter.keywordType);
     params.set('q', filter.keyword);

@@ -493,7 +493,7 @@ export type OrderKeywordType =
 
 export interface SalesOrdersQuery {
   status?: SalesOrderStatus;
-  channel?: 'medusa' | 'naver' | 'coupang' | '3pl';
+  channels?: string[];
   startDate?: string;
   endDate?: string;
   /** 구분 (재고/매칭 상태) — 서버측 필터 */

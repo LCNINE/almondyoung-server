@@ -18,8 +18,7 @@ describe('주문내역 주소', () => {
       ...defaultHistoryFilter(TODAY),
       type: 'all' as const,
       excludeTerminal: false,
-      channelCategory: '자사몰',
-      channel: 'medusa',
+      channels: ['naver', 'coupang'],
       quickDate: 'week' as const,
       dateFrom: '2026-03-04',
       dateTo: '2026-03-10',
@@ -30,6 +29,23 @@ describe('주문내역 주소', () => {
     const query = historyParams(filter, 2).toString();
 
     expect(read(query)).toEqual({ filter, page: 2 });
+  });
+
+  it('기존 단일 판매처 링크도 복원하고 새 파라미터로 저장한다', () => {
+    const { filter } = read('channel=naver&cat=외부채널');
+    const params = historyParams(filter, 0);
+
+    expect(filter.channels).toEqual(['naver']);
+    expect(params.get('channels')).toBe('naver');
+    expect(params.has('channel')).toBe(false);
+    expect(params.has('cat')).toBe(false);
+  });
+
+  it('쉼표 사이 공백과 빈 값은 버리고 새 파라미터를 우선한다', () => {
+    expect(
+      read('channels= naver, ,coupang, &channel=medusa').filter.channels
+    ).toEqual(['naver', 'coupang']);
+    expect(read('channels=&channel=medusa').filter.channels).toEqual([]);
   });
 
   it('기본값은 주소에 적지 않는다', () => {
