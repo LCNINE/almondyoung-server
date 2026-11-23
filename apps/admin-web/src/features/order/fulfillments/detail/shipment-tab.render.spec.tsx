@@ -1197,6 +1197,31 @@ describe('물류앱에서 막힌 상자', () => {
     ).toBeNull();
   });
 
+  it('송장 때문에 막힌 뒤 새 송장이 발급됐으면 다시 찍기를 기다린다고 보이고 송장 칸을 가리키지 않는다', () => {
+    const issuedAt = '2026-01-02T05:00:00.000Z';
+    show(
+      rejection({
+        action: 'check_waybill',
+        message: '송장이 출고할 수 있는 상태가 아니라 반영하지 못했어요.',
+        newWaybill: { issuedAt, trackingNo: '123456789012' },
+      })
+    );
+    const notice = screen.getByRole('region', {
+      name: '작업자가 다시 찍기를 기다림',
+    });
+
+    expect(notice.textContent).toContain(
+      `작업자가 다시 찍기를 기다려요 — ${new Date(issuedAt).toLocaleString('ko-KR')}에 새 송장을 발급했어요 · 123456789012`
+    );
+    expect(notice.textContent).toContain(
+      '작업자가 물류앱에서 새 송장으로 다시 찍어 반영되면 이 표시는 사라져요.'
+    );
+    expect(notice.textContent).not.toContain('송장 칸');
+    expect(
+      screen.queryByRole('region', { name: '물류앱에서 막힘' })
+    ).toBeNull();
+  });
+
   it('받은 작업자 이름을 모르면 넘긴 시각만 보인다', () => {
     const handedOffAt = '2026-01-02T04:00:00.000Z';
     show(

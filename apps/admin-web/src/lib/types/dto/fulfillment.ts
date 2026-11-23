@@ -824,6 +824,8 @@ export interface ScanRejection {
   rejectedAt: string;
   /** 거절 뒤 담당을 넘겼으면 그 시각과 받은 작업자 — 옛 응답에는 없다 */
   handedOff?: { at: string; workerId: string | null } | null;
+  /** 송장 때문에 막힌 뒤 출고할 수 있는 새 송장이 발급됐으면 그 시각과 번호 — 옛 응답에는 없다 */
+  newWaybill?: { issuedAt: string; trackingNo: string } | null;
 }
 
 /** 상자가 현장에서 빠지기를 기다리는 취소 */

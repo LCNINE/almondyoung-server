@@ -929,6 +929,36 @@ describe('물류앱에서 막힌 상자', () => {
     expect(within(row).queryByText(/이 줄의 «넘기기»/)).toBeNull();
   });
 
+  it('송장 때문에 막힌 뒤 새 송장이 발급됐으면 다시 찍기를 기다린다고 보이고 송장을 확인하라고 하지 않는다', () => {
+    const issuedAt = '2026-01-02T05:00:00.000Z';
+    mockBatch = batchWith([
+      {
+        ...picking,
+        scanRejection: rejection({
+          action: 'check_waybill',
+          message: '송장이 출고할 수 있는 상태가 아니라 반영하지 못했어요.',
+          newWaybill: { issuedAt, trackingNo: '123456789012' },
+        }),
+      },
+    ]);
+    renderDrawer();
+    const row = screen.getAllByRole('row')[1];
+    const notice = within(row).getByRole('region', {
+      name: '작업자가 다시 찍기를 기다림',
+    });
+
+    expect(notice.textContent).toContain(
+      `작업자가 다시 찍기를 기다려요 — ${new Date(issuedAt).toLocaleString('ko-KR')}에 새 송장을 발급했어요 · 123456789012`
+    );
+    expect(notice.textContent).toContain(
+      '막혔던 것: 출고 검수 스캔 · 상품 A ×2'
+    );
+    expect(within(notice).queryByRole('link')).toBeNull();
+    expect(
+      within(row).queryByRole('region', { name: '물류앱에서 막힘' })
+    ).toBeNull();
+  });
+
   it('담당 때문에 막힌 상자를 넘기면 막힌 작업자를 미리 골라 맨 위에 둔다', async () => {
     mockBatch = batchWith([
       {

@@ -6,8 +6,14 @@
 import { and, desc, eq, inArray, isNull, max, sql } from 'drizzle-orm';
 import type { DbService } from '@app/db';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
-import { ScanRejectionAction, scanRejectionReason } from '../scan-rejections/scan-rejection-reasons';
+import {
+  REJECTIONS_RESOLVED_BY_NEW_WAYBILL,
+  ScanRejectionAction,
+  scanRejectionReason,
+} from '../scan-rejections/scan-rejection-reasons';
+import { canonicalFulfillmentRequestHash } from '../services/fulfillment-command.service';
 import { ACTIVE_WORK_ITEM_STATUSES } from '../services/work-item-status';
+import { WAYBILL_DISPATCHABLE_STATUSES } from '../waybill/waybill.constants';
 
 type ReadDb = DbTx | DbService<typeof wmsSchema>['db'];
 
@@ -44,6 +50,8 @@ export interface OpenScanRejection {
   rejectedAt: Date;
   /** 거절 뒤 관리자가 담당을 넘겼으면 — 이제 받은 작업자가 다시 찍기만 남았다 */
   handedOff: { at: Date; workerId: string | null } | null;
+  /** 송장 때문에 막힌 뒤 출고할 수 있는 새 송장이 발급됐으면 — 이제 작업자가 새 송장으로 다시 찍기만 남았다 */
+  newWaybill: { issuedAt: Date; trackingNo: string } | null;
 }
 
 const ROUTES: ReadonlyMap<string, OutboundSaveRoute> = new Map(Object.entries(OUTBOUND_SAVE_COMMANDS));
@@ -64,6 +72,31 @@ function handedOffTo(
   if (item.pickerClaimedAt?.getTime() === at.getTime()) return item.pickerId;
   if (item.packerClaimedAt?.getTime() === at.getTime()) return item.packerId;
   return null;
+}
+
+/**
+ * 거절 뒤에 발급됐고 지금 상자 내용(구성·받는 분)과 맞는 송장 — 출고 저장이 송장을 받아 줄 조건과 같게 본다.
+ * 발급이 거절보다 앞이면 그 송장 때문에 막힌 것이므로 아직 관리자 할 일이다.
+ */
+function newWaybillAfter(
+  waybill:
+    | {
+        trackingNo: string | null;
+        issuedAt: Date | null;
+        manifestVersion: number;
+        recipientHash: string;
+        shipmentManifestVersion: number;
+        recipientSnapshot: unknown;
+      }
+    | undefined,
+  rejectedAt: Date,
+): { issuedAt: Date; trackingNo: string } | null {
+  if (!waybill?.issuedAt || waybill.issuedAt <= rejectedAt) return null;
+  const trackingNo = waybill.trackingNo?.trim();
+  if (!trackingNo) return null;
+  if (waybill.manifestVersion !== waybill.shipmentManifestVersion) return null;
+  if (waybill.recipientHash !== canonicalFulfillmentRequestHash(waybill.recipientSnapshot)) return null;
+  return { issuedAt: waybill.issuedAt, trackingNo };
 }
 
 /** 상자마다 가장 최근 거절이 아직 풀리지 않았으면 싣는다. */
@@ -102,6 +135,10 @@ export async function loadOpenScanRejections(
   // 넘기기는 담당 사유로 막힌 상자에만 의미가 있다 — 그런 거절이 없으면 명령 기록을 읽지 않는다.
   const handoffWorkItemIds = [...latest.values()].flatMap((row) =>
     row.workItemId && scanRejectionReason(row.code).action === 'handoff_worker' ? [row.workItemId] : [],
+  );
+  // 새 송장은 송장 검사에서 막힌 상자에만 의미가 있다.
+  const waybillShipmentIds = [...latest.values()].flatMap((row) =>
+    REJECTIONS_RESOLVED_BY_NEW_WAYBILL.has(row.code) ? [row.shipmentId] : [],
   );
   const commands = wmsTables.fulfillmentCommandRequests;
   const workItems = workItemIds.length
@@ -163,11 +200,33 @@ export async function loadOpenScanRejections(
         )
         .groupBy(commands.resourceId)
     : [];
+  // 발급 시각(issuedAt)은 거절 시각과 같은 앱 시계로 찍힌다. 상자당 출고할 수 있는 활성 송장은 하나뿐이다.
+  const dispatchableWaybills = waybillShipmentIds.length
+    ? await trx
+        .select({
+          shipmentId: wmsTables.waybills.shipmentId,
+          trackingNo: wmsTables.waybills.trackingNo,
+          issuedAt: wmsTables.waybills.issuedAt,
+          manifestVersion: wmsTables.waybills.manifestVersion,
+          recipientHash: wmsTables.waybills.recipientHash,
+          shipmentManifestVersion: wmsTables.shipments.manifestVersion,
+          recipientSnapshot: wmsTables.shipments.recipientSnapshot,
+        })
+        .from(wmsTables.waybills)
+        .innerJoin(wmsTables.shipments, eq(wmsTables.shipments.id, wmsTables.waybills.shipmentId))
+        .where(
+          and(
+            inArray(wmsTables.waybills.shipmentId, waybillShipmentIds),
+            inArray(wmsTables.waybills.status, [...WAYBILL_DISPATCHABLE_STATUSES]),
+          ),
+        )
+    : [];
   const statusOf = new Map(shipments.map((row) => [row.id, row.status]));
   const workItemOf = new Map(workItems.map((row) => [row.id, row]));
   const appliedAt = new Map(applied.map((row) => [row.shipmentId, row.lastAppliedAt]));
   const holdingTote = new Set(totes.map((row) => row.shipmentId));
   const handedOffAt = new Map(handoffs.map((row) => [row.workItemId, row.lastHandedOffAt]));
+  const waybillOf = new Map(dispatchableWaybills.map((row) => [row.shipmentId, row]));
 
   for (const row of latest.values()) {
     const route = ROUTES.get(row.commandType);
@@ -196,6 +255,8 @@ export async function loadOpenScanRejections(
         reason.action === 'handoff_worker' && workItem && handoffAt && handoffAt > row.createdAt
           ? { at: handoffAt, workerId: workItem.handedOffAt ? handedOffTo(workItem, workItem.handedOffAt) : null }
           : null,
+      // 송장 검사에서 막힌 상자의 송장만 읽었다 — 다른 사유면 없다.
+      newWaybill: newWaybillAfter(waybillOf.get(row.shipmentId), row.createdAt),
     });
   }
   return result;
