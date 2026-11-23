@@ -1,4 +1,4 @@
-import { useNavigate } from '@tanstack/react-router';
+import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useWarehouse } from '../../app/warehouse-context';
@@ -54,7 +54,9 @@ function BatchStatus({ warehouseId, prefs, print }: { warehouseId: string; prefs
   const emptyShown = showEmpty || active.length === 0;
   // 고를 수 있는 것은 보이는 줄뿐이다 — 접으면 빈 배치를 고른 채 남지 않는다
   const batches = emptyShown ? [...active, ...empty] : active;
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // 피킹 목록에서 돌아오면 보던 배치를 다시 고른다
+  const returnedTo = useRouterState({ select: (state) => state.location.state.batchId });
+  const [selectedId, setSelectedId] = useState<string | null>(returnedTo ?? null);
   const [panel, setPanel] = useState<'join' | 'remove' | null>(null);
   const [printing, setPrinting] = useState(false);
   const [removedOnStart, setRemovedOnStart] = useState<Record<string, RemovedOnStart>>({});
@@ -63,9 +65,11 @@ function BatchStatus({ warehouseId, prefs, print }: { warehouseId: string; prefs
   const selected = batches.find((batch) => batch.id === selectedId) ?? batches[0] ?? null;
   // 고른 배치를 붙잡는다 — 새 배치가 맨 위로 들어와도 보던 배치가 바뀌지 않게. 끝나서 목록에서 빠지면 맨 위로
   const pinId = selected?.id ?? null;
+  // 목록이 오기 전엔 붙잡지 않는다 — 돌아와 고를 배치를 빈 목록으로 지우지 않게. 한쪽이 실패했으면 보이는 줄로 붙잡는다
+  const listed = [picking, created].every((list) => list.data !== undefined || loadFailed(list));
   useEffect(() => {
-    if (pinId !== selectedId && !printing) setSelectedId(pinId);
-  }, [pinId, selectedId, printing]);
+    if (listed && pinId !== selectedId && !printing) setSelectedId(pinId);
+  }, [listed, pinId, selectedId, printing]);
   // 빈 배치를 보고 있으면 펼친 채 둔다 — 진행할 배치가 새로 들어와도 보던 빈 배치가 접혀 사라지지 않게(접기는 사람이 한다)
   const viewingEmpty = selected !== null && empty.some((batch) => batch.id === selected.id);
   useEffect(() => {
@@ -135,6 +139,13 @@ function BatchStatus({ warehouseId, prefs, print }: { warehouseId: string; prefs
                     setPrinting(running);
                   }}
                 />
+                <Button
+                  type="button"
+                  className={cn('mt-2', SECONDARY)}
+                  onClick={() => void navigate({ to: '/outbound/batches/$batchId/pick-list', params: { batchId: selected.id } })}
+                >
+                  피킹 목록
+                </Button>
                 <Button type="button" className={cn('mt-2', SECONDARY)} onClick={() => setPanel(panel === 'join' ? null : 'join')}>
                   박스 넣기
                 </Button>

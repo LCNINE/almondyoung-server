@@ -75,6 +75,8 @@ import { SimpleOutboundService } from './services/simple-outbound.service';
 import { OutboundScanRejectionManager } from './scan-rejections/outbound-scan-rejection.manager';
 import { OutboundRejectionInterceptor } from './scan-rejections/outbound-rejection.interceptor';
 import { ShipmentWaybillReader } from './reader/shipment-waybill.reader';
+import { BatchPickListReader } from './reader/batch-pick-list';
+import { BatchPickListController } from './controllers/batch-pick-list.controller';
 import { RefillPendingReader } from './reader/refill-pending.reader';
 import { OutboundRefillController } from './controllers/outbound-refill.controller';
 import { DraftBoxAmender } from './draft-box/draft-box-amender';
@@ -148,6 +150,7 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     LocationOutboundController,
     FulfillmentsController,
     OutboundBatchV2Controller,
+    BatchPickListController,
     PickingV2Controller,
     PickingCommandV2Controller,
     ToteController,
@@ -221,6 +224,7 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     LocationOutboundService,
     ReturnBinService,
     ShipmentWaybillReader,
+    BatchPickListReader,
     RefillPendingReader,
     DraftBoxAmender,
     LineCompositionEditReader,

@@ -226,6 +226,60 @@ describe('F2 배치 현황(스펙 §8, 목업 ⑤)', () => {
     expect(await screen.findByText('이 배치에서 박스 빼기')).toBeInTheDocument();
   });
 
+  it('시작된 배치의 «피킹 목록»(보조)을 누르면 그 배치의 피킹 목록으로 간다', async () => {
+    const { router } = setupBatches();
+    const button = await screen.findByRole('button', { name: '피킹 목록' });
+    expect(button.className).toContain('bg-white');
+    fireEvent.click(button);
+    await waitFor(() => expect(router.state.location.pathname).toBe('/outbound/batches/b-1/pick-list'));
+  });
+
+  it('피킹 목록에서 돌아오면 보던 배치를 다시 본다', async () => {
+    const { router } = setupBatches({
+      picking: [batchSummary({ id: 'b-1', batchNumber: 'B-1002' }), batchSummary({ id: 'b-2', batchNumber: 'B-1003' })],
+    });
+    fireEvent.click(await screen.findByRole('button', { name: 'B-1003' }));
+    await waitFor(() => expect(within(detail()).getByRole('heading', { name: 'B-1003' })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: '피킹 목록' }));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/outbound/batches/b-2/pick-list'));
+    await router.navigate({ to: '/outbound/batches', state: { batchId: 'b-2' } });
+    await waitFor(() => expect(within(detail()).getByRole('heading', { name: 'B-1003' })).toBeInTheDocument());
+  });
+
+  it('목록을 새로 받는 동안 돌아와도 보던 배치를 놓치지 않는다', async () => {
+    const { router, server, queryClient } = setupBatches({
+      picking: [batchSummary({ id: 'b-1', batchNumber: 'B-1002' }), batchSummary({ id: 'b-2', batchNumber: 'B-1003' })],
+    });
+    await screen.findByRole('button', { name: 'B-1003' });
+    await router.navigate({ to: '/outbound/batches/$batchId/pick-list', params: { batchId: 'b-2' } });
+    queryClient.clear();
+    const release = server.holdLists();
+    await router.navigate({ to: '/outbound/batches', state: { batchId: 'b-2' } });
+    await screen.findByText('배치 목록을 불러오고 있어요.');
+    release();
+    await waitFor(() => expect(within(detail()).getByRole('heading', { name: 'B-1003' })).toBeInTheDocument());
+  });
+
+  it('시작 전 목록만 실패해도 보이는 배치를 붙잡는다 — 새 배치가 위로 들어와도 바뀌지 않는다', async () => {
+    const { server, queryClient } = setupBatches({
+      picking: [batchSummary({ id: 'b-1', batchNumber: 'B-1002' }), batchSummary({ id: 'b-2', batchNumber: 'B-1003' })],
+    });
+    server.config.batchesFailStatus = 'created';
+    queryClient.clear();
+    await waitFor(() => expect(within(detail()).getByRole('heading', { name: 'B-1002' })).toBeInTheDocument());
+    await screen.findByText(/배치 목록을 불러오지 못했어요/);
+    server.config.batches.picking = [batchSummary({ id: 'b-0', batchNumber: 'B-1001' }), ...server.config.batches.picking];
+    await queryClient.refetchQueries({ queryKey: ['outbound-batches'] });
+    await screen.findByRole('button', { name: 'B-1001' });
+    expect(within(detail()).getByRole('heading', { name: 'B-1002' })).toBeInTheDocument();
+  });
+
+  it('시작 전 배치엔 «피킹 목록»이 없다 — 배정은 시작할 때 생긴다', async () => {
+    setupBatches({ picking: [], created: [NEW_B3] });
+    expect(await screen.findByRole('button', { name: '작업 시작하고 송장 인쇄' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '피킹 목록' })).toBeNull();
+  });
+
   it('시작된 배치에서 다음 할 일인 송장 인쇄가 주 버튼이고, 박스 넣기·빼기는 보조다', async () => {
     setupBatches();
     const printButton = await screen.findByRole('button', { name: '송장 인쇄' });
