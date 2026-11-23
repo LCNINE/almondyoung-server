@@ -206,6 +206,9 @@ describeIfDb('InboundReceiptStateReader (PostgreSQL)', () => {
             'putawayBlockReason',
             'canCancel',
             'cancelBlockReason',
+            'usualLocationId',
+            'usualLocationCode',
+            'canRememberUsual',
           ].sort(),
         );
         await request(http)

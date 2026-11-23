@@ -202,7 +202,8 @@ it('다른 기기의 부분 적치는 입력을 보존하고 최신 잔량을 �
         isActive: true,
         isSystem: false,
       },
-      4
+      4,
+      false
     )
   );
   expect(f.posts).toHaveLength(1);

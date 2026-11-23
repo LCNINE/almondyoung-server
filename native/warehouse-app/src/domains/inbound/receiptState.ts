@@ -40,6 +40,10 @@ export interface ReceiptLineState {
   putawayBlockReason: ReceiptActionBlockReason | null;
   canCancel: boolean;
   cancelBlockReason: ReceiptActionBlockReason | null;
+  // 단건 상태에만 오고, 옛 서버는 보내지 않는다.
+  usualLocationId?: string | null;
+  usualLocationCode?: string | null;
+  canRememberUsual?: boolean;
 }
 export class ReceiptStateError extends Error {}
 export function validateReceiptLineState(

@@ -259,12 +259,19 @@ describeIfDb('getReturnZoneGoods (DB integration, rollback-only)', () => {
       expect(result.items).toHaveLength(2);
       expect(result.items).toEqual(
         expect.arrayContaining([
-          expect.objectContaining({ skuId: plain.id, quantity: 2, usualLocationId: null, usualLocationCode: null }),
+          expect.objectContaining({
+            skuId: plain.id,
+            quantity: 2,
+            usualLocationId: null,
+            usualLocationCode: null,
+            canRememberUsual: true,
+          }),
           expect.objectContaining({
             skuId: withShelf.id,
             quantity: 3,
             usualLocationId: locA.id,
             usualLocationCode: locA.code,
+            canRememberUsual: false,
           }),
         ]),
       );
@@ -316,7 +323,11 @@ describeIfDb('getReturnZoneGoods (DB integration, rollback-only)', () => {
       const { items } = await reader.getReturnZoneGoods(warehouse.id, tx);
 
       expect(items).toHaveLength(3);
-      for (const item of items) expect(item.usualLocationId).toBeNull();
+      for (const item of items) {
+        expect(item.usualLocationId).toBeNull();
+        // 쓸 수 없는 자리라도 이미 정해져 있으니 적치가 덮지 않는다.
+        expect(item.canRememberUsual).toBe(false);
+      }
     });
   });
 

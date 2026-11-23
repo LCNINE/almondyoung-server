@@ -10,6 +10,7 @@ import {
   IsOptional,
   IsString,
   MaxLength,
+  IsBoolean,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -95,6 +96,14 @@ export class PutawayRequestDto extends WarehouseOperationVersionDto {
   @IsNumber()
   @Min(1)
   quantity: number;
+
+  @ApiProperty({
+    description: '상품의 평소 선반이 비어 있으면 이 목적지로 정한다. 이미 정해져 있으면 바꾸지 않는다.',
+    required: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  rememberAsUsual?: boolean;
 
   @ApiProperty({ description: '요청 멱등 키 — 클라이언트 생성 UUID, 같은 작업의 재시도는 같은 값 재사용' })
   @IsString()

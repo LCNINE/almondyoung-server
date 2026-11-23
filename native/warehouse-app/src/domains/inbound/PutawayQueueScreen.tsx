@@ -1,4 +1,5 @@
 import { isActionablePutaway } from './types';
+import { usualShelfNotice } from './RememberUsualToggle';
 import { useWorkCapabilities } from '../../core/operations/useWorkCapabilities';
 import { useWorkRuntime } from '../../core/operations/OperationContext';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -362,11 +363,12 @@ export function PutawayQueueScreen({
             clearScanFeedback();
             setReturnTarget(null);
           }}
-          onDone={(dest, quantity) => {
+          onDone={(dest, quantity, usualShelfSet) => {
             clearScanFeedback();
             setReturnTarget(null);
             setNotice(
-              `${returnTarget.skuName} ${quantity}개를 ${dest.code}에 넣었어요.`
+              `${returnTarget.skuName} ${quantity}개를 ${dest.code}에 넣었어요.` +
+                (usualShelfSet ? ` ${usualShelfNotice(dest.code)}` : '')
             );
           }}
         />
@@ -381,10 +383,11 @@ export function PutawayQueueScreen({
             clearScanFeedback();
             setTarget(null);
           }}
-          onDone={(dest) => {
+          onDone={(dest, _quantity, usualShelfSet) => {
             clearScanFeedback();
             setLastDest(dest);
             setTarget(null);
+            if (usualShelfSet) setNotice(usualShelfNotice(dest.code));
             // 잔량이 남으면 무효화된 큐가 줄어든 수량으로 다시 내려준다.
           }}
         />

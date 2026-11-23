@@ -23,6 +23,7 @@ import {
 import { remainingUnshippedQuantity, unshippedDemandPredicate } from './unshipped-demand';
 import { unshippedOrders } from './unshipped-orders';
 import { UnshippedOrdersResponseDto } from '../dto/unshipped-orders.dto';
+import { readUsualShelves } from '../../core/services/usual-shelf';
 
 @Injectable()
 export class StockProjectionReader {
@@ -548,28 +549,11 @@ export class StockProjectionReader {
       const goods = (await readLocationStockAvailability(trx, zone.id, warehouseId)).filter(
         (item) => item.stockState === 'ON_HAND' && item.generallyMovableQty > 0,
       );
-      const usual = goods.length
-        ? await trx
-            .select({
-              skuId: wmsTables.skus.id,
-              locationId: wmsTables.locations.id,
-              locationCode: wmsTables.locations.code,
-            })
-            .from(wmsTables.skus)
-            .innerJoin(wmsTables.locations, eq(wmsTables.locations.id, wmsTables.skus.primaryLocationId))
-            .where(
-              and(
-                inArray(
-                  wmsTables.skus.id,
-                  goods.map((item) => item.skuId),
-                ),
-                eq(wmsTables.locations.warehouseId, warehouseId),
-                eq(wmsTables.locations.isActive, true),
-                eq(wmsTables.locations.isSystem, false),
-              ),
-            )
-        : [];
-      const usualBySku = new Map(usual.map((row) => [row.skuId, row]));
+      const usual = await readUsualShelves(
+        trx,
+        goods.map((item) => item.skuId),
+        warehouseId,
+      );
 
       return {
         locationId: zone.id,
@@ -580,8 +564,9 @@ export class StockProjectionReader {
           skuCode: item.skuCode,
           skuName: item.skuName,
           quantity: item.generallyMovableQty,
-          usualLocationId: usualBySku.get(item.skuId)?.locationId ?? null,
-          usualLocationCode: usualBySku.get(item.skuId)?.locationCode ?? null,
+          usualLocationId: usual.get(item.skuId)?.usualLocationId ?? null,
+          usualLocationCode: usual.get(item.skuId)?.usualLocationCode ?? null,
+          canRememberUsual: usual.get(item.skuId)?.canRememberUsual ?? false,
         })),
       };
     }, tx);

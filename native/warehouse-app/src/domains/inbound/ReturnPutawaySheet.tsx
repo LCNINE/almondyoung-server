@@ -12,6 +12,7 @@ import { useLocationSearch } from '../warehouse/useLocationSearch';
 import { useMoveStock } from '../movement/useMoveStock';
 import { RETURN_GOODS_KEY, type ReturnGoodsItem } from './returnGoods';
 import type { LocationRef } from './PutawaySheet';
+import { RememberUsualToggle } from './RememberUsualToggle';
 
 export interface ReturnPutawayTarget extends ReturnGoodsItem {
   returnLocationId: string;
@@ -41,7 +42,7 @@ function ReturnPutawaySheetContent({
 }: {
   target: ReturnPutawayTarget;
   warehouseId: string;
-  onDone: (dest: LocationRef, quantity: number) => void;
+  onDone: (dest: LocationRef, quantity: number, usualShelfSet: boolean) => void;
   onCancel: () => void;
 }) {
   const [dest, setDest] = useState<LocationRef | null>(() =>
@@ -54,6 +55,9 @@ function ReturnPutawaySheetContent({
     crypto.randomUUID()
   );
   const [notice, setNotice] = useState<string | null>(null);
+  // 평소 선반이 비어 있는 상품만 묻는다 — 이미 정해진 상품은 다른 곳에 넣어도 바꾸지 않는다.
+  const canRemember = !usualShelf(target) && target.canRememberUsual === true;
+  const [remember, setRemember] = useState(true);
   // 보낸 이동은 결과가 정해질 때까지 대상지·수량을 바꿀 수 없다 — 응답을 못 받으면 실행기가 같은 키로 맞출 때까지 기다린다.
   const [sending, setSending] = useState<{
     dest: LocationRef;
@@ -105,36 +109,51 @@ function ReturnPutawaySheetContent({
   }, [search.data, term, dest, target.returnLocationId, choose]);
 
   // 대상지나 수량을 바꾸면 새 키 — 응답만 잃은 앞 요청이 같은 키로 옛 값을 되돌려주지 않게.
-  const keyPayload = useRef({ to: dest?.id ?? '', qty: quantity });
+  const keyPayload = useRef({ to: dest?.id ?? '', qty: quantity, remember });
   useEffect(() => {
     const prev = keyPayload.current;
-    if (prev.to === (dest?.id ?? '') && prev.qty === quantity) return;
-    keyPayload.current = { to: dest?.id ?? '', qty: quantity };
+    if (
+      prev.to === (dest?.id ?? '') &&
+      prev.qty === quantity &&
+      prev.remember === remember
+    )
+      return;
+    keyPayload.current = { to: dest?.id ?? '', qty: quantity, remember };
     setIdempotencyKey(crypto.randomUUID());
-  }, [dest, quantity]);
+  }, [dest, quantity, remember]);
 
   async function submit() {
     if (submitLock.current) return;
     const sent =
       dest && quantity >= 1 && quantity <= target.quantity
-        ? { dest, quantity, key: idempotencyKey }
+        ? {
+            dest,
+            quantity,
+            key: idempotencyKey,
+            remember: canRemember && remember,
+          }
         : null;
     if (!sent) return;
     submitLock.current = true;
     setSending(sent);
     setNotice(null);
     try {
-      await move.mutateAsync({
+      const result = await move.mutateAsync({
         warehouseId,
         skuId: target.skuId,
         fromLocationId: target.returnLocationId,
         toLocationId: sent.dest.id,
         quantity: sent.quantity,
         reason: '반품 적치',
+        rememberAsUsual: sent.remember,
         idempotencyKey: sent.key,
       });
       void qc.invalidateQueries({ queryKey: [RETURN_GOODS_KEY] });
-      onDone(sent.dest, sent.quantity);
+      onDone(
+        sent.dest,
+        sent.quantity,
+        result?.usualShelfSkuIds?.includes(target.skuId) === true
+      );
     } catch (error) {
       if (
         error instanceof ApiError &&
@@ -282,6 +301,12 @@ function ReturnPutawaySheetContent({
                   )}
                 </>
               )}
+              {dest && canRemember ? (
+                <RememberUsualToggle
+                  checked={remember}
+                  onChange={setRemember}
+                />
+              ) : null}
             </section>
           </>
         )}

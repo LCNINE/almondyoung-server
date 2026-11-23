@@ -37,4 +37,11 @@ export class ReceiptLineState {
   @ApiProperty() canCancel: boolean;
   @ApiProperty({ enum: RECEIPT_ACTION_BLOCK_REASONS, nullable: true })
   cancelBlockReason: ReceiptActionBlockReason | null;
+  // 단건 상태 조회에만 싣는다 — 적치 창이 대상지를 미리 채우고 평소 선반을 정할지 묻는 데 쓴다.
+  @ApiProperty({ type: String, nullable: true, required: false })
+  usualLocationId?: string | null;
+  @ApiProperty({ type: String, nullable: true, required: false })
+  usualLocationCode?: string | null;
+  @ApiProperty({ required: false, description: '평소 선반이 비어 있어 적치하며 정할 수 있다' })
+  canRememberUsual?: boolean;
 }

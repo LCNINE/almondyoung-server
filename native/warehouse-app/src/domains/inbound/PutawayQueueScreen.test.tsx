@@ -172,6 +172,8 @@ interface RenderOpts {
   moveKeys?: string[];
   /** 앞의 N번 이동은 응답을 받지 못한 것처럼 실패한다 */
   moveFailures?: number;
+  /** POST /movement/move 응답 — 없으면 { success: true } */
+  moveResponse?: unknown;
   /** 반품 양품 조회를 차례로 소비한다(마지막 항목 반복) — 'error' 는 실패 */
   returnGoodsSequence?: Array<ReturnGoods | 'error'>;
   locations?: Record<
@@ -299,7 +301,7 @@ function renderScreen(prefsSeed?: Record<string, string>, opts?: RenderOpts) {
         if (moveFailures-- > 0)
           throw new NetworkError(new TypeError('Failed to fetch'));
         opts?.moves?.push(body);
-        return { success: true };
+        return opts?.moveResponse ?? { success: true };
       }
       throw new Error(`GET ${o.path} → 404`);
     }) as unknown as ApiClient['request'],
@@ -1115,6 +1117,96 @@ describe('반품 양품', () => {
         ],
       }),
     ]);
+  });
+
+  const B02 = {
+    B02: [
+      {
+        id: 'loc-b2',
+        code: 'B02',
+        displayName: 'B02',
+        isActive: true,
+        isSystem: false,
+      },
+    ],
+  };
+  const NO_SHELF_YET: ReturnGoods = {
+    ...RETURN_GOODS,
+    items: [{ ...RETURN_GOODS.items[1], canRememberUsual: true }],
+  };
+
+  async function putPouchOnB02() {
+    await userEvent.click(
+      await screen.findByRole('button', { name: /파우치/ })
+    );
+    const dialog = await screen.findByRole('dialog', {
+      name: '반품 양품 적치',
+    });
+    const submit = within(dialog).getByRole('button', { name: '적치' });
+    scanHid(submit, 'B02');
+    await waitFor(() => expect(submit).toBeEnabled());
+    return { dialog, submit };
+  }
+
+  it('평소 선반이 비어 있으면 찍은 선반을 평소 선반으로 정하자고 켜 두고, 정했으면 알린다', async () => {
+    const moves: unknown[] = [];
+    renderScreen(SELECTED, {
+      returnGoods: NO_SHELF_YET,
+      moves,
+      locations: B02,
+      moveResponse: { usualShelfSkuIds: ['s-8'] },
+    });
+    const { dialog, submit } = await putPouchOnB02();
+    expect(
+      within(dialog).getByRole('checkbox', {
+        name: /이 선반을 평소 선반으로 정하기/,
+      })
+    ).toBeChecked();
+    await userEvent.click(submit);
+    await waitFor(() => expect(dialog).not.toBeInTheDocument());
+    expect(moves).toEqual([
+      expect.objectContaining({
+        lines: [
+          expect.objectContaining({
+            toLocationId: 'loc-b2',
+            rememberAsUsual: true,
+          }),
+        ],
+      }),
+    ]);
+    expect(
+      await screen.findByText(
+        '파우치 1개를 B02에 넣었어요. 평소 선반으로 정했어요: B02'
+      )
+    ).toBeInTheDocument();
+  });
+
+  it('끄고 적치하면 평소 선반을 정하자고 보내지 않는다', async () => {
+    const moves: unknown[] = [];
+    renderScreen(SELECTED, {
+      returnGoods: NO_SHELF_YET,
+      moves,
+      locations: B02,
+    });
+    const { dialog, submit } = await putPouchOnB02();
+    await userEvent.click(
+      within(dialog).getByRole('checkbox', {
+        name: /이 선반을 평소 선반으로 정하기/,
+      })
+    );
+    await userEvent.click(submit);
+    await waitFor(() => expect(dialog).not.toBeInTheDocument());
+    const [move] = moves as Array<{ lines: Array<Record<string, unknown>> }>;
+    expect(move.lines[0]).not.toHaveProperty('rememberAsUsual');
+    expect(
+      await screen.findByText('파우치 1개를 B02에 넣었어요.')
+    ).toBeInTheDocument();
+  });
+
+  it('평소 선반이 이미 있거나 서버가 정할 수 있다고 하지 않으면 묻지 않는다', async () => {
+    renderScreen(SELECTED, { returnGoods: RETURN_GOODS, locations: B02 });
+    const { dialog } = await putPouchOnB02();
+    expect(within(dialog).queryByRole('checkbox')).not.toBeInTheDocument();
   });
 
   it('입고 대기가 없고 반품 양품만 있으면 «적치할 항목이 없어요» 대신 입고 쪽만 비었다고 말한다', async () => {
