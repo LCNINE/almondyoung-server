@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsEnum, IsDateString, IsInt, Min, IsIn, IsString, IsBoolean } from 'class-validator';
+import { IsOptional, IsEnum, IsDateString, IsInt, Min, IsIn, IsString, IsBoolean, IsArray } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { orderStatusEnum, salesChannelEnum } from '../schema/sales-order.schema';
 
@@ -38,6 +38,32 @@ export class SalesOrderFilterDto {
   @IsOptional()
   @IsEnum(salesChannelValues)
   channel?: SalesChannelEnum;
+
+  @ApiPropertyOptional({
+    description: '판매 채널 목록 (쉼표 구분 또는 반복 파라미터)',
+    enum: salesChannelValues,
+    isArray: true,
+  })
+  @Transform(({ value }: { value: unknown }) => {
+    if (typeof value !== 'string' && !Array.isArray(value)) {
+      return value;
+    }
+
+    const values: unknown[] = Array.isArray(value) ? value : [value];
+
+    return values.flatMap((channel) =>
+      typeof channel === 'string'
+        ? channel
+            .split(',')
+            .map((item) => item.trim())
+            .filter(Boolean)
+        : [channel],
+    );
+  })
+  @IsOptional()
+  @IsArray()
+  @IsEnum(salesChannelValues, { each: true })
+  channels?: SalesChannelEnum[];
 
   @ApiPropertyOptional({ description: '주문 상태(단일)', enum: orderStatusValues })
   @IsOptional()

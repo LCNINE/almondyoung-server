@@ -21,8 +21,7 @@ export interface OrderHistoryFilter {
     type: OrderTypeFilter;
     excludeTerminal: boolean;
     refundIssueOnly: boolean;   // 환불 실패/수동처리 주문만 표시
-    channelCategory?: string;   // 판매처 분류
-    channel?: string;           // 판매처 (medusa/naver/coupang/3pl)
+    channels: string[];
     quickDate: QuickDateOption;
     dateFrom: string;           // YYYY-MM-DD
     dateTo: string;             // YYYY-MM-DD

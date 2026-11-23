@@ -79,7 +79,7 @@ jest.mock('@/hooks/use-permission', () => ({
 }));
 jest.mock('../../contexts/filter.context', () => ({
   useOrderHistoryFilter: () => ({
-    filter: { type: 'all' },
+    filter: { type: 'all', channels: [] },
     searchToken: 0,
     page: mockPage,
     setPage: mockSetPage,

@@ -15,10 +15,9 @@ const QUICK_DATE_OPTIONS: { key: QuickDateOption; label: string; fromDays: numbe
     { key: 'custom',    label: '임의기간', fromDays: 0,  toDays: 0 },
 ];
 
-const CHANNEL_CATEGORIES = ['판매처 분류 전체', '자사몰', '외부채널'];
 const CHANNELS: { label: string; value: string }[] = [
-    { label: '판매처 전체', value: '' },
-    { label: '자사몰 (Medusa)', value: 'medusa' },
+    { label: '전체', value: '' },
+    { label: '자사몰', value: 'medusa' },
     { label: '네이버 스마트스토어', value: 'naver' },
     { label: '쿠팡', value: 'coupang' },
     { label: '수기·기타', value: '3pl' },
@@ -67,24 +66,37 @@ export default function FilterBox() {
             {/* 판매처 */}
             <div className="flex items-center gap-3 flex-wrap">
                 <span className="text-sm font-medium text-gray-700 w-14 shrink-0">판매처</span>
-                <select
-                    className="border rounded h-9 px-2 text-sm min-w-[140px]"
-                    value={local.channelCategory ?? ''}
-                    onChange={(e) => setLocal({ ...local, channelCategory: e.target.value || undefined })}
-                >
-                    {CHANNEL_CATEGORIES.map((c) => (
-                        <option key={c} value={c === '판매처 분류 전체' ? '' : c}>{c}</option>
+                <div className="flex items-center gap-4 flex-wrap">
+                    {CHANNELS.map((channel) => (
+                        <label
+                            key={channel.value}
+                            className="flex items-center gap-1 text-sm cursor-pointer"
+                        >
+                            <input
+                                type="checkbox"
+                                className="accent-blue-600"
+                                checked={
+                                    channel.value
+                                        ? local.channels.includes(channel.value)
+                                        : local.channels.length === 0
+                                }
+                                onChange={() =>
+                                    setLocal((prev) => ({
+                                        ...prev,
+                                        channels: !channel.value
+                                            ? []
+                                            : prev.channels.includes(channel.value)
+                                                ? prev.channels.filter(
+                                                        (value) => value !== channel.value
+                                                    )
+                                                : [...prev.channels, channel.value],
+                                    }))
+                                }
+                            />
+                            {channel.label}
+                        </label>
                     ))}
-                </select>
-                <select
-                    className="border rounded h-9 px-2 text-sm min-w-[160px]"
-                    value={local.channel ?? ''}
-                    onChange={(e) => setLocal({ ...local, channel: e.target.value || undefined })}
-                >
-                    {CHANNELS.map((c) => (
-                        <option key={c.value} value={c.value}>{c.label}</option>
-                    ))}
-                </select>
+                </div>
             </div>
 
             {/* 일자 */}

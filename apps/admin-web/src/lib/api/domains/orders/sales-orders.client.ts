@@ -27,14 +27,15 @@ import type {
 import { client } from '../../client';
 
 // 쿼리 파라미터를 URL에 추가하는 헬퍼 함수
-const buildQueryString = (params: Record<string, any>): string => {
+const buildQueryString = (params: Record<string, unknown>): string => {
   const searchParams = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => {
     if (value !== undefined && value !== null) {
-      searchParams.append(key, value.toString());
+      searchParams.append(key, String(value));
     }
   });
   const queryString = searchParams.toString();
+
   return queryString ? `?${queryString}` : '';
 };
 
@@ -54,7 +55,10 @@ export const salesOrders = {
   getSalesOrders: async (
     query: SalesOrdersQuery
   ): Promise<SalesOrdersResponseDto> => {
-    const queryString = buildQueryString(query);
+    const queryString = buildQueryString({
+      ...query,
+      channels: query.channels?.join(',') || undefined,
+    });
     const response = await client.get(
       `${ALMONDYOUNG_API_BASE_URL}/sales-orders${queryString}`
     );
