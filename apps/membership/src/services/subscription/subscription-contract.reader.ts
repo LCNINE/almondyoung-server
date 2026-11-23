@@ -184,6 +184,23 @@ export class SubscriptionContractReader {
     return row?.createdAt ?? null;
   }
 
+  /** 인보이스 경로가 마지막으로 선지급한 주기의 종료일(YYYY-MM-DD). 선지급 기록이 없으면 null. */
+  async findLatestInvoiceGrantPeriodEnd(contractId: string): Promise<string | null> {
+    const [row] = await this.dbService.db
+      .select({ periodEnd: sql<string | null>`${schema.subscriptionContractEvents.metadata}->>'periodEnd'` })
+      .from(schema.subscriptionContractEvents)
+      .where(
+        and(
+          eq(schema.subscriptionContractEvents.contractId, contractId),
+          eq(schema.subscriptionContractEvents.eventType, 'INVOICE_ADVANCE_GRANT'),
+        ),
+      )
+      .orderBy(desc(schema.subscriptionContractEvents.createdAt))
+      .limit(1);
+
+    return row?.periodEnd ?? null;
+  }
+
   /**
    * 해지 예약된 계약이 **원래 정기결제였는지**.
    *
