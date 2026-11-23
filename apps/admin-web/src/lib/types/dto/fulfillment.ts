@@ -822,6 +822,8 @@ export interface ScanRejection {
   quantity: number | null;
   actorId: string;
   rejectedAt: string;
+  /** 거절 뒤 담당을 넘겼으면 그 시각과 받은 작업자 — 옛 응답에는 없다 */
+  handedOff?: { at: string; workerId: string | null } | null;
 }
 
 /** 상자가 현장에서 빠지기를 기다리는 취소 */

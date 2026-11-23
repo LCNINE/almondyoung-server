@@ -1174,6 +1174,46 @@ describe('물류앱에서 막힌 상자', () => {
     expect(notice.textContent).not.toContain('송장 칸');
   });
 
+  it('거절 뒤 담당을 넘겼으면 다시 찍기를 기다린다고 보이고 배치 상세로 보내지 않는다', () => {
+    const handedOffAt = '2026-01-02T04:00:00.000Z';
+    show(
+      rejection({
+        action: 'handoff_worker',
+        message: '다른 작업자가 맡은 상자라 반영하지 못했어요.',
+        handedOff: { at: handedOffAt, workerId: 'user-1' },
+      })
+    );
+    const notice = screen.getByRole('region', {
+      name: '작업자가 다시 찍기를 기다림',
+    });
+
+    expect(notice.textContent).toContain(
+      `${new Date(handedOffAt).toLocaleString('ko-KR')}에 김관리에게 넘겼어요`
+    );
+    expect(within(notice).queryByRole('link')).toBeNull();
+    expect(notice.textContent).not.toContain('담당을 넘기거나 풀어 주세요');
+    expect(
+      screen.queryByRole('region', { name: '물류앱에서 막힘' })
+    ).toBeNull();
+  });
+
+  it('받은 작업자 이름을 모르면 넘긴 시각만 보인다', () => {
+    const handedOffAt = '2026-01-02T04:00:00.000Z';
+    show(
+      rejection({
+        action: 'handoff_worker',
+        handedOff: { at: handedOffAt, workerId: 'someone-else' },
+      })
+    );
+
+    expect(
+      screen.getByRole('region', { name: '작업자가 다시 찍기를 기다림' })
+        .textContent
+    ).toContain(
+      `${new Date(handedOffAt).toLocaleString('ko-KR')}에 담당을 넘겼어요`
+    );
+  });
+
   it('배치 작업 항목 없이 남은 거절이면 배치에서 빼라고 하지 않는다', () => {
     show(rejection({ action: 'review_box', workItemId: null }));
     const notice = screen.getByRole('region', { name: '물류앱에서 막힘' });

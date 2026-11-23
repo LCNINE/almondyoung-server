@@ -328,6 +328,7 @@ function ShipmentDetailView({
   const operatorName = useOperatorNames([
     ...operations.map((o) => o.operatorId),
     shipment.scanRejection?.actorId,
+    shipment.scanRejection?.handedOff?.workerId,
   ]);
   const waybills = shipment.waybills ?? [];
   const attempts = shipment.dispatchAttempts ?? [];
@@ -396,6 +397,9 @@ function ShipmentDetailView({
           <ScanRejectionNotice
             rejection={shipment.scanRejection}
             workerName={operatorName(shipment.scanRejection.actorId)}
+            handoffWorkerName={operatorName(
+              shipment.scanRejection.handedOff?.workerId
+            )}
           >
             <ScanRejectionDetailStep
               rejection={shipment.scanRejection}

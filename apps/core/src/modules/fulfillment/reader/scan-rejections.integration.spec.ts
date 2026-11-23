@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { eq } from 'drizzle-orm';
+import { eq, sql as fragment } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { BarcodeService } from '../../inventory/shared/services/barcode.service';
 import { OutboundScanRejectionManager } from '../scan-rejections/outbound-scan-rejection.manager';
@@ -88,6 +88,107 @@ describeIfDb('물류앱에서 막힌 상자', () => {
       const byShipment = new Map(batch.workItems.map((item) => [item.shipmentId, item]));
       expect(byShipment.get(first.shipmentId)?.scanRejection?.code).toBe('SIMPLE_OUTBOUND_CLAIMED_BY_OTHER');
       expect(byShipment.get(second.shipmentId)?.scanRejection).toBeNull();
+    });
+  });
+
+  const leaseOf = async (tx: DbTx, workItemId: string) =>
+    (
+      await tx
+        .select({ leaseVersion: wmsTables.outboundBatchWorkItems.leaseVersion })
+        .from(wmsTables.outboundBatchWorkItems)
+        .where(eq(wmsTables.outboundBatchWorkItems.id, workItemId))
+    )[0].leaseVersion;
+  const supervisor = { id: randomUUID(), roles: ['logistics_manager'] };
+
+  it('거절 뒤 담당을 넘기면 남은 채로 받은 작업자와 시각을 싣고, 그 작업자가 찍어 반영되면 사라진다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { first, wiring, other } = await blocked(tx);
+      expect((await open(tx, first))?.handedOff).toBeNull();
+
+      await wiring.batches.handoff(
+        first.workItemId,
+        {
+          claimType: 'picker',
+          targetWorkerId: other,
+          expectedLeaseVersion: await leaseOf(tx, first.workItemId),
+          reason: 'handoff after rejection',
+        },
+        `handoff-${randomUUID()}`,
+        supervisor,
+        tx,
+      );
+
+      expect(await open(tx, first)).toMatchObject({
+        code: 'SIMPLE_OUTBOUND_CLAIMED_BY_OTHER',
+        actorId: other,
+        handedOff: { at: expect.any(Date), workerId: other },
+      });
+      const batch = await wiring.batches.getBatch(first.batchId, tx);
+      expect(batch.workItems.find((item) => item.shipmentId === first.shipmentId)?.scanRejection?.handedOff).toEqual({
+        at: expect.any(Date),
+        workerId: other,
+      });
+
+      await wiring.simple.scan(
+        first.shipmentId,
+        {
+          barcode: first.barcode,
+          quantity: 1,
+          actor: { id: other, roles: ['logistics_worker'] },
+          idempotencyKey: randomUUID(),
+        },
+        tx,
+      );
+      expect(await open(tx, first)).toBeNull();
+    });
+  });
+
+  it('넘긴 뒤 담당이 또 바뀌었으면 넘긴 시각만 싣고 받은 작업자는 모른다고 둔다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { first, wiring, other } = await blocked(tx);
+      await wiring.batches.handoff(
+        first.workItemId,
+        {
+          claimType: 'picker',
+          targetWorkerId: other,
+          expectedLeaseVersion: await leaseOf(tx, first.workItemId),
+          reason: 'handoff after rejection',
+        },
+        `handoff-${randomUUID()}`,
+        supervisor,
+        tx,
+      );
+      await tx
+        .update(wmsTables.outboundBatchWorkItems)
+        .set({ pickerId: randomUUID(), pickerClaimedAt: fragment`CURRENT_TIMESTAMP + interval '5 minutes'` })
+        .where(eq(wmsTables.outboundBatchWorkItems.id, first.workItemId));
+
+      expect((await open(tx, first))?.handedOff).toEqual({ at: expect.any(Date), workerId: null });
+    });
+  });
+
+  it('넘긴 뒤에 다시 거절되면 넘긴 것으로 보지 않는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { first, wiring, other, manager, input } = await blocked(tx);
+      const third = randomUUID();
+      await wiring.batches.handoff(
+        first.workItemId,
+        {
+          claimType: 'picker',
+          targetWorkerId: third,
+          expectedLeaseVersion: await leaseOf(tx, first.workItemId),
+          reason: 'handoff to someone else',
+        },
+        `handoff-${randomUUID()}`,
+        supervisor,
+        tx,
+      );
+      expect((await open(tx, first))?.handedOff).toMatchObject({ workerId: third });
+
+      expect(
+        await manager.record({ ...input, idempotencyKey: randomUUID(), rejectedAt: new Date(Date.now() + 60_000) }, tx),
+      ).toBe(true);
+      expect(await open(tx, first)).toMatchObject({ actorId: other, handedOff: null });
     });
   });
 

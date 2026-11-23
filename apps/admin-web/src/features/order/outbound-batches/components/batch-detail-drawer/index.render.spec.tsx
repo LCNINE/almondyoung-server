@@ -879,6 +879,40 @@ describe('물류앱에서 막힌 상자', () => {
     ).toBe('/order/fulfillments?shipmentId=ship-1');
   });
 
+  it('거절 뒤 담당을 넘겼으면 받은 작업자가 다시 찍기를 기다린다고 보이고 넘기라고 하지 않는다', () => {
+    mockCanHandoff = true;
+    const handedOffAt = '2026-01-02T04:00:00.000Z';
+    mockBatch = batchWith([
+      {
+        ...picking,
+        scanRejection: rejection({
+          action: 'handoff_worker',
+          message: '다른 작업자가 맡은 상자라 반영하지 못했어요.',
+          handedOff: { at: handedOffAt, workerId: 'worker-b' },
+        }),
+      },
+    ]);
+    renderDrawer();
+    const row = screen.getAllByRole('row')[1];
+    const notice = within(row).getByRole('region', {
+      name: '작업자가 다시 찍기를 기다림',
+    });
+
+    expect(notice.textContent).toContain(
+      `작업자가 다시 찍기를 기다려요 — ${new Date(handedOffAt).toLocaleString('ko-KR')}에 이두리에게 넘겼어요`
+    );
+    expect(notice.textContent).toContain(
+      '막혔던 것: 출고 검수 스캔 · 상품 A ×2'
+    );
+    expect(notice.textContent).toContain(
+      '넘겨받은 작업자가 물류앱에서 다시 찍어 반영되면 이 표시는 사라져요.'
+    );
+    expect(
+      within(row).queryByRole('region', { name: '물류앱에서 막힘' })
+    ).toBeNull();
+    expect(within(row).queryByText(/이 줄의 «넘기기»/)).toBeNull();
+  });
+
   it('송장·상자 확인이면 상자 상세로 잇는다', () => {
     mockBatch = batchWith([
       { ...picking, scanRejection: rejection({ action: 'check_waybill' }) },
