@@ -1,6 +1,7 @@
 import {
   PRINT_PRODUCTS,
   PRINT_SPECS,
+  workKind,
   type PrintKind,
 } from "../../../lib/catalog"
 import { newDesign, resizeDesign, withProduct } from "../../../lib/document"
@@ -91,7 +92,14 @@ export function SpecPanel({ editor }: { editor: AlmondEditor }) {
           disabled={!!productId}
           onChange={(event) => {
             const id = event.target.value
-            change(withProduct(design, id, PRINT_PRODUCTS[id]?.kind))
+            const kind = PRINT_PRODUCTS[id]?.kind
+            change(
+              withProduct(
+                design,
+                id,
+                kind === workKind(design.kind) ? design.kind : kind
+              )
+            )
             setSelectedId(null)
           }}
         >

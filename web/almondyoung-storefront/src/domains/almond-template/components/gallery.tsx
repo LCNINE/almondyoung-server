@@ -3,7 +3,12 @@
 import { cn } from "@/lib/utils"
 import { ArrowLeft, Info, Palette, Search, SquarePlus } from "lucide-react"
 import { useMemo, useRef, useState } from "react"
-import { PRINT_PRODUCTS, PRINT_SPECS, type PrintKind } from "../lib/catalog"
+import {
+  PRINT_PRODUCTS,
+  PRINT_SPECS,
+  workKind,
+  type PrintKind,
+} from "../lib/catalog"
 import { templateProductOf } from "../lib/template-product"
 import {
   COLORS,
@@ -206,13 +211,18 @@ export function AlmondTemplateGallery({
     product:
       productId ||
       Object.keys(PRINT_PRODUCTS).find(
-        (id) => PRINT_PRODUCTS[id].kind === startKindForBlank
+        (id) =>
+          PRINT_PRODUCTS[id].kind ===
+          (canDesign ? workKind(startKindForBlank) : startKindForBlank)
       ) ||
       "",
     size: startSize,
   })
   if (variantId) startParams.set("variant", variantId)
-  if (canDesign) startParams.set("mode", "designer")
+  if (canDesign) {
+    startParams.set("mode", "designer")
+    startParams.set("kind", startKindForBlank)
+  }
   const startHref = canDesign
     ? `/${countryCode}/almond-template?${startParams}`
     : `/${countryCode}/almond-template/edit?${startParams}`

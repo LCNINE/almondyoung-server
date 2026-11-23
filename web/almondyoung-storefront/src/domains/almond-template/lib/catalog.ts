@@ -320,6 +320,10 @@ export const PRINT_SPECS: Record<
   },
 }
 
+// 명함 상품은 따로 없어 같은 규격의 주의사항 카드 상품으로 작업한다
+export const workKind = (kind: PrintKind): PrintKind =>
+  kind === "bizcard" ? "card" : kind
+
 export function sizeFromOption(
   kind: PrintKind,
   label: string
