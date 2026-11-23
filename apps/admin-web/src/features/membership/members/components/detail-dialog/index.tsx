@@ -822,6 +822,7 @@ function PlanTab({
     pgConfirmPending,
     refundImpossible,
     canComplete,
+    needsResolution,
     label,
     question,
   } = manualRefundState(detail);
@@ -858,7 +859,7 @@ function PlanTab({
   };
 
   const handleCompleteManualRefund = async () => {
-    if (!canComplete || !window.confirm(question)) {
+    if (!canComplete || needsResolution || !window.confirm(question)) {
       return;
     }
 
@@ -974,13 +975,27 @@ function PlanTab({
                       variant="outline"
                       className="h-7 text-xs"
                       data-testid="complete-manual-refund"
-                      disabled={completeManualRefundMutation.isPending}
+                      disabled={
+                        needsResolution ||
+                        completeManualRefundMutation.isPending
+                      }
                       onClick={handleCompleteManualRefund}
                     >
                       {completeManualRefundMutation.isPending
                         ? '처리 중...'
                         : label}
                     </Button>
+                  )}
+                {allowForceCancel &&
+                  canRun(useCompleteManualRefund) &&
+                  canComplete &&
+                  needsResolution && (
+                    <span
+                      className="text-xs text-muted-foreground"
+                      data-testid="refund-resolution-required"
+                    >
+                      결의서를 먼저 올려 주세요
+                    </span>
                   )}
               </span>
             </div>

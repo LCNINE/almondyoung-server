@@ -200,6 +200,26 @@ export const useCompleteManualRefund = () => {
 };
 useCompleteManualRefund.permission = ['membership.billing.refund'] as const satisfies PermissionRequirement;
 
+/** 셀메이트에 지출결의서를 올렸다는 기록. submitted=false 는 잘못 누른 기록을 되돌린다. */
+export const useSetRefundResolution = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      contractId,
+      submitted,
+    }: {
+      contractId: string;
+      submitted: boolean;
+    }) => membershipApi.setRefundResolution(contractId, submitted),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: membershipQueryKeys.all });
+    },
+  });
+};
+useSetRefundResolution.permission = [
+  'membership.billing.refund',
+] as const satisfies PermissionRequirement;
+
 export const useForceCancelSubscription = () => {
   const queryClient = useQueryClient();
   return useMutation({

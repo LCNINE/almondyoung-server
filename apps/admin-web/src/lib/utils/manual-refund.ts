@@ -14,6 +14,7 @@ type RefundDetail = Pick<
   | 'hasPaymentIntent'
   | 'manualRefundAccount'
   | 'refundSettlement'
+  | 'refundResolutionSubmittedAt'
 >;
 
 export function manualRefundState(detail: RefundDetail | undefined) {
@@ -46,8 +47,13 @@ export function manualRefundState(detail: RefundDetail | undefined) {
     ? `결제관리에서 이미 ${(settlement?.alreadyRefundedAmount ?? 0).toLocaleString('ko-KR')}원이 환불됐어요. 추가 송금 없이 완료로 정리할까요?`
     : `${where}로 ${requestedRefund.toLocaleString('ko-KR')}원을 실제로 송금했나요? 이 버튼은 돈을 보내지 않고 완료 기록만 남겨요.`;
 
+  // 회사 계좌 이체는 셀메이트 결의서가 먼저다. PG 로 이미 나간 건은 이체가 없어 결의서도 없다.
+  const needsResolution =
+    !pgAlreadyRefunded && !detail?.refundResolutionSubmittedAt;
+
   return {
     pgAlreadyRefunded,
+    needsResolution,
     pgConfirmPending,
     refundImpossible,
     canComplete:
