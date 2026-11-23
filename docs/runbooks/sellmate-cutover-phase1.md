@@ -92,7 +92,7 @@
     python3 scripts/sellmate/without-unpaired.py apps/core/tmp/<날짜>/pair.txt <재고 CSV> apps/core/tmp/<날짜>/without-unpaired
     # 4-4 의 🔍 명령에서 <재고 CSV> 자리에 apps/core/tmp/<날짜>/without-unpaired/<같은 파일 이름>
     ```
-  - 11-20: 짝 못 지은 품목 행을 뺀 사본(파일 이름은 그대로, 다른 폴더)으로 돌렸다. ON_HAND 불일치에서 멈춘 뒤 `--accept-onhand-mismatch` 를 붙인 dry-run 은 **종료 0** — 넘긴 주문 ↔ Medusa 검사까지 라이브 데이터로 처음 지났다. 이월 목록에 «BUP(매칭용)»(3PL 제품, 재고 0·미발송 큼)이 큰 이월로 잡힌다 — 저녁 맞추기 제외(`excluded.ts`)에 넣을지 T 전에 정한다. 원본 파일로 종료 0 은 짝 표가 0 이 된 뒤다
+  - 11-20: 짝 못 지은 품목 행을 뺀 사본(파일 이름은 그대로, 다른 폴더)으로 돌렸다. ON_HAND 불일치에서 멈춘 뒤 `--accept-onhand-mismatch` 를 붙인 dry-run 은 **종료 0** — 넘긴 주문 ↔ Medusa 검사까지 라이브 데이터로 처음 지났다. 이월 목록에 «BUP(매칭용)»(3PL 제품, 재고 0·미발송 큼)이 큰 이월로 잡힌다 — 저녁 맞추기 제외(`excluded.ts`)에 넣을지 T 전에 정한다 — 11-23 물류팀 확인: 신경 쓰지 않아도 된다, 제외하지 않는다. 매일 이월 모자람에 이 품목(옵션 01)이 남는 것은 정상이다. 원본 파일로 종료 0 은 짝 표가 0 이 된 뒤다
 - [x] **바코드번호2 백필**(#1356, PR #1371). 터널 필요. — 11-20: 1~3 끝(재고 현황 «개발팀 데이터 내보내기용» CSV 한 파일로. 이 양식에 `바코드번호2` 가 있다). 백필이 넣는 보조 바코드는 짝 짓기 결과를 바꾸지 않는 것을 읽기 전용으로 확인했다. 4 는 dry-run 만 — ★ 대부분이 짝 표의 `code_barcode_conflict` SKU 라 물류팀장 판정 뒤에 `--apply` 한다 — 판정과 정리는 11-20 끝(위 짝 표 줄). 4 는 11-20 `--apply` 끝(아래 4 의 기록)
   1. 🔍 `DRY_RUN=1 bash scripts/sellmate/run.sh live backfill-barcode2 <현재고 전체 CSV>` — 넣을 것·충돌을 본다
   2. **«현재고 전체» 를 다시 받아서** ✅ `bash scripts/sellmate/run.sh live backfill-barcode2 <새 CSV> --apply` (받은 뒤 생긴 SKU 는 파일에 없어 빠진다)
