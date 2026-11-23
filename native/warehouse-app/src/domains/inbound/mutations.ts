@@ -91,7 +91,7 @@ export function usePutaway() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: PutawayInput) =>
-      api.request<{ success: boolean }>({
+      api.request<{ success: boolean; usualShelfSet?: boolean }>({
         method: 'POST',
         path: '/inbound/putaway',
         body: input,

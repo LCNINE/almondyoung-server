@@ -18,6 +18,7 @@ import { toHistoryCancelBlockReason } from './inbound-receipt-policy';
 import { getTableColumns } from 'drizzle-orm';
 import { InboundReceipt } from '../../schema/inventory.schema';
 import { ReplayableDates } from '../../shared/mappers/stored-date';
+import { rememberUsualShelf } from '../../core/services/usual-shelf';
 
 @Injectable()
 export class InboundService {
@@ -372,7 +373,7 @@ export class InboundService {
       dto.idempotencyKey,
       warehouseRequest(dto, actorId),
       async (tx) => {
-        await this.receiptKernel.putaway(
+        const line = await this.receiptKernel.putaway(
           {
             receiptLineId: dto.lineId,
             toLocationId: dto.toLocationId,
@@ -381,7 +382,10 @@ export class InboundService {
           },
           tx,
         );
-        return { success: true };
+        const usualShelfSet =
+          dto.rememberAsUsual === true &&
+          (await rememberUsualShelf(tx, line.skuId, dto.toLocationId, line.warehouseId));
+        return { success: true, usualShelfSet };
       },
       tx,
     );

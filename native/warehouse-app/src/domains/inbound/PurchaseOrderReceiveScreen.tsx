@@ -22,6 +22,7 @@ import {
   useCancelPurchaseOrderReceipt,
   useReceivePurchaseOrder,
 } from './mutations';
+import { usualShelfNotice } from './RememberUsualToggle';
 import { PutawaySheet, type LocationRef } from './PutawaySheet';
 import { ReceiveSheet } from './ReceiveSheet';
 import { parseQuantity } from '../../core/design/QuantityInput';
@@ -834,9 +835,10 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
           warehouseId={warehouseId}
           lastDest={lastDest}
           onCancel={() => setPutawayTarget(null)}
-          onDone={async (dest) => {
+          onDone={async (dest, _quantity, usualShelfSet) => {
             setLastDest(dest);
             setPutawayTarget(null);
+            if (usualShelfSet) setNotice(usualShelfNotice(dest.code));
             await receipt.refresh().catch(() => {});
           }}
         />

@@ -13,7 +13,7 @@ export function useMoveStock() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: MoveInput) =>
-      api.request<unknown>({
+      api.request<{ usualShelfSkuIds?: string[] }>({
         method: 'POST',
         path: '/movement/move',
         body: {
@@ -26,6 +26,7 @@ export function useMoveStock() {
               toLocationId: input.toLocationId,
               quantity: input.quantity,
               memo: input.reason,
+              ...(input.rememberAsUsual ? { rememberAsUsual: true } : {}),
             },
           ],
         },

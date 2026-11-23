@@ -59,6 +59,9 @@ export class ReturnZoneGoodsItemDto {
 
   @ApiProperty({ nullable: true, type: String })
   usualLocationCode: string | null;
+
+  @ApiProperty({ description: '평소 선반이 비어 있어 적치하며 정할 수 있다(다른 창고에 정해져 있으면 false)' })
+  canRememberUsual: boolean;
 }
 
 export class ReturnZoneGoodsDto {

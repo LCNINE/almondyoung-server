@@ -127,6 +127,14 @@ export class MovementJobWithLinesDto extends BaseMovementJobDto {
   lines: MovementJobLineDto[];
 }
 
+export class MoveImmediatelyResponseDto extends MovementJobWithLinesDto {
+  @ApiProperty({
+    description: '이 이동으로 평소 선반을 정한 SKU ID 목록 — 요청 줄의 rememberAsUsual 이 켜져 있고 비어 있던 상품만',
+    type: [String],
+  })
+  usualShelfSkuIds: string[];
+}
+
 export class MovementWorkLogDto {
   @ApiProperty({
     description: '로그 ID',

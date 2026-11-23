@@ -276,7 +276,7 @@ export class InboundReceiptKernel {
   }
 
   /** 즉시 적치 — 원위치(입고 로케이션)에서 같은 창고의 목적지로 내부 이동. 정산에 영향 없음. */
-  async putaway(input: PutawayInput, tx: DbTx): Promise<void> {
+  async putaway(input: PutawayInput, tx: DbTx): Promise<{ skuId: string; warehouseId: string }> {
     const line = await this.lockLine(input.receiptLineId, tx);
     const receipt = await this.loadReceipt(line.receiptId, tx);
     const originLocationId = this.requireOrigin(line);
@@ -368,6 +368,7 @@ export class InboundReceiptKernel {
       quantity: input.quantity,
       eventId: moveResult.eventId ?? null,
     });
+    return { skuId: line.skuId, warehouseId: receipt.warehouseId };
   }
 
   /** 회송 — 원위치 잔량에서 차감(ADJUST_DOWN). 발주 정산은 바꾸지 않는다(스펙 §3.3). */

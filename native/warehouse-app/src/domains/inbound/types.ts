@@ -87,6 +87,8 @@ export interface PutawayInput {
   lineId: string;
   toLocationId: string;
   quantity: number;
+  /** 평소 선반이 비어 있으면 이 목적지로 정한다(서버가 비어 있을 때만 채운다). */
+  rememberAsUsual?: boolean;
   idempotencyKey: string;
 }
 

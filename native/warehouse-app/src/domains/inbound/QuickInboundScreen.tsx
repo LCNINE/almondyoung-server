@@ -31,6 +31,7 @@ import { WarehousePicker } from '../warehouse/WarehousePicker';
 import { useSkuByBarcode } from '../inventory/useSkuByBarcode';
 import { scanIncrement } from './packingUnit';
 import { useSimpleInbound } from './mutations';
+import { usualShelfNotice } from './RememberUsualToggle';
 import { PutawaySheet, type LocationRef } from './PutawaySheet';
 import type { FreshLine, PutawayTarget } from './types';
 
@@ -794,9 +795,10 @@ function QuickInboundScreenContent() {
           warehouseId={warehouseId}
           lastDest={lastDest}
           onCancel={() => setPutawayFor(null)}
-          onDone={async (dest) => {
+          onDone={async (dest, _quantity, usualShelfSet) => {
             setLastDest(dest);
             setPutawayFor(null);
+            if (usualShelfSet) setNotice(usualShelfNotice(dest.code));
             await reconcileRef.current?.().catch(() => {});
           }}
         />

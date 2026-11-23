@@ -9,6 +9,8 @@ export interface ReturnGoodsItem {
   quantity: number;
   usualLocationId: string | null;
   usualLocationCode: string | null;
+  /** 평소 선반이 비어 있어 적치하며 정할 수 있다. 옛 서버는 보내지 않는다. */
+  canRememberUsual?: boolean;
 }
 
 /** GET /inventory/stocks/return-zone 응답. */

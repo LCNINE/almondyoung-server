@@ -4,7 +4,11 @@ import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
 import { User, RequirePermission } from '@app/authorization';
 import { MovementService } from '../services/movement.service';
 import { MoveBatchDto } from '../dto/move-batch.dto';
-import { MovementJobWithLinesDto, MovementHistoryResponseDto } from '../dto/movement-response.dto';
+import {
+  MovementJobWithLinesDto,
+  MovementHistoryResponseDto,
+  MoveImmediatelyResponseDto,
+} from '../dto/movement-response.dto';
 import { MovementJobMapper, MovementWorkLogMapper } from '../mappers/movement.mapper';
 
 @ApiTags('Movement')
@@ -18,17 +22,21 @@ export class MovementController {
   @ApiResponse({
     status: 200,
     description: '이동 작업이 성공적으로 처리되었습니다.',
-    type: MovementJobWithLinesDto,
+    type: MoveImmediatelyResponseDto,
   })
   @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async moveImmediately(
     @Body() dto: MoveBatchDto,
     @User() user?: WarehouseActor,
     @Headers('idempotency-key') headerKey?: string,
-  ): Promise<MovementJobWithLinesDto> {
+  ): Promise<MoveImmediatelyResponseDto> {
     const actorId = warehouseOperationContext(dto, user, headerKey);
     const result = await this.movementService.moveImmediately(dto, actorId);
-    return MovementJobMapper.toWithLinesDto(result.job, result.lines);
+    // 이 필드가 생기기 전에 저장된 멱등 응답을 되돌려줄 때는 없다.
+    return {
+      ...MovementJobMapper.toWithLinesDto(result.job, result.lines),
+      usualShelfSkuIds: result.usualShelfSkuIds ?? [],
+    };
   }
 
   @RequirePermission('inventory.stock.read')

@@ -12,6 +12,8 @@ import { useLocationSearch } from '../warehouse/useLocationSearch';
 import type { LocationItem } from '../warehouse/types';
 import { usePutaway } from './mutations';
 import type { PutawayTarget } from './types';
+import { RememberUsualToggle } from './RememberUsualToggle';
+import type { ReceiptLineState } from './receiptState';
 
 export type LocationRef = Pick<
   LocationItem,
@@ -39,7 +41,7 @@ function PutawaySheetContent({
   target: PutawayTarget;
   warehouseId: string | null;
   lastDest: LocationRef | null;
-  onDone: (dest: LocationRef, quantity: number) => void;
+  onDone: (dest: LocationRef, quantity: number, usualShelfSet: boolean) => void;
   onCancel: () => void;
 }) {
   // Invalidate captured preflight intent synchronously, before React renders an edit.
@@ -78,6 +80,44 @@ function PutawaySheetContent({
   const submitLock = useRef(false);
   const [checking, setChecking] = useState(false);
   const pendingQty = receipt.state?.pendingQty ?? reviewedPending;
+  // 적치 직전 다시 읽는 동안 입고 상태가 잠깐 비어도, 이 줄에서 받은 평소 선반 정보는 그대로 쓴다.
+  // 흔들리면 «정하기» 여부와 함께 멱등 키가 바뀌어, 응답만 잃은 적치가 새 키로 한 번 더 나갈 수 있다.
+  const [shelf, setShelf] = useState<Pick<
+    ReceiptLineState,
+    'lineId' | 'usualLocationId' | 'usualLocationCode' | 'canRememberUsual'
+  > | null>(null);
+  useEffect(() => {
+    const latest = receipt.state;
+    if (latest?.lineId !== target.lineId) return;
+    setShelf((prev) =>
+      prev?.lineId === latest.lineId &&
+      prev.usualLocationId === latest.usualLocationId &&
+      prev.usualLocationCode === latest.usualLocationCode &&
+      prev.canRememberUsual === latest.canRememberUsual
+        ? prev
+        : {
+            lineId: latest.lineId,
+            usualLocationId: latest.usualLocationId,
+            usualLocationCode: latest.usualLocationCode,
+            canRememberUsual: latest.canRememberUsual,
+          }
+    );
+  }, [receipt.state, target.lineId]);
+  const lineState = shelf?.lineId === target.lineId ? shelf : null;
+  const usual: LocationRef | null =
+    typeof lineState?.usualLocationId === 'string' &&
+    typeof lineState.usualLocationCode === 'string' &&
+    lineState.usualLocationId !== target.originLocationId
+      ? {
+          id: lineState.usualLocationId,
+          code: lineState.usualLocationCode,
+          isActive: true,
+          isSystem: false,
+        }
+      : null;
+  // 평소 선반이 비어 있는 상품만 묻는다 — 이미 정해진 상품은 다른 곳에 넣어도 바꾸지 않는다.
+  const canRemember = !usual && lineState?.canRememberUsual === true;
+  const [remember, setRemember] = useState(true);
   const activeIdentity = useRef('');
   activeIdentity.current = `${warehouseId}:${target.lineId}`;
   async function submitPutaway() {
@@ -114,17 +154,19 @@ function PutawaySheetContent({
         return;
       }
       if (quantity < 1 || quantity > latest.pendingQty) return;
-      await putaway.mutateAsync({
+      const result = await putaway.mutateAsync({
         lineId: target.lineId,
         toLocationId: dest.id,
         quantity,
+        // 켰을 때만 보낸다 — 이 필드를 모르는 서버가 지운 채 저장한 요청과 재시도의 지문이 갈리지 않게.
+        rememberAsUsual: canRemember && remember ? true : undefined,
         idempotencyKey,
       });
       if (
         identity === activeIdentity.current &&
         revision === intentRevision.current
       )
-        onDone(dest, quantity);
+        onDone(dest, quantity, result?.usualShelfSet === true);
     } catch (error) {
       if (identity === activeIdentity.current)
         setNotice(receiptFeedback(error, 'putaway'));
@@ -191,6 +233,14 @@ function PutawaySheetContent({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [target.lineId, warehouseId]);
 
+  // 평소 선반은 줄마다 한 번만 미리 넣는다 — 작업자가 «변경»으로 비운 뒤 다시 채우지 않는다.
+  const prefilledFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!usual || prefilledFor.current === target.lineId) return;
+    prefilledFor.current = target.lineId;
+    if (!dest && !term) setDest(usual);
+  }, [usual, dest, term, target.lineId, setDest]);
+
   // 멱등키 회전: 대상지나 수량이 바뀌면 새 키. "커밋됐는데 응답만 유실" 뒤 값을
   // 고쳐 재제출할 때 옛 payload 를 같은 키로 replay 하면 서버가 옛 결과를 돌려주고
   // 화면은 새 값이 반영된 줄 안다 — 원장과 화면이 갈린다.
@@ -198,19 +248,26 @@ function PutawaySheetContent({
     lineId: target.lineId,
     to: '',
     qty: target.pendingQty,
+    remember: canRemember && remember,
   });
   useEffect(() => {
-    const next = { lineId: target.lineId, to: dest?.id ?? '', qty: quantity };
+    const next = {
+      lineId: target.lineId,
+      to: dest?.id ?? '',
+      qty: quantity,
+      remember: canRemember && remember,
+    };
     const prev = keyPayloadRef.current;
     if (
       prev.lineId === next.lineId &&
       prev.to === next.to &&
-      prev.qty === next.qty
+      prev.qty === next.qty &&
+      prev.remember === next.remember
     )
       return;
     keyPayloadRef.current = next;
     setIdempotencyKey(crypto.randomUUID());
-  }, [target.lineId, dest, quantity]);
+  }, [target.lineId, dest, quantity, canRemember, remember]);
 
   return (
     <div
@@ -276,6 +333,9 @@ function PutawaySheetContent({
             <div className="flex items-center gap-3 rounded-lg border border-blue-500 bg-blue-50 p-3">
               <span className="flex-1 font-medium text-gray-800">
                 {dest.code}
+                {usual && dest.id === usual.id ? (
+                  <span className="ml-2 text-xs text-blue-700">평소 선반</span>
+                ) : null}
               </span>
               <button
                 type="button"
@@ -287,7 +347,17 @@ function PutawaySheetContent({
             </div>
           ) : (
             <>
+              {usual ? (
+                <button
+                  type="button"
+                  className="w-full rounded-md border border-blue-300 bg-blue-50 p-2 text-sm text-blue-700"
+                  onClick={() => setDest(usual)}
+                >
+                  평소 선반 {usual.code} 사용
+                </button>
+              ) : null}
               {lastDest &&
+              lastDest.id !== usual?.id &&
               lastDest.id !== target.originLocationId &&
               isPutawayDestination(lastDest) ? (
                 <button
@@ -343,6 +413,13 @@ function PutawaySheetContent({
               )}
             </>
           )}
+          {dest && canRemember ? (
+            <RememberUsualToggle
+              checked={remember}
+              disabled={checking || putaway.isPending}
+              onChange={setRemember}
+            />
+          ) : null}
         </section>
 
         {notice && <p role="alert">{notice}</p>}
