@@ -34,25 +34,25 @@ const allMenus: MainMenu[] = [
     id: 'company',
     title: '회사/조직',
     icon: 'Users',
-    defaultPath: '/company/my-account', // 첫 번째 페이지
+    defaultPath: '/company/attendance',
     children: [
       {
         id: 'user-management',
         title: '사용자관리',
         children: [
-          {
-            id: 'my-account',
-            title: '내 계정 정보',
-            path: '/company/my-account',
-            children: [
-              { id: 'sub-users', title: '하부사용자 관리', isComingSoon: true },
-              {
-                id: 'attendance',
-                title: '내 출퇴근',
-                path: '/company/attendance/records',
-              },
-            ],
-          },
+          // {
+          //   id: 'my-account',
+          //   title: '내 계정 정보',
+          //   path: '/company/my-account',
+          //   children: [
+          //     { id: 'sub-users', title: '하부사용자 관리', isComingSoon: true },
+          //     {
+          //       id: 'attendance',
+          //       title: '내 출퇴근',
+          //       path: '/company/attendance/records',
+          //     },
+          //   ],
+          // },
           {
             id: 'admin-accounts',
             title: '관리자·권한',
