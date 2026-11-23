@@ -559,6 +559,11 @@ export class SubscriptionCancellationService {
       }
     }
 
+    // 회사 계좌 이체는 셀메이트 지출결의서가 먼저다. PG 로 이미 나간 건(위)은 이체가 없어 결의서도 없다.
+    if (!contract.refundResolutionSubmittedAt) {
+      throw new ConflictError('셀메이트에 결의서를 먼저 올려 주세요.');
+    }
+
     const refundedAmount = params.amount ?? requested;
     if (refundedAmount <= 0) throw new BadRequestError('환불 금액이 0원입니다.');
     // 실제로 보낸 금액이 요청액과 다르면 그대로 기록한다(추정하지 않는다). 다만 요청액 초과는 막는다.
@@ -581,6 +586,10 @@ export class SubscriptionCancellationService {
     );
 
     return { contractId, refundedAmount, refundCompletedAt: new Date().toISOString() };
+  }
+
+  async setRefundResolutionSubmitted(contractId: string, adminId: string, submitted: boolean) {
+    return this.cancellationManager.setRefundResolutionSubmitted(contractId, adminId, submitted);
   }
 
   /**

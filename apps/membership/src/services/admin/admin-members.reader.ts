@@ -78,6 +78,8 @@ export interface AdminMemberListItem {
   refundCompleted: boolean;
   refundCompletedAt: string | null;
   eligibleRefundAmount: number | null;
+  refundResolutionSubmittedAt: string | null;
+  refundResolutionSubmittedBy: string | null;
   /** 환불 대상 결제가 있는지. 관리자 지급·이관 계약은 돌려줄 돈 자체가 없다. */
   hasPaymentIntent: boolean;
   /** 효성 CMS 인보이스 경로인지. 수금이 늦어 '선지급 후 출금' 상태가 존재한다. */
@@ -137,6 +139,7 @@ export interface AdminMemberDetail {
   eligibleRefundAmount: number | null;
   refundCompleted: boolean;
   refundCompletedAt: string | null;
+  refundResolutionSubmittedAt: string | null;
   /**
    * 해지 예약을 철회해 자동결제를 재개할 수 있는지. 1회 결제 계약은 되살릴 정기결제가 없어 false.
    * 화면이 `autoRenewal || recurringCancelledAt` 으로 추론하면 1회 결제 해지 건까지 철회 버튼이 열려
@@ -497,6 +500,8 @@ export class AdminMembersReader {
         refundCompleted: schema.subscriptionContracts.refundCompleted,
         refundCompletedAt: schema.subscriptionContracts.refundCompletedAt,
         eligibleRefundAmount: schema.subscriptionContracts.eligibleRefundAmount,
+        refundResolutionSubmittedAt: schema.subscriptionContracts.refundResolutionSubmittedAt,
+        refundResolutionSubmittedBy: schema.subscriptionContracts.refundResolutionSubmittedBy,
         lastPaymentIntentId: schema.subscriptionContracts.lastPaymentIntentId,
         billingPath: schema.subscriptionContracts.billingPath,
         planDurationDays: schema.plan.durationDays,
@@ -576,6 +581,8 @@ export class AdminMembersReader {
         refundCompleted: r.refundCompleted === true,
         refundCompletedAt: r.refundCompletedAt ? r.refundCompletedAt.toISOString() : null,
         eligibleRefundAmount: r.eligibleRefundAmount ?? null,
+        refundResolutionSubmittedAt: r.refundResolutionSubmittedAt ? r.refundResolutionSubmittedAt.toISOString() : null,
+        refundResolutionSubmittedBy: r.refundResolutionSubmittedBy ?? null,
         hasPaymentIntent: !!r.lastPaymentIntentId,
         billingPath: r.billingPath,
         cancellation: null as CancellationInfo | null,
@@ -681,6 +688,7 @@ export class AdminMembersReader {
         recurringCancellationReasonCode: schema.subscriptionContracts.recurringCancellationReasonCode,
         refundRequested: schema.subscriptionContracts.refundRequested,
         refundRequestedAt: schema.subscriptionContracts.refundRequestedAt,
+        refundResolutionSubmittedAt: schema.subscriptionContracts.refundResolutionSubmittedAt,
         eligibleRefundAmount: schema.subscriptionContracts.eligibleRefundAmount,
         refundCompleted: schema.subscriptionContracts.refundCompleted,
         refundCompletedAt: schema.subscriptionContracts.refundCompletedAt,
@@ -807,6 +815,7 @@ export class AdminMembersReader {
       eligibleRefundAmount: r.eligibleRefundAmount ?? null,
       refundCompleted: r.refundCompleted ?? false,
       refundCompletedAt: r.refundCompletedAt ? r.refundCompletedAt.toISOString() : null,
+      refundResolutionSubmittedAt: r.refundResolutionSubmittedAt ? r.refundResolutionSubmittedAt.toISOString() : null,
       canUndoCancellation,
       hasPaymentIntent: !!r.lastPaymentIntentId,
       manualRefundAccount,

@@ -1842,6 +1842,10 @@ describeE2E('멤버십 해지·환불 E2E', () => {
         refundReceiveAccount: { bank: '20', accountNumber: '110123456789', holderName: '홍길동' },
       });
       expect((await loadContract(contract.id)).refundCompleted).toBe(false);
+      await expect(service.markManualRefundCompleted(contract.id, 'admin_1', {})).rejects.toThrow(
+        '셀메이트에 결의서를 먼저 올려 주세요.',
+      );
+      await service.setRefundResolutionSubmitted(contract.id, 'admin_1', true);
 
       const result = await service.markManualRefundCompleted(contract.id, 'admin_1', { memo: '계좌 송금 완료' });
 
@@ -1986,6 +1990,7 @@ describeE2E('멤버십 해지·환불 E2E', () => {
         cancelType: 'IMMEDIATE_REFUND',
         refundReceiveAccount: { bank: '20', accountNumber: '110123456789', holderName: '홍길동' },
       });
+      await service.setRefundResolutionSubmitted(contract.id, 'admin_1', true);
 
       await service.markManualRefundCompleted(contract.id, 'admin_1', { memo: '계좌 송금 완료' });
 
