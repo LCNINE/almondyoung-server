@@ -168,6 +168,11 @@ export interface AdminMemberDetail {
   membershipUsageDays: number;
 }
 
+// 인보이스 경로 계약은 이 칸에 wallet 결제 ID 가 아니라 인보이스 멱등 키를 기록한다.
+export function walletIntentIdOf(key: string | null, billingPath: string): string | null {
+  return billingPath === 'INVOICE' ? null : key;
+}
+
 export interface BillingEventItem {
   id: string;
   contractId: string;
@@ -856,6 +861,7 @@ export class AdminMembersReader {
     const rows = await this.dbService.db
       .select(this.billingEventColumns())
       .from(schema.billingEvents)
+      .innerJoin(schema.subscriptionContracts, eq(schema.billingEvents.contractId, schema.subscriptionContracts.id))
       .where(eq(schema.billingEvents.contractId, contractId))
       .orderBy(desc(schema.billingEvents.createdAt));
     return rows.map((r) => this.toBillingEventItem(r));
@@ -878,6 +884,7 @@ export class AdminMembersReader {
       attemptNo: schema.billingEvents.attemptNo,
       amount: schema.billingEvents.amount,
       paymentIntentId: schema.billingEvents.paymentIntentId,
+      billingPath: schema.subscriptionContracts.billingPath,
       errorCode: schema.billingEvents.errorCode,
       errorMessage: schema.billingEvents.errorMessage,
       createdAt: schema.billingEvents.createdAt,
@@ -904,11 +911,18 @@ export class AdminMembersReader {
     attemptNo: number | null;
     amount: number | null;
     paymentIntentId: string | null;
+    billingPath: string;
     errorCode: string | null;
     errorMessage: string | null;
     createdAt: Date;
   }): BillingEventItem {
-    return { ...r, createdAt: r.createdAt.toISOString() };
+    const { billingPath, ...rest } = r;
+
+    return {
+      ...rest,
+      paymentIntentId: walletIntentIdOf(r.paymentIntentId, billingPath),
+      createdAt: r.createdAt.toISOString(),
+    };
   }
 
   private toContractEventItem(r: {
@@ -977,6 +991,7 @@ export class AdminMembersReader {
           attemptNo: schema.billingEvents.attemptNo,
           amount: schema.billingEvents.amount,
           paymentIntentId: schema.billingEvents.paymentIntentId,
+          billingPath: schema.subscriptionContracts.billingPath,
           errorCode: schema.billingEvents.errorCode,
           errorMessage: schema.billingEvents.errorMessage,
           createdAt: schema.billingEvents.createdAt,
@@ -997,7 +1012,7 @@ export class AdminMembersReader {
         eventType: r.eventType,
         attemptNo: r.attemptNo,
         amount: r.amount,
-        paymentIntentId: r.paymentIntentId,
+        paymentIntentId: walletIntentIdOf(r.paymentIntentId, r.billingPath),
         errorCode: r.errorCode,
         errorMessage: r.errorMessage,
         createdAt: r.createdAt.toISOString(),
