@@ -471,11 +471,12 @@ describeIfDb('SimpleOutboundService.scan — 피킹', () => {
     });
   });
 
-  it('이 송장에 없는 바코드는 409 로 거부한다', async () => {
+  it('이 송장에 없는 바코드는 찍은 상품 이름과 함께 409 로 거부한다', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await seedPickableShipment(tx, 2);
       await startBatchFor(tx, fixture);
       const other = await seedPickableShipment(tx, 1);
+      await tx.update(wmsTables.skus).set({ name: '잘못 집은 상품' }).where(eq(wmsTables.skus.id, other.skuId));
       const service = assembleSimpleOutbound(tx);
 
       await expect(
@@ -489,7 +490,9 @@ describeIfDb('SimpleOutboundService.scan — 피킹', () => {
           },
           tx,
         ),
-      ).rejects.toMatchObject({ response: { code: 'SIMPLE_OUTBOUND_SKU_NOT_IN_SHIPMENT' } });
+      ).rejects.toMatchObject({
+        response: { code: 'SIMPLE_OUTBOUND_SKU_NOT_IN_SHIPMENT', scannedSkuName: '잘못 집은 상품' },
+      });
     });
   });
 

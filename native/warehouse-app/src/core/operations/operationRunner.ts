@@ -37,7 +37,8 @@ export function storedRejection(op: StoredOperation) {
     op.requiredPermissions,
     undefined,
     op.path,
-    op.rejectionRecorded
+    op.rejectionRecorded,
+    op.scannedSkuName
   );
 }
 export function createOperationRunner(deps: {
@@ -210,7 +211,8 @@ export function createOperationRunner(deps: {
           failure instanceof ApiError ? failure.preparation : undefined,
           failure instanceof ApiError ? failure.requiredPermissions : undefined,
           failure instanceof ApiError ? failure.status : undefined,
-          failure instanceof ApiError && failure.rejectionRecorded
+          failure instanceof ApiError && failure.rejectionRecorded,
+          failure instanceof ApiError ? failure.scannedSkuName : undefined
         );
         const saved = (await deps.store.get(input.id))!;
         recordDiagnostic(saved);

@@ -69,6 +69,8 @@ export interface OutboundServerConfig {
   legacyBatchStates: boolean;
   /** 내 되돌림 바구니 조회를 실패시킨다(503) */
   returnBinFail: boolean;
+  /** 상자 밖 상품의 이름(바코드별) — 이 상자에 없는 상품을 찍으면 409 에 싣는다. 비어 있으면 옛 core 처럼 싣지 않는다 */
+  skuNames: Record<string, string>;
 }
 
 export function batchSummary(
@@ -105,6 +107,7 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
     batchesFail: false,
     legacyBatchStates: false,
     returnBinFail: false,
+    skuNames: {},
   };
   /** 내 되돌림 바구니 — 상자에서 꺼낸 상품이 쌓인다 */
   const returnBin: Array<{ skuId: string; skuCode: string; skuName: string; sourceLocationId: string; locationCode: string; qty: number }> = [];
@@ -240,7 +243,16 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
     if (!applied.has(key)) {
       const box = byId(shipmentId);
       const line = box.lines.find((l) => l.barcode === body.barcode);
-      if (!line) throw new ConflictError('not in shipment', 'SIMPLE_OUTBOUND_SKU_NOT_IN_SHIPMENT');
+      if (!line)
+        throw new ConflictError(
+          'not in shipment',
+          'SIMPLE_OUTBOUND_SKU_NOT_IN_SHIPMENT',
+          undefined,
+          undefined,
+          o.path,
+          false,
+          config.skuNames[body.barcode]
+        );
       if (pickedOf(box, line.id) + body.quantity > line.qty) throw new ConflictError('overscan', 'SIMPLE_OUTBOUND_OVERSCAN');
       box.picked.set(line.id, pickedOf(box, line.id) + body.quantity);
       box.workItemStatus = 'picking';

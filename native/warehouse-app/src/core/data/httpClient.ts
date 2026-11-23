@@ -97,6 +97,8 @@ export class ApiError extends Error {
   readonly notApplied: boolean;
   /** 출고 저장 경로가 이 거절을 관리자 화면에 남겼다. */
   readonly rejectionRecorded: boolean;
+  /** 출고 저장 경로가 «이 상자에 없는 상품» 으로 거절하며 알려 준 찍은 상품 이름. */
+  readonly scannedSkuName?: string;
   constructor(
     message: string,
     status: number,
@@ -106,11 +108,13 @@ export class ApiError extends Error {
     requiredPermissions?: readonly string[],
     serverMessage?: string,
     path?: string,
-    rejectionRecorded?: boolean
+    rejectionRecorded?: boolean,
+    scannedSkuName?: string
   ) {
     super(message);
     this.notApplied = isSavePointRejection(status, code, path);
     this.rejectionRecorded = this.notApplied && rejectionRecorded === true;
+    if (this.notApplied && scannedSkuName) this.scannedSkuName = scannedSkuName;
     this.status = status;
     if (serverMessage) this.serverMessage = serverMessage;
     this.errors = errors;
@@ -199,7 +203,8 @@ export class ConflictError extends ApiError {
     preparation?: PreparationRejection,
     errors?: unknown,
     path?: string,
-    rejectionRecorded?: boolean
+    rejectionRecorded?: boolean,
+    scannedSkuName?: string
   ) {
     super(
       message,
@@ -210,7 +215,8 @@ export class ConflictError extends ApiError {
       undefined,
       undefined,
       path,
-      rejectionRecorded
+      rejectionRecorded,
+      scannedSkuName
     );
   }
 }
@@ -299,6 +305,7 @@ export function createApiClient(deps: {
           details?: unknown;
           errors?: unknown;
           rejectionRecorded?: unknown;
+          scannedSkuName?: unknown;
         };
         throw new ConflictError(
           body.message ?? 'version conflict',
@@ -306,7 +313,10 @@ export function createApiClient(deps: {
           parsePreparationRejection(body.details),
           body.errors,
           o.path,
-          body.rejectionRecorded === true
+          body.rejectionRecorded === true,
+          typeof body.scannedSkuName === 'string'
+            ? body.scannedSkuName
+            : undefined
         );
       }
       if (!res.ok) {

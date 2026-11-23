@@ -30,16 +30,23 @@ export class ScanWaitingError extends Error {
 /** 내려놓기·전환 전 정리 결과 — `checking` 이면 결과 모름이 남아 확인할 일로 넘어갔다 */
 export type SettleOutcome = 'settled' | 'checking';
 
+/** 서버가 반영한 상품 스캔 하나 */
+export interface AcceptedScan {
+  shipmentLineId: string | null;
+  quantity: number;
+  barcode: string;
+}
+
 export interface InspectionBoxEvents {
   /**
    * 서버가 반영한 스캔 — 오른 줄과 수량, 찍은 바코드. 다시 연 박스의 저장된 스캔은 조회한 진행에 이미 들어 있어 오른 줄을 못 찾는다(null) —
    * 그때는 바코드로 상품을 알아본다
    */
   onAccepted(shipmentLineId: string | null, quantity: number, barcode: string): void;
-  /** 마지막 스캔(또는 강제출고)으로 출고됐다 */
-  onShipped(): void;
-  /** 서버가 거절했거나 결과를 모른다 — 화면이 오류로 알린다 */
-  onRejected(message: string, barcode: string | null): void;
+  /** 마지막 스캔(또는 강제출고 — 그때는 null)으로 출고됐다. 상자를 끝낸 스캔도 기록에 남게 함께 넘긴다 */
+  onShipped(final: AcceptedScan | null): void;
+  /** 서버가 거절했거나 결과를 모른다 — 화면이 오류로 알린다. 이 상자에 없는 상품이면 서버가 알려 준 그 상품 이름도 */
+  onRejected(message: string, barcode: string | null, scannedName?: string): void;
   /** 그 사이 박스가 배치에서 빠져 서버가 상품을 받지 않았다 — 화면이 뺄 상품으로 넘어간다 */
   onWithdrawn(barcode: string): void;
   /** 출고 뒤에 줄 서 있던 스캔 — 보내지 않았다 */
@@ -63,13 +70,13 @@ export function useInspectionBox(box: ShipmentByWaybill, events: InspectionBoxEv
   const shipped = useRef(false);
 
   /** 서버 응답을 그린다. 출고됐으면 알리고 true */
-  const apply = (state: SimpleOutboundState): boolean => {
+  const apply = (state: SimpleOutboundState, final: AcceptedScan | null = null): boolean => {
     progressRef.current = state.lines;
     setProgress(state.lines);
     setWorkItemStatus(state.workItemStatus);
     if (state.status !== 'shipped') return false;
     shipped.current = true;
-    eventsRef.current.onShipped();
+    eventsRef.current.onShipped(final);
     return true;
   };
 
@@ -84,7 +91,8 @@ export function useInspectionBox(box: ShipmentByWaybill, events: InspectionBoxEv
       if (queue.detached()) return;
       const line = scannedLineOf(progressRef.current, state.lines);
       if (line) setLastScan({ barcode: input.barcode, shipmentLineId: line });
-      if (!apply(state)) eventsRef.current.onAccepted(line, input.quantity, input.barcode);
+      const accepted = { shipmentLineId: line, quantity: input.quantity, barcode: input.barcode };
+      if (!apply(state, accepted)) eventsRef.current.onAccepted(line, input.quantity, input.barcode);
     } catch (error) {
       const rejected = error instanceof ApiError && error.outcome === 'rejected';
       if (queue.detached()) {
@@ -93,7 +101,12 @@ export function useInspectionBox(box: ShipmentByWaybill, events: InspectionBoxEv
       }
 
       if (rejected && error.code === 'SHIPMENT_WITHDRAWN') eventsRef.current.onWithdrawn(input.barcode);
-      else eventsRef.current.onRejected(rejected ? errorMessage(error, 'outbound') : UNCERTAIN_SCAN_MESSAGE, input.barcode);
+      else
+        eventsRef.current.onRejected(
+          rejected ? errorMessage(error, 'outbound') : UNCERTAIN_SCAN_MESSAGE,
+          input.barcode,
+          rejected ? error.scannedSkuName : undefined
+        );
       // 확정된 거절만 큐에서 뺀다 — 결과를 모르는 스캔은 머리에 남겨 같은 키로 다시 맞춘다
       if (!rejected) throw error;
     }
