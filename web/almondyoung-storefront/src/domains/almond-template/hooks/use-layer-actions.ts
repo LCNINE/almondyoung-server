@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { PRINT_PRODUCTS, PRINT_SPECS } from "../lib/catalog"
 import { newDesign, type Design, type Layer } from "../lib/document"
 import {
@@ -23,6 +23,17 @@ const TEXT_SHAPE_KEYS = new Set([
   "widthScale",
 ])
 import type { EditorMode } from "./use-template-storage"
+
+// 복사해 둔 레이어를 다른 탭의 편집기에서도 붙여 넣을 수 있게 브라우저 저장소에 둔다
+const COPIED_KEY = "almond-template:copied"
+
+const readCopied = (): Layer[] => {
+  try {
+    return JSON.parse(localStorage.getItem(COPIED_KEY) ?? "[]")
+  } catch {
+    return []
+  }
+}
 
 type Params = {
   design: Design
@@ -53,7 +64,32 @@ export function useLayerActions({
   group,
   setGroupIds,
 }: Params) {
-  const [copied, setCopied] = useState<Layer[]>([])
+  const [copied, setCopiedState] = useState<Layer[]>([])
+
+  useEffect(() => {
+    setCopiedState(readCopied())
+    const sync = (event: StorageEvent) => {
+      if (event.key === COPIED_KEY) setCopiedState(readCopied())
+    }
+    window.addEventListener("storage", sync)
+
+    return () => window.removeEventListener("storage", sync)
+  }, [])
+
+  const setCopied = (items: Layer[]) => {
+    setCopiedState(items)
+    try {
+      localStorage.setItem(COPIED_KEY, JSON.stringify(items))
+    } catch {
+      // 저장 전 큰 사진은 저장소 한도를 넘는다. 다른 탭에 옛 복사본이 붙지 않게 비운다
+      try {
+        localStorage.removeItem(COPIED_KEY)
+      } catch {}
+      setMessage(
+        "사진이 커서 이 탭에서만 붙여 넣을 수 있어요. 시안을 저장한 뒤 복사하면 다른 탭에도 붙여 넣을 수 있어요."
+      )
+    }
+  }
 
   const fitText = (layer: Layer): Layer =>
     layer.type === "text"
