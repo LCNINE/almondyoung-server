@@ -127,9 +127,19 @@ export class PreparationBatchReturnDto {
   needsNewWaybill: boolean;
 }
 
+// 받는 분. 접속기록이 이 칸을 받은 상자만 대상으로 남기게 상자 id 를 함께 싣는다
+export class PreparationRecipientDto {
+  shipmentId: string;
+  name: string;
+}
+
 export class PreparationShipmentDto {
   shipmentId: string;
   orderNos: string[];
+  // 상자에 든 주문 중 가장 이른 주문일. 판매 주문이 없는 상자(위탁 출고 등)는 null
+  orderedAt: string | null;
+  // 완전출고 상자만
+  recipient?: PreparationRecipientDto;
   itemSummary: string;
   totalQty: number;
   single: boolean;

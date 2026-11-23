@@ -431,6 +431,71 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
     });
   });
 
+  it('분류 안에서 오래된 주문부터 놓고 주문일을 싣고, 받는 분은 완전출고 상자에만 싣는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const base = await consolidationBase(tx);
+      const source = (quantity = 1) => createConsolidationSource(tx, wired, base, { quantity, customerId: randomUUID() });
+      const newest = await source();
+      const middle = await source();
+      const oldest = await source();
+      const joined = await source();
+      const partial = await source(3);
+      const at = (day: number) => new Date(Date.UTC(2026, 0, day, 3));
+      const orderDates: [typeof newest, Date][] = [
+        [newest, at(5)],
+        [middle, at(3)],
+        [oldest, at(2)],
+        [joined, at(1)],
+        [partial, at(4)],
+      ];
+
+      for (const [fixture, date] of orderDates) {
+        await tx
+          .update(wmsTables.salesOrders)
+          .set({ orderDate: date })
+          .where(eq(wmsTables.salesOrders.id, fixture.salesOrderId));
+      }
+
+      // 더 오래된 주문 줄을 가장 최근 상자에 합친다 — 상자의 주문일은 든 주문 중 가장 이른 날이다
+      await tx
+        .update(wmsTables.shipmentLines)
+        .set({ shipmentId: newest.shipment.id })
+        .where(eq(wmsTables.shipmentLines.id, joined.line.id));
+      await tx
+        .update(wmsTables.shipments)
+        .set({ status: 'canceled' })
+        .where(eq(wmsTables.shipments.id, joined.shipment.id));
+      await tx
+        .update(wmsTables.stockReservations)
+        .set({ quantity: 1 })
+        .where(eq(wmsTables.stockReservations.targetId, partial.line.id));
+
+      const summary = await reader.summarize(base.warehouseId, undefined, tx);
+      const ready = summary.buckets.find(({ bucket }) => bucket === 'ready')?.shipments ?? [];
+      const partialRows = summary.buckets.find(({ bucket }) => bucket === 'partial')?.shipments ?? [];
+
+      expect(ready.map(({ shipmentId }) => shipmentId)).toEqual([
+        newest.shipment.id,
+        oldest.shipment.id,
+        middle.shipment.id,
+      ]);
+      expect(ready.map(({ orderedAt }) => orderedAt)).toEqual([
+        at(1).toISOString(),
+        at(2).toISOString(),
+        at(3).toISOString(),
+      ]);
+      expect(ready.map(({ shipmentId, recipient }) => recipient?.shipmentId === shipmentId)).toEqual([
+        true,
+        true,
+        true,
+      ]);
+      expect(ready[0].recipient?.name).toBe(CONSOLIDATION_RECIPIENT.recipientName);
+      expect(partialRows).toHaveLength(1);
+      expect(partialRows[0]).toMatchObject({ shipmentId: partial.shipment.id, orderedAt: at(4).toISOString() });
+      expect(partialRows[0]).not.toHaveProperty('recipient');
+    });
+  });
+
   it('버킷 전체 건수를 유지하면서 생성 순으로 최대 200개만 반환한다', async () => {
     await inRollbackTx(db, async (tx) => {
       const base = await consolidationBase(tx);

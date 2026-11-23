@@ -1122,6 +1122,10 @@ export interface NeedsInfoSku {
 export interface PreparationShipmentDto {
   shipmentId: string;
   orderNos: string[];
+  // 상자에 든 주문 중 가장 이른 주문일. 판매 주문이 없는 상자는 null, 옛 core 응답엔 없다
+  orderedAt?: string | null;
+  // 완전출고 상자만. 받는 분 정보 권한이 없으면 가린 이름이 온다
+  recipient?: { shipmentId: string; name: string };
   itemSummary: string;
   totalQty: number;
   single: boolean;

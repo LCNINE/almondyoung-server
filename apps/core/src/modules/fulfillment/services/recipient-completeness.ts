@@ -17,3 +17,9 @@ export function missingRecipientFields(snapshot: unknown): string[] {
 export function isRecipientComplete(snapshot: unknown): boolean {
   return missingRecipientFields(snapshot).length === 0;
 }
+
+export function recipientNameOf(snapshot: unknown): string | null {
+  const name = isRecord(snapshot) ? snapshot.recipientName : undefined;
+
+  return typeof name === 'string' && name.trim() ? name.trim() : null;
+}

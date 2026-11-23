@@ -9,7 +9,7 @@ import {
   OptionLine,
   uniqueInOrder,
 } from '../services/consolidation-shipment-reads';
-import { isRecipientComplete } from '../services/recipient-completeness';
+import { isRecipientComplete, recipientNameOf } from '../services/recipient-completeness';
 import {
   classifyPreparation,
   isSingleItem,
@@ -32,6 +32,30 @@ import {
 } from '../dto/outbound-preparation.dto';
 
 type PreparationLineQuantity = PreparationFacts['lines'][number] & { name: string; skuId: string };
+
+// 상자에 든 주문 중 가장 이른 주문일
+function earliestOrderDates(lines: readonly OptionLine[]): Map<string, Date> {
+  const earliest = new Map<string, Date>();
+
+  for (const line of lines) {
+    const at = line.salesOrderCreatedAt;
+    const current = earliest.get(line.shipmentId);
+
+    if (at && (!current || at < current)) {
+      earliest.set(line.shipmentId, at);
+    }
+  }
+
+  return earliest;
+}
+
+// 주문일이 없는 상자는 뒤로
+function compareOrderedAt(a: Date | undefined, b: Date | undefined): number {
+  if (a && b) return a.getTime() - b.getTime();
+  if (a) return -1;
+  if (b) return 1;
+  return 0;
+}
 
 // 분류마다 한 번에 돌려주는 상자 수. 나머지는 화면이 `bucket`·`offset` 으로 더 부른다.
 const BUCKET_PAGE_SIZE = 200;
@@ -92,15 +116,18 @@ export class OutboundPreparationReader {
       const returned = await loadReturnedWorkItems(trx, ids);
       const shortPicks = await loadShortPickReturns(trx, returned);
       const newWaybills = await loadNeedsNewWaybill(trx, [...returned.keys()]);
-      // 분류마다 결품으로 돌아온 상자, 배치에서 빠져 돌아온 상자 순으로 앞에 모은다 — 쪽 나누기 전에 정렬해야 다음 쪽에 묻히지 않는다
-      const rank = (id: string) => (shortPicks.has(id) ? 0 : returned.has(id) ? 1 : 2);
-      const shipments = [0, 1, 2].flatMap((order) => kept.filter((shipment) => rank(shipment.id) === order));
-
       if (ids.length === 0) {
         return { warehouseId, buckets, awaitingMatchingCount: backlog.count, holders: [] };
       }
 
       const lines = await loadShipmentLines(trx, ids);
+      const orderedAt = earliestOrderDates(lines);
+      // 분류마다 결품으로 돌아온 상자, 배치에서 빠져 돌아온 상자 순으로 앞에 모으고, 그 안에서는 오래된 주문부터 —
+      // 쪽 나누기 전에 정렬해야 다음 쪽에 묻히지 않는다. 주문일이 없거나 같으면 상자를 만든 순서 그대로다
+      const rank = (id: string) => (shortPicks.has(id) ? 0 : returned.has(id) ? 1 : 2);
+      const shipments = [...kept].sort(
+        (a, b) => rank(a.id) - rank(b.id) || compareOrderedAt(orderedAt.get(a.id), orderedAt.get(b.id)),
+      );
       const quantitiesByShipment = await this.lineQuantities(ids, trx);
       const splits = await loadSplitShares(trx, ids);
       const workItems = await trx
@@ -195,9 +222,13 @@ export class OutboundPreparationReader {
 
         const names = shipmentLines.map((line) => line.skuName);
 
+        const recipientName = bucketName === 'ready' ? recipientNameOf(shipment.recipientSnapshot) : null;
+
         bucket.shipments.push({
           shipmentId: shipment.id,
           orderNos: uniqueInOrder(shipmentLines.flatMap((line) => line.displayOrderNo ?? line.channelOrderId ?? [])),
+          orderedAt: orderedAt.get(shipment.id)?.toISOString() ?? null,
+          ...(recipientName && { recipient: { shipmentId: shipment.id, name: recipientName } }),
           itemSummary: names.length > 1 ? `${names[0]} 외 ${names.length - 1}건` : (names[0] ?? ''),
           totalQty: shipmentLines.reduce((total, line) => total + line.qty, 0),
           single,

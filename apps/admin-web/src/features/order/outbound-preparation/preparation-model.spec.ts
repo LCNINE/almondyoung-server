@@ -2,6 +2,7 @@ import type { PreparationShipmentDto } from '@/lib/types/dto/fulfillment';
 import {
   batchReturnNextStep,
   locatePreparationTarget,
+  orderAgeOf,
   plannedOrderText,
   preparationAddress,
   preparationTargetNotice,
@@ -193,4 +194,26 @@ describe('showsShipmentDetailLink', () => {
       ).toBe(expected);
     }
   );
+});
+
+describe('orderAgeOf', () => {
+  const now = new Date('2026-01-10T12:00:00Z');
+
+  it('하루를 넘긴 주문만 오래 기다림으로 보고, 1분이 안 된 주문은 방금이라고 쓴다', () => {
+    expect(orderAgeOf('2026-01-09T12:00:00Z', now)).toMatchObject({
+      dateText: '1월 9일 21:00',
+      waitText: '1일 지남',
+      long: false,
+    });
+    expect(orderAgeOf('2026-01-09T11:59:00Z', now)).toMatchObject({
+      long: true,
+    });
+    expect(orderAgeOf('2026-01-10T11:59:30Z', now)?.waitText).toBe('방금');
+  });
+
+  it('주문일이 없거나 읽을 수 없으면 null', () => {
+    expect(orderAgeOf(null, now)).toBeNull();
+    expect(orderAgeOf(undefined, now)).toBeNull();
+    expect(orderAgeOf('not-a-date', now)).toBeNull();
+  });
 });
