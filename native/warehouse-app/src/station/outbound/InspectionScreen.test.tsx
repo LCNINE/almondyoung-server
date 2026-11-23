@@ -367,6 +367,76 @@ describe('F1 출고 검수 — 송장 스캔 즉시 시작, 상품 스캔 = +1, 
     expect(progress()).toHaveTextContent('0 / 4');
   });
 
+  it('새 송장 화면에서 송장이 아닌 바코드를 찍으면 새 송장을 먼저 찍으라고 하고 새 송장 안내는 그대로 둔다', async () => {
+    await setupInspection({ boxes: [{ ...BOX1, labelState: 'reprint_required' }] });
+    scan('421033881907');
+    expect(await screen.findByText('새 송장 출력됨')).toBeInTheDocument();
+    scan('8801002');
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('새 송장을 먼저 찍어 주세요');
+    expect(alert).toHaveTextContent('8801002');
+    expect(alert).not.toHaveTextContent('운송장을 찾을 수 없어요');
+    expect(screen.getByText('새 송장 출력됨')).toBeInTheDocument();
+    expect(screen.getByText('옛 송장은 버리고 새 송장을 찍으세요')).toBeInTheDocument();
+    expect(flash()).toBe('error');
+    await openBox('421033881907');
+    expect(progress()).toHaveTextContent('0 / 4');
+  });
+
+  it('송장과 길이가 같은 상품 바코드도 이 상자의 상품이면 새 송장을 먼저 찍으라고 한다', async () => {
+    const lines = BOX1.lines.map((line, index) => (index === 0 ? { ...line, barcode: '880100200001' } : line));
+    await setupInspection({ boxes: [{ ...BOX1, lines, labelState: 'reprint_required' }] });
+    scan('421033881907');
+    expect(await screen.findByText('새 송장 출력됨')).toBeInTheDocument();
+    scan('880100200001');
+    expect(await screen.findByRole('alert')).toHaveTextContent('새 송장을 먼저 찍어 주세요');
+    expect(screen.getByText('새 송장 출력됨')).toBeInTheDocument();
+  });
+
+  it('새 송장 출력이 실패했으면 상품을 찍어도 새 송장을 찍으라고 하지 않는다 — 찍을 새 송장이 없다', async () => {
+    await setupInspection({
+      boxes: [{ ...BOX1, labelState: 'reprint_required' }],
+      print: async () => {
+        throw new Error('offline');
+      },
+    });
+    scan('421033881907');
+    expect(await screen.findByRole('button', { name: /다시 출력/ })).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText('새 송장 출력 중')).toBeNull());
+    scan('8801002');
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('이 운송장을 찾을 수 없어요'));
+    expect(screen.queryByText('새 송장을 먼저 찍어 주세요.')).toBeNull();
+  });
+
+  it('새 송장을 다시 출력하면 지난 «새 송장을 먼저» 줄은 지운다 — 다시 출력이 실패해도 남기지 않는다', async () => {
+    let fail = false;
+    await setupInspection({
+      boxes: [{ ...BOX1, labelState: 'reprint_required' }],
+      print: async () => {
+        if (fail) throw new Error('offline');
+      },
+    });
+    scan('421033881907');
+    expect(await screen.findByText('새 송장 출력됨')).toBeInTheDocument();
+    scan('8801002');
+    expect(await screen.findByText('새 송장을 먼저 찍어 주세요.')).toBeInTheDocument();
+    fail = true;
+    press('F12');
+    // 다시 출력 실패는 큰 칸의 빨간 사유로 바뀐다 — 그 자리에 지난 거절 줄이 함께 남지 않는다
+    await waitFor(() => expect(screen.queryByText('새 송장 출력됨')).toBeNull());
+    await waitFor(() => expect(screen.queryByText('새 송장 출력 중')).toBeNull());
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+    expect(screen.queryByText('새 송장을 먼저 찍어 주세요.')).toBeNull();
+  });
+
+  it('새 송장 화면에서 송장처럼 생겼는데 없는 번호는 지금처럼 운송장을 찾을 수 없다고 한다', async () => {
+    await setupInspection({ boxes: [{ ...BOX1, labelState: 'reprint_required' }] });
+    scan('421033881907');
+    expect(await screen.findByText('새 송장 출력됨')).toBeInTheDocument();
+    scan('421099999999');
+    expect(await screen.findByRole('alert')).toHaveTextContent('이 운송장을 찾을 수 없어요');
+  });
+
   it('프린터가 없으면 새 송장 대신 «프린터 있는 자리» 로 거절한다', async () => {
     await setupInspection({ boxes: [{ ...BOX1, labelState: 'never_printed' }], prefs: stationPrefs({}, false) });
     scan('421033881907');

@@ -33,6 +33,7 @@ import { fetchBatchLabelStates, type BatchWorkItem } from '../../domains/outboun
 import { WarehousePicker } from '../../domains/warehouse/WarehousePicker';
 import { useBatchProgress } from '../status/batchProgress';
 
+const SECONDARY = 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-50';
 const TH = 'border-b border-[#D5D8DE] bg-[#F6F7F8] px-4 py-2.5 text-left text-[13px] font-semibold text-[#535968]';
 
 /** 스테이션 F2 배치 현황(스펙 §8, 목업 ⑤) — 관리자 작업, 마우스 허용. 시작·일괄 인쇄·넣기·빼기는 지금 부품 그대로 쓴다 */
@@ -103,16 +104,17 @@ function BatchStatus({ warehouseId, prefs, print }: { warehouseId: string; prefs
                   batchId={selected.id}
                   prefs={prefs}
                   print={print}
+                  afterPrinted="이제 F1 «출고 검수»에서 송장을 찍으세요."
                   onRunningChange={(running) => {
                     if (running)
                       writeLastBatch(prefs, { id: selected.id, batchNumber: selected.batchNumber, name: batchNameOf(selected) });
                     setPrinting(running);
                   }}
                 />
-                <Button type="button" className="mt-2" onClick={() => setPanel(panel === 'join' ? null : 'join')}>
+                <Button type="button" className={cn('mt-2', SECONDARY)} onClick={() => setPanel(panel === 'join' ? null : 'join')}>
                   박스 넣기
                 </Button>
-                <Button type="button" className="mt-2" onClick={() => setPanel(panel === 'remove' ? null : 'remove')}>
+                <Button type="button" className={cn('mt-2', SECONDARY)} onClick={() => setPanel(panel === 'remove' ? null : 'remove')}>
                   박스 빼기
                 </Button>
               </>
