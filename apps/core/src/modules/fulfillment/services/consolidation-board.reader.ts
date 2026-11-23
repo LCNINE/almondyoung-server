@@ -4,6 +4,7 @@ import { DbService, InjectTypedDb } from '@app/db';
 import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import {
+  ConsolidationBoardCountDto,
   ConsolidationBoardGroupDto,
   ConsolidationBoardResponseDto,
   ConsolidationBoardShipmentDto,
@@ -159,5 +160,12 @@ export class ConsolidationBoardReader {
 
       return { groups: assembleConsolidationBoard(shipments, lines, progress, inHouseProfileIds) };
     }, tx);
+  }
+
+  // 묶음은 보드와 같은 판정으로 세고, 받는 분은 싣지 않는다
+  async countGroups(warehouseId: string, tx?: DbTx): Promise<ConsolidationBoardCountDto> {
+    const board = await this.findBoard(warehouseId, tx);
+
+    return { groupCount: board.groups.length };
   }
 }

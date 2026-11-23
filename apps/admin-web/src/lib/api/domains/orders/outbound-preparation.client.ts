@@ -6,6 +6,7 @@ import type { IdempotentCommand } from '@/lib/services/orders/idempotency';
 import type {
   BulkShipmentResult,
   PreparationWaybillResult,
+  OutboundPreparationCounts,
   OutboundPreparationSummary,
   PreparationBucket,
 } from '@/lib/types/dto/fulfillment';
@@ -25,6 +26,12 @@ export const outboundPreparationClient = {
         ...(holders.length > 0 && { holders: holders.join(',') }),
       },
     });
+
+    return res.data;
+  },
+
+  counts: async (warehouseId: string): Promise<OutboundPreparationCounts> => {
+    const res = await client.get(`${BASE}/counts`, { params: { warehouseId } });
 
     return res.data;
   },

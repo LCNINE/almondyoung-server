@@ -13,6 +13,8 @@ import {
 import { OPEN_WITH_RECIPIENT, PiiResponse, RequirePermission, User } from '@app/authorization';
 import {
   BulkShipmentIdsDto,
+  OutboundPreparationCountsDto,
+  OutboundPreparationCountsQueryDto,
   OutboundPreparationQueryDto,
   OutboundPreparationSummaryDto,
 } from '../dto/outbound-preparation.dto';
@@ -39,6 +41,13 @@ export class OutboundPreparationController {
       offset: query.offset,
       holders: query.holders,
     });
+  }
+
+  // 수령인을 담지 않으므로 PII 선언이 없다
+  @RequirePermission('fulfillment.shipment.read')
+  @Get('outbound-preparation/counts')
+  countBuckets(@Query() query: OutboundPreparationCountsQueryDto): Promise<OutboundPreparationCountsDto> {
+    return this.service.countBuckets(query.warehouseId);
   }
 
   @RequirePermission('fulfillment.warehouse.operate')

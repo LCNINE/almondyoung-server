@@ -164,6 +164,13 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
         ['needs_info', 1],
       ]);
       expect(summary.awaitingMatchingCount - before.count).toBe(2);
+
+      const counts = await reader.countBuckets(base.warehouseId, tx);
+
+      expect(counts).toEqual({
+        warehouseId: base.warehouseId,
+        buckets: summary.buckets.map(({ bucket, count }) => ({ bucket, count })),
+      });
       expect(summary.buckets.find(({ bucket }) => bucket === 'needs_info')?.shipments[0].reason).toBe(
         '배송 프로필이 상품마다 달라요',
       );

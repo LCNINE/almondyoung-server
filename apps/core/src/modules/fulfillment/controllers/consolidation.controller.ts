@@ -12,6 +12,7 @@ import {
 import { User, RequirePermission, PiiResponse, OPEN_WITH_RECIPIENT } from '@app/authorization';
 import {
   ConsolidationActor,
+  ConsolidationBoardCountDto,
   ConsolidationBoardQueryDto,
   ConsolidationBoardResponseDto,
   ConsolidationCandidateQueryDto,
@@ -138,6 +139,13 @@ export class ConsolidationController {
   @Get('consolidation-board')
   findBoard(@Query() query: ConsolidationBoardQueryDto): Promise<ConsolidationBoardResponseDto> {
     return this.options.findBoard(query.warehouseId);
+  }
+
+  // 수령인을 담지 않으므로 PII 선언이 없다
+  @RequirePermission('fulfillment.shipment.read')
+  @Get('consolidation-board/count')
+  countBoardGroups(@Query() query: ConsolidationBoardQueryDto): Promise<ConsolidationBoardCountDto> {
+    return this.options.countBoardGroups(query.warehouseId);
   }
 
   // 수령인을 담지 않으므로 PII 선언이 없다
