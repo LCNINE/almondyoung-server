@@ -403,10 +403,12 @@ export class SimpleOutboundService {
         asc(wmsTables.pickingSourceAllocations.sourceLocationId),
       );
     if (allocations.length === 0) {
-      throw this.conflict(
-        source ? 'LOCATION_OUTBOUND_SOURCE_MISMATCH' : 'SIMPLE_OUTBOUND_SKU_NOT_IN_SHIPMENT',
-        'No allocation for the scanned SKU at the selected source',
-      );
+      if (source)
+        throw this.conflict(
+          'LOCATION_OUTBOUND_SOURCE_MISMATCH',
+          'No allocation for the scanned SKU at the selected source',
+        );
+      throw await this.notInShipment(skuId, tx);
     }
 
     // Location-aware requests must fail before any picking.scan call, with no fallback.
@@ -719,5 +721,21 @@ export class SimpleOutboundService {
   // 먼저 변경했어요" 하나로만 본다 — SKU_NOT_IN_SHIPMENT·OVERSCAN·CLAIMED_BY_OTHER 가 다 같은 문구가 된다.
   private conflict(code: string, message: string): ConflictException {
     return new ConflictException({ code, error: code, message });
+  }
+
+  /** 이 상자에 없는 상품 — 작업자가 무엇을 잘못 집었는지 알 수 있게 찍은 상품의 이름을 함께 싣는다 */
+  private async notInShipment(skuId: string, tx: DbTx): Promise<ConflictException> {
+    const code = 'SIMPLE_OUTBOUND_SKU_NOT_IN_SHIPMENT';
+    const [sku] = await tx
+      .select({ name: wmsTables.skus.name })
+      .from(wmsTables.skus)
+      .where(eq(wmsTables.skus.id, skuId))
+      .limit(1);
+    return new ConflictException({
+      code,
+      error: code,
+      message: 'No allocation for the scanned SKU at the selected source',
+      ...(sku?.name ? { scannedSkuName: sku.name } : {}),
+    });
   }
 }

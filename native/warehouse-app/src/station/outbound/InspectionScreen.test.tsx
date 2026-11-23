@@ -57,6 +57,65 @@ describe('F1 출고 검수 — 송장 스캔 즉시 시작, 상품 스캔 = +1, 
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
+  it('박스에 없는 상품은 서버가 알려 준 상품 이름을 바코드와 함께 보이고 최근 스캔에도 남긴다', async () => {
+    const { server } = await setupInspection();
+    server.config.skuNames['8801003'] = '샴푸 퍼퓸';
+    await openBox('421033881907');
+    scan('8801003');
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('이 송장에 없는 상품이에요');
+    expect(alert).toHaveTextContent('샴푸 퍼퓸');
+    expect(alert).toHaveTextContent('8801003');
+    const recent = within(screen.getByRole('list', { name: '최근 스캔' }));
+    expect(recent.getAllByRole('listitem')[0]).toHaveTextContent('샴푸 퍼퓸 8801003');
+  });
+
+  it('상자를 끝낸 마지막 스캔도 최근 스캔에 남긴다', async () => {
+    await setupInspection();
+    await openBox('421033881915');
+    scan('8801003');
+    expect(await screen.findByText('출고 완료')).toBeInTheDocument();
+    const items = within(screen.getByRole('list', { name: '최근 스캔' })).getAllByRole('listitem');
+    expect(items[0]).toHaveTextContent('4210-3388-1915 출고 완료');
+    expect(items[1]).toHaveTextContent('샴푸 퍼퓸+1');
+  });
+
+  it('송장 대기에 지금 배치와 남은 상자를 크게 보이고, 출고하면 줄인다', async () => {
+    await setupInspection({
+      picking: [batchSummary({ id: 'b-1', batchNumber: 'OB-1002' })],
+      prefs: stationPrefs({ 'almondwms.outbound.lastBatch': JSON.stringify({ id: 'b-1', batchNumber: 'OB-1002', name: '오전' }) }),
+    });
+    const now = await screen.findByRole('status', { name: '지금 배치' });
+    expect(now).toHaveTextContent('오전OB-1002');
+    expect(now).toHaveTextContent('남은 상자 2 / 2');
+    await openBox('421033881915');
+    scan('8801003');
+    expect(await screen.findByText('출고 완료')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('status', { name: '지금 배치' })).toHaveTextContent('남은 상자 1 / 2'));
+  });
+
+  it('하던 박스를 다시 열지 못하면 그 박스의 배치가 아니라 배치 현황이 남긴 배치를 보인다', async () => {
+    await setupInspection({
+      boxes: [BOX1, { ...BOX2, batchId: 'b-9', shipped: true }],
+      prefs: stationPrefs({
+        'almondwms.outbound.lastBox': JSON.stringify({ shipmentId: 's-2', trackingNo: '421033881915', batchId: 'b-9' }),
+        'almondwms.outbound.lastBatch': JSON.stringify({ id: 'b-1', batchNumber: 'OB-1002', name: null }),
+      }),
+    });
+    const now = await screen.findByRole('status', { name: '지금 배치' });
+    expect(now).toHaveTextContent('OB-1002');
+    expect(now).toHaveTextContent('남은 상자 1 / 1');
+  });
+
+  it('시작만 하고 아직 아무 상자도 찍지 않은 배치도 배치 현황이 남긴 번호로 보인다', async () => {
+    await setupInspection({
+      prefs: stationPrefs({ 'almondwms.outbound.lastBatch': JSON.stringify({ id: 'b-1', batchNumber: 'OB-1002', name: null }) }),
+    });
+    const now = await screen.findByRole('status', { name: '지금 배치' });
+    expect(now).toHaveTextContent('OB-1002');
+    expect(now).toHaveTextContent('남은 상자 2 / 2');
+  });
+
   it('같은 송장을 다시 찍으면 다시 조회만 한다 — 서버에 쓰지 않고, 방금 보낸 스캔까지 보인다', async () => {
     const { server } = await setupInspection();
     await openBox('421033881907');

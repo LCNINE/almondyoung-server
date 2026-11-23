@@ -47,8 +47,8 @@ const QUANTITY_HINTS: readonly KeyHint[] = [{ keys: '0-9', label: '수량' }];
 const EDITING_HINTS: readonly KeyHint[] = [...QUANTITY_HINTS, { keys: '⌫', label: '지우기' }];
 const NO_HINTS: readonly KeyHint[] = [];
 
-/** «한 번 더 눌러 확정» 대기 중인 키(§6.3 F10·F11) */
-type Armed = 'force' | 'withdraw' | null;
+/** «한 번 더 눌러 확정» 대기 중인 키(§6.3 F10·F11, 상자를 끝내는 F8) */
+type Armed = 'all' | 'force' | 'withdraw' | null;
 
 /** 검수 중(스펙 §6.3·§6.4, 목업 ②) — 박스마다 새로 마운트된다(key) */
 export function InspectWork({
@@ -79,9 +79,10 @@ export function InspectWork({
   alert: Alert | null;
   recent: readonly RecentEntry[];
   canPrint: boolean;
-  onAlert(message: string, detail?: string): void;
+  onAlert(message: string, detail?: string, item?: string): void;
   onScanned(name: string, quantity: number): void;
-  onShipped(box: ShipmentByWaybill): void;
+  /** 출고됐다 — 상자를 끝낸 상품 스캔이 있으면 그 이름·수량(강제출고면 null) */
+  onShipped(box: ShipmentByWaybill, final: { name: string; quantity: number } | null): void;
   onExcess(): void;
   onWithdrawn(box: ShipmentByWaybill, barcode: string): void;
   onPutDown(): void;
@@ -109,8 +110,9 @@ export function InspectWork({
   const cancelWaiting = cancelWaitingOf(box);
   const work = useInspectionBox(box, {
     onAccepted: (lineId, quantity, barcode) => onScanned(nameOf(lineId, barcode), quantity),
-    onShipped: () => onShipped(box),
-    onRejected: (message, barcode) => onAlert(message, barcode ?? undefined),
+    onShipped: (final) =>
+      onShipped(box, final ? { name: nameOf(final.shipmentLineId, final.barcode), quantity: final.quantity } : null),
+    onRejected: (message, barcode, scannedName) => onAlert(message, barcode ?? undefined, scannedName),
     onWithdrawn: (barcode) => onWithdrawn(box, barcode),
     onExcess,
   });
@@ -237,7 +239,7 @@ export function InspectWork({
   };
 
   /** 첫 누름은 무장, 같은 키를 한 번 더 누르면 실행(§6.3 F10·F11, §7.4) */
-  const arm = (kind: 'force' | 'withdraw', act: () => void) => {
+  const arm = (kind: Exclude<Armed, null>, act: () => void) => {
     setQuantity(null);
     if (armed === kind) {
       setArmed(null);
@@ -262,15 +264,29 @@ export function InspectWork({
     }
   };
 
+  const rows = inspectionRows(box.lines, work.progress);
+  const totals = inspectionTotals(rows);
+  // 직전에 찍은 줄 말고는 다 찼다 — 이 F8 이 상자를 출고까지 끝낸다(찍지 않은 상품이 담긴 채 나가지 않게 한 번 더 받는다)
+  const allFinishesBox =
+    remaining > 0 && rows.every((row) => row.done || row.shipmentLineId === work.lastScan?.shipmentLineId);
+  // 직전에 찍은 줄의 «주문 − 스캔» 을 그 바코드로 한 번 더 — 서버에는 일반 스캔이다(§6.3)
+  const sendAll = () => {
+    if (work.lastScan && !work.accept(work.lastScan.barcode, remaining)) onAlert(INTAKE_BLOCKED_MESSAGE);
+  };
+
   const actions: StationAction[] = [
     {
       ...INSPECTION_ACTIONS.all,
+      label: armed === 'all' ? '전량 담고 출고 확정' : INSPECTION_ACTIONS.all.label,
       enabled: work.idle && remaining > 0 && !cancelWaiting,
       run: () => {
+        if (allFinishesBox) {
+          arm('all', sendAll);
+          return;
+        }
         setArmed(null);
         setQuantity(null);
-        // 직전에 찍은 줄의 «주문 − 스캔» 을 그 바코드로 한 번 더 — 서버에는 일반 스캔이다(§6.3)
-        if (work.lastScan && !work.accept(work.lastScan.barcode, remaining)) onAlert(INTAKE_BLOCKED_MESSAGE);
+        sendAll();
       },
     },
     ...(canShortPick
@@ -324,10 +340,8 @@ export function InspectWork({
   ];
   useStationActions(actions);
 
-  const rows = inspectionRows(box.lines, work.progress);
-  const totals = inspectionTotals(rows);
   const big: BigPanelContent = armed
-    ? { kind: 'armed', keyLabel: armed === 'force' ? 'F10' : 'F11', label: armed === 'force' ? '강제출고' : '박스 빼기' }
+    ? armedPanel(armed, remaining)
     : quantity !== null
       ? { kind: 'quantity', value: quantity }
       : alert
@@ -376,4 +390,15 @@ export function InspectWork({
       ) : null}
     </>
   );
+}
+
+function armedPanel(armed: Exclude<Armed, null>, remaining: number): BigPanelContent {
+  switch (armed) {
+    case 'all':
+      return { kind: 'armed', keyLabel: 'F8', label: `남은 ${remaining}개를 담고 출고 완료` };
+    case 'force':
+      return { kind: 'armed', keyLabel: 'F10', label: '강제출고' };
+    case 'withdraw':
+      return { kind: 'armed', keyLabel: 'F11', label: '박스 빼기' };
+  }
 }

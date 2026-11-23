@@ -25,7 +25,7 @@ import {
 import { formatTrackingNo } from '../../domains/outbound/inspection';
 import { JoinBoxPanel } from '../../domains/outbound/JoinBoxPanel';
 import { useOutboundBatches } from '../../domains/outbound/queries';
-import { writeLastBox } from '../../domains/outbound/lastBox';
+import { writeLastBatch, writeLastBox } from '../../domains/outbound/lastBox';
 import { RemoveBoxPanel } from '../../domains/outbound/RemoveBoxPanel';
 import { RemovedOnStartNotice, StartBatchButton, type RemovedOnStart } from '../../domains/outbound/StartBatchButton';
 import type { OutboundBatchSummary } from '../../domains/outbound/types';
@@ -91,11 +91,24 @@ function BatchStatus({ warehouseId, prefs, print }: { warehouseId: string; prefs
               <StartBatchButton
                 key={selected.id}
                 batchId={selected.id}
-                onStarted={(outcome) => setRemovedOnStart((prev) => ({ ...prev, [selected.id]: outcome }))}
+                onStarted={(outcome) => {
+                  writeLastBatch(prefs, { id: selected.id, batchNumber: selected.batchNumber, name: batchNameOf(selected) });
+                  setRemovedOnStart((prev) => ({ ...prev, [selected.id]: outcome }));
+                }}
               />
             ) : (
               <>
-                <BatchLabelPrintButton key={selected.id} batchId={selected.id} prefs={prefs} print={print} onRunningChange={setPrinting} />
+                <BatchLabelPrintButton
+                  key={selected.id}
+                  batchId={selected.id}
+                  prefs={prefs}
+                  print={print}
+                  onRunningChange={(running) => {
+                    if (running)
+                      writeLastBatch(prefs, { id: selected.id, batchNumber: selected.batchNumber, name: batchNameOf(selected) });
+                    setPrinting(running);
+                  }}
+                />
                 <Button type="button" className="mt-2" onClick={() => setPanel(panel === 'join' ? null : 'join')}>
                   박스 넣기
                 </Button>

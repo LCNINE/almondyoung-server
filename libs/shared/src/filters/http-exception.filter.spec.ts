@@ -135,3 +135,37 @@ describe('required permissions on a permission denial', () => {
     );
   });
 });
+
+describe('scanned product name on a not-in-shipment rejection', () => {
+  function render(exception: unknown) {
+    let body: unknown;
+    const reply = {
+      status: () => reply,
+      send: (value: unknown) => {
+        body = value;
+      },
+    };
+    const host = {
+      switchToHttp: () => ({ getResponse: () => reply, getRequest: () => ({ method: 'POST', url: '/' }) }),
+    } as ArgumentsHost;
+    new GlobalExceptionFilter().catch(exception, host);
+    return body;
+  }
+
+  it('keeps the name so the station can say which product was picked by mistake', () => {
+    const code = 'SIMPLE_OUTBOUND_SKU_NOT_IN_SHIPMENT';
+    expect(render(new ConflictException({ code, message: 'x', scannedSkuName: '컬러크림 6N' }))).toMatchObject({
+      code,
+      scannedSkuName: '컬러크림 6N',
+    });
+  });
+
+  it('drops it for other codes and for anything that is not a string', () => {
+    expect(
+      render(new ConflictException({ code: 'SIMPLE_OUTBOUND_OVERSCAN', message: 'x', scannedSkuName: '컬러크림 6N' })),
+    ).not.toHaveProperty('scannedSkuName');
+    expect(
+      render(new ConflictException({ code: 'SIMPLE_OUTBOUND_SKU_NOT_IN_SHIPMENT', message: 'x', scannedSkuName: 1 })),
+    ).not.toHaveProperty('scannedSkuName');
+  });
+});

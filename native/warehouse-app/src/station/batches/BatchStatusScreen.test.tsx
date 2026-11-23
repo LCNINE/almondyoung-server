@@ -29,7 +29,7 @@ function setupBatches(
   const prefs = stationPrefs();
   const print = vi.fn<PrintRaw>(async () => {});
   const view = renderStation(() => <BatchStatusScreen prefs={prefs} print={print} />, { runtime, prefs, path: '/outbound/batches' });
-  return { server, ...view };
+  return { server, prefs, ...view };
 }
 
 const detail = () => screen.getByRole('region', { name: '배치 상세' });
@@ -99,6 +99,16 @@ describe('F2 배치 현황(스펙 §8, 목업 ⑤)', () => {
     await waitFor(() => expect(within(detail()).getByRole('heading', { name: 'B-1004' })).toBeInTheDocument());
     expect(screen.getByRole('button', { name: '작업 시작' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '박스 넣기' })).toBeNull();
+  });
+
+  it('송장을 인쇄한 배치를 기기에 남긴다 — 출고 검수가 송장을 찍기 전에도 지금 배치를 보인다', async () => {
+    const { prefs } = setupBatches();
+    fireEvent.click(await screen.findByRole('button', { name: '송장 인쇄' }));
+    expect(prefs.get('almondwms.outbound.lastBatch')).toBeNull();
+    fireEvent.click(await screen.findByRole('button', { name: '인쇄' }));
+    await waitFor(() =>
+      expect(JSON.parse(prefs.get('almondwms.outbound.lastBatch') ?? 'null')).toEqual({ id: 'b-1', batchNumber: 'B-1002', name: '오전' })
+    );
   });
 
   it('시작된 배치엔 송장 인쇄·박스 넣기·박스 빼기 — 박스 빼기 패널이 열린다', async () => {

@@ -52,7 +52,7 @@ export type BigPanelContent =
   | { kind: 'progress'; scanned: number; ordered: number }
   | { kind: 'quantity'; value: string }
   | { kind: 'armed'; keyLabel: string; label: string }
-  | { kind: 'alert'; message: string; detail?: string }
+  | { kind: 'alert'; message: string; detail?: string; item?: string }
   | { kind: 'notice'; title: string; message?: string }
   | { kind: 'cancelWaiting'; lines: CancelWaitingLine[]; whole: boolean };
 
@@ -88,7 +88,7 @@ export function BigPanel({ content }: { content: BigPanelContent }) {
     case 'armed':
       return (
         <div role="status" className={cn(base, 'border-2 border-[#D99A00] bg-[#FFF1C7] text-[#5E3B00]')}>
-          <div className="text-[32px] font-bold">{content.label}</div>
+          <div className="break-keep text-[32px] font-bold">{content.label}</div>
           <div className="flex items-center gap-2 text-lg font-semibold">
             <Kbd>{content.keyLabel}</Kbd> 한 번 더
           </div>
@@ -101,6 +101,7 @@ export function BigPanel({ content }: { content: BigPanelContent }) {
             <X className="h-11 w-11" aria-hidden />
           </div>
           <div className="text-[28px] font-bold text-[#9E1320]">{content.message}</div>
+          {content.item ? <div className="text-2xl font-bold">{content.item}</div> : null}
           {content.detail ? <div className="font-mono text-xl font-semibold">{content.detail}</div> : null}
         </div>
       );
@@ -330,14 +331,36 @@ export function DoneBanner({ last }: { last: LastBox }) {
 }
 
 /** 송장 대기(목업 ①) — 직접 입력칸이 열리면 그 안에 그린다 */
-export function WaitingPrompt({ children }: { children?: ReactNode }) {
+/** 송장 대기 화면이 보이는 지금 배치 — 남은 상자 = 출고 안 된 상자(빠진 상자는 세지 않는다). 남은 상자가 있을 때만 보인다 */
+export interface WaitingBatch {
+  code: string;
+  name: string | null;
+  done: number;
+  total: number;
+}
+
+export function WaitingPrompt({ batch, children }: { batch?: WaitingBatch | null; children?: ReactNode }) {
   return (
     <div className={cn(CARD, 'flex min-h-0 flex-1 flex-col items-center justify-center gap-5')}>
+      {batch ? <WaitingBatchLine batch={batch} /> : null}
       <div className="flex h-[120px] w-[120px] items-center justify-center rounded-3xl bg-[#E3ECFC] text-[#1D5BD8]">
         <ScanLine className="h-[68px] w-[68px]" strokeWidth={1.6} aria-hidden />
       </div>
       <div className="text-4xl font-bold">송장 바코드</div>
       {children}
+    </div>
+  );
+}
+
+function WaitingBatchLine({ batch }: { batch: WaitingBatch }) {
+  return (
+    <div role="status" aria-label="지금 배치" className="flex flex-col items-center gap-1 text-center">
+      {batch.name ? <div className="text-lg font-semibold text-[#535968]">{batch.name}</div> : null}
+      <div className="whitespace-nowrap font-mono text-xl font-semibold text-[#535968]">{batch.code}</div>
+      <div className="text-[34px] font-bold">
+        남은 상자 <span className="font-mono text-[#1D5BD8]">{batch.total - batch.done}</span>
+        <span className="font-mono text-[#A3A9B4]"> / {batch.total}</span>
+      </div>
     </div>
   );
 }

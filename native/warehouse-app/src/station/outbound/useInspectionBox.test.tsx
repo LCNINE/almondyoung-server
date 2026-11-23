@@ -173,7 +173,7 @@ describe('useInspectionBox — 박스 하나의 스캔 큐(스펙 §6.3·§10.1)
     act(() => {
       box.accept('X', 1);
     });
-    await waitFor(() => expect(events.onRejected).toHaveBeenCalledWith('이 송장에 없는 상품이에요', 'X'));
+    await waitFor(() => expect(events.onRejected).toHaveBeenCalledWith('이 송장에 없는 상품이에요', 'X', undefined));
     await waitFor(async () => expect(await saved()).toHaveLength(0));
     act(() => {
       box.accept('A', 1);

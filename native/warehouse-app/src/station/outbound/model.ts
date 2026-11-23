@@ -8,6 +8,8 @@ export interface Alert {
   message: string;
   /** 거절된 바코드나 송장번호 */
   detail?: string;
+  /** 거절된 바코드의 상품 이름 — 무엇을 잘못 집었는지 */
+  item?: string;
 }
 
 export type PrintStatus = { kind: 'printing' } | { kind: 'printed' } | { kind: 'failed'; message: string };

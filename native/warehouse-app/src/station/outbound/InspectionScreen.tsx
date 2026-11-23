@@ -10,9 +10,9 @@ import { printRaw, readLabelPrinter, type PrintRaw } from '../../core/hardware/p
 import { requestBoxChecksOpen } from '../../core/operations/boxChecks';
 import { useBoxChecks } from '../../core/operations/workArea';
 import { useHumanKeys, useScanEmit, useScanner } from '../../core/hardware/scan/useScanner';
-import { batchProgressOf, useBatchWorkItems } from '../../domains/outbound/batchStatus';
+import { batchNameOf, batchProgressOf, useBatchWorkItems } from '../../domains/outbound/batchStatus';
 import { classifyInspectScan, inspectionGateOf, isNotFound } from '../../domains/outbound/inspection';
-import { clearLastBox, readLastBox, writeLastBox } from '../../domains/outbound/lastBox';
+import { clearLastBox, readLastBatch, readLastBox, writeLastBox } from '../../domains/outbound/lastBox';
 import { fetchShipmentByWaybill, useOutboundBatches } from '../../domains/outbound/queries';
 import type { ShortPickResult } from '../../domains/outbound/shortPick';
 import type { ShipmentByWaybill } from '../../domains/outbound/types';
@@ -42,6 +42,7 @@ import {
   ManualWaybillInput,
   RecentList,
   WaitingPrompt,
+  type WaitingBatch,
   WorkGrid,
 } from './panels';
 import { RefillPanel } from './RefillPanel';
@@ -84,7 +85,7 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
   const [last, setLast] = useState<LastBox | null>(null);
   const [recent, setRecent] = useState<RecentEntry[]>([]);
   const [manual, setManual] = useState<string | null>(null);
-  const [batchId, setBatchId] = useState<string | null>(() => readLastBox(prefs)?.batchId ?? null);
+  const [batchId, setBatchId] = useState<string | null>(() => readLastBox(prefs)?.batchId ?? readLastBatch(prefs)?.id ?? null);
   const work = useRef<BoxWorkHandle | null>(null);
   // 진행 중인 작업 수 — 결품 결과는 거절하지 않고 겹쳐 들어온다(run 의 force)
   const busy = useRef(0);
@@ -113,22 +114,38 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
   const batches = useOutboundBatches(warehouseId, 'picking');
   const batchItems = useBatchWorkItems(batchId);
   const batch = batches.data?.find((b) => b.id === batchId);
-  useBatchProgress(batch && batchItems.data ? batchProgressOf(batch.batchNumber, batchItems.data) : null);
+  const progress = batch && batchItems.data ? batchProgressOf(batch.batchNumber, batchItems.data) : null;
+  useBatchProgress(progress);
+  // 시작만 한 배치는 진행 중 목록에 없다 — 배치 현황이 남긴 번호·이름으로 보인다
+  const saved = readLastBatch(prefs);
+  const label = batch
+    ? { code: batch.batchNumber, name: batchNameOf(batch) }
+    : saved && saved.id === batchId
+      ? { code: saved.batchNumber, name: saved.name }
+      : null;
+  const counted = label && batchItems.data ? batchProgressOf(label.code, batchItems.data) : null;
+  const waitingBatch: WaitingBatch | null =
+    label && counted && counted.done < counted.total ? { ...counted, name: label.name } : null;
 
   const note = useCallback(
     (entry: Omit<RecentEntry, 'id' | 'at'>) => setRecent((list) => pushRecent(list, { ...entry, at: Date.now() })),
     []
   );
   const reject = useCallback(
-    (message: string, detail?: string) => {
-      setAlert({ message, detail });
+    (message: string, detail?: string, item?: string) => {
+      setAlert({ message, detail, item });
       signal('error');
-      note({ kind: 'error', text: detail ?? message });
+      note({ kind: 'error', text: item && detail ? `${item} ${detail}` : (detail ?? message) });
     },
     [signal, note]
   );
 
   const lookup = (code: string) => fetchShipmentByWaybill(api, code, warehouseId);
+  /** 하던 박스를 다시 열지 못했다 — 그 박스의 배치 대신 배치 현황이 남긴 배치를 본다 */
+  const forgetRestoredBox = () => {
+    clearLastBox(prefs);
+    setBatchId(readLastBatch(prefs)?.id ?? null);
+  };
   const printFor = async (shipmentId: string): Promise<PrintStatus> => {
     const outcome = await printWaybill({ api, print, prefs }, shipmentId);
     void queryClient.invalidateQueries({ queryKey: ['waybill-label-states'] });
@@ -188,7 +205,7 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
         ? current.cause
         : undefined);
     if (gate.kind === 'reject') {
-      if (quiet) clearLastBox(prefs);
+      if (quiet) forgetRestoredBox();
       else reject(gate.message, found.trackingNo);
       return;
     }
@@ -422,7 +439,7 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
       try {
         await show(await lookup(saved.trackingNo), true);
       } catch {
-        clearLastBox(prefs);
+        forgetRestoredBox();
       }
     });
   });
@@ -442,15 +459,16 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
    * 박스 화면이 내는 거절. 화면이 아직 그 박스면 알리고, 다른 박스로 넘어간 뒤 늦게 온 것(박스 빼기 실패)이면
    * 든 박스에 빨간 칸·오류음을 내지 않고 최근 목록에만 적는다
    */
-  const boxAlert = (box: ShipmentByWaybill) => (message: string, detail?: string) => {
+  const boxAlert = (box: ShipmentByWaybill) => (message: string, detail?: string, item?: string) => {
     const current = viewRef.current;
-    if (current.kind !== 'waiting' && current.box.shipmentId === box.shipmentId) reject(message, detail);
+    if (current.kind !== 'waiting' && current.box.shipmentId === box.shipmentId) reject(message, detail, item);
     else note({ kind: 'error', text: `${box.trackingNo} ${message}` });
   };
 
-  const onShipped = (box: ShipmentByWaybill) => {
+  const onShipped = (box: ShipmentByWaybill, final: { name: string; quantity: number } | null) => {
     clearLastBox(prefs);
     signal('complete');
+    if (final) note({ kind: 'scan', text: final.name, qty: final.quantity });
     note({ kind: 'shipped', text: box.trackingNo });
     setLast({ kind: 'shipped', trackingNo: box.trackingNo });
     setAlert(null);
@@ -730,7 +748,7 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
               {alert ? (
                 <BigPanel content={{ kind: 'alert', ...alert }} />
               ) : (
-                <WaitingPrompt>
+                <WaitingPrompt batch={waitingBatch}>
                   {manual !== null ? (
                     <ManualWaybillInput
                       initial={manual}

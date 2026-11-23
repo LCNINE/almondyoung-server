@@ -25,6 +25,7 @@ export interface StoredOperation extends OperationInput {
   preparation?: PreparationRejection;
   requiredPermissions?: string[];
   rejectionRecorded?: true;
+  scannedSkuName?: string;
 }
 const unresolved = (o: StoredOperation) =>
   !['confirmed', 'rejected'].includes(o.status);
@@ -153,7 +154,8 @@ export function createOperationStore(name = 'almondwms-work-v2') {
     preparation?: PreparationRejection,
     requiredPermissions?: readonly string[],
     errorStatus?: number,
-    rejectionRecorded?: boolean
+    rejectionRecorded?: boolean,
+    scannedSkuName?: string
   ) =>
     transaction<void>('readwrite', (s, done) => {
       const r = s.get(id);
@@ -185,6 +187,10 @@ export function createOperationStore(name = 'almondwms-work-v2') {
               : undefined,
             rejectionRecorded:
               status === 'rejected' && rejectionRecorded ? true : undefined,
+            scannedSkuName:
+              status === 'rejected' && scannedSkuName
+                ? scannedSkuName
+                : undefined,
             attempts: r.result.attempts + (status === 'sending' ? 1 : 0),
           });
         done();

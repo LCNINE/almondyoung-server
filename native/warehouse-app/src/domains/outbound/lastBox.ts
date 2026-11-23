@@ -23,3 +23,31 @@ export function writeLastBox(prefs: DevicePrefs, shipment: ShipmentByWaybill): v
 export function clearLastBox(prefs: DevicePrefs): void {
   prefs.remove(KEY);
 }
+
+const BATCH_KEY = 'almondwms.outbound.lastBatch';
+
+/**
+ * 이 기기가 배치 현황에서 마지막으로 시작·인쇄한 배치 — 출고 검수가 송장을 찍기 전에도 지금 배치를 보이게.
+ * 시작만 하고 아직 아무 박스도 찍지 않은 배치는 진행 중 목록에 없어 번호·이름도 함께 남긴다
+ */
+export interface LastBatch {
+  id: string;
+  batchNumber: string;
+  name: string | null;
+}
+
+export function readLastBatch(prefs: DevicePrefs): LastBatch | null {
+  const raw = prefs.get(BATCH_KEY);
+  if (raw === null) return null;
+  try {
+    const parsed = JSON.parse(raw) as Partial<LastBatch>;
+    if (typeof parsed?.id !== 'string' || typeof parsed.batchNumber !== 'string') return null;
+    return { id: parsed.id, batchNumber: parsed.batchNumber, name: typeof parsed.name === 'string' ? parsed.name : null };
+  } catch {
+    return null;
+  }
+}
+
+export function writeLastBatch(prefs: DevicePrefs, batch: LastBatch): void {
+  prefs.set(BATCH_KEY, JSON.stringify(batch));
+}

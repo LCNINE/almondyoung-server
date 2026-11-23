@@ -89,6 +89,30 @@ describe('검수 중 기능키(스펙 §6.3)', () => {
     await waitFor(() => expect(big('진행')).toHaveTextContent('3 / 4'));
   });
 
+  it('F8 이 상자를 끝내게 되면 한 번 더 눌러야 나가고, 그 수량도 최근 스캔에 남는다', async () => {
+    const { server } = await setupInspection();
+    await openBox('421033881907');
+    scan('8801001');
+    await waitFor(() => expect(server.scans).toHaveLength(1));
+    scan('8801002');
+    await enabledKey(/이 상품 전량/);
+    press('F8');
+    await enabledKey(/전량 담고 출고 확정/);
+    expect(screen.getByText('남은 2개를 담고 출고 완료')).toBeInTheDocument();
+    expect(server.scans).toHaveLength(2);
+    press('Escape');
+    await waitFor(() => expect(bar().queryByRole('button', { name: /전량 담고 출고 확정/ })).toBeNull());
+    expect(big('진행')).toHaveTextContent('2 / 4');
+    expect(server.scans).toHaveLength(2);
+    press('F8');
+    await enabledKey(/전량 담고 출고 확정/);
+    press('F8');
+    expect(await screen.findByText('출고 완료')).toBeInTheDocument();
+    expect(server.scans[2]).toMatchObject({ barcode: '8801002', quantity: 2 });
+    const recent = within(screen.getByRole('list', { name: '최근 스캔' }));
+    expect(recent.getAllByRole('listitem')[1]).toHaveTextContent('헤어클립 집게핀+2');
+  });
+
   it('F10 강제출고는 한 번 더 눌러야 나간다 — 고정 사유', async () => {
     const { server } = await setupInspection();
     await openBox('421033881907');
