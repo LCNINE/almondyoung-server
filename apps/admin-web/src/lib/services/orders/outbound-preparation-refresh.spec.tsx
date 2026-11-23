@@ -8,8 +8,12 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 jest.mock('@/lib/api/domains', () => ({
   orders: {
     picking: {},
-    outboundPreparation: { summary: jest.fn() },
-    consolidation: { createShipmentConsolidation: jest.fn() },
+    outboundPreparation: { summary: jest.fn(), counts: jest.fn() },
+    consolidation: {
+      createShipmentConsolidation: jest.fn(),
+      getBoard: jest.fn(),
+      getBoardCount: jest.fn(),
+    },
     outboundBatches: { addShipment: jest.fn(), excludeShipment: jest.fn() },
     salesOrders: {
       cancelSalesOrder: jest.fn(),
@@ -23,7 +27,11 @@ jest.mock('sonner', () => ({
 }));
 
 import { orders } from '@/lib/api/domains';
-import type { OutboundPreparationSummary } from '@/lib/types/dto/fulfillment';
+import type {
+  ConsolidationBoardResponse,
+  OutboundPreparationCounts,
+  OutboundPreparationSummary,
+} from '@/lib/types/dto/fulfillment';
 import {
   useAddShipmentToBatch,
   useAdminCancelSalesOrder,
@@ -31,9 +39,23 @@ import {
   useCreateShipmentConsolidation,
   useExcludeShipmentFromBatch,
 } from './mutations';
-import { useOutboundPreparationSummary } from './queries';
+import {
+  useConsolidationBoard,
+  useConsolidationBoardCount,
+  useOutboundPreparationCounts,
+  useOutboundPreparationSummary,
+} from './queries';
+import { orderQueryKeys } from './query-keys';
 
 const summaryApi = jest.mocked(orders.outboundPreparation.summary);
+const countsApi = jest.mocked(orders.outboundPreparation.counts);
+const boardApi = jest.mocked(orders.consolidation.getBoard);
+const boardCountApi = jest.mocked(orders.consolidation.getBoardCount);
+
+const countsOf = (ready: number): OutboundPreparationCounts => ({
+  warehouseId: 'w1',
+  buckets: [{ bucket: 'ready', count: ready }],
+});
 
 const summaryWith = (ids: string[]) =>
   ({
@@ -63,14 +85,14 @@ function clientWrapper() {
 async function renderBadge(
   wrapper: ({ children }: { children: ReactNode }) => ReactNode
 ) {
-  summaryApi.mockResolvedValueOnce(summaryWith(['old']));
+  countsApi.mockResolvedValueOnce(countsOf(1));
 
-  const badge = renderHook(() => useOutboundPreparationSummary('w1'), {
+  const badge = renderHook(() => useOutboundPreparationCounts('w1'), {
     wrapper,
   });
 
   await waitFor(() =>
-    expect(idsOf(badge.result.current.data)).toEqual(['old'])
+    expect(badge.result.current.data?.buckets[0].count).toBe(1)
   );
 
   return badge;
@@ -79,15 +101,26 @@ async function renderBadge(
 beforeEach(() => {
   jest.clearAllMocks();
   summaryApi.mockReset();
+  countsApi.mockReset();
+  boardApi.mockReset();
+  boardCountApi.mockReset();
 });
 
 describe('출고 준비 요약 신선도', () => {
-  it('메뉴 배지가 받아 둔 요약이 있어도 출고 준비 화면은 들어올 때 다시 읽고 그동안 조회 중이다', async () => {
+  it('메뉴 배지는 내역을 부르지 않고 숫자만 받는다', async () => {
     const { wrapper } = clientWrapper();
 
     await renderBadge(wrapper);
-    summaryApi.mockResolvedValueOnce(summaryWith(['old', 'merged']));
 
+    expect(countsApi).toHaveBeenCalledWith('w1');
+    expect(summaryApi).not.toHaveBeenCalled();
+  });
+
+  it('출고 준비 화면은 들어올 때 다시 읽고, 읽은 내역으로 배지 숫자를 맞춘다', async () => {
+    const { wrapper } = clientWrapper();
+    const badge = await renderBadge(wrapper);
+
+    summaryApi.mockResolvedValueOnce(summaryWith(['old', 'merged']));
     const page = renderHook(
       () => useOutboundPreparationSummary('w1', true, 'always'),
       { wrapper }
@@ -97,20 +130,105 @@ describe('출고 준비 요약 신선도', () => {
     await waitFor(() =>
       expect(idsOf(page.result.current.data)).toEqual(['old', 'merged'])
     );
-    expect(summaryApi).toHaveBeenCalledTimes(2);
+    await waitFor(() =>
+      expect(badge.result.current.data?.buckets[0].count).toBe(2)
+    );
+    expect(countsApi).toHaveBeenCalledTimes(1);
   });
 
-  it('메뉴 배지처럼 기본으로 쓰면 받아 둔 요약을 그대로 쓴다', async () => {
+  it('먼저 떠난 배지 숫자 조회가 늦게 와도 화면 내역으로 맞춘 숫자를 덮지 않는다', async () => {
     const { wrapper } = clientWrapper();
+    let releaseCounts: (value: OutboundPreparationCounts) => void = () => {};
 
-    await renderBadge(wrapper);
-
-    const other = renderHook(() => useOutboundPreparationSummary('w1'), {
+    countsApi.mockReturnValueOnce(
+      new Promise((resolve) => {
+        releaseCounts = resolve;
+      })
+    );
+    const badge = renderHook(() => useOutboundPreparationCounts('w1'), {
       wrapper,
     });
+    await waitFor(() => expect(countsApi).toHaveBeenCalledTimes(1));
 
-    expect(other.result.current.isFetching).toBe(false);
-    expect(summaryApi).toHaveBeenCalledTimes(1);
+    summaryApi.mockResolvedValueOnce(summaryWith(['a', 'b']));
+    const page = renderHook(
+      () => useOutboundPreparationSummary('w1', true, 'always'),
+      { wrapper }
+    );
+    await waitFor(() =>
+      expect(idsOf(page.result.current.data)).toEqual(['a', 'b'])
+    );
+    await waitFor(() =>
+      expect(badge.result.current.data?.buckets[0].count).toBe(2)
+    );
+
+    await act(async () => releaseCounts(countsOf(1)));
+    await waitFor(() => expect(badge.result.current.isFetching).toBe(false));
+    expect(badge.result.current.data?.buckets[0].count).toBe(2);
+  });
+
+  it('먼저 떠난 묶음 수 조회가 늦게 와도 보드로 맞춘 숫자를 덮지 않는다', async () => {
+    const { wrapper } = clientWrapper();
+    let releaseCount: (value: { groupCount: number }) => void = () => {};
+
+    boardCountApi.mockReturnValueOnce(
+      new Promise((resolve) => {
+        releaseCount = resolve;
+      })
+    );
+    const badge = renderHook(() => useConsolidationBoardCount('w1'), {
+      wrapper,
+    });
+    await waitFor(() => expect(boardCountApi).toHaveBeenCalledTimes(1));
+
+    boardApi.mockResolvedValueOnce({
+      groups: [{}, {}],
+    } as unknown as ConsolidationBoardResponse);
+    renderHook(() => useConsolidationBoard('w1'), { wrapper });
+    await waitFor(() => expect(badge.result.current.data?.groupCount).toBe(2));
+
+    await act(async () => releaseCount({ groupCount: 5 }));
+    await waitFor(() => expect(badge.result.current.isFetching).toBe(false));
+    expect(badge.result.current.data?.groupCount).toBe(2);
+  });
+
+  it('화주로 걸러 읽은 내역은 배지 숫자를 바꾸지 않는다', async () => {
+    const { client, wrapper } = clientWrapper();
+
+    await renderBadge(wrapper);
+    summaryApi.mockResolvedValueOnce(summaryWith(['own-1', 'own-2']));
+    const page = renderHook(
+      () => useOutboundPreparationSummary('w1', true, 'always', ['own']),
+      { wrapper }
+    );
+
+    await waitFor(() =>
+      expect(idsOf(page.result.current.data)).toEqual(['own-1', 'own-2'])
+    );
+    expect(
+      client.getQueryData<OutboundPreparationCounts>(
+        orderQueryKeys.outboundPreparationCounts('w1')
+      )?.buckets[0].count
+    ).toBe(1);
+  });
+
+  it('합칠 수 있는 주문 배지는 묶음 수만 받고, 보드를 읽으면 그 묶음 수로 맞춘다', async () => {
+    const { wrapper } = clientWrapper();
+
+    boardCountApi.mockResolvedValueOnce({ groupCount: 3 });
+    const badge = renderHook(() => useConsolidationBoardCount('w1'), {
+      wrapper,
+    });
+    await waitFor(() => expect(badge.result.current.data?.groupCount).toBe(3));
+    expect(boardApi).not.toHaveBeenCalled();
+
+    boardApi.mockResolvedValueOnce({
+      groups: [{}, {}],
+    } as unknown as ConsolidationBoardResponse);
+    renderHook(() => useConsolidationBoard('w1'), { wrapper });
+
+    await waitFor(() => expect(badge.result.current.data?.groupCount).toBe(2));
+    expect(boardCountApi).toHaveBeenCalledTimes(1);
   });
 
   const commands: [string, () => () => Promise<unknown>][] = [
@@ -178,19 +296,19 @@ describe('출고 준비 요약 신선도', () => {
   ];
 
   it.each(commands)(
-    '%s 뒤에는 열려 있는 메뉴 배지의 요약을 바로 다시 읽는다',
+    '%s 뒤에는 열려 있는 메뉴 배지 숫자를 바로 다시 읽는다',
     async (_, useCommand) => {
       const { wrapper } = clientWrapper();
       const badge = await renderBadge(wrapper);
       const command = renderHook(useCommand, { wrapper });
 
-      summaryApi.mockResolvedValueOnce(summaryWith(['merged']));
+      countsApi.mockResolvedValueOnce(countsOf(5));
       await act(() => command.result.current());
 
       await waitFor(() =>
-        expect(idsOf(badge.result.current.data)).toEqual(['merged'])
+        expect(badge.result.current.data?.buckets[0].count).toBe(5)
       );
-      expect(summaryApi).toHaveBeenCalledTimes(2);
+      expect(countsApi).toHaveBeenCalledTimes(2);
     }
   );
 });

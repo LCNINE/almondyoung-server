@@ -26,6 +26,7 @@ import { loadWarehouseStock, readPipelineScope, shortageStockOf } from './shorta
 import { InboundPipelineReader } from '../../inventory/stock-projection/services/inbound-pipeline.reader';
 import {
   OutboundPreparationQueryDto,
+  OutboundPreparationCountsDto,
   OutboundPreparationSummaryDto,
   PreparationBucketDto,
   PreparationHolderDto,
@@ -69,9 +70,28 @@ export class OutboundPreparationReader {
     private readonly inboundPipeline: InboundPipelineReader,
   ) {}
 
-  async summarize(
+  summarize(
     warehouseId: string,
     page?: Pick<OutboundPreparationQueryDto, 'bucket' | 'offset' | 'holders'>,
+    tx?: DbTx,
+  ): Promise<OutboundPreparationSummaryDto> {
+    return this.collect(warehouseId, page, false, tx);
+  }
+
+  // 분류는 내역과 같은 판정으로 하고, 상자 목록(받는 분 포함)은 싣지 않는다
+  async countBuckets(warehouseId: string, tx?: DbTx): Promise<OutboundPreparationCountsDto> {
+    const summary = await this.collect(warehouseId, undefined, true, tx);
+
+    return {
+      warehouseId,
+      buckets: summary.buckets.map(({ bucket, count }) => ({ bucket, count })),
+    };
+  }
+
+  private async collect(
+    warehouseId: string,
+    page: Pick<OutboundPreparationQueryDto, 'bucket' | 'offset' | 'holders'> | undefined,
+    countsOnly: boolean,
     tx?: DbTx,
   ): Promise<OutboundPreparationSummaryDto> {
     return this.dbService.run(async (trx) => {
@@ -205,6 +225,7 @@ export class OutboundPreparationReader {
         bucket.batchReturnCount += exit && !shortPick ? 1 : 0;
 
         if (
+          countsOnly ||
           (page?.bucket && bucketName !== page.bucket) ||
           bucket.count <= (page?.offset ?? 0) ||
           bucket.shipments.length >= BUCKET_PAGE_SIZE
@@ -250,6 +271,10 @@ export class OutboundPreparationReader {
             : null,
           owner: owner.key === OUR_HOLDER_KEY ? null : { id: owner.key, name: owner.name },
         });
+      }
+
+      if (countsOnly) {
+        return { warehouseId, buckets, awaitingMatchingCount: backlog.count, holders: [] };
       }
 
       await this.fillWaybillFailures(trx, buckets.find((entry) => entry.bucket === 'resume')?.shipments ?? []);

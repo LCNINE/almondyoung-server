@@ -181,6 +181,22 @@ export class PreparationBucketDto {
   shipments: PreparationShipmentDto[];
 }
 
+export class OutboundPreparationCountsQueryDto {
+  @IsUUID()
+  warehouseId: string;
+}
+
+export class PreparationBucketCountDto {
+  bucket: PreparationBucket;
+  count: number;
+}
+
+// 메뉴 배지처럼 숫자만 쓰는 곳에 준다. 분류는 내역과 같다
+export class OutboundPreparationCountsDto {
+  warehouseId: string;
+  buckets: PreparationBucketCountDto[];
+}
+
 export class OutboundPreparationSummaryDto {
   warehouseId: string;
   buckets: PreparationBucketDto[];

@@ -25,6 +25,7 @@ export {
   // 출고 배치 (D2)
   useOutboundBatchesV2,
   useOutboundPreparationSummary,
+  useOutboundPreparationCounts,
   useLoadMoreOutboundPreparation,
   useOutboundBatchV2,
   useLoadOutboundBatchV2,
@@ -40,6 +41,7 @@ export {
   useShipmentConsolidationCandidates,
   useConsolidationCandidatesV2,
   useConsolidationBoard,
+  useConsolidationBoardCount,
   usePlannedShipments,
   useConsolidationLive,
   useConsolidationSavings,

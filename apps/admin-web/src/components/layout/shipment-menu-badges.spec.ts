@@ -4,8 +4,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 const mockSummary = jest.fn();
 const mockBoard = jest.fn();
 jest.mock('@/lib/services/orders', () => ({
-  useOutboundPreparationSummary: () => mockSummary(),
-  useConsolidationBoard: () => mockBoard(),
+  useOutboundPreparationCounts: () => mockSummary(),
+  useConsolidationBoardCount: () => mockBoard(),
 }));
 jest.mock('@/lib/services/inventory/queries', () => ({
   useWarehouses: () => ({ data: [{ id: 'w1', name: '창고' }] }),
@@ -49,7 +49,7 @@ describe('출고 메뉴 배지', () => {
   });
 
   it('합칠 수 있는 주문은 묶음 수를 센다', () => {
-    mockBoard.mockReturnValue({ data: { groups: [{}, {}] } });
+    mockBoard.mockReturnValue({ data: { groupCount: 2 } });
 
     expect(
       renderToStaticMarkup(createElement(ConsolidationMenuBadge))

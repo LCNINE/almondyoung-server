@@ -48,6 +48,7 @@ describeIfDb('ConsolidationBoardReader (DB integration)', () => {
       const board = await reader.findBoard(base.warehouseId, tx);
 
       expect(board.groups).toHaveLength(1);
+      expect(await reader.countGroups(base.warehouseId, tx)).toEqual({ groupCount: 1 });
       expect(board.groups[0].shipments.map((shipment) => shipment.shipmentId).sort()).toEqual(
         [first.shipment.id, second.shipment.id].sort(),
       );

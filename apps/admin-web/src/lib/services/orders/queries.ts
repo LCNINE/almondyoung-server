@@ -25,6 +25,8 @@ import type {
   OutboundBatchV2ListQuery,
   SupplierQueueStage,
   OutboundPreparationSummary,
+  OutboundPreparationCounts,
+  ConsolidationBoardCount,
   PreparationBucket,
 } from '@/lib/types/dto/fulfillment';
 import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
@@ -66,21 +68,53 @@ export const useSalesOrderItems = (orderId: string) => {
 
 // ===== 출고 배치 관련 쿼리 (D2) =====
 
-// 출고 준비 화면은 숫자를 보고 일하므로 들어올 때마다 다시 읽는다(메뉴 배지는 캐시를 그대로 쓴다)
+// 출고 준비 화면은 숫자를 보고 일하므로 들어올 때마다 다시 읽는다.
+// 화주 필터 없이 읽은 내역은 메뉴 배지 숫자도 그 값으로 맞춘다
 export const useOutboundPreparationSummary = (
   warehouseId: string,
   enabled = true,
   refetchOnMount: boolean | 'always' = true,
   holders: readonly string[] = []
 ) => {
+  const queryClient = useQueryClient();
+
   return useQuery({
     queryKey: orderQueryKeys.outboundPreparationSummary(warehouseId, holders),
-    queryFn: () =>
-      orders.outboundPreparation.summary(warehouseId, undefined, holders),
+    queryFn: async () => {
+      const summary = await orders.outboundPreparation.summary(
+        warehouseId,
+        undefined,
+        holders
+      );
+
+      if (holders.length === 0) {
+        const countsKey = orderQueryKeys.outboundPreparationCounts(warehouseId);
+
+        // 먼저 떠난 숫자 조회가 늦게 와서 이 값을 덮지 않게 한다
+        await queryClient.cancelQueries({ queryKey: countsKey, exact: true });
+        queryClient.setQueryData<OutboundPreparationCounts>(countsKey, {
+          warehouseId,
+          buckets: summary.buckets.map(({ bucket, count }) => ({
+            bucket,
+            count,
+          })),
+        });
+      }
+
+      return summary;
+    },
     enabled: !!warehouseId && enabled,
     refetchOnMount,
   });
 };
+
+// 메뉴 배지 — 받는 분이 든 내역 대신 숫자만 받는다
+export const useOutboundPreparationCounts = (warehouseId: string) =>
+  useQuery({
+    queryKey: orderQueryKeys.outboundPreparationCounts(warehouseId),
+    queryFn: () => orders.outboundPreparation.counts(warehouseId),
+    enabled: !!warehouseId,
+  });
 
 export const useLoadMoreOutboundPreparation = (
   warehouseId: string,
@@ -277,10 +311,31 @@ export const useShipmentConsolidationCandidates = (
 
 export const useConsolidationCandidatesV2 = useShipmentConsolidationCandidates;
 
-export const useConsolidationBoard = (warehouseId: string) =>
-  useQuery({
+// 보드를 읽으면 메뉴 배지 숫자도 그 값으로 맞춘다
+export const useConsolidationBoard = (warehouseId: string) => {
+  const queryClient = useQueryClient();
+
+  return useQuery({
     queryKey: orderQueryKeys.consolidationBoard(warehouseId),
-    queryFn: () => orders.consolidation.getBoard(warehouseId),
+    queryFn: async () => {
+      const board = await orders.consolidation.getBoard(warehouseId);
+      const countKey = orderQueryKeys.consolidationBoardCount(warehouseId);
+
+      await queryClient.cancelQueries({ queryKey: countKey, exact: true });
+      queryClient.setQueryData<ConsolidationBoardCount>(countKey, {
+        groupCount: board.groups.length,
+      });
+
+      return board;
+    },
+    enabled: !!warehouseId,
+  });
+};
+
+export const useConsolidationBoardCount = (warehouseId: string) =>
+  useQuery({
+    queryKey: orderQueryKeys.consolidationBoardCount(warehouseId),
+    queryFn: () => orders.consolidation.getBoardCount(warehouseId),
     enabled: !!warehouseId,
   });
 

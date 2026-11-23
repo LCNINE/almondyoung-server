@@ -184,6 +184,11 @@ export class ConsolidationBoardResponseDto {
   groups: ConsolidationBoardGroupDto[];
 }
 
+export class ConsolidationBoardCountDto {
+  @ApiProperty()
+  groupCount: number;
+}
+
 export class PlannedShipmentDto {
   @ApiProperty()
   shipmentId: string;

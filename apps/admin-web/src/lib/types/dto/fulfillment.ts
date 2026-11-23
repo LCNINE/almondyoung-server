@@ -1199,6 +1199,12 @@ export interface OutboundPreparationSummary {
   holders?: PreparationHolder[];
 }
 
+// 메뉴 배지용 — 분류는 내역과 같고 상자 목록은 없다
+export interface OutboundPreparationCounts {
+  warehouseId: string;
+  buckets: { bucket: PreparationBucket; count: number }[];
+}
+
 export interface BulkShipmentFailure {
   shipmentId: string;
   code: string;
@@ -1224,6 +1230,10 @@ export interface PlannedShipment {
 
 export interface ConsolidationBoardResponse {
   groups: ConsolidationBoardGroup[];
+}
+
+export interface ConsolidationBoardCount {
+  groupCount: number;
 }
 
 export interface ConsolidationOptionsResponse {
