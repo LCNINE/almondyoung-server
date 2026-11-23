@@ -12,6 +12,8 @@ import { RefundRequestsContent } from './refund-requests-content';
 
 const replace = jest.fn();
 const complete = jest.fn();
+const setResolution = jest.fn();
+let resolutionAt: string | null = '2026-11-23T05:00:00Z';
 let permissions = new Set<string>();
 let search = '';
 let walletTotal = 0;
@@ -61,6 +63,8 @@ jest.mock('@/lib/services/membership', () => ({
           userId: 'user1',
           hasPaymentIntent: !noPayment,
           cancelledAt: '2026-10-01T00:00:00Z',
+          eligibleRefundAmount: 12000,
+          refundResolutionSubmittedAt: resolutionAt,
         },
       ],
       total: membershipTotal,
@@ -74,6 +78,10 @@ jest.mock('@/lib/services/membership', () => ({
     isError: false,
   })),
   useCompleteManualRefund: () => ({ mutateAsync: complete, isPending: false }),
+  useSetRefundResolution: () => ({
+    mutateAsync: setResolution,
+    isPending: false,
+  }),
 }));
 jest.mock('sonner', () => ({
   toast: { success: jest.fn(), error: jest.fn() },
@@ -91,6 +99,7 @@ beforeEach(() => {
   membershipTotal = 13;
   canMutate = true;
   noPayment = false;
+  resolutionAt = '2026-11-23T05:00:00Z';
   detail = {
     contractId: 'contract1',
     userId: 'user1',
@@ -104,8 +113,35 @@ beforeEach(() => {
       holderName: '테스트',
     },
     refundSettlement: null,
+    refundResolutionSubmittedAt: resolutionAt,
   };
   complete.mockResolvedValue({});
+  setResolution.mockResolvedValue({});
+});
+
+it('결의서를 올리기 전에는 이체했어요를 막고 올렸어요 확인 뒤 기록한다', async () => {
+  resolutionAt = null;
+  detail.refundResolutionSubmittedAt = null;
+  const user = userEvent.setup();
+  render(<RefundRequestsContent />);
+
+  expect(
+    screen.getByRole('button', { name: '이체했어요' }).hasAttribute('disabled')
+  ).toBe(true);
+  expect(screen.getByText('결의서를 먼저 올려 주세요')).toBeTruthy();
+
+  await user.click(screen.getByRole('button', { name: '올렸어요' }));
+  await user.click(
+    within(screen.getByRole('alertdialog')).getByRole('button', {
+      name: '네, 올렸어요',
+    })
+  );
+
+  expect(setResolution).toHaveBeenCalledWith({
+    contractId: 'contract1',
+    submitted: true,
+  });
+  expect(complete).not.toHaveBeenCalled();
 });
 
 it('상품 환불이 0이면 멤버십을 먼저 열고 확인 후 계약 한 건만 완료한다', async () => {

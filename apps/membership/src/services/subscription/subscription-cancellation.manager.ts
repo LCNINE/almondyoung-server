@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { ConflictError, NotFoundError } from '@app/shared';
 import { DbService } from '@app/db';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
 import * as schema from '../../shared/schemas/entities/schema';
@@ -372,6 +373,57 @@ export class SubscriptionCancellationManager {
           .set({ refundCompleted: true, refundCompletedAt: new Date(), updatedAt: new Date() })
           .where(eq(schema.subscriptionContracts.id, contractId));
       }
+    });
+  }
+
+  /**
+   * 수동 송금 환불의 지출결의서를 셀메이트에 올렸다는 기록. 잘못 누른 경우를 위해 해제도 받는다.
+   * 돈이 이미 나간(완료된) 건은 바꾸지 않는다.
+   */
+  async setRefundResolutionSubmitted(
+    contractId: string,
+    adminId: string,
+    submitted: boolean,
+  ): Promise<{ contractId: string; refundResolutionSubmittedAt: string | null }> {
+    return this.dbService.db.transaction(async (tx) => {
+      const [contract] = await tx
+        .select({
+          userId: schema.subscriptionContracts.userId,
+          refundRequested: schema.subscriptionContracts.refundRequested,
+          refundCompleted: schema.subscriptionContracts.refundCompleted,
+        })
+        .from(schema.subscriptionContracts)
+        .where(eq(schema.subscriptionContracts.id, contractId))
+        .for('update');
+
+      if (!contract) throw new NotFoundError(`구독 계약을 찾을 수 없습니다: ${contractId}`);
+      if (!contract.refundRequested) throw new ConflictError('환불 요청이 없는 계약입니다.');
+      if (contract.refundCompleted) throw new ConflictError('이미 환불 완료 처리된 계약입니다.');
+
+      const now = new Date();
+      const submittedAt = submitted ? now : null;
+
+      await tx
+        .update(schema.subscriptionContracts)
+        .set({
+          refundResolutionSubmittedAt: submittedAt,
+          refundResolutionSubmittedBy: submitted ? adminId : null,
+          updatedAt: now,
+        })
+        .where(eq(schema.subscriptionContracts.id, contractId));
+
+      await this.contractEventManager.addEvent(
+        tx,
+        contractId,
+        submitted ? 'REFUND_RESOLUTION_SUBMITTED' : 'REFUND_RESOLUTION_REVERTED',
+        {},
+        'ADMIN',
+        contract.userId,
+        undefined,
+        adminId,
+      );
+
+      return { contractId, refundResolutionSubmittedAt: submittedAt ? submittedAt.toISOString() : null };
     });
   }
 

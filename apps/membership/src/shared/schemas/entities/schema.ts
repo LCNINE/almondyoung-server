@@ -141,6 +141,9 @@ export const subscriptionContracts = pgTable(
     eligibleRefundAmount: integer('eligible_refund_amount'),
     refundCompleted: boolean('refund_completed').notNull().default(false),
     refundCompletedAt: timestamp('refund_completed_at', { withTimezone: true }),
+    // 수동 송금 환불의 지출결의서를 셀메이트에 올렸다는 관리자 기록. 이체 완료 기록보다 먼저 남아야 한다.
+    refundResolutionSubmittedAt: timestamp('refund_resolution_submitted_at', { withTimezone: true }),
+    refundResolutionSubmittedBy: varchar('refund_resolution_submitted_by'),
     walletReferenceId: text('wallet_reference_id'),
     lastEventId: integer('last_event_id'),
     // 정기결제 중단 관련 필드
