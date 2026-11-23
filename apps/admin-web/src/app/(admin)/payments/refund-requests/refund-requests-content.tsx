@@ -2,6 +2,10 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useRefundRequestCounts } from '@/features/payments/hooks/use-refund-request-counts';
+import { MembershipRefundRequests } from './membership-refund-requests';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { toast } from 'sonner';
@@ -16,17 +20,24 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { useRefundRequests, useApproveRefundRequest, useRejectRefundRequest } from '@/lib/services/wallet';
+import {
+  useRefundRequests,
+  useApproveRefundRequest,
+  useRejectRefundRequest,
+} from '@/lib/services/wallet';
 import { usePermissionCheck } from '@/hooks/use-permission';
 import { TOSS_BANKS } from '@/lib/constants/toss-banks';
 import type { RefundRequestDto } from '@/lib/types/dto/wallet';
 
 const bankLabel = (r: RefundRequestDto) =>
-  r.bankName ?? TOSS_BANKS.find((b) => b.code === r.bankCode)?.name ?? r.bankCode;
+  r.bankName ??
+  TOSS_BANKS.find((b) => b.code === r.bankCode)?.name ??
+  r.bankCode;
 
-const errMessage = (e: unknown, fallback: string) => (e instanceof Error && e.message ? e.message : fallback);
+const errMessage = (e: unknown, fallback: string) =>
+  e instanceof Error && e.message ? e.message : fallback;
 
-export function RefundRequestsContent() {
+function WalletRefundRequests() {
   const [page, setPage] = useState(1);
   const limit = 20;
   const { data, isLoading } = useRefundRequests(page, limit);
@@ -39,17 +50,29 @@ export function RefundRequestsContent() {
 
   const handleApprove = async (r: RefundRequestDto) => {
     try {
-      const res = await approve.mutateAsync({ id: r.id, intentId: r.intentId, amount: r.amount });
-      const cancel = res.cancel as { error?: string; skipped?: string; requestId?: string } | undefined;
+      const res = await approve.mutateAsync({
+        id: r.id,
+        intentId: r.intentId,
+        amount: r.amount,
+      });
+      const cancel = res.cancel as
+        | { error?: string; skipped?: string; requestId?: string }
+        | undefined;
       if (cancel && 'error' in cancel && cancel.error) {
-        toast.warning('환불은 완료됐으나 주문 취소에 실패했습니다. 주문 상태를 수동 확인해 주세요.');
+        toast.warning(
+          '환불은 완료됐으나 주문 취소에 실패했습니다. 주문 상태를 수동 확인해 주세요.'
+        );
       } else if (cancel?.skipped === 'already_shipped') {
-        toast.warning('환불 완료. 단 이미 출고된 주문이라 자동 취소되지 않았습니다. 물류 확인이 필요합니다.');
+        toast.warning(
+          '환불 완료. 단 이미 출고된 주문이라 자동 취소되지 않았습니다. 물류 확인이 필요합니다.'
+        );
       } else if (cancel?.requestId) {
         // Medusa 주문은 core 가 채널에 취소를 «요청»만 한다 — 끝난 게 아니다.
         toast.success('환불 완료 · 주문 취소를 채널에 요청했습니다');
       } else {
-        toast.success('환불 승인 완료 — 주문 취소 및 환불 송금 처리됨 (약 2영업일)');
+        toast.success(
+          '환불 승인 완료 — 주문 취소 및 환불 송금 처리됨 (약 2영업일)'
+        );
       }
     } catch (e) {
       toast.error(errMessage(e, '환불 승인 실패'));
@@ -72,8 +95,12 @@ export function RefundRequestsContent() {
       <div className="border-b p-4">
         <h1 className="text-lg font-semibold">무통장 환불 요청</h1>
         <p className="text-sm text-muted-foreground">
-          고객이 제출한 환불 요청입니다. 승인 시 저장된 계좌로 토스가 자동 송금하고 현금영수증도 취소됩니다.
-          <span className="font-medium text-amber-600"> 승인 전 배송/반품 여부를 반드시 확인하세요.</span>
+          고객이 제출한 환불 요청입니다. 승인 시 저장된 계좌로 토스가 자동
+          송금하고 현금영수증도 취소됩니다.
+          <span className="font-medium text-amber-600">
+            {' '}
+            승인 전 배송/반품 여부를 반드시 확인하세요.
+          </span>
         </p>
       </div>
 
@@ -82,7 +109,9 @@ export function RefundRequestsContent() {
           <Spinner />
         </div>
       ) : rows.length === 0 ? (
-        <p className="p-8 text-center text-sm text-muted-foreground">대기 중인 환불 요청이 없습니다.</p>
+        <p className="p-8 text-center text-sm text-muted-foreground">
+          대기 중인 환불 요청이 없습니다.
+        </p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -115,59 +144,77 @@ export function RefundRequestsContent() {
                     {r.amount.toLocaleString('ko-KR')} {r.currency}
                   </td>
                   <td className="p-3">
-                    {bankLabel(r)} <span className="font-mono">{r.accountNumber}</span>
+                    {bankLabel(r)}{' '}
+                    <span className="font-mono">{r.accountNumber}</span>
                   </td>
                   <td className="p-3">{r.holderName}</td>
-                  <td className="p-3 text-muted-foreground">{r.reason ?? '-'}</td>
-                  <td className="p-3 text-muted-foreground">{new Date(r.createdAt).toLocaleString('ko-KR')}</td>
+                  <td className="p-3 text-muted-foreground">
+                    {r.reason ?? '-'}
+                  </td>
+                  <td className="p-3 text-muted-foreground">
+                    {new Date(r.createdAt).toLocaleString('ko-KR')}
+                  </td>
                   <td className="p-3">
                     <div className="flex justify-end gap-2">
                       {canRun(useApproveRefundRequest) && (
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button size="sm" disabled={busy}>
-                            승인
-                          </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>환불 승인</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              {bankLabel(r)} {r.accountNumber} ({r.holderName})로 {r.amount.toLocaleString('ko-KR')}원을
-                              환불합니다. 토스가 자동 송금하며 되돌릴 수 없습니다. <br />
-                              <span className="font-medium text-amber-600">
-                                이미 배송/출고된 주문이 아닌지 확인하셨나요?
-                              </span>
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>취소</AlertDialogCancel>
-                            <AlertDialogAction onClick={() => handleApprove(r)}>승인 및 환불 실행</AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button size="sm" disabled={busy}>
+                              승인
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>환불 승인</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                {bankLabel(r)} {r.accountNumber} ({r.holderName}
+                                )로 {r.amount.toLocaleString('ko-KR')}원을
+                                환불합니다. 토스가 자동 송금하며 되돌릴 수
+                                없습니다. <br />
+                                <span className="font-medium text-amber-600">
+                                  이미 배송/출고된 주문이 아닌지 확인하셨나요?
+                                </span>
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>취소</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => handleApprove(r)}
+                              >
+                                승인 및 환불 실행
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
                       )}
                       {canRun(useRejectRefundRequest) && (
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button size="sm" variant="outline" disabled={busy}>
-                            거절
-                          </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>환불 요청 거절</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              {r.holderName} 고객의 {r.amount.toLocaleString('ko-KR')}원 환불 요청을 거절합니다. 실제
-                              환불은 실행되지 않습니다.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>취소</AlertDialogCancel>
-                            <AlertDialogAction onClick={() => handleReject(r.id)}>거절 처리</AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button size="sm" variant="outline" disabled={busy}>
+                              거절
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>
+                                환불 요청 거절
+                              </AlertDialogTitle>
+                              <AlertDialogDescription>
+                                {r.holderName} 고객의{' '}
+                                {r.amount.toLocaleString('ko-KR')}원 환불 요청을
+                                거절합니다. 실제 환불은 실행되지 않습니다.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>취소</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => handleReject(r.id)}
+                              >
+                                거절 처리
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
                       )}
                     </div>
                   </td>
@@ -184,15 +231,95 @@ export function RefundRequestsContent() {
             총 {total}건 · {page}페이지
           </span>
           <div className="flex gap-2">
-            <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => p - 1)}
+            >
               이전
             </Button>
-            <Button size="sm" variant="outline" disabled={page * limit >= total} onClick={() => setPage((p) => p + 1)}>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={page * limit >= total}
+              onClick={() => setPage((p) => p + 1)}
+            >
               다음
             </Button>
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+export function RefundRequestsContent() {
+  const counts = useRefundRequestCounts();
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
+  const router = useRouter();
+  const requestedTab = searchParams.get('tab');
+  const defaultTab =
+    counts.walletEnabled &&
+    (counts.walletTotal > 0 || counts.membershipTotal === 0)
+      ? 'wallet'
+      : 'membership';
+  const tab =
+    requestedTab === 'membership' && counts.membershipEnabled
+      ? 'membership'
+      : requestedTab === 'wallet' && counts.walletEnabled
+        ? 'wallet'
+        : defaultTab;
+
+  const handleTabChange = (value: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('tab', value);
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  };
+
+  if (counts.isLoading) {
+    return (
+      <div className="flex justify-center p-8">
+        <Spinner />
+      </div>
+    );
+  }
+
+  if (!counts.walletEnabled && !counts.membershipEnabled) {
+    return (
+      <p className="p-8 text-sm text-muted-foreground">
+        환불 조회 권한을 확인해 주세요.
+      </p>
+    );
+  }
+
+  return (
+    <Tabs value={tab} onValueChange={handleTabChange}>
+      <TabsList>
+        {counts.walletEnabled && (
+          <TabsTrigger value="wallet">
+            상품 환불 (무통장){' '}
+            {counts.wallet.isError ? '?' : counts.walletTotal}건
+          </TabsTrigger>
+        )}
+        {counts.membershipEnabled && (
+          <TabsTrigger value="membership">
+            멤버십 환불 (수동 송금){' '}
+            {counts.membership.isError ? '?' : counts.membershipTotal}건
+          </TabsTrigger>
+        )}
+      </TabsList>
+      {counts.walletEnabled && (
+        <TabsContent value="wallet">
+          <WalletRefundRequests />
+        </TabsContent>
+      )}
+      {counts.membershipEnabled && (
+        <TabsContent value="membership">
+          <MembershipRefundRequests />
+        </TabsContent>
+      )}
+    </Tabs>
   );
 }

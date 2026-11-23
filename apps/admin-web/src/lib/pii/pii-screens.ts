@@ -108,7 +108,6 @@ const SHOWN: Readonly<Record<string, PiiScreen>> = {
 
   '/payments': CUSTOMER_MIXED,
   '/payments/points': CUSTOMER,
-  '/payments/refund-requests': CUSTOMER,
   '/payments/refunds': CUSTOMER,
 
   '/statistics/keywords': CUSTOMER,

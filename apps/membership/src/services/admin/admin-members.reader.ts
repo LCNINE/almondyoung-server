@@ -463,6 +463,7 @@ export class AdminMembersReader {
     if (refundPending) {
       baseConditions.push(eq(schema.subscriptionContracts.refundRequested, true));
       baseConditions.push(eq(schema.subscriptionContracts.refundCompleted, false));
+      baseConditions.push(isNotNull(schema.subscriptionContracts.lastPaymentIntentId));
     }
 
     const whereClause = baseConditions.length > 0 ? and(...baseConditions) : undefined;
