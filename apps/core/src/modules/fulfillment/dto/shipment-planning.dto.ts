@@ -410,6 +410,14 @@ export class ScanRejectionHandoffResponseDto {
   workerId: string | null;
 }
 
+export class ScanRejectionNewWaybillResponseDto {
+  @ApiProperty()
+  issuedAt: Date;
+
+  @ApiProperty({ description: '새 송장 번호' })
+  trackingNo: string;
+}
+
 /** 물류앱 출고 저장이 관리자 손이 필요한 사유로 거절돼 막힌 상자 */
 export class ScanRejectionResponseDto {
   @ApiProperty({ description: '거절 코드' })
@@ -448,6 +456,13 @@ export class ScanRejectionResponseDto {
     description: '거절 뒤 담당을 넘겼으면 그 시각과 받은 작업자 — 작업자가 다시 찍기를 기다린다',
   })
   handedOff: ScanRejectionHandoffResponseDto | null;
+
+  @ApiProperty({
+    type: ScanRejectionNewWaybillResponseDto,
+    nullable: true,
+    description: '송장 때문에 막힌 뒤 출고할 수 있는 새 송장이 발급됐으면 — 작업자가 새 송장으로 다시 찍기를 기다린다',
+  })
+  newWaybill: ScanRejectionNewWaybillResponseDto | null;
 }
 
 export class ShipmentDetailResponseDto {
