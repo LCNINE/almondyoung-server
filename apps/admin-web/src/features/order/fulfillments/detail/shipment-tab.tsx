@@ -820,7 +820,9 @@ export function ShipmentTab({
       window.history.replaceState(window.history.state, '', url);
     }
   });
-  const detail = useShipmentDetail(selectedShipmentId);
+  const detail = useShipmentDetail(selectedShipmentId, {
+    followScanRejection: true,
+  });
 
   if (shipments.isLoading)
     return (
