@@ -60,16 +60,17 @@ export function PrintFileNotice({
   const extension = file.name.split(".").pop()?.toUpperCase() ?? ""
 
   return (
-    <div className="border-border bg-muted flex items-center gap-3 rounded-lg border p-3">
-      <span className="border-border text-foreground flex h-14 w-12 shrink-0 items-center justify-center rounded border bg-white text-xs font-bold">
+    <div className="border-border bg-muted flex items-center gap-3 rounded-lg border px-3 py-2">
+      <span className="border-border text-foreground flex h-10 w-9 shrink-0 items-center justify-center rounded border bg-white text-[10px] font-bold">
         {extension}
       </span>
-      <div className="min-w-0 flex-1 text-sm">
-        <p className="text-foreground font-semibold">{t("attachedTitle")}</p>
-        <p className="text-foreground mt-0.5 truncate text-xs">{file.name}</p>
-        <p className="text-muted-foreground mt-0.5 text-xs">
-          {t("attachedHint")}
+      <div className="min-w-0 flex-1 text-xs">
+        <p className="text-foreground truncate">
+          <span className="font-semibold">{t("attachedTitle")}</span>
+          <span className="text-muted-foreground"> · </span>
+          {file.name}
         </p>
+        <p className="text-muted-foreground mt-0.5">{t("attachedHint")}</p>
       </div>
       <Button
         variant="ghost"

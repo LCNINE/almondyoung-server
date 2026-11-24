@@ -168,7 +168,7 @@ const MobileActions: React.FC<MobileActionsProps> = ({
           )}
           <PrintSourceButtons
             templateHref={templateHref}
-            onFileOrder={onFileOrder}
+            onFileOrder={printFile ? undefined : onFileOrder}
           />
           {printFile && onFileOrder && (
             <PrintFileNotice file={printFile} onChange={onFileOrder} />
@@ -353,7 +353,7 @@ const MobileActions: React.FC<MobileActionsProps> = ({
             </div>
             <PrintSourceButtons
               templateHref={templateHref}
-              onFileOrder={fileOrderFromSheet}
+              onFileOrder={printFile ? undefined : fileOrderFromSheet}
               className="mb-2"
             />
             {printFile && fileOrderFromSheet && (
@@ -368,11 +368,6 @@ const MobileActions: React.FC<MobileActionsProps> = ({
               <p className="text-muted-foreground mb-2 text-center text-xs">
                 {t("almondDesignAttached")}
               </p>
-            )}
-            {showCustomOrderNotice && (
-              <div className="mb-2">
-                <CustomOrderNoticeLine targetId={SHEET_NOTICE_ID} />
-              </div>
             )}
             <div className="flex gap-x-3">
               {/* TODO: 재입고 알림 기능 추가 후 활성화
