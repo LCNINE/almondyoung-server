@@ -1,7 +1,9 @@
 import type { PreparationShipmentDto } from '@/lib/types/dto/fulfillment';
 import {
   batchReturnNextStep,
+  isShortLine,
   isSplittableUnreserved,
+  lineSplitText,
   locatePreparationTarget,
   orderAgeOf,
   plannedOrderText,
@@ -288,4 +290,18 @@ describe('orderAgeOf', () => {
     expect(orderAgeOf(undefined, now)).toBeNull();
     expect(orderAgeOf('not-a-date', now)).toBeNull();
   });
+});
+
+describe('isShortLine', () => {
+  it('주문보다 잡은 재고가 적을 때만 모자란 줄이다', () => {
+    expect(isShortLine({ qty: 3, reservedQty: 2 })).toBe(true);
+    expect(isShortLine({ qty: 3, reservedQty: 3 })).toBe(false);
+    expect(isShortLine({ qty: 3, reservedQty: 5 })).toBe(false);
+  });
+});
+
+it('lineSplitText 는 모자란 개수를 앞에 둔다', () => {
+  expect(lineSplitText({ qty: 5, reservedQty: 2 })).toBe(
+    '3개 모자람 · 주문 5 · 지금 보낼 2'
+  );
 });

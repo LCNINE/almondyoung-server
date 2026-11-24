@@ -34,6 +34,7 @@ import {
   batchReturnNextStep,
   batchReturnText,
   bulkSelectableShipments,
+  isShortLine,
   lineSplitText,
   orderAgeOf,
   PREPARATION_BATCH_LIMIT,
@@ -250,10 +251,12 @@ export function BucketList({
                       <ul role="list" className="space-y-1 whitespace-normal">
                         {shipment.lines.map((line, index) => (
                           <li key={index}>
-                            <span className="block">{line.name}</span>
-                            <span className="block whitespace-nowrap text-xs tabular-nums text-muted-foreground">
-                              {lineSplitText(line)}
-                            </span>
+                            <LineName line={line} />
+                            {isShortLine(line) && (
+                              <span className="block whitespace-nowrap text-xs font-semibold tabular-nums text-red-600">
+                                {lineSplitText(line)}
+                              </span>
+                            )}
                           </li>
                         ))}
                       </ul>
@@ -262,9 +265,9 @@ export function BucketList({
                       <ul role="list" className="space-y-1 whitespace-normal">
                         {shipment.lines.map((line, index) => (
                           <li key={index}>
-                            <span className="block">{line.name}</span>
-                            {line.stock && (
-                              <span className="block text-xs tabular-nums text-muted-foreground">
+                            <LineName line={line} />
+                            {isShortLine(line) && line.stock && (
+                              <span className="block text-xs font-semibold tabular-nums text-red-600">
                                 {shortageLineText({
                                   ...line,
                                   stock: line.stock,
@@ -407,6 +410,25 @@ export function BucketList({
           />
         ))}
     </section>
+  );
+}
+
+// 모자란 줄은 빨갛게, 다 있는 줄은 흐리게 — 무엇이 모자라 막혔는지 상품 칸에서 바로 읽히게
+function LineName({
+  line,
+}: {
+  line: { name: string; qty: number; reservedQty: number };
+}) {
+  return (
+    <span
+      className={
+        isShortLine(line)
+          ? 'block font-semibold text-red-600'
+          : 'block text-muted-foreground'
+      }
+    >
+      {line.name}
+    </span>
   );
 }
 

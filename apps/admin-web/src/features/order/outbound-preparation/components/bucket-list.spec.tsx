@@ -257,8 +257,12 @@ it('출고불가 내역은 고를 칸 없이 상품별 재고·모자람과 들�
   expect(screen.queryByRole('checkbox')).toBeNull();
   expect(screen.getByRole('heading').textContent).toBe('출고불가 내역');
   expect(
-    screen.getByText('주문 5 · 이 창고 재고 2 (다른 주문 몫 2) · 모자람 5')
+    screen.getByText('5개 모자람 · 주문 5 · 이 창고 재고 2 (다른 주문 몫 2)')
   ).toBeTruthy();
+  expect(
+    screen.getByText('5개 모자람 · 주문 5 · 이 창고 재고 2 (다른 주문 몫 2)')
+      .className
+  ).toContain('text-red-600');
   expect(
     screen.getByText('이 창고로 올 것: 이동 중 3개(1월 5일 도착 예정)')
   ).toBeTruthy();
@@ -753,4 +757,89 @@ it('재고를 내준 상자는 언제 어느 주문에 내줬는지 보인다', 
   expect(
     screen.getByText(/우선할당한 주문\(#B-1\)에 재고를 내줬어요/)
   ).toBeTruthy();
+});
+
+it('부분출고는 모자란 상품 줄만 빨갛게 수량과 함께, 다 있는 줄은 이름만 흐리게 보인다', () => {
+  render(
+    list({
+      bucket: 'partial',
+      count: 1,
+      singleCount: 0,
+      multiCount: 1,
+      shipments: [
+        {
+          ...shipment('s1', null),
+          lines: [
+            { name: '상품 A', qty: 1, reservedQty: 1 },
+            {
+              name: '상품 B',
+              qty: 3,
+              reservedQty: 1,
+              stock: awayStock('sku-b', 6),
+            },
+          ],
+        },
+      ],
+    })
+  );
+
+  expect(screen.getByText('상품 A').className).toContain(
+    'text-muted-foreground'
+  );
+  expect(screen.getByText('상품 B').className).toContain('text-red-600');
+  expect(
+    screen.getByText('2개 모자람 · 주문 3 · 지금 보낼 1').className
+  ).toContain('text-red-600');
+  expect(screen.queryByText(/주문 1 ·/)).toBeNull();
+});
+
+it('부분출고에 모자란 줄이 없으면 이름만 흐리게 보인다', () => {
+  render(
+    list({
+      bucket: 'partial',
+      count: 1,
+      singleCount: 1,
+      multiCount: 0,
+      shipments: [
+        {
+          ...shipment('s1', null),
+          lines: [{ name: '상품 A', qty: 2, reservedQty: 2 }],
+        },
+      ],
+    })
+  );
+
+  expect(screen.getByText('상품 A').className).toContain(
+    'text-muted-foreground'
+  );
+  expect(screen.queryByText(/모자람/)).toBeNull();
+});
+
+it('출고불가에서 stock 없는 모자란 줄은 이름만 빨갛게 보인다', () => {
+  render(
+    list({
+      bucket: 'unavailable',
+      count: 1,
+      singleCount: 0,
+      multiCount: 1,
+      shipments: [
+        {
+          ...shipment('s1', null),
+          lines: [
+            {
+              name: '상품 A',
+              qty: 2,
+              reservedQty: 0,
+              stock: awayStock('sku-a', 1),
+            },
+            { name: '상품 B', qty: 1, reservedQty: 0 },
+          ],
+        },
+      ],
+    })
+  );
+
+  expect(screen.getByText('상품 A').className).toContain('text-red-600');
+  expect(screen.getByText('상품 B').className).toContain('text-red-600');
+  expect(screen.getAllByText(/개 모자람 ·/)).toHaveLength(1);
 });

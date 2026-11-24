@@ -175,10 +175,16 @@ export function splitQuantities(lines: LineQuantity[]): {
   );
 }
 
+// 주문보다 잡은 재고가 적은 줄. 옛 응답엔 stock 이 없을 수 있어 수량으로만 가린다
+export function isShortLine(line: LineQuantity): boolean {
+  return line.qty > line.reservedQty;
+}
+
+// 모자란 줄(isShortLine)에만 부른다
 export function lineSplitText(line: LineQuantity): string {
   const { now, wait } = splitQuantities([line]);
 
-  return `주문 ${line.qty} · 지금 보낼 ${now} · 기다릴 ${wait}`;
+  return `${wait}개 모자람 · 주문 ${line.qty} · 지금 보낼 ${now}`;
 }
 
 // 합포장한 상자(주문이 여럿)는 서버가 «있는 것만 먼저 보내기»를 거절한다

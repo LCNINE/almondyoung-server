@@ -34,14 +34,14 @@ describe('blocked-copy', () => {
         reservedQty: 0,
         stock: { onHand: 1, reservedByOthers: 4, ...none },
       })
-    ).toBe('주문 3 · 이 창고 재고 1 (다른 주문 몫 1) · 모자람 3');
+    ).toBe('3개 모자람 · 주문 3 · 이 창고 재고 1 (다른 주문 몫 1)');
     expect(
       shortageLineText({
         qty: 3,
         reservedQty: 0,
         stock: { onHand: 0, reservedByOthers: 0, ...none },
       })
-    ).toBe('주문 3 · 이 창고 재고 0 · 모자람 3');
+    ).toBe('3개 모자람 · 주문 3 · 이 창고 재고 0');
   });
 
   it('이 창고로 올 것과 다른 창고에 있는 것을 나눠 쓰고, 모르면 입고 화면으로 보낸다', () => {
