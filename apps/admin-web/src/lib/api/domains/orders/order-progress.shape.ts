@@ -297,19 +297,18 @@ export function initialBoardStage(param: string | null): BoardStageKey {
 }
 
 /** «10종 중 1종 · 헤어클립 세트 2개». 품목이 셋 이상이면 «… 외 N». */
-export function shortageSummary(s: ReserveShortageView): string {
-  const line = (i: ReserveShortageItemView) => `${i.skuName} ${i.shortQty.toLocaleString('ko-KR')}개`;
-  const items =
-    s.items.length <= 2
-      ? s.items.map(line).join(', ')
-      : `${line(s.items[0])} 외 ${s.items.length - 1}`;
-  return `${s.skuKinds}종 중 ${s.shortSkuKinds}종 · ${items}`;
+export function shortageKindsText(s: ReserveShortageView): string {
+  return `${s.skuKinds}종 중 ${s.shortSkuKinds}종`;
 }
 
-/** «입고 10-25». 입고 예정이 없으면 빈 문자열(작은 글씨 최소화). 날짜 문자열을 쪼개 쓴다 — Date 는 시간대로 하루가 밀린다. */
-export function arrivalLabel(expectedArrival: string | null): string {
+/**
+ * «입고 10-25», 지난 날이면 «10-25 예정이 지남». 입고 예정이 없으면 빈 문자열. `today` 는 한국 날짜(YYYY-MM-DD).
+ * 날짜 문자열을 쪼개 쓴다 — Date 는 시간대로 하루가 밀린다.
+ */
+export function arrivalLabel(expectedArrival: string | null, today: string): string {
   const m = expectedArrival ? /^\d{4}-(\d{2}-\d{2})$/.exec(expectedArrival) : null;
-  return m ? `입고 ${m[1]}` : '';
+  if (!expectedArrival || !m) return '';
+  return expectedArrival < today ? `${m[1]} 예정이 지남` : `입고 ${m[1]}`;
 }
 
 /**

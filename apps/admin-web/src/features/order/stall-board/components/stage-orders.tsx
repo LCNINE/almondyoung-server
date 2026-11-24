@@ -8,15 +8,14 @@ import {
   BoardStageKey,
   StageSummary,
   formatDwell,
-  arrivalLabel,
   gaveUpBadge,
-  shortageSummary,
   stateLabel,
 } from '@/lib/api/domains/orders/order-progress.shape';
 import { settlementLabel, settlementReason, settlementTiming } from '@/lib/api/domains/orders/cancel-request.shape';
 import { SettlementActions } from '@/features/order/cancel-settlement/settlement-actions';
 import { ManualRefundTodo } from '@/features/order/cancel-settlement/manual-refund-todo';
 import { PendingTransfers } from './pending-transfers';
+import { ShortageCell } from './shortage-cell';
 import { ShortageSplitAction } from './shortage-split-action';
 import { cn } from '@/lib/utils/ui';
 
@@ -182,14 +181,7 @@ export function StageOrders(props: {
                     {isReserve && (
                       <td className="px-4 py-2">
                         {r.shortage && (
-                          <>
-                            {shortageSummary(r.shortage)}
-                            {arrivalLabel(r.shortage.items[0].expectedArrival) && (
-                              <span className="ml-1.5 text-xs text-muted-foreground">
-                                {arrivalLabel(r.shortage.items[0].expectedArrival)}
-                              </span>
-                            )}
-                          </>
+                          <ShortageCell shortage={r.shortage} now={props.now} />
                         )}
                       </td>
                     )}
