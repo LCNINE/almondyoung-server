@@ -19,6 +19,7 @@ import { getTableColumns } from 'drizzle-orm';
 import { InboundReceipt } from '../../schema/inventory.schema';
 import { ReplayableDates } from '../../shared/mappers/stored-date';
 import { rememberUsualShelf } from '../../core/services/usual-shelf';
+import { InboundArrivalFollowUp } from './inbound-arrival-follow-up';
 
 @Injectable()
 export class InboundService {
@@ -28,6 +29,7 @@ export class InboundService {
     private readonly eventStore: StockEventStore,
     private readonly idempotency: InventoryIdempotencyService,
     private readonly receiptKernel: InboundReceiptKernel,
+    private readonly arrivalFollowUp: InboundArrivalFollowUp,
   ) {}
 
   private get db() {
@@ -51,7 +53,7 @@ export class InboundService {
 
   // 간편입고: 지정 창고의 입고기본존에 여러 SKU를 즉시 입고
   async simpleInbound(dto: SimpleInboundDto, tx?: DbTx, actorId?: string) {
-    return this.idempotency.withIdempotency(
+    const result = await this.idempotency.withIdempotency(
       warehouseEndpoint('inbound.simple', dto),
       dto.idempotencyKey,
       warehouseRequest(dto, actorId),
@@ -79,11 +81,17 @@ export class InboundService {
       },
       tx,
     );
+    await this.afterArrival(
+      tx,
+      dto.warehouseId,
+      dto.items.map((item) => item.skuId),
+    );
+    return result;
   }
 
   // 전수조사 간편입고: 처리 로직은 동일하나 회차/로그의 method를 구분
   async simpleInboundFullscan(dto: SimpleInboundDto, tx?: DbTx, actorId?: string) {
-    return this.idempotency.withIdempotency(
+    const result = await this.idempotency.withIdempotency(
       warehouseEndpoint('inbound.simple-fullscan', dto),
       dto.idempotencyKey,
       warehouseRequest(dto, actorId),
@@ -111,11 +119,17 @@ export class InboundService {
       },
       tx,
     );
+    await this.afterArrival(
+      tx,
+      dto.warehouseId,
+      dto.items.map((item) => item.skuId),
+    );
+    return result;
   }
 
   // 개별입고: 단일 SKU를 지정 로케이션(옵션, 없으면 기본입고존)으로 입고
   async individualInbound(dto: IndividualInboundDto, tx?: DbTx, actorId?: string) {
-    return this.idempotency.withIdempotency(
+    const result = await this.idempotency.withIdempotency(
       warehouseEndpoint('inbound.individual', dto),
       dto.idempotencyKey,
       warehouseRequest(dto, actorId),
@@ -145,6 +159,13 @@ export class InboundService {
       },
       tx,
     );
+    await this.afterArrival(tx, dto.warehouseId, [dto.skuId]);
+    return result;
+  }
+
+  /** 이 메서드가 트랜잭션 주인일 때만 — 바깥 tx 는 아직 커밋 전이라 크론이 맡는다. */
+  private async afterArrival(tx: DbTx | undefined, warehouseId: string, skuIds: string[]): Promise<void> {
+    if (tx === undefined) await this.arrivalFollowUp.afterArrival(warehouseId, skuIds);
   }
 
   /** 입고 전 SKU 존재 확인 — 현행 404 계약(`SKU ${id} not found`)을 유지한다. */

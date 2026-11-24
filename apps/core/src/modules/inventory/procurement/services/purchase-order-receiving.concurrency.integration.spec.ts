@@ -11,6 +11,8 @@ import { PurchaseOrderHeaderDeriver } from './purchase-order-header.deriver';
 import { PurchaseOrderManager } from './purchase-order.manager';
 import { PurchaseOrderReader } from './purchase-order.reader';
 import { PurchaseOrderReceivingManager } from './purchase-order-receiving.manager';
+import { InboundArrivalFollowUp } from '../../inbound/services/inbound-arrival-follow-up';
+import { DeferredArrivalReservations } from '../../inbound/kernel/inbound-arrival-reservations.port';
 
 const DATABASE_URL = process.env.DATABASE_URL ?? '';
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -58,6 +60,7 @@ describeIfDb('PurchaseOrderReceivingManager (PostgreSQL concurrency)', () => {
       new PurchaseOrderHeaderDeriver(),
       reader,
       { recalculateAndPublishForSkus: jest.fn().mockResolvedValue([]) } as never,
+      new InboundArrivalFollowUp(new DeferredArrivalReservations()),
     );
   }
 

@@ -43,6 +43,7 @@ function makeManager(status = 'ordered', expectedArrival = '2026-10-17', receive
     {} as never,
     reader as never,
     projection as never,
+    {} as never,
   );
 
   return { manager, tx, projection, update, steps };

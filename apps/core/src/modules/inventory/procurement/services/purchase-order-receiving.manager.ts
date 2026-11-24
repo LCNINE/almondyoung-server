@@ -7,6 +7,7 @@ import { DbTx, wmsSchema, wmsTables } from '../../schema/inventory.schema';
 import type { PurchaseOrderLine } from '../../schema/inventory.schema';
 import { InboundReceiptKernel } from '../../inbound/kernel/inbound-receipt.kernel';
 import { InventoryIdempotencyService } from '../../core/services/inventory-idempotency.service';
+import { InboundArrivalFollowUp } from '../../inbound/services/inbound-arrival-follow-up';
 import { PurchaseOrderResponse } from '../dto/purchase-order.dto';
 import {
   CancelPurchaseOrderReceiptLineDto,
@@ -44,6 +45,7 @@ export class PurchaseOrderReceivingManager {
     private readonly headerDeriver: PurchaseOrderHeaderDeriver,
     private readonly reader: PurchaseOrderReader,
     private readonly productSellableQuantity: ProductSellableQuantityService,
+    private readonly arrivalFollowUp: InboundArrivalFollowUp,
   ) {}
 
   async receive(
@@ -52,7 +54,7 @@ export class PurchaseOrderReceivingManager {
     tx?: DbTx,
     actorId?: string,
   ): Promise<PurchaseOrderReceiptResponseDto> {
-    return this.idempotency.withIdempotency(
+    const result = await this.idempotency.withIdempotency(
       warehouseEndpoint('purchase_order.receive', dto),
       dto.idempotencyKey,
       warehouseRequest({ poId, ...dto } as ReceivePurchaseOrderDto, actorId),
@@ -130,6 +132,14 @@ export class PurchaseOrderReceivingManager {
       },
       tx,
     );
+    // 트랜잭션 주인일 때만 — 바깥 tx 는 아직 커밋 전이라 크론이 맡는다
+    if (tx === undefined) {
+      await this.arrivalFollowUp.afterArrival(
+        dto.warehouseId,
+        result.lines.map((line) => line.skuId),
+      );
+    }
+    return result;
   }
 
   async cancelReceiptLine(
