@@ -1083,6 +1083,8 @@ export interface PreparationIncoming {
   inTransit: number;
   inTransitEta: string | null;
   ordered: number;
+  // 바로 오는 발주의 예정일. 옛 응답에는 없다
+  orderedEta?: string | null;
   inboundShipment: number;
   inboundShipmentEta: string | null;
 }
@@ -1101,6 +1103,8 @@ export interface PreparationLineStock {
   reservedByOthers: number;
   // 아직 어느 상자도 잡지 않은 수량. 옛 응답에는 없다
   available?: number;
+  // 이 창고에서 재고를 아직 못 잡은 수량의 합. 옛 응답에는 없다
+  waiting?: number;
   // 판매 창고가 이 창고 하나일 때만 안다
   incoming: PreparationIncoming | null;
   elsewhere: PreparationElsewhere | null;

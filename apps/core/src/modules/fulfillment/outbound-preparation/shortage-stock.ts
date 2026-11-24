@@ -1,4 +1,4 @@
-import { eq, getTableName, inArray, sql, type Column, type Table } from 'drizzle-orm';
+import { and, eq, getTableName, inArray, sql, type Column, type Table } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { InboundPipelineRow } from '../../inventory/stock-projection/services/inbound-pipeline.reader';
 
@@ -8,6 +8,7 @@ export interface ShortageIncoming {
   inTransitEta: string | null;
   // 이 창고로 바로 들어오는 발주 잔량
   ordered: number;
+  orderedEta: string | null;
   // 이 창고로 오는 선적 잔량
   inboundShipment: number;
   inboundShipmentEta: string | null;
@@ -28,6 +29,8 @@ export interface ShortageStock {
   reservedByOthers: number;
   // 아직 어느 상자도 잡지 않은 수량
   available: number;
+  // 이 창고에서 재고를 아직 못 잡은 수량의 합
+  waiting: number;
   // 이 창고로 오는 것은 판매 창고가 이 창고 하나일 때만, 다른 창고에 있는 것은 이 창고가 판매 창고일 때만 안다. 모르면 null
   incoming: ShortageIncoming | null;
   elsewhere: ShortageElsewhere | null;
@@ -62,6 +65,35 @@ export async function loadWarehouseStock(
 }
 
 /**
+ * 이 창고에서 상품마다 재고를 아직 못 잡은 수량. 예약 재시도가 들어온 재고를 나눠 주는 상자(draft)를 그대로 센다 —
+ * 출고 준비 목록에 없는 셀메이트 상자도 같은 재고를 기다린다.
+ */
+export async function loadWaitingQuantities(
+  trx: DbTx,
+  warehouseId: string,
+  skuIds: string[],
+): Promise<Map<string, number>> {
+  if (skuIds.length === 0) {
+    return new Map();
+  }
+
+  const { shipments, shipmentLines, stockReservations: reservations } = wmsTables;
+  const rows = await trx
+    .select({
+      skuId: shipmentLines.skuId,
+      qty: sql<number>`SUM(GREATEST(0, ${shipmentLines.qty} - COALESCE((SELECT SUM(${reservations.quantity}) FROM ${reservations} WHERE ${reservations.targetType} = 'SHIPMENT_LINE' AND ${reservations.shipmentLineId} = ${shipmentLines.id} AND ${reservations.status} = 'confirmed'), 0)))::int`,
+    })
+    .from(shipments)
+    .innerJoin(shipmentLines, eq(shipmentLines.shipmentId, shipments.id))
+    .where(
+      and(eq(shipments.warehouseId, warehouseId), eq(shipments.status, 'draft'), inArray(shipmentLines.skuId, skuIds)),
+    )
+    .groupBy(shipmentLines.skuId);
+
+  return new Map(rows.map((row) => [row.skuId, Number(row.qty)]));
+}
+
+/**
  * 공급 파이프라인으로 이 창고에 대해 무엇을 알 수 있는가. 판매하지 않는 창고 보유·발주(다른 창고)는 판매 창고이면 알고,
  * 이 창고로 오는 수량(판매 창고 축)은 판매 창고가 이 창고 하나일 때만 이 창고의 수량과 같다.
  */
@@ -86,7 +118,7 @@ export async function readPipelineScope(
  * 아직 다른 창고에 있거나 그쪽으로 들어올 것(이동 대기·해외 발주). 모르는 쪽은 null 이다.
  */
 export function shortageStockOf(
-  stock: { onHand: number; reserved: number } | undefined,
+  stock: { onHand: number; reserved: number; waiting: number } | undefined,
   pipeline: InboundPipelineRow | undefined,
   ownReservedQty: number,
   scope: { incoming: boolean; elsewhere: boolean },
@@ -95,11 +127,13 @@ export function shortageStockOf(
     onHand: stock?.onHand ?? 0,
     reservedByOthers: Math.max(0, (stock?.reserved ?? 0) - ownReservedQty),
     available: Math.max(0, (stock?.onHand ?? 0) - (stock?.reserved ?? 0)),
+    waiting: stock?.waiting ?? 0,
     incoming: scope.incoming
       ? {
           inTransit: pipeline?.inTransitQty ?? 0,
           inTransitEta: dateText(pipeline?.inTransitEta ?? null),
           ordered: Math.max(0, (pipeline?.onOrderTotalQty ?? 0) - (pipeline?.onOrderQty ?? 0)),
+          orderedEta: pipeline?.onOrderToSellableEta ?? null,
           inboundShipment: pipeline?.inboundShipmentToSellableQty ?? 0,
           inboundShipmentEta: pipeline?.inboundShipmentEta ?? null,
         }

@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import type { PreparationShipmentDto } from '@/lib/types/dto/fulfillment';
+import { kstToday } from '@/features/order/matching/lib/date-key';
 import { incomingText } from '../blocked-copy';
 import {
   isSplittableUnreserved,
@@ -42,7 +43,8 @@ export function SplitConfirmDialog({
   );
   const excludedCount = splittable.length - chosen.length;
   const totals = splitQuantities(chosen.flatMap(({ lines }) => lines ?? []));
-  const products = waitingProducts(chosen);
+  const today = kstToday();
+  const products = waitingProducts(chosen, today);
 
   return (
     <AlertDialog open onOpenChange={(open) => !open && onClose()}>
@@ -87,7 +89,7 @@ export function SplitConfirmDialog({
                     기다림
                   </span>
                   <span className="block text-muted-foreground">
-                    {incomingText(product.stock)}
+                    {incomingText(product.stock, today)}
                   </span>
                 </div>
                 <Button

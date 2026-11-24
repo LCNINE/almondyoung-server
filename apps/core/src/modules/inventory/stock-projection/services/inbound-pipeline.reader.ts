@@ -16,6 +16,8 @@ export interface InboundPipelineRow {
   onOrderEta: Date | null;
   /** 창고 불문 실발주 라인 잔량. 전사 축(#743)이 쓴다. 판매창고행 = onOrderTotalQty − onOrderQty. */
   onOrderTotalQty: number;
+  /** 판매창고행 발주의 가장 이른 예정일 (date 문자열). 없으면 null. */
+  onOrderToSellableEta: string | null;
   awaitingTransferQty: number;
   inTransitQty: number;
   inTransitEta: Date | null;
@@ -83,7 +85,8 @@ export class InboundPipelineReader {
         skuId,
         onOrderQty: onOrder.get(skuId)?.qty ?? 0,
         onOrderEta: onOrder.get(skuId)?.eta ?? null,
-        onOrderTotalQty: onOrderTotal.get(skuId) ?? 0,
+        onOrderTotalQty: onOrderTotal.get(skuId)?.qty ?? 0,
+        onOrderToSellableEta: onOrderTotal.get(skuId)?.sellableEta ?? null,
         awaitingTransferQty: awaiting.get(skuId) ?? 0,
         inTransitQty: inTransit.get(skuId)?.qty ?? 0,
         inTransitEta: inTransit.get(skuId)?.eta ?? null,
@@ -133,9 +136,11 @@ export class InboundPipelineReader {
    * 전 창고 실발주 라인 잔량. ①과 달리 판매 창고행(국내 직행 발주)도 센다 — 전사 축은
    * "회사가 이미 산 것" 전부가 필요하다. ①의 비판매 조건을 지우는 게 아니라 항목을 하나 더 낸다.
    */
-  private async readOnOrderTotal(trx: DbTx, skuIds: string[]): Promise<Map<string, number>> {
-    const outstanding = await this.purchaseOrders.sumOutstandingBySku(skuIds, 'all', trx);
-    return new Map([...outstanding].map(([skuId, row]) => [skuId, row.qty]));
+  private async readOnOrderTotal(
+    trx: DbTx,
+    skuIds: string[],
+  ): Promise<Map<string, { qty: number; sellableEta: string | null }>> {
+    return this.purchaseOrders.sumOutstandingBySku(skuIds, 'all', trx);
   }
 
   /** ② 비판매 창고에 도착해 있으나 아직 이동 지시서에 실리지 않은 물량. 예정일이라 할 것이 없다. */

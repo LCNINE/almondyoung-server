@@ -22,7 +22,7 @@ import { loadShortPickReturns } from './short-pick-returns';
 import { batchExitReasonOf, loadNeedsNewWaybill, loadReturnedWorkItems } from './batch-returns';
 import { OUR_HOLDER_KEY, preparationOwnerOf } from './preparation-owner';
 import { loadNeedsInfoLines, loadUntrustedLineSkus, needsInfoIssues, needsInfoReasonText } from './needs-info';
-import { loadWarehouseStock, readPipelineScope, shortageStockOf } from './shortage-stock';
+import { loadWaitingQuantities, loadWarehouseStock, readPipelineScope, shortageStockOf } from './shortage-stock';
 import { InboundPipelineReader } from '../../inventory/stock-projection/services/inbound-pipeline.reader';
 import {
   OutboundPreparationQueryDto,
@@ -368,6 +368,7 @@ export class OutboundPreparationReader {
       ),
     );
     const stock = await loadWarehouseStock(trx, warehouseId, skuIds);
+    const waiting = await loadWaitingQuantities(trx, warehouseId, skuIds);
     const scope = await readPipelineScope(trx, warehouseId);
     const pipeline = new Map(
       scope.elsewhere
@@ -393,7 +394,15 @@ export class OutboundPreparationReader {
 
         return {
           ...line,
-          stock: { skuId, ...shortageStockOf(stock.get(skuId), pipeline.get(skuId), ownReserved, scope) },
+          stock: {
+            skuId,
+            ...shortageStockOf(
+              { ...(stock.get(skuId) ?? { onHand: 0, reserved: 0 }), waiting: waiting.get(skuId) ?? 0 },
+              pipeline.get(skuId),
+              ownReserved,
+              scope,
+            ),
+          },
         };
       });
     }

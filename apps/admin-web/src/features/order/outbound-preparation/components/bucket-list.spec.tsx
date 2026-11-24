@@ -205,7 +205,7 @@ it('출고불가 내역은 고를 칸 없이 상품별 재고·모자람과 들�
                 reservedByOthers: 2,
                 incoming: {
                   inTransit: 3,
-                  inTransitEta: '2026-01-05',
+                  inTransitEta: '2099-01-05',
                   ordered: 0,
                   inboundShipment: 0,
                   inboundShipmentEta: null,
@@ -453,6 +453,66 @@ it('부분출고는 모자란 상품이 언제 들어오는지 사유 칸에 상
       .getByRole('link', { name: '보충 제안에서 보기' })
       .getAttribute('href')
   ).toBe('/inventory/replenishment?sku=sku-b');
+});
+
+it('한국 날짜로 어제가 예정일이던 발주는 지났다고 보이고, 기다리는 수량보다 적으면 모자란 만큼 보인다', () => {
+  jest.useFakeTimers();
+  // 한국은 1월 10일 0시 30분
+  jest.setSystemTime(new Date('2026-01-09T15:30:00Z'));
+
+  const direct = (skuId: string, orderedEta: string) => ({
+    skuId,
+    onHand: 0,
+    reservedByOthers: 0,
+    available: 0,
+    waiting: 9,
+    incoming: {
+      inTransit: 0,
+      inTransitEta: null,
+      ordered: 6,
+      orderedEta,
+      inboundShipment: 0,
+      inboundShipmentEta: null,
+    },
+    elsewhere: { onHand: 0, ordered: 0, orderedEta: null },
+  });
+
+  try {
+    render(
+      list({
+        bucket: 'unavailable',
+        count: 1,
+        singleCount: 0,
+        multiCount: 1,
+        shipments: [
+          {
+            ...shipment('s1', null),
+            lines: [
+              {
+                name: '상품 A',
+                qty: 2,
+                reservedQty: 0,
+                stock: direct('a', '2026-01-09'),
+              },
+              {
+                name: '상품 B',
+                qty: 2,
+                reservedQty: 0,
+                stock: direct('b', '2026-01-10'),
+              },
+            ],
+          },
+        ],
+      })
+    );
+
+    expect(
+      screen.getByText(/발주 6개\(1월 9일 예정이 지났어요\)/).textContent
+    ).toContain('모두 9개 기다려 3개 모자라요');
+    expect(screen.getByText(/발주 6개\(1월 10일 입고 예정\)/)).toBeTruthy();
+  } finally {
+    jest.useRealTimers();
+  }
 });
 
 it('보충 제안 화면을 볼 수 없으면 링크를 보이지 않는다', () => {
