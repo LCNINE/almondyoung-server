@@ -4,22 +4,36 @@ import { listMadeToOrderPrintMasterIds } from "@/lib/api/print/print-product"
 const WAIT_MS = 1500
 
 let cached: Promise<Set<string>> | null = null
+let resolved: Set<string> | null = null
 
 export function madeToOrderMasterIds(): Promise<Set<string>> {
-  if (cached) {
-    return cached
+  if (resolved) {
+    return Promise.resolve(resolved)
   }
 
-  const loading = listMadeToOrderPrintMasterIds()
-    .then((ids) => new Set(ids))
-    .catch(() => new Set<string>())
+  const loading =
+    cached ??
+    listMadeToOrderPrintMasterIds()
+      .then((ids) => {
+        resolved = new Set(ids)
+
+        return resolved
+      })
+      .catch(() => {
+        cached = null
+
+        return new Set<string>()
+      })
   cached = loading
 
   return Promise.race([
     loading,
     new Promise<Set<string>>((resolve) =>
       setTimeout(() => {
-        cached = null
+        if (!resolved && cached === loading) {
+          cached = null
+        }
+
         resolve(new Set())
       }, WAIT_MS)
     ),

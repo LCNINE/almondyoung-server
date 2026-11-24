@@ -16,10 +16,11 @@ import type { PrintFileRejection } from "@/lib/types/ui/print-orders"
 
 const REJECTION_COPY: Record<
   string,
-  "notYours" | "wrongType" | "alreadySent" | "failed"
+  "notYours" | "wrongType" | "sameFile" | "alreadySent" | "failed"
 > = {
   PRINT_FILE_NOT_YOURS: "notYours",
   PRINT_FILE_TYPE_NOT_ACCEPTED: "wrongType",
+  PRINT_FILE_SAME_AS_REJECTED: "sameFile",
   PRINT_FILE_NOT_REJECTED: "alreadySent",
   PRINT_FILE_DELIVERY_FAILED: "failed",
 }

@@ -1001,6 +1001,7 @@
       "done": "We sent the new file to the printer",
       "notYours": "This file can't be used. Please upload your own file",
       "wrongType": "This product doesn't accept that file type",
+      "sameFile": "This is the file the printer sent back. Please upload a corrected file",
       "alreadySent": "A new file was already sent. Please refresh",
       "failed": "We couldn't send the file to the printer. Please try again shortly",
       "dialogTitle": "Upload a new print file",
