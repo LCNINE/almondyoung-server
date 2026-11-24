@@ -20,6 +20,7 @@ import {
 } from './CancelReceiptDialog';
 import { useReturnGoods } from './returnGoods';
 import { useWaitingOrders } from './waitingOrders';
+import { ReadyShipmentsSection } from './ReadyShipmentsSection';
 import { WaitingOrdersFailed, WaitingOrdersNote } from './WaitingOrdersNote';
 import {
   ReturnPutawaySheet,
@@ -345,6 +346,12 @@ export function PutawayQueueScreen({
           ))}
         </ul>
       )}
+
+      {/* 화면 순서대로 넘긴다 — 100줄이 넘으면 화면 앞쪽 100줄만 본다 */}
+      <ReadyShipmentsSection
+        warehouseId={warehouseId}
+        receiptLineIds={items.map((item) => item.lineId)}
+      />
 
       {queue.hasNextPage && !queue.isFetchNextPageError ? (
         <Button

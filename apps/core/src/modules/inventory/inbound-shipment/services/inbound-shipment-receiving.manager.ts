@@ -6,6 +6,7 @@ import { DbTx, wmsTables } from '../../schema/inventory.schema';
 import type { InboundShipment, InboundShipmentLine } from '../../schema/inventory.schema';
 import { InboundReceiptKernel } from '../../inbound/kernel/inbound-receipt.kernel';
 import { InventoryIdempotencyService } from '../../core/services/inventory-idempotency.service';
+import { InboundArrivalFollowUp } from '../../inbound/services/inbound-arrival-follow-up';
 import { warehouseEndpoint, warehouseRequest } from '../../core/services/warehouse-operation-contract';
 import { ProductSellableQuantityService } from '../../product-sellable-quantity/services/product-sellable-quantity.service';
 import {
@@ -56,6 +57,7 @@ export class InboundShipmentReceivingManager {
     private readonly kernel: InboundReceiptKernel,
     private readonly idempotency: InventoryIdempotencyService,
     private readonly productSellableQuantity: ProductSellableQuantityService,
+    private readonly arrivalFollowUp: InboundArrivalFollowUp,
   ) {}
 
   async receiveBox(
@@ -67,7 +69,9 @@ export class InboundShipmentReceivingManager {
   ): Promise<ReceiveBoxResult> {
     const endpoint = warehouseEndpoint('inbound_shipment.box.receive', dto);
     const request: ReceiveBoxDto & { shipmentId: string; boxId: string } = { shipmentId, boxId, ...dto };
-    return this.idempotency.withIdempotency(
+    // 원장에 실제로 들어간 것 — 같은 키 재시도(본문을 안 탄다)와 0 만 센 상자는 비어 있다
+    const arrived: { at?: { warehouseId: string; skuIds: string[] } } = {};
+    const result = await this.idempotency.withIdempotency(
       endpoint,
       dto.idempotencyKey,
       warehouseRequest(request, actorId),
@@ -133,6 +137,9 @@ export class InboundShipmentReceivingManager {
         if (arrival && arrival.lines.length !== ledger.length) {
           throw new Error(`kernel returned ${arrival.lines.length} receipt lines for ${ledger.length} inputs`);
         }
+        if (arrival) {
+          arrived.at = { warehouseId: shipment.warehouseId, skuIds: arrival.lines.map((line) => line.skuId) };
+        }
 
         // 집계 id 는 미리 만든다 — RETURNING 행 순서에 기대지 않는다
         const countRows = planned.map((p) => ({
@@ -177,6 +184,11 @@ export class InboundShipmentReceivingManager {
       },
       tx,
     );
+    // 트랜잭션 주인일 때만 — 바깥 tx 는 아직 커밋 전이라 크론이 맡는다
+    if (tx === undefined && arrived.at) {
+      await this.arrivalFollowUp.afterArrival(arrived.at.warehouseId, arrived.at.skuIds);
+    }
+    return result;
   }
 
   /**

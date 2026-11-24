@@ -83,6 +83,8 @@ import { ShipmentWaybillReader } from './reader/shipment-waybill.reader';
 import { BatchPickListReader } from './reader/batch-pick-list';
 import { BatchPickListController } from './controllers/batch-pick-list.controller';
 import { WaitingOrdersReader } from './reader/waiting-orders.reader';
+import { ReadyShipmentsReader } from './reader/ready-shipments.reader';
+import { ReadyShipmentsController } from './controllers/ready-shipments.controller';
 import { WaitingOrdersController } from './controllers/waiting-orders.controller';
 import { StockPriorityController } from './controllers/stock-priority.controller';
 import { StockPriorityManager } from './stock-priority/stock-priority.manager';
@@ -165,6 +167,7 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     OutboundBatchV2Controller,
     BatchPickListController,
     WaitingOrdersController,
+    ReadyShipmentsController,
     StockPriorityController,
     PickingV2Controller,
     PickingCommandV2Controller,
@@ -248,6 +251,7 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     ShipmentWaybillReader,
     BatchPickListReader,
     WaitingOrdersReader,
+    ReadyShipmentsReader,
     StockPriorityReader,
     StockPriorityManager,
     StockPriorityService,

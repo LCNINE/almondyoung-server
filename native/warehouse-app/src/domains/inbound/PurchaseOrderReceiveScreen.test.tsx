@@ -150,6 +150,8 @@ interface RenderOpts {
   conflictReceive?: boolean;
   /** GET /waiting-orders 응답 — 없으면 기다리는 주문 없음 */
   waiting?: Array<{ skuId: string; orders: number; qty: number }>;
+  /** GET /ready-shipments 의 상자 줄 — 없으면 없음 */
+  ready?: unknown[];
 }
 
 async function renderScreen(calls: Call[], opts: RenderOpts = {}) {
@@ -202,6 +204,8 @@ async function renderScreen(calls: Call[], opts: RenderOpts = {}) {
       if (o.path.startsWith('/inventory/expected-arrivals')) return served;
       if (o.path.startsWith('/waiting-orders?'))
         return { items: opts.waiting ?? [] };
+      if (o.path.startsWith('/ready-shipments?'))
+        return { items: opts.ready ?? [], waitingOnOtherSkus: 0 };
       if (o.path.startsWith('/inventory/skus?barcode=8801'))
         return SKU_BY_BARCODE;
       if (o.path.startsWith('/inventory/skus?barcode=')) return [];
@@ -328,7 +332,53 @@ async function renderScreen(calls: Call[], opts: RenderOpts = {}) {
   return qc;
 }
 
+const READY_BOX = {
+  shipmentId: 'sh-1',
+  status: 'planned',
+  orderNos: ['A-1001'],
+  recipientMasked: '김*영',
+  skuCount: 1,
+  totalQty: 2,
+  readiness: 'putaway_required',
+};
+
 describe('PurchaseOrderReceiveScreen', () => {
+  it('미발송 주문 칸을 그 화면의 입고 줄로 보인다', async () => {
+    const user = userEvent.setup();
+    const calls: Call[] = [];
+    await renderScreen(calls, { ready: [READY_BOX] });
+    await screen.findByText('코튼셔츠');
+    await user.click(screen.getByRole('button', { name: '스캔:8801' }));
+    await screen.findByRole('dialog', { name: '입고 수량' });
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '입고' })).toBeEnabled()
+    );
+    await user.click(screen.getByRole('button', { name: '입고' }));
+
+    expect(await screen.findByText('미발송 주문')).toBeInTheDocument();
+    expect(screen.getByText('적치하면 나갈 수 있어요')).toBeInTheDocument();
+    expect(
+      calls.some(
+        (c) =>
+          c.path.startsWith('/ready-shipments?') &&
+          c.path.includes('receiptLineIds=rl-1')
+      )
+    ).toBe(true);
+  });
+
+  it('확정 전에는 /ready-shipments 를 부르지 않는다', async () => {
+    const user = userEvent.setup();
+    const calls: Call[] = [];
+    await renderScreen(calls, { ready: [READY_BOX] });
+    await screen.findByText('코튼셔츠');
+    await user.click(screen.getByRole('button', { name: '스캔:8801' }));
+    await screen.findByRole('dialog', { name: '입고 수량' });
+
+    expect(calls.some((c) => c.path.startsWith('/ready-shipments'))).toBe(
+      false
+    );
+  });
+
   it('발주 라인을 발주/입고/남은 수량으로 보여준다', async () => {
     await renderScreen([]);
     expect(await screen.findByText('코튼셔츠')).toBeInTheDocument();

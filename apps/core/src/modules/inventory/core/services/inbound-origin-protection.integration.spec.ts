@@ -15,6 +15,8 @@ import {
   makeMovementService,
   buildWiring,
 } from '../../inbound/services/__fixtures__/inbound-harness';
+import { InboundArrivalFollowUp } from '../../inbound/services/inbound-arrival-follow-up';
+import { DeferredArrivalReservations } from '../../inbound/kernel/inbound-arrival-reservations.port';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -428,6 +430,7 @@ describeIfDb('Inbound origin protection at the stock write boundary', () => {
         new PurchaseOrderHeaderDeriver(),
         new PurchaseOrderReader(dbService),
         { recalculateAndPublishForSkus: jest.fn().mockResolvedValue([]) } as never,
+        new InboundArrivalFollowUp(new DeferredArrivalReservations()),
       );
       const received = await receiving.receive(
         po.id,

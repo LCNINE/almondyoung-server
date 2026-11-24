@@ -14,6 +14,7 @@ import { usePutaway } from './mutations';
 import type { PutawayTarget } from './types';
 import { RememberUsualToggle } from './RememberUsualToggle';
 import { useWaitingOrders } from './waitingOrders';
+import { ReadyShipmentsSection } from './ReadyShipmentsSection';
 import { WaitingOrdersFailed, WaitingOrdersNote } from './WaitingOrdersNote';
 import type { ReceiptLineState } from './receiptState';
 
@@ -452,6 +453,11 @@ function PutawaySheetContent({
             {errorMessage(putaway.error, 'putaway')}
           </p>
         ) : null}
+
+        <ReadyShipmentsSection
+          warehouseId={warehouseId}
+          receiptLineIds={[target.lineId]}
+        />
 
         <div className="flex gap-2">
           <Button

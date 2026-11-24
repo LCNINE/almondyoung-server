@@ -39,6 +39,8 @@ import { StockRemovalReservations } from '../../apps/core/src/modules/fulfillmen
 import { ShipmentReservationService } from '../../apps/core/src/modules/fulfillment/services/shipment-reservation.service';
 import { FulfillmentProgressService } from '../../apps/core/src/modules/fulfillment/services/fulfillment-progress.service';
 import { FulfillmentInvariantService } from '../../apps/core/src/modules/fulfillment/services/fulfillment-invariant.service';
+import { InboundArrivalFollowUp } from '../../apps/core/src/modules/inventory/inbound/services/inbound-arrival-follow-up';
+import { DeferredArrivalReservations } from '../../apps/core/src/modules/inventory/inbound/kernel/inbound-arrival-reservations.port';
 
 // scripts/seeding/constants/uuids.ts 의 WAREHOUSE_BUCHEON_DOMESTIC
 const WAREHOUSE_BUCHEON = '019d0001-0001-7000-a000-000000000001';
@@ -108,6 +110,7 @@ async function main() {
         ),
       ),
     ),
+    new InboundArrivalFollowUp(new DeferredArrivalReservations()),
   );
 
   try {

@@ -168,6 +168,10 @@ interface RenderOpts {
   returnGoods?: ReturnGoods | 'error';
   /** GET /waiting-orders 응답 — 없으면 기다리는 주문 없음 */
   waiting?: Array<{ skuId: string; orders: number; qty: number }>;
+  /** GET /ready-shipments 의 상자 줄 — 없으면 없음 */
+  ready?: unknown[];
+  /** GET /ready-shipments 경로를 모은다 */
+  readyCalls?: string[];
   /** POST /movement/move 본문을 모은다 */
   moves?: unknown[];
   /** POST /movement/move 멱등키를 모은다 */
@@ -273,6 +277,10 @@ function renderScreen(prefsSeed?: Record<string, string>, opts?: RenderOpts) {
       }
       if (o.path.startsWith('/waiting-orders?'))
         return { items: opts?.waiting ?? [] };
+      if (o.path.startsWith('/ready-shipments?')) {
+        opts?.readyCalls?.push(o.path);
+        return { items: opts?.ready ?? [], waitingOnOtherSkus: 0 };
+      }
       if (o.path === '/inbound/putaway') return { success: true };
       if (o.path.startsWith('/inventory/stocks/return-zone')) {
         opts?.calls?.push(o.path);
@@ -345,7 +353,30 @@ function renderScreen(prefsSeed?: Record<string, string>, opts?: RenderOpts) {
   return qc;
 }
 
+const READY_BOX = {
+  shipmentId: 'sh-1',
+  status: 'planned',
+  orderNos: ['A-1001'],
+  recipientMasked: '김*영',
+  skuCount: 1,
+  totalQty: 2,
+  readiness: 'putaway_required',
+};
+
 describe('PutawayQueueScreen', () => {
+  it('미발송 주문 칸을 그 화면의 입고 줄로 보인다', async () => {
+    const calls: string[] = [];
+    renderScreen(SELECTED, { ready: [READY_BOX], readyCalls: calls });
+    await screen.findByText('무선마우스 블랙');
+
+    expect(await screen.findByText('미발송 주문')).toBeInTheDocument();
+    expect(screen.getByText('적치하면 나갈 수 있어요')).toBeInTheDocument();
+    const read = calls.find((path) => path.startsWith('/ready-shipments?'));
+    expect(
+      new URL(read!, 'http://localhost').searchParams.get('receiptLineIds')
+    ).toBe('l-1,l-2');
+  });
+
   it('200건 목록 밖·기간 밖 상품도 서버 검색으로 적치한다', async () => {
     const calls: string[] = [];
     renderScreen(SELECTED, {

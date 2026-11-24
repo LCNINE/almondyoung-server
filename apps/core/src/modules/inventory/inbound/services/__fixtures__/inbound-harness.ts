@@ -21,6 +21,8 @@ import { FulfillmentInvariantService } from '../../../../fulfillment/services/fu
 import { FulfillmentProgressService } from '../../../../fulfillment/services/fulfillment-progress.service';
 import { ShipmentReservationService } from '../../../../fulfillment/services/shipment-reservation.service';
 import { StockRemovalReservations } from '../../../../fulfillment/stock-removal/stock-removal-reservations';
+import { InboundArrivalFollowUp } from '../inbound-arrival-follow-up';
+import { DeferredArrivalReservations } from '../../kernel/inbound-arrival-reservations.port';
 
 export type Database = PostgresJsDatabase<typeof wmsSchema>;
 
@@ -91,6 +93,7 @@ export function makeInboundService(database: Database): InboundService {
     eventStore,
     idempotency,
     new InboundReceiptKernel(command, location, eventStore, guard, reservations),
+    new InboundArrivalFollowUp(new DeferredArrivalReservations()),
   );
 }
 

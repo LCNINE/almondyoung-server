@@ -33,6 +33,8 @@ import { seedOutboundReady } from './outbound';
 import { seedOutboundScenarios } from './outbound-scenarios';
 import { seedReturnScenarios } from './return-scenarios';
 import { seedBulk } from './bulk';
+import { InboundArrivalFollowUp } from '../../../apps/core/src/modules/inventory/inbound/services/inbound-arrival-follow-up';
+import { DeferredArrivalReservations } from '../../../apps/core/src/modules/inventory/inbound/kernel/inbound-arrival-reservations.port';
 
 /**
  * 이 스크립트의 유일한 의도된 대상은 DEFAULT_SEED_URL(localhost:5432/dev_core) 이다.
@@ -118,6 +120,7 @@ async function main(): Promise<void> {
       wired.eventStore,
       idempotency,
       receiptKernel,
+      new InboundArrivalFollowUp(new DeferredArrivalReservations()),
     );
     const headerDeriver = new PurchaseOrderHeaderDeriver();
     const poReader = new PurchaseOrderReader(dbService);
@@ -128,6 +131,7 @@ async function main(): Promise<void> {
       headerDeriver,
       poReader,
       wired.sellable,
+      new InboundArrivalFollowUp(new DeferredArrivalReservations()),
     );
     void inboundService;
     // 반품 예정 기록은 실제 Manager 가 만든다. 발행자는 outbox 에 적재만 한다 — 시드가 Kafka 를 부르지 않는다.

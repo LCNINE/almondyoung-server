@@ -121,6 +121,7 @@ async function renderScreen(
     serverDown?: { now: boolean };
     savedScans?: string[];
     waiting?: Array<{ skuId: string; orders: number; qty: number }>;
+    ready?: unknown[];
   }
 ) {
   const qc = new QueryClient({
@@ -166,6 +167,8 @@ async function renderScreen(
         };
       if (o.path.startsWith('/waiting-orders?'))
         return { items: [...(hold?.waiting ?? [])] };
+      if (o.path.startsWith('/ready-shipments?'))
+        return { items: hold?.ready ?? [], waitingOnOtherSkus: 0 };
       if (o.path.startsWith('/inventory/skus/search/advanced?'))
         return { items: BOX_SKU, total: 1 };
       if (o.path.startsWith('/inventory/skus?barcode=880')) return BOX_SKU;
@@ -323,7 +326,46 @@ async function renderScreen(
   );
 }
 
+const READY_BOX = {
+  shipmentId: 'sh-1',
+  status: 'planned',
+  orderNos: ['A-1001'],
+  recipientMasked: '김*영',
+  skuCount: 1,
+  totalQty: 2,
+  readiness: 'putaway_required',
+};
+
 describe('QuickInboundScreen', () => {
+  it('미발송 주문 칸을 그 화면의 입고 줄로 보인다', async () => {
+    const calls: Call[] = [];
+    await renderScreen(calls, { lineId: 'ln-1' }, false, { ready: [READY_BOX] });
+
+    expect(await screen.findByText('미발송 주문')).toBeInTheDocument();
+    expect(screen.getByText('적치하면 나갈 수 있어요')).toBeInTheDocument();
+    expect(
+      calls.some(
+        (c) =>
+          c.path.startsWith('/ready-shipments?') &&
+          c.path.includes('receiptLineIds=ln-1')
+      )
+    ).toBe(true);
+  });
+
+  it('확정 전에는 /ready-shipments 를 부르지 않는다', async () => {
+    const user = userEvent.setup();
+    const calls: Call[] = [];
+    await renderScreen(calls);
+    await screen.findByText('간편입고');
+
+    await user.click(screen.getByRole('button', { name: '스캔:8801' }));
+    await screen.findByText('코튼셔츠');
+
+    expect(calls.some((c) => c.path.startsWith('/ready-shipments'))).toBe(
+      false
+    );
+  });
+
   it('스캔하면 카트에 담긴다', async () => {
     const user = userEvent.setup();
     await renderScreen([]);

@@ -29,6 +29,8 @@ import { SkuCatalogManager } from '../../sku-catalog/services/sku-catalog.manage
 import { SkuCatalogService } from '../../sku-catalog/services/sku-catalog.service';
 import { InboundService } from '../../inbound/services/inbound.service';
 import { InboundReceiptKernel } from '../../inbound/kernel/inbound-receipt.kernel';
+import { InboundArrivalFollowUp } from '../../inbound/services/inbound-arrival-follow-up';
+import { DeferredArrivalReservations } from '../../inbound/kernel/inbound-arrival-reservations.port';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -72,6 +74,7 @@ describeIfDb('inventory idempotency (DB integration, rollback-only)', () => {
         new BatchControlledStockGuard(),
         reservationReleaseFor(dbService, sellable),
       ),
+      new InboundArrivalFollowUp(new DeferredArrivalReservations()),
     );
     const module = await Test.createTestingModule({
       controllers: [InboundController, MovementController],

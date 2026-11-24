@@ -25,6 +25,7 @@ import {
 import { usualShelfNotice } from './RememberUsualToggle';
 import { PutawaySheet, type LocationRef } from './PutawaySheet';
 import { useWaitingOrders } from './waitingOrders';
+import { ReadyShipmentsSection } from './ReadyShipmentsSection';
 import { WaitingOrdersFailed, WaitingOrdersNote } from './WaitingOrdersNote';
 import { ReceiveSheet } from './ReceiveSheet';
 import { parseQuantity } from '../../core/design/QuantityInput';
@@ -569,6 +570,10 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
               ' · 입고 상태 확인 필요'
             )}
           </p>
+          <ReadyShipmentsSection
+            warehouseId={warehouseId}
+            receiptLineIds={[fresh.lineId]}
+          />
           <div className="flex gap-2">
             {receipt.ready &&
             receipt.state?.canPutaway &&

@@ -38,6 +38,7 @@ import {
   CancelReceiptDialog,
   type CancelReceiptTarget,
 } from './CancelReceiptDialog';
+import { ReadyShipmentsSection } from './ReadyShipmentsSection';
 import { WaitingOrdersFailed, WaitingOrdersNote } from './WaitingOrdersNote';
 import type { FreshLine, PutawayTarget } from './types';
 
@@ -605,6 +606,10 @@ function QuickInboundScreenContent() {
               );
             })}
           </ul>
+          <ReadyShipmentsSection
+            warehouseId={warehouseId}
+            receiptLineIds={staged.map((row) => row.lineId)}
+          />
           <Button
             type="button"
             className="w-full border border-gray-300 bg-white text-gray-800 hover:bg-gray-50"

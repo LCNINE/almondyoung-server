@@ -12,6 +12,8 @@ import { InboundShipmentReader } from './inbound-shipment.reader';
 import { InboundShipmentReceivingManager } from './inbound-shipment-receiving.manager';
 import { ListCell } from './inbound-shipment-list.parser';
 import { outstandingShipmentLineWhere, outstandingShipmentQtySql } from './inbound-shipment-outstanding.sql';
+import { InboundArrivalFollowUp } from '../../inbound/services/inbound-arrival-follow-up';
+import { DeferredArrivalReservations } from '../../inbound/kernel/inbound-arrival-reservations.port';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -46,9 +48,12 @@ describeIfDb('inbound shipment outstanding SQL — 외부 선적 (DB integration
         recalculateAndPublishForSkus: jest.fn().mockResolvedValue([]),
       } as never),
       reader: new InboundShipmentReader(dbService, matcher),
-      receiving: new InboundShipmentReceivingManager(kernel, new InventoryIdempotencyService(dbService), {
-        recalculateAndPublishForSkus: jest.fn().mockResolvedValue([]),
-      } as never),
+      receiving: new InboundShipmentReceivingManager(
+        kernel,
+        new InventoryIdempotencyService(dbService),
+        { recalculateAndPublishForSkus: jest.fn().mockResolvedValue([]) } as never,
+        new InboundArrivalFollowUp(new DeferredArrivalReservations()),
+      ),
     };
   }
   type Built = ReturnType<typeof build>;

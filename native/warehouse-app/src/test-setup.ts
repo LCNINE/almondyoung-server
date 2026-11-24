@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom';
-import { afterEach } from 'vitest';
+import { afterEach, vi } from 'vitest';
 import { resetRemembered } from './core/design/rememberedState';
 
 afterEach(() => {
@@ -11,3 +11,7 @@ afterEach(() => {
 if (typeof window !== 'undefined') {
   window.scrollTo = () => {};
 }
+
+// jsdom 에는 Tauri 가 없어 platform() 이 던진다. 스테이션 판정을 기본으로 부르는 화면(미발송 주문 칸 등)이
+// 렌더만 돼도 죽지 않게 핸드헬드로 둔다 — 파일이 자기 vi.mock 을 두면 그쪽이 이긴다.
+vi.mock('@tauri-apps/plugin-os', () => ({ platform: () => 'android' }));

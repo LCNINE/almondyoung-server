@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { QueryClient } from '@tanstack/react-query';
 import { useApiClient } from '../../core/data/ApiClientProvider';
 import { WAITING_ORDERS_KEY } from './waitingOrders';
+import { READY_SHIPMENTS_KEY } from './readyShipments';
 import type {
   CancelInboundInput,
   CancelPurchaseOrderReceiptInput,
@@ -27,6 +28,7 @@ function invalidateAfterLedgerWrite(qc: QueryClient) {
   // 한쪽만 갱신하면 두 화면이 서로 다른 사실을 말한다.
   void qc.invalidateQueries({ queryKey: ['putaway-pending'] });
   void qc.invalidateQueries({ queryKey: [WAITING_ORDERS_KEY] });
+  void qc.invalidateQueries({ queryKey: [READY_SHIPMENTS_KEY] });
 }
 
 /**
