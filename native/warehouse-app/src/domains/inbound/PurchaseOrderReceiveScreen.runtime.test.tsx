@@ -1827,6 +1827,7 @@ it('별도 적치 화면에서 처리한 후 PO를 재개하면 서버의 현재
     <PutawaySheet
       target={{
         lineId: 'receipt-line-1',
+        skuId: 'sku-1',
         source: 'purchase_order',
         skuName: '아몬드 셔츠',
         skuCode: 'ALMOND-A',

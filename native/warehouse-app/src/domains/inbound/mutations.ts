@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { QueryClient } from '@tanstack/react-query';
 import { useApiClient } from '../../core/data/ApiClientProvider';
+import { WAITING_ORDERS_KEY } from './waitingOrders';
 import type {
   CancelInboundInput,
   CancelPurchaseOrderReceiptInput,
@@ -25,6 +26,7 @@ function invalidateAfterLedgerWrite(qc: QueryClient) {
   // 적치를 건너뛴 라인은 큐에 나타나야 하고, 큐에서 적치한 라인은 사라져야 한다.
   // 한쪽만 갱신하면 두 화면이 서로 다른 사실을 말한다.
   void qc.invalidateQueries({ queryKey: ['putaway-pending'] });
+  void qc.invalidateQueries({ queryKey: [WAITING_ORDERS_KEY] });
 }
 
 /**

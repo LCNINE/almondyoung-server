@@ -29,6 +29,7 @@ const session = {
 const TARGET: PutawayTarget = {
   source: 'direct',
   lineId: 'ln-1',
+  skuId: 's1',
   skuCode: 'CT-001',
   skuName: '코튼셔츠',
   pendingQty: 50,
@@ -51,6 +52,8 @@ interface ClientOpts {
   putawayResponse?: unknown;
   /** 입고 줄 상태를 늦게 돌려준다 — 다시 읽는 동안 상태가 비는 순간을 화면에 남긴다 */
   receiptDelayMs?: number;
+  /** GET /waiting-orders 응답 — 없으면 기다리는 주문 없음, 'error' 면 실패 */
+  waiting?: Array<{ skuId: string; orders: number; qty: number }> | 'error';
 }
 
 interface Call {
@@ -198,6 +201,11 @@ function makeClient(calls: Call[], opts: ClientOpts = {}): ApiClient {
           };
         }
         return { items: [], total: 0 };
+      }
+      if (o.path.startsWith('/waiting-orders?')) {
+        if (opts.waiting === 'error')
+          throw new Error('GET /waiting-orders → 500');
+        return { items: opts.waiting ?? [] };
       }
       if (o.path === '/inbound/putaway') {
         putawayAttempts += 1;
@@ -831,5 +839,47 @@ describe('PutawaySheet', () => {
         calls.find((c) => c.path === '/inbound/putaway')?.body
       ).toMatchObject({ rememberAsUsual: true });
     });
+  });
+});
+
+describe('기다리는 주문', () => {
+  const WAITING = [{ skuId: 's1', orders: 2, qty: 5 }];
+
+  it('이 상품을 기다리는 주문과 왜 선반에 넣어야 하는지 보인다', async () => {
+    renderSheet({}, [], { waiting: WAITING });
+    expect(
+      await screen.findByText(/기다리는 주문 2건 · 5개/)
+    ).toHaveTextContent(
+      '기다리는 주문 2건 · 5개 — 선반에 넣어야 출고할 수 있어요.'
+    );
+  });
+
+  it('기다리는 주문이 없으면 아무것도 보이지 않는다', async () => {
+    const calls: Call[] = [];
+    renderSheet({}, calls, { waiting: [] });
+    await waitFor(() =>
+      expect(calls.some((c) => c.path.startsWith('/waiting-orders?'))).toBe(
+        true
+      )
+    );
+    expect(await screen.findByText(/잔여 50개/)).toBeInTheDocument();
+    expect(screen.queryByText(/기다리는 주문/)).not.toBeInTheDocument();
+  });
+
+  it('확인하지 못해도 적치는 그대로 된다', async () => {
+    const user = userEvent.setup();
+    const calls: Call[] = [];
+    const onDone = vi.fn();
+    renderSheet({ lastDest: LAST_DEST, onDone }, calls, { waiting: 'error' });
+    expect(
+      await screen.findByText('기다리는 주문을 확인하지 못했어요.')
+    ).toBeInTheDocument();
+    await user.click(
+      screen.getByRole('button', { name: '직전 대상지 A-01-01 사용' })
+    );
+    const submit = screen.getByRole('button', { name: '적치' });
+    await waitFor(() => expect(submit).toBeEnabled());
+    await user.click(submit);
+    await waitFor(() => expect(onDone).toHaveBeenCalled());
   });
 });

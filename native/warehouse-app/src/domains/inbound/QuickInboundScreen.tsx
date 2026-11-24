@@ -33,6 +33,8 @@ import { scanIncrement } from './packingUnit';
 import { useSimpleInbound } from './mutations';
 import { usualShelfNotice } from './RememberUsualToggle';
 import { PutawaySheet, type LocationRef } from './PutawaySheet';
+import { useWaitingOrders } from './waitingOrders';
+import { WaitingOrdersFailed, WaitingOrdersNote } from './WaitingOrdersNote';
 import type { FreshLine, PutawayTarget } from './types';
 
 /** 이전 입고 결과를 확인하다 멈춘 이유 — 그대로 작업자에게 보여 준다. */
@@ -231,6 +233,10 @@ function QuickInboundScreenContent() {
   const [lastDest, setLastDest] = useState<LocationRef | null>(null);
   // 적치 대기 목록으로 넘어간 뒤에는 스캔이 카트를 건드리면 안 된다.
   const stagedMode = staged.length > 0;
+  const waiting = useWaitingOrders(
+    warehouseId,
+    (stagedMode ? staged : cart).map((row) => row.skuId)
+  );
 
   // 저장된 작업을 못 읽었거나 이전 입고 결과를 확인하지 못했다 — 기다려도 준비되지 않는다.
   const loadFailed = !draft.ready && !!draft.error;
@@ -469,6 +475,7 @@ function QuickInboundScreenContent() {
             주세요.
           </p>
           <Link to="/inbound/history">입고내역 · 취소</Link>
+          <WaitingOrdersFailed failed={waiting.failed} />
           {!reconciled && !prepFailure && (
             <p role="alert">
               입고 상태를 확인하고 있어요. 확인이 안 되면 입고내역 또는 적치
@@ -498,6 +505,10 @@ function QuickInboundScreenContent() {
                     <span className="block font-mono text-xs text-gray-500">
                       {line.skuCode}
                     </span>
+                    {line.canceledQty > 0 ||
+                    line.putawayDoneQty >= line.quantity ? null : (
+                      <WaitingOrdersNote waiting={waiting.of(line.skuId)} />
+                    )}
                     {/* 예정 입고 화면 배너와 같은 문구 — 부분 적치가 손대지 않은 라인과
                       시각적으로 구분되지 않는 문제를 막는다. */}
                     {line.putawayDoneQty > 0 &&
@@ -546,6 +557,7 @@ function QuickInboundScreenContent() {
                         )
                           setPutawayFor({
                             lineId: line.lineId,
+                            skuId: line.skuId,
                             skuName: line.skuName,
                             skuCode: line.skuCode,
                             source: current.source,
@@ -617,6 +629,7 @@ function QuickInboundScreenContent() {
             }
             onSubmit={(code) => scanQueue.enqueue(code)}
           />
+          <WaitingOrdersFailed failed={waiting.failed} />
           {!draft.ready ? null : cart.length === 0 ? (
             <p className="text-sm text-gray-500">
               상품을 검색해서 선택하거나 바코드를 입력해 주세요.
@@ -636,6 +649,7 @@ function QuickInboundScreenContent() {
                       <span className="block font-mono text-xs text-gray-500">
                         {row.skuCode}
                       </span>
+                      <WaitingOrdersNote waiting={waiting.of(row.skuId)} />
                     </span>
                     <button
                       type="button"

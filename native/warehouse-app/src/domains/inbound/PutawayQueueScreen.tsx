@@ -15,6 +15,8 @@ import { PutawaySheet, type LocationRef } from './PutawaySheet';
 import { usePutawayPending, type PutawayDays } from './queries';
 import type { PutawayPendingItem, PutawayTarget } from './types';
 import { useReturnGoods } from './returnGoods';
+import { useWaitingOrders } from './waitingOrders';
+import { WaitingOrdersFailed, WaitingOrdersNote } from './WaitingOrdersNote';
 import {
   ReturnPutawaySheet,
   type ReturnPutawayTarget,
@@ -83,6 +85,10 @@ export function PutawayQueueScreen({
   );
   const byBarcode = useSkuByBarcode();
   const items = queue.data?.items ?? [];
+  const waiting = useWaitingOrders(
+    warehouseId,
+    items.map((item) => item.skuId)
+  );
   function select(item: PutawayPendingItem) {
     if (!supported || !isActionablePutaway(item)) return;
     setTarget({
@@ -269,6 +275,7 @@ export function PutawayQueueScreen({
           {days === 'all' ? '' : ' 기간 필터를 넓혀 보세요.'}
         </p>
       ) : null}
+      <WaitingOrdersFailed failed={waiting.failed} />
       {items.length > 0 && (
         <ul className="space-y-2">
           {items.map((item) => (
@@ -294,6 +301,7 @@ export function PutawayQueueScreen({
                     {item.originLocationCode ?? '원위치 확인 필요'} ·{' '}
                     {formatTime(item.receivedAt)}
                   </span>
+                  <WaitingOrdersNote waiting={waiting.of(item.skuId)} />
                   {!item.canPutaway && (
                     <span className="block text-sm text-amber-700">
                       입고내역과 원위치를 확인해 주세요.

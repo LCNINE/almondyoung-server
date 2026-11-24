@@ -166,6 +166,8 @@ interface RenderOpts {
   /** 검색어(부분 문자열)로 대상 로케이션 후보를 내려주는 목 — 적치 완료 시나리오용. */
   /** GET /inventory/stocks/return-zone 응답 — 없으면 빈 목록, 'error' 면 실패 */
   returnGoods?: ReturnGoods | 'error';
+  /** GET /waiting-orders 응답 — 없으면 기다리는 주문 없음 */
+  waiting?: Array<{ skuId: string; orders: number; qty: number }>;
   /** POST /movement/move 본문을 모은다 */
   moves?: unknown[];
   /** POST /movement/move 멱등키를 모은다 */
@@ -269,6 +271,8 @@ function renderScreen(prefsSeed?: Record<string, string>, opts?: RenderOpts) {
         if (found) return { items: found[1], total: found[1].length };
         return { items: [], total: 0 };
       }
+      if (o.path.startsWith('/waiting-orders?'))
+        return { items: opts?.waiting ?? [] };
       if (o.path === '/inbound/putaway') return { success: true };
       if (o.path.startsWith('/inventory/stocks/return-zone')) {
         opts?.calls?.push(o.path);
@@ -1294,4 +1298,16 @@ describe('반품 양품', () => {
       screen.getByRole('button', { name: '다시 확인' })
     ).toBeInTheDocument();
   });
+});
+
+it('기다리는 주문이 있는 상품 줄에만 건수와 수량을 보인다', async () => {
+  renderScreen(SELECTED, { waiting: [{ skuId: 's-2', orders: 1, qty: 3 }] });
+  expect(
+    await screen.findByRole('button', {
+      name: /USB-C 케이블 1m.*기다리는 주문 1건 · 3개/,
+    })
+  ).toBeInTheDocument();
+  expect(
+    screen.getByRole('button', { name: /무선마우스 블랙/ })
+  ).not.toHaveTextContent('기다리는 주문');
 });

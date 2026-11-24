@@ -148,6 +148,8 @@ interface RenderOpts {
   failCancel?: boolean;
   /** 서버가 발주 수령 409 문구를 보낸다. */
   conflictReceive?: boolean;
+  /** GET /waiting-orders 응답 — 없으면 기다리는 주문 없음 */
+  waiting?: Array<{ skuId: string; orders: number; qty: number }>;
 }
 
 async function renderScreen(calls: Call[], opts: RenderOpts = {}) {
@@ -198,6 +200,8 @@ async function renderScreen(calls: Call[], opts: RenderOpts = {}) {
           ],
         };
       if (o.path.startsWith('/inventory/expected-arrivals')) return served;
+      if (o.path.startsWith('/waiting-orders?'))
+        return { items: opts.waiting ?? [] };
       if (o.path.startsWith('/inventory/skus?barcode=8801'))
         return SKU_BY_BARCODE;
       if (o.path.startsWith('/inventory/skus?barcode=')) return [];
@@ -780,4 +784,16 @@ describe('PurchaseOrderReceiveScreen', () => {
       ).toBeEnabled()
     );
   });
+});
+
+it('발주 줄과 입고 수량 창에 기다리는 주문을 보인다', async () => {
+  await renderScreen([], { waiting: [{ skuId: 's1', orders: 3, qty: 7 }] });
+  expect(
+    await screen.findByText('기다리는 주문 3건 · 7개')
+  ).toBeInTheDocument();
+  await userEvent.click(screen.getAllByRole('button', { name: '입고' })[0]);
+  const receive = await screen.findByRole('dialog', { name: '입고 수량' });
+  expect(
+    within(receive).getByText('기다리는 주문 3건 · 7개')
+  ).toBeInTheDocument();
 });
