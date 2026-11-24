@@ -1,6 +1,6 @@
 {
-  "id": "c0846a71-62aa-46da-b78e-80f1d217f4e9",
-  "prevId": "29522b8f-7bbb-416c-bb24-2b25fb9dae12",
+  "id": "5726b39a-6897-4abc-929b-188bef09d15b",
+  "prevId": "eee8949d-8ffe-4e7d-b587-fa10ac07e53e",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -9710,6 +9710,13 @@
           "notNull": true,
           "default": "'normal'"
         },
+        "stock_allocation": {
+          "name": "stock_allocation",
+          "type": "varchar(16)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'normal'"
+        },
         "total_items": {
           "name": "total_items",
           "type": "integer",
@@ -9804,6 +9811,22 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "idx_fulfillment_orders_stock_priority": {
+          "name": "idx_fulfillment_orders_stock_priority",
+          "columns": [
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"fulfillment_orders\".\"stock_allocation\" = 'priority'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -9850,7 +9873,12 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "ck_fulfillment_orders_stock_allocation": {
+          "name": "ck_fulfillment_orders_stock_allocation",
+          "value": "\"fulfillment_orders\".\"stock_allocation\" IN ('normal', 'priority')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.holders": {
@@ -25324,6 +25352,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "file_rejected_jobstat": {
+          "name": "file_rejected_jobstat",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
         "file_resubmitted_at": {
           "name": "file_resubmitted_at",
           "type": "timestamp with time zone",
@@ -26940,7 +26974,9 @@
         "force_dispatch",
         "amend",
         "waybill_void",
-        "waybill_reissue"
+        "waybill_reissue",
+        "stock_priority",
+        "stock_priority_cancel"
       ]
     },
     "public.shipment_status": {
