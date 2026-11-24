@@ -32,6 +32,8 @@ export interface ZplOptions {
   copies?: number;
   /** 프린터 해상도(dot/mm). 기본 8(203dpi). 템플릿의 mm·moduleDots 는 8 dot/mm 기준이라 여기서 옮긴다. */
   dotsPerMm?: number;
+  /** `^MMT` — 장마다 자르지 않고 이어 붙여 낸다. 커터 설정인 라벨 프린터가 `^PQ` 장수를 한 장씩 잘라 냈다(2026-11-24). */
+  tearOff?: boolean;
 }
 
 export function rotateClockwise(src: MonoBitmap): MonoBitmap {
@@ -157,6 +159,7 @@ export function encodeZpl(drawn: MonoBitmap, barcodes: readonly BarcodePlacement
   const gfData = opts.compress ? compressAcs(rows) : rows.join('');
   const lines = [
     '^XA',
+    ...(opts.tearOff ? ['^MMT'] : []),
     ...(opts.rotation === 270 ? ['^POI'] : []),
     `^PW${printed.widthDots}`,
     `^LL${printed.heightDots}`,

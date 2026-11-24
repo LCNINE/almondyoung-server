@@ -73,5 +73,5 @@ export function buildLabelBatch(
       skipped.push({ ref: c.ref, code: c.code, reason: rendered.reason });
     }
   }
-  return { format: 'zpl', data: encodeLabelRuns(runs, rasterizer, compress, LABEL_DOTS_PER_MM), labels, skipped };
+  return { format: 'zpl', data: encodeLabelRuns(runs, rasterizer, compress, LABEL_DOTS_PER_MM, true), labels, skipped };
 }

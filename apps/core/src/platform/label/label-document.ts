@@ -27,6 +27,7 @@ export function encodeLabelRuns(
   rasterizer: SvgRasterizer,
   compress: boolean,
   dotsPerMm: number = DOTS_PER_MM,
+  tearOff: boolean = false,
 ): string {
   return runs
     .map(({ spec, copies }) =>
@@ -35,6 +36,7 @@ export function encodeLabelRuns(
         rotation: spec.rotation,
         copies,
         dotsPerMm,
+        tearOff,
       }),
     )
     .join('\n');
