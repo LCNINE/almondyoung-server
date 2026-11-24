@@ -65,6 +65,11 @@ import { PickToTotePickingStrategy } from './picking/pick-to-tote.strategy';
 import { ShipmentDispatchService } from './services/shipment-dispatch.service';
 import { ShipmentDeliveryTrackingService } from './services/shipment-delivery-tracking.service';
 import { CarrierTrackingPoller } from './services/carrier-tracking.poller';
+import { CarrierTrackingChecker } from './carrier-tracking/carrier-tracking.checker';
+import { CarrierTrackingManager } from './carrier-tracking/carrier-tracking.manager';
+import { CarrierTrackingReader } from './carrier-tracking/carrier-tracking.reader';
+import { CarrierTrackingService } from './carrier-tracking/carrier-tracking.service';
+import { CarrierTrackingController } from './controllers/carrier-tracking.controller';
 import { ShipmentShortPickService } from './services/shipment-short-pick.service';
 import { ToteLifecycleService } from './services/tote-lifecycle.service';
 import { ShipmentRecallService } from './services/shipment-recall.service';
@@ -171,6 +176,7 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     ShipmentPlanningController,
     FulfillmentOperationController,
     ShipmentTrackingController,
+    CarrierTrackingController,
     ShipmentShortPickController,
     ShipmentRecallController,
     ShipmentRecallOperationController,
@@ -191,6 +197,10 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     ShipmentDispatchService,
     ShipmentDeliveryTrackingService,
     CarrierTrackingPoller,
+    CarrierTrackingChecker,
+    CarrierTrackingReader,
+    CarrierTrackingManager,
+    CarrierTrackingService,
     ShipmentShortPickService,
     ShipmentRecallService,
     ToteLifecycleService,

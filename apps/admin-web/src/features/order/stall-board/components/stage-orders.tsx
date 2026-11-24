@@ -14,6 +14,7 @@ import {
 import { settlementLabel, settlementReason, settlementTiming } from '@/lib/api/domains/orders/cancel-request.shape';
 import { SettlementActions } from '@/features/order/cancel-settlement/settlement-actions';
 import { ManualRefundTodo } from '@/features/order/cancel-settlement/manual-refund-todo';
+import { CarrierAttentionPanel } from '@/features/order/carrier-tracking/carrier-attention-panel';
 import { PendingTransfers } from './pending-transfers';
 import { ShortageCell } from './shortage-cell';
 import { ShortageSplitAction } from './shortage-split-action';
@@ -109,6 +110,7 @@ export function StageOrders(props: {
         </div>
       </div>
       {isCancelRequest && <PendingTransfers now={props.now} />}
+      {props.stage === 'track' && <CarrierAttentionPanel now={props.now} />}
       {items.length === 0 ? (
         <div className="px-4 py-10 text-center text-muted-foreground">
           {q.isLoading

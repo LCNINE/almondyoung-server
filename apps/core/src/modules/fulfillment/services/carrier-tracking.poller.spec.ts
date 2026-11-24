@@ -6,6 +6,7 @@ import {
   CarrierScan,
 } from '../waybill/carrier/carrier-gateway.interface';
 import { CarrierGatewayRegistry } from '../waybill/carrier/carrier-gateway.registry';
+import { CarrierTrackingChecker } from '../carrier-tracking/carrier-tracking.checker';
 import { CarrierTrackingPoller, type CarrierTrackingTarget } from './carrier-tracking.poller';
 
 class FakeGateway extends CarrierGateway {
@@ -39,6 +40,7 @@ const target = (n: number, carrier: CarrierCode = 'HANJIN'): CarrierTrackingTarg
   dispatchedAt,
   carrier,
   trackingNo: `wbl-${n}`,
+  recalled: false,
 });
 const scan = (statusCode: string, status: CarrierScan['status'], iso: string): CarrierScan => ({
   statusCode,
@@ -56,6 +58,7 @@ function makePoller(options: {
   targets?: CarrierTrackingTarget[];
   operational?: boolean;
   record?: RecordMock;
+  saveFails?: (savedSoFar: number) => boolean;
 }) {
   const tracking = {
     recordProviderEvent:
@@ -63,14 +66,30 @@ function makePoller(options: {
       (jest.fn((_id, input) => Promise.resolve({ replayed: false, status: input.status })) as RecordMock),
   };
   const workflowGate = { shouldRunCarrierTrackingPoll: jest.fn(() => options.operational ?? true) };
-  const poller = new CarrierTrackingPoller(
-    {} as never,
+  const saved: string[] = [];
+  const db = {
+    run: (fn: (tx: unknown) => Promise<unknown>) =>
+      options.saveFails?.(saved.length)
+        ? Promise.reject(new Error('db down'))
+        : fn({
+            insert: () => ({
+              values: (row: { dispatchAttemptId: string; outcome: string }) => ({
+                onConflictDoUpdate: () => {
+                  saved.push(`${row.dispatchAttemptId}:${row.outcome}`);
+                  return Promise.resolve();
+                },
+              }),
+            }),
+          }),
+  };
+  const checker = new CarrierTrackingChecker(
+    db as never,
     new CarrierGatewayRegistry(options.gateways),
     tracking as never,
-    workflowGate as never,
   );
+  const poller = new CarrierTrackingPoller({} as never, checker, workflowGate as never);
   const findTargets = jest.spyOn(poller, 'findTargets').mockResolvedValue(options.targets ?? []);
-  return { poller, tracking, findTargets };
+  return { poller, tracking, findTargets, saved };
 }
 
 describe('CarrierTrackingPoller.pollOnce', () => {
@@ -131,22 +150,83 @@ describe('CarrierTrackingPoller.pollOnce', () => {
   it('운송장 하나의 확정 거절은 그 건만 건너뛰고 계속한다', async () => {
     const gateway = new FakeGateway('HANJIN', true, true, (no) =>
       no === 'wbl-1'
-        ? Promise.reject(new CarrierError('bad', 'definitive_rejection', { code: 'ERROR-02' }))
+        ? Promise.reject(new CarrierError('bad', 'definitive_rejection', { code: 'ERROR-02', invalidWaybill: true }))
         : Promise.resolve([scan('11', 'in_transit', '2026-09-24T09:00:00.000Z')]),
     );
     const { poller } = makePoller({ gateways: [gateway], targets: [target(1), target(2)] });
     expect(await poller.pollOnce(now)).toMatchObject({ tracked: 1, carrierRejected: 1, recorded: 1 });
   });
 
-  // -103(호출량 초과)·타임아웃은 다음 운송장도 똑같이 맞는다 — 주기를 끝내고 다음 주기에 다시 부른다(#916).
-  it.each(['transient_rejection', 'unknown_outcome'] as const)('%s 면 이번 주기를 멈춘다', async (outcome) => {
+  // -103(호출량 초과)은 다음 운송장도 똑같이 맞는다 — 주기를 끝내고 다음 주기에 다시 부른다(#916).
+  it('호출량 초과면 이번 주기를 멈춘다', async () => {
     const gateway = new FakeGateway('HANJIN', true, true, () =>
-      Promise.reject(new CarrierError('rate limited', outcome, { code: '-103' })),
+      Promise.reject(new CarrierError('rate limited', 'transient_rejection', { code: '-103' })),
     );
     const { poller } = makePoller({ gateways: [gateway], targets: [target(1), target(2)] });
     const result = await poller.pollOnce(now);
     expect(gateway.track).toHaveBeenCalledTimes(1);
-    expect(result).toMatchObject({ tracked: 0, aborted: '-103' });
+    expect(result).toMatchObject({ tracked: 0, failed: 1, aborted: '-103' });
+  });
+
+  it('운송장 하나의 결과를 모르면 그 건만 남기고 계속한다', async () => {
+    const gateway = new FakeGateway('HANJIN', true, true, (no) =>
+      no === 'wbl-1'
+        ? Promise.reject(new CarrierError('timeout', 'unknown_outcome', { code: 'timeout' }))
+        : Promise.resolve([scan('11', 'in_transit', '2026-09-24T09:00:00.000Z')]),
+    );
+    const { poller, saved } = makePoller({ gateways: [gateway], targets: [target(1), target(2), target(3)] });
+    const result = await poller.pollOnce(now);
+    expect(result).toMatchObject({ tracked: 2, failed: 1, recorded: 2 });
+    expect(result.aborted).toBeUndefined();
+    expect(saved).toEqual(['attempt-1:unknown', 'attempt-2:scans', 'attempt-3:scans']);
+  });
+
+  it('잇달아 세 번 못 물으면 택배사 장애로 보고 멈춘다', async () => {
+    const gateway = new FakeGateway('HANJIN', true, true, () =>
+      Promise.reject(new CarrierError('down', 'unknown_outcome', { code: 'http_503' })),
+    );
+    const { poller, saved } = makePoller({ gateways: [gateway], targets: [1, 2, 3, 4].map((n) => target(n)) });
+    expect(await poller.pollOnce(now)).toMatchObject({ failed: 3, aborted: 'http_503' });
+    expect(gateway.track).toHaveBeenCalledTimes(3);
+    expect(saved).toHaveLength(3);
+  });
+
+  it('사이에 답한 운송장이 있으면 연속으로 세지 않는다', async () => {
+    const gateway = new FakeGateway('HANJIN', true, true, (no) =>
+      no === 'wbl-3' ? Promise.resolve([]) : Promise.reject(new CarrierError('down', 'unknown_outcome', {})),
+    );
+    const { poller } = makePoller({ gateways: [gateway], targets: [1, 2, 3, 4, 5].map((n) => target(n)) });
+    const result = await poller.pollOnce(now);
+    expect(result).toMatchObject({ failed: 4, tracked: 1 });
+    expect(result.aborted).toBeUndefined();
+  });
+
+  it('확인 결과를 남기지 못한 운송장이 나머지를 멈추지 않는다', async () => {
+    const gateway = new FakeGateway('HANJIN');
+    let first = true;
+    const { poller } = makePoller({
+      gateways: [gateway],
+      targets: [target(1), target(2)],
+      saveFails: () => {
+        const fails = first;
+        first = false;
+        return fails;
+      },
+    });
+    expect(await poller.pollOnce(now)).toMatchObject({ failed: 1, tracked: 1 });
+  });
+
+  it('되돌린 출고는 묻기만 하고 배송 이력에 넣지 않는다', async () => {
+    const gateway = new FakeGateway('HANJIN', true, true, () =>
+      Promise.resolve([scan('11', 'in_transit', '2026-09-24T09:00:00.000Z')]),
+    );
+    const { poller, tracking, saved } = makePoller({
+      gateways: [gateway],
+      targets: [{ ...target(1), recalled: true }],
+    });
+    expect(await poller.pollOnce(now)).toMatchObject({ tracked: 1, recorded: 0 });
+    expect(tracking.recordProviderEvent).not.toHaveBeenCalled();
+    expect(saved).toEqual(['attempt-1:scans']);
   });
 
   // 뒤 이벤트가 앞 이벤트를 전제한다(in_transit → delivered). 하나가 거절되면 그 운송장의 나머지는 다음 주기로.

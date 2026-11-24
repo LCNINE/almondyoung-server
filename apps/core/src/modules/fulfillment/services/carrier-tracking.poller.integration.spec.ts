@@ -2,7 +2,6 @@ import { randomUUID } from 'crypto';
 import * as postgres from 'postgres';
 import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
-import { CarrierGatewayRegistry } from '../waybill/carrier/carrier-gateway.registry';
 import { makeDbService } from './__support__';
 import { CarrierTrackingPoller } from './carrier-tracking.poller';
 
@@ -28,12 +27,7 @@ describeIfDb('CarrierTrackingPoller.findTargets (PostgreSQL integration)', () =>
   it('출고된·배송완료 전·창 안·추적 가능 캐리어의 운송장만 오래된 출고부터 고른다', async () => {
     const suffix = randomUUID();
     const since = new Date('2026-09-12T00:00:00.000Z');
-    const poller = new CarrierTrackingPoller(
-      makeDbService(db),
-      new CarrierGatewayRegistry([]),
-      {} as never,
-      {} as never,
-    );
+    const poller = new CarrierTrackingPoller(makeDbService(db), {} as never, {} as never);
 
     type Case = {
       key: string;

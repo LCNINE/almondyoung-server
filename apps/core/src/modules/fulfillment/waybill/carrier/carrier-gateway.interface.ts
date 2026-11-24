@@ -110,6 +110,8 @@ export class CarrierError extends Error {
       cause?: unknown;
       /** `transient_rejection` 일 때만 의미가 있다. 없으면 상태머신이 기본 백오프를 쓴다. */
       retryAfter?: RetryAfter;
+      /** 캐리어가 이 운송장번호 자체를 틀린 번호로 답했다 — 다시 물어도 같다. */
+      invalidWaybill?: boolean;
     } = {},
   ) {
     super(message);

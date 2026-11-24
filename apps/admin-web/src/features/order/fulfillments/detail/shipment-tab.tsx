@@ -40,6 +40,8 @@ import type {
   ShipmentAdminDetail,
   ShipmentAdminSummary,
 } from '@/lib/types/dto/fulfillment';
+import { AttemptCarrierStatus } from '@/features/order/carrier-tracking/attempt-carrier-status';
+import { scanStatusLabel } from '@/features/order/carrier-tracking/carrier-tracking-copy';
 import { useChannelDispatchViewModel } from './channel-dispatch-query';
 import { ConsolidationProgressPanel } from './consolidation-progress-panel';
 import {
@@ -530,7 +532,8 @@ function ShipmentDetailView({
                           key={event.id}
                           className="text-xs text-muted-foreground"
                         >
-                          {when(event.timestamp)} · {event.status}
+                          {when(event.timestamp)} ·{' '}
+                          {scanStatusLabel(event.status)}
                           {event.location ? ` · ${event.location}` : ''}
                         </p>
                       ))}
@@ -539,6 +542,10 @@ function ShipmentDetailView({
                           아직 배송 추적 기록이 없어요.
                         </p>
                       )}
+                      <AttemptCarrierStatus
+                        shipmentId={shipment.id}
+                        attemptId={attempt.id}
+                      />
                     </div>
                   </div>
                 </div>

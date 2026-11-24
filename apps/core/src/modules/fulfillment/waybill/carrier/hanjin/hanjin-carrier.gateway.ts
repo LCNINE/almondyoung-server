@@ -75,7 +75,7 @@ const STATUS_MAP: Record<string, CarrierScanStatus> = {
   '01': 'pending', // 예약등록
   '03': 'canceled', // 예약취소
   '05': 'pending', // 운송장출력
-  '07': 'in_transit', // 집하출발
+  '07': 'pending', // 집하출발 — 기사가 가지러 나섰을 뿐이다. 뒤에 미집하가 올 수 있어 인수로 세지 않는다
   '08': 'pickup_missed', // 미집하 — 진행 중이 아니라 예외 상태
   '11': 'in_transit', // 집하완료
   '14': 'in_transit', // 입고
@@ -308,7 +308,7 @@ export class HanjinCarrierGateway extends CarrierGateway {
       throw new CarrierError(
         `Hanjin tracking-wbl rejected: ${code} - ${res?.resultMessage ?? ''}`,
         'definitive_rejection',
-        { carrier: 'hanjin', code },
+        { carrier: 'hanjin', code, ...(code === 'ERROR-02' ? { invalidWaybill: true } : {}) },
       );
     }
     const list: TrackingWblItem[] = Array.isArray(res?.wrkList) ? res.wrkList : [];
