@@ -1,6 +1,7 @@
 import { planCode128 } from './code128';
 import {
   createBitmap,
+  DOTS_PER_MM,
   getBit,
   mmToDots,
   PRINTER_MAX_WIDTH_MM,
@@ -28,6 +29,8 @@ export interface ZplOptions {
   rotation: LabelRotation;
   /** 같은 라벨 장수(`^PQ`). 기본 1. */
   copies?: number;
+  /** 프린터 해상도(dot/mm). 기본 8(203dpi). 템플릿의 mm·moduleDots 는 8 dot/mm 기준이라 여기서 옮긴다. */
+  dotsPerMm?: number;
 }
 
 export function rotateClockwise(src: MonoBitmap): MonoBitmap {
@@ -99,10 +102,18 @@ export function compressAcs(hexRowsIn: readonly string[]): string {
   return out;
 }
 
-function barcodeField(b: BarcodePlacement, drawnW: number, drawnH: number, rotation: LabelRotation): string {
-  const x = mmToDots(b.xMm);
-  const y = mmToDots(b.yMm);
-  const h = mmToDots(b.heightMm);
+function barcodeField(
+  placed: BarcodePlacement,
+  drawnW: number,
+  drawnH: number,
+  rotation: LabelRotation,
+  dotsPerMm: number,
+): string {
+  // ponytail: 모듈은 내림해 라벨 폭을 넘지 않는다. 3→4 처럼 딱 안 떨어지면 바코드가 조금 좁아지고 가운데에서 살짝 왼쪽에 선다.
+  const b = { ...placed, moduleDots: Math.floor((placed.moduleDots * dotsPerMm) / DOTS_PER_MM) };
+  const x = mmToDots(b.xMm, dotsPerMm);
+  const y = mmToDots(b.yMm, dotsPerMm);
+  const h = mmToDots(b.heightMm, dotsPerMm);
   if (x < 0 || y < 0 || x >= drawnW || y + h > drawnH) {
     throw new Error(`barcode ${b.kind} is outside the label: x=${x} y=${y} h=${h} on ${drawnW}×${drawnH}`);
   }
@@ -127,8 +138,9 @@ function barcodeField(b: BarcodePlacement, drawnW: number, drawnH: number, rotat
 }
 
 export function encodeZpl(drawn: MonoBitmap, barcodes: readonly BarcodePlacement[], opts: ZplOptions): string {
+  const dotsPerMm = opts.dotsPerMm ?? DOTS_PER_MM;
   const printed = opts.rotation === 0 ? drawn : rotateClockwise(drawn);
-  const maxDots = mmToDots(PRINTER_MAX_WIDTH_MM);
+  const maxDots = mmToDots(PRINTER_MAX_WIDTH_MM, dotsPerMm);
   if (printed.widthDots > maxDots) {
     throw new Error(
       `label is ${printed.widthDots} dots wide as fed (rotation ${opts.rotation}), printer max is ${maxDots}`,
@@ -144,7 +156,7 @@ export function encodeZpl(drawn: MonoBitmap, barcodes: readonly BarcodePlacement
     `^LL${printed.heightDots}`,
     '^LH0,0',
     `^FO0,0^GFA,${total},${total},${printed.bytesPerRow},${gfData}^FS`,
-    ...barcodes.map((b) => barcodeField(b, drawn.widthDots, drawn.heightDots, opts.rotation)),
+    ...barcodes.map((b) => barcodeField(b, drawn.widthDots, drawn.heightDots, opts.rotation, dotsPerMm)),
     `^PQ${opts.copies ?? 1}`,
     '^XZ',
   ];

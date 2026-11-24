@@ -8,8 +8,8 @@ import { planCode128 } from './code128';
 /** 203dpi 프린터는 정확히 8 dot/mm 다. */
 export const DOTS_PER_MM = 8;
 
-export function mmToDots(mm: number): number {
-  return Math.round(mm * DOTS_PER_MM);
+export function mmToDots(mm: number, dotsPerMm: number = DOTS_PER_MM): number {
+  return Math.round(mm * dotsPerMm);
 }
 
 /** 1비트 비트맵. 1 = 검정, 행 우선, 한 바이트의 MSB 가 가장 왼쪽 픽셀, 행 끝은 바이트 경계까지 패딩. */
