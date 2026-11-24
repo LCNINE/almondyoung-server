@@ -122,12 +122,12 @@ bash scripts/sellmate/run.sh live build-location-master --apply    # 반영
 
 - 판정은 `apps/core/src/modules/inventory/core/shelf-move-verdict.ts`(컷오버 판정 «로케이션 2» 와 같은 함수). 남기는 사유: 위치 없음·낡은 위치 행·못 읽는 텍스트·고쳐 읽은 코드(스위치 꺼짐)·로케이션 없음·다른 선반에 재고·배정 걸림·적치 대기·불일치.
 - `--positions-since` 는 T 당일 `load-shelf-positions` 를 돌리기 **직전** 시각이다. 그보다 앞서 쓰인 위치 행은 셀메이트에서 지워졌을 수 있어 믿지 않는다(적재는 지우지 않는다).
-- 고쳐 읽은 코드(`CC-4-1` → `CC-04-01` 등)는 현장 확인 전까지 꺼져 있다. `--include-rule=zero-pad,dash-position,custom-bin` 로 규칙마다 켠다.
+- 고쳐 읽은 코드(`CC-4-1` → `CC-04-01` 등)는 기본으로 꺼져 있고 `--include-rule=zero-pad,dash-position,custom-bin` 로 규칙마다 켠다. **T 당일엔 `--include-rule=dash-position` 만** 켠다(2026-11-18 현장 확인 — 설계 `docs/superpowers/specs/2026-11-17-cutover-move-stock-to-shelf-design.md` §5.1).
 - 며칠 뒤 다시 돌리지 않는다 — 묶이지 않은 앱 입고분까지 쓸어 간다.
 
 ```bash
-bash scripts/sellmate/run.sh live move-stock-to-shelf --positions-since=<시각>            # dry-run
-bash scripts/sellmate/run.sh live move-stock-to-shelf --positions-since=<시각> --apply    # 반영
+bash scripts/sellmate/run.sh live move-stock-to-shelf --positions-since=<시각> --include-rule=dash-position            # dry-run
+bash scripts/sellmate/run.sh live move-stock-to-shelf --positions-since=<시각> --include-rule=dash-position --apply    # 반영
 # 판매 창고가 둘 이상이면 --warehouse-id=<부천 창고 id> 를 붙인다
 # 동시 처리 기본 4(--concurrency). 11-18 라이브에서 8·16 은 sst 터널을 죽였다. 4 로 dry-run 약 3분, apply 는 그보다 몇 배 길다
 ```
