@@ -62,6 +62,11 @@ export class UpdateVariantStockPolicyDto {
   @IsOptional()
   @IsBoolean()
   restockApproximate?: boolean;
+
+  @ApiProperty({ description: '단종 예정 표시. 표시 전용이라 판매·발주는 바뀌지 않는다', required: false })
+  @IsOptional()
+  @IsBoolean()
+  discontinuing?: boolean;
 }
 
 export class VariantStockPolicyDto {
@@ -86,6 +91,9 @@ export class VariantStockPolicyDto {
 
   @ApiProperty({ description: '수동 재입고일의 대략적인 일정 여부' })
   restockApproximate?: boolean;
+
+  @ApiProperty({ description: '단종 예정 표시 (표시 전용)' })
+  discontinuing?: boolean;
 }
 
 export class ProductSellableQuantityProjectionComponentDto {
@@ -148,6 +156,9 @@ export class ProductSellableQuantityProjectionViewDto {
 
   @ApiProperty({ description: '재입고 일정이 대략적인지' })
   inboundApproximate?: boolean;
+
+  @ApiProperty({ description: '단종 예정 표시 (표시 전용)' })
+  discontinuing: boolean;
 
   @ApiProperty({ description: '재입고일 출처', nullable: true, enum: ['manual', 'purchase_order', 'inbound_shipment'] })
   inboundSource?: 'manual' | 'purchase_order' | 'inbound_shipment' | null;

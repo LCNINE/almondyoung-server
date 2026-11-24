@@ -118,6 +118,7 @@
     "restockInfoLabel": "About the restock date",
     "outOfStockSuffix": "({value} sold out)",
     "optionRestockShort": "Restock {date}",
+    "discontinuingBadge": "Discontinuing",
     "defaultLabel": "Default option",
     "directInput": "Enter qty",
     "buyNow": "Buy now",

@@ -650,6 +650,48 @@ describe('MedusaClient product sellable inventory projection', () => {
     expect(storedMetadata.custom).toBe('preserved');
   });
 
+  it.each([
+    { stored: {}, input: { discontinuing: true }, expected: true },
+    { stored: { discontinuing: true }, input: { discontinuing: false }, expected: undefined },
+    { stored: { discontinuing: true }, input: {}, expected: true },
+  ])('단종 예정 projection 켜기·끄기·이전 이벤트 호환: %p', async ({ stored, input, expected }) => {
+    const storedMetadata: Record<string, unknown> = { pimVariantId: 'pim-var-1', custom: 'preserved', ...stored };
+    const batchVariants = jest.fn(
+      async (_id: string, body: { update: Array<{ metadata: Record<string, unknown> }> }) => {
+        for (const key of Object.keys(storedMetadata)) delete storedMetadata[key];
+        Object.assign(storedMetadata, body.update[0].metadata);
+
+        return {};
+      },
+    );
+    const client = Object.create(MedusaClient.prototype) as MedusaClient;
+    (client as any).logger = logger;
+    (client as any).getProductWithVariantDetails = jest.fn().mockResolvedValue({
+      id: 'prod_1',
+      variants: [{ id: 'variant_medusa_1', manage_inventory: true, allow_backorder: false, metadata: storedMetadata }],
+    });
+    (client as any).ensureVariantInventoryLinks = jest
+      .fn()
+      .mockResolvedValue(new Map([['pim-var-1', { inventoryItemId: 'inventory_1' }]]));
+    (client as any).upsertProjectionInventoryLevel = jest.fn().mockResolvedValue(5);
+    (client as any).sdk = { admin: { product: { batchVariants } } };
+
+    await client.applyProductSellableQuantityProjection({
+      medusaProductId: 'prod_1',
+      variantId: 'pim-var-1',
+      masterId: 'master_1',
+      sellableQuantity: 5,
+      stockBoundQuantity: 5,
+      isSellable: true,
+      reason: 'SELLABLE',
+      calculatedAt: '2026-11-24T00:00:00Z',
+      ...input,
+    });
+
+    expect(storedMetadata.discontinuing).toBe(expected);
+    expect(storedMetadata.custom).toBe('preserved');
+  });
+
   it('turns off managed inventory for missing matching projection events', async () => {
     const batchVariants = jest.fn().mockResolvedValue({});
     const upsertProjectionInventoryLevel = jest.fn().mockResolvedValue(undefined);

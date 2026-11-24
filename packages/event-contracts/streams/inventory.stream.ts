@@ -285,6 +285,8 @@ export interface ProductSellableQuantityChangedPayload {
   /** 재입고 예정일. null은 기존 표시를 제거, 필드 생략은 이전 생산자 호환. */
   inboundDate?: string | null;
   inboundApproximate?: boolean;
+  /** 표시 전용 단종 예정. 필드 생략은 이전 생산자 호환이라 기존 표시를 건드리지 않는다. */
+  discontinuing?: boolean;
   preStockSellable?: boolean;
   calculatedAt: string;
 }
@@ -486,6 +488,7 @@ const ProductSellableQuantityChangedSchema = z.object({
   comingSoonDate: z.string().nullable().optional(),
   inboundDate: z.string().nullable().optional(),
   inboundApproximate: z.boolean().optional(),
+  discontinuing: z.boolean().optional(),
   preStockSellable: z.boolean().optional(),
   calculatedAt: z.string().datetime(),
 });

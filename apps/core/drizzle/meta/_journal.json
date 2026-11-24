@@ -1184,6 +1184,13 @@
       "when": 1795507175424,
       "tag": "20261124075935_add-customer-print-file",
       "breakpoints": true
+    },
+    {
+      "idx": 169,
+      "version": "7",
+      "when": 1795509819845,
+      "tag": "20261124084339_add-variant-discontinuing",
+      "breakpoints": true
     }
   ]
 }

@@ -118,6 +118,7 @@
     "restockInfoLabel": "入荷予定日について",
     "outOfStockSuffix": "({value} 売り切れ)",
     "optionRestockShort": "{date} 入荷",
+    "discontinuingBadge": "販売終了予定",
     "defaultLabel": "基本オプション",
     "directInput": "直接入力",
     "buyNow": "今すぐ購入",
