@@ -29,7 +29,7 @@ describeIfDb('입고 직후 예약 재시도', () => {
       new ConfigService({ FULFILLMENT_WORKFLOW_MODE: mode, FULFILLMENT_V2_CUTOVER_AT: '1970-01-01T00:00:00.000Z' }),
     );
 
-  const retry = (tx: DbTx, gate = gateIn('v2')) => {
+  const wire = (tx: DbTx, gate = gateIn('v2')) => {
     const { dbService, sellable } = buildWiring(tx as never);
     const reservations = new ShipmentReservationService(
       dbService,
@@ -37,8 +37,9 @@ describeIfDb('입고 직후 예약 재시도', () => {
       new FulfillmentProgressService(),
       new FulfillmentInvariantService(),
     );
-    return new ArrivalReservationRetry(ambientDbService(tx), gate, reservations);
+    return { reservations, retry: new ArrivalReservationRetry(ambientDbService(tx), gate, reservations) };
   };
+  const retry = (tx: DbTx, gate = gateIn('v2')) => wire(tx, gate).retry;
 
   const confirmedQty = async (tx: DbTx, box: Pick<Box, 'shipmentLineId'>) => {
     const [row] = await tx
@@ -155,6 +156,31 @@ describeIfDb('입고 직후 예약 재시도', () => {
 
       expect(await confirmedQty(tx, earlier)).toBe(1);
       expect(await confirmedQty(tx, later)).toBe(0);
+    });
+  });
+
+  it('재고가 바닥나면 그 상품의 남은 줄은 시도하지 않는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const first = await waitingBox(tx, 2);
+      const second = await sibling(tx, first, 2);
+      const third = await sibling(tx, first, 2);
+      await queuedAt(tx, first, 30);
+      await queuedAt(tx, second, 20);
+      await queuedAt(tx, third, 10);
+      // 첫 줄은 다 받고 둘째 줄은 하나만 받는다 — 거기서 재고가 바닥난다
+      await arrive(tx, first, 3);
+
+      const { reservations, retry: arrival } = wire(tx);
+      const reservePartial = jest.spyOn(reservations, 'reservePartial');
+      await arrival.retryForSkus(first.warehouseId, [first.skuId], tx);
+
+      expect(await confirmedQty(tx, first)).toBe(2);
+      expect(await confirmedQty(tx, second)).toBe(1);
+      expect(await confirmedQty(tx, third)).toBe(0);
+      expect(reservePartial.mock.calls.map(([lineId]) => lineId)).toEqual([
+        first.shipmentLineId,
+        second.shipmentLineId,
+      ]);
     });
   });
 

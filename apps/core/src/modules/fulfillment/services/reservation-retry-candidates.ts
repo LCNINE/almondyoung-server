@@ -3,9 +3,10 @@ import { sql } from 'drizzle-orm';
 import { DbTx, wmsSchema } from '../../inventory/schema/inventory.schema';
 import { reservationQueueOrderSql } from './reservation-queue-key';
 
-/** 예약 재시도 후보 — 미예약 수량이 남은 draft 줄과 그 줄의 수량 */
+/** 예약 재시도 후보 — 미예약 수량이 남은 draft 줄과 그 줄의 상품·수량 */
 export interface ReservationRetryCandidate {
   id: string;
+  skuId: string;
   qty: number;
 }
 
@@ -28,8 +29,8 @@ export async function findReservationRetryCandidates(
             sql`, `,
           )})`
     : sql``;
-  const rows = await db.execute<{ id: string; qty: number }>(sql`
-    SELECT sl.id, sl.qty
+  const rows = await db.execute<{ id: string; sku_id: string; qty: number }>(sql`
+    SELECT sl.id, sl.sku_id, sl.qty
       FROM shipment_lines sl
       JOIN shipments shipment ON shipment.id = sl.shipment_id
       JOIN fulfillment_order_items item ON item.id = sl.fulfillment_order_item_id
@@ -51,8 +52,9 @@ export async function findReservationRetryCandidates(
      LIMIT ${limit}
   `);
   // execute 는 postgres.js RowList 를 돌려준다 — 행 모양은 위 SELECT 가 정한다
-  return (rows as unknown as Array<{ id: string; qty: number | string }>).map((row) => ({
+  return (rows as unknown as Array<{ id: string; sku_id: string; qty: number | string }>).map((row) => ({
     id: row.id,
+    skuId: row.sku_id,
     qty: Number(row.qty),
   }));
 }
