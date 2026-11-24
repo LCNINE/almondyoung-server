@@ -150,10 +150,10 @@ describeIfDb('정체 보드 CS 조회 (PostgreSQL integration)', () => {
     });
   });
 
-  it('안심번호(050…)·빈 번호·회원 없음은 같은 고객으로 묶지 않는다', async () => {
+  it('안심번호(050…)·채워 넣은 번호·빈 번호·회원 없음은 같은 고객으로 묶지 않는다', async () => {
     await rollback(async (tx) => {
       const virtual = `0507${String(Date.now()).slice(-8)}`;
-      for (const customerPhone of [virtual, null, '']) {
+      for (const customerPhone of [virtual, '010-0000-0000', null, '']) {
         const a = await order(tx, { customerPhone });
         await order(tx, { customerPhone });
         expect((await reader.context(a, tx)).otherOrders).toEqual([]);

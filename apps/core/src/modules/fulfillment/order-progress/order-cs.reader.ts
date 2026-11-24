@@ -60,10 +60,11 @@ const OTHER_ORDERS = 10;
 
 const isoSql = (expr: SQL) => sql`to_char((${expr}) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`;
 
-/** 마켓이 주는 안심번호(050…)는 다른 사람에게 다시 쓰이므로 같은 고객의 근거로 쓰지 않는다 */
+/** 같은 고객의 근거로 쓸 번호 — 마켓 안심번호(050…)는 다른 사람에게 다시 쓰이고, 010-0000-0000 처럼 채워 넣은 번호는 남과 겹친다 */
 const ownPhoneSql = (expr: SQL) => sql`(
   CASE WHEN length(regexp_replace(coalesce(${expr}, ''), '\\D', '', 'g')) >= 9
         AND regexp_replace(${expr}, '\\D', '', 'g') NOT LIKE '050%'
+        AND regexp_replace(${expr}, '\\D', '', 'g') !~ '(\\d)\\1{7}$'
        THEN regexp_replace(${expr}, '\\D', '', 'g') END)`;
 
 /** 가장 최근 연락 기록에 적힌 «다시 연락할 날»이 오늘(한국)이거나 지났다 */
