@@ -5,11 +5,10 @@ import { eq } from 'drizzle-orm';
 import { DbTx, wmsSchema, wmsTables } from '../../schema/inventory.schema';
 import {
   Database,
-  dbServiceFor,
   inRollbackTx,
+  makeInboundReceiptStateReader,
   makeInboundService,
 } from '../../inbound/services/__fixtures__/inbound-harness';
-import { InboundReceiptStateReader } from '../../inbound/services/inbound-receipt-state.reader';
 import { seed as seedMovement, wiringFor } from '../../movement/services/__support__/movement-location-policy-fixtures';
 import { readUsualShelves } from './usual-shelf';
 
@@ -73,7 +72,7 @@ describeIfDb('평소 선반 — 적치하며 비어 있을 때만 정한다 (Pos
   }
 
   const stateOf = (tx: DbTx, lineId: string, warehouseId: string) =>
-    new InboundReceiptStateReader(dbServiceFor(db)).getLineState({ lineId, warehouseId }, tx);
+    makeInboundReceiptStateReader(db).getLineState({ lineId, warehouseId }, tx);
 
   it('입고 적치: 비어 있으면 그 선반으로 정하고, 다음 입고 줄 상태가 그 선반을 싣는다', async () => {
     await inRollbackTx(db, async (tx) => {

@@ -105,8 +105,7 @@ export function usePutaway() {
 
 /**
  * POST /inbound/cancel — 직전 입고 되돌리기.
- * 서버 제약: 전량만·적치 전에만·당일(Asia/Seoul)만. 화면은 이 셋을 만족하는
- * 순간에만 버튼을 노출한다.
+ * 서버 제약: 전량만·적치 전에만. 화면은 상태 조회가 허락할 때만 버튼을 켠다.
  */
 export function useCancelInbound() {
   const api = useApiClient();

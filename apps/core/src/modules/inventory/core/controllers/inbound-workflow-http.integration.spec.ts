@@ -48,7 +48,7 @@ describeIfDb('inbound workflow capability → native runner → Core HTTP → Po
     client = postgres(databaseUrl!, { max: 4 });
     db = drizzle(client, { schema: wmsSchema });
     const wiring = buildWiring(db);
-    const { dbService, command, location, eventStore, idempotency, guard } = wiring;
+    const { dbService, command, location, eventStore, idempotency, guard, reservations } = wiring;
     const catalogReader = new SkuCatalogReader(dbService);
     const catalog = new SkuCatalogService(catalogReader, new SkuCatalogManager(dbService, catalogReader));
     const module = await Test.createTestingModule({
@@ -63,12 +63,12 @@ describeIfDb('inbound workflow capability → native runner → Core HTTP → Po
             catalog,
             eventStore,
             idempotency,
-            new InboundReceiptKernel(command, location, eventStore, guard),
+            new InboundReceiptKernel(command, location, eventStore, guard, reservations),
           ),
         },
         { provide: MovementService, useValue: new MovementService(dbService, eventStore, idempotency) },
         { provide: InboundPutawayReader, useValue: new InboundPutawayReader(dbService) },
-        { provide: InboundReceiptStateReader, useValue: new InboundReceiptStateReader(dbService) },
+        { provide: InboundReceiptStateReader, useValue: new InboundReceiptStateReader(dbService, reservations) },
       ],
     }).compile();
     app = module.createNestApplication();

@@ -272,7 +272,7 @@ export class PurchaseOrderController {
 
   @RequirePermission('inventory.stock.operate')
   @Post('receipt-lines/:receiptLineId/cancel')
-  @ApiOperation({ summary: '발주 수령 취소 — 당일·전량·적치/회송 전' })
+  @ApiOperation({ summary: '발주 수령 취소 — 전량·적치/회송 전' })
   @ApiResponse({ status: 200, type: PurchaseOrderReceiptCancelResponseDto })
   @HttpCode(HttpStatus.OK)
   async cancelReceiptLine(

@@ -257,7 +257,7 @@ export class InboundShipmentReader {
 
   /**
    * 그 창고의 열린 선적(`expected`·`receiving`)과, 끝난 선적(저절로든 사람이 닫았든)의 오늘 확정 상자에서 이름이 같은 상자 전부
-   * — spec §8.1·§7.5. 사람이 닫은 선적의 상자도 당일 확정 취소는 된다(모델 설계 §8.4). 상자 더하기만 막힌다(`addBox`).
+   * — spec §8.1·§7.5. 사람이 닫은 선적의 상자도 확정 취소는 된다(모델 설계 §8.4). 상자 더하기만 막힌다(`addBox`).
    * 선적마다 이름이 `L1` 부터 다시 시작하므로 후보가 여럿일 수 있다. 기본 선택은 두지 않는다.
    */
   async findBoxes(warehouseId: string, label: string, tx?: DbTx): Promise<BoxCandidateView[]> {

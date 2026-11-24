@@ -238,7 +238,7 @@ export class InboundShipmentController {
   @RequirePermission('inventory.stock.operate')
   @Post(':id/boxes/:boxId/receive/cancel')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '상자 확정 취소 — 당일·전량, 적치 전만(창고 작업 계약 v2)' })
+  @ApiOperation({ summary: '상자 확정 취소 — 전량, 적치 전만(창고 작업 계약 v2)' })
   @ApiResponse({ status: 200, type: CancelBoxReceiptResultDto })
   cancelBoxReceipt(
     @Param('id', new ParseUUIDPipe()) id: string,

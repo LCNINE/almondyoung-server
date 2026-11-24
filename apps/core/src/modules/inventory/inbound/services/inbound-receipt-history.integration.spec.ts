@@ -445,8 +445,8 @@ describeIfDb('InboundService.listInboundReceipts 회차별 이력 (PostgreSQL in
           .set({ occurredAt: new Date('2026-09-14T14:59:59.999Z') })
           .where(eq(wmsTables.inboundReceipts.id, direct.receipt.id));
         await expect(readDirectHint()).resolves.toMatchObject({
-          canCancel: false,
-          cancelBlockReason: 'NOT_TODAY',
+          canCancel: true,
+          cancelBlockReason: null,
         });
       });
     } finally {

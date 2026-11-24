@@ -118,7 +118,13 @@ describeIfDb('재입고 일정 회귀 (PostgreSQL integration)', () => {
 
       await wiring.sellable.recalculateAndPublishForVariant(fixture.variant.id, tx);
 
-      const kernel = new InboundReceiptKernel(wiring.command, wiring.location, wiring.eventStore, wiring.guard);
+      const kernel = new InboundReceiptKernel(
+        wiring.command,
+        wiring.location,
+        wiring.eventStore,
+        wiring.guard,
+        wiring.reservations,
+      );
 
       await kernel.recordArrival(
         {

@@ -34,6 +34,10 @@ import { useSimpleInbound } from './mutations';
 import { usualShelfNotice } from './RememberUsualToggle';
 import { PutawaySheet, type LocationRef } from './PutawaySheet';
 import { useWaitingOrders } from './waitingOrders';
+import {
+  CancelReceiptDialog,
+  type CancelReceiptTarget,
+} from './CancelReceiptDialog';
 import { WaitingOrdersFailed, WaitingOrdersNote } from './WaitingOrdersNote';
 import type { FreshLine, PutawayTarget } from './types';
 
@@ -80,6 +84,7 @@ function QuickInboundScreenContent() {
     }));
   const runtime = useWorkRuntime();
   const session = useSession();
+  const [receivedAt, setReceivedAt] = useState<string | null>(null);
   const [currentLines, setCurrentLines] = useState<
     import('./receiptHistory').ReceiptHistoryLine[]
   >([]);
@@ -150,6 +155,7 @@ function QuickInboundScreenContent() {
           ? (op.result as SimpleInboundResult).id
           : undefined);
       let historyLines: import('./receiptHistory').ReceiptHistoryLine[] = [];
+      let receivedAt: string | null = null;
       if (latest.staged.length) {
         if ((await runtime.store.pending(scope)).length)
           throw new CheckStop('처리 내역을 먼저 확인해 주세요.');
@@ -177,6 +183,7 @@ function QuickInboundScreenContent() {
         )
           throw new CheckStop('입고내역을 확인해 주세요.');
         historyLines = receipt.lines;
+        receivedAt = receipt.occurredAt;
       }
       if (
         !live ||
@@ -189,6 +196,7 @@ function QuickInboundScreenContent() {
         throw new CheckStop('처리 내역을 먼저 확인해 주세요.');
       if (!live || thisGeneration !== generation) return;
       setCurrentLines(historyLines);
+      setReceivedAt(receivedAt);
       if (live && thisGeneration === generation) setReconciled(true);
     };
     const runReconcile = () => {
@@ -230,6 +238,7 @@ function QuickInboundScreenContent() {
   const [notice, setNotice] = useState<string | null>(null);
 
   const [putawayFor, setPutawayFor] = useState<PutawayTarget | null>(null);
+  const [cancelFor, setCancelFor] = useState<CancelReceiptTarget | null>(null);
   const [lastDest, setLastDest] = useState<LocationRef | null>(null);
   // 적치 대기 목록으로 넘어간 뒤에는 스캔이 카트를 건드리면 안 된다.
   const stagedMode = staged.length > 0;
@@ -534,6 +543,27 @@ function QuickInboundScreenContent() {
                   <span className="text-lg font-semibold text-gray-900">
                     {line.quantity}
                   </span>
+                  {current &&
+                  receivedAt &&
+                  line.canceledQty === 0 &&
+                  line.putawayDoneQty < line.quantity ? (
+                    <button
+                      type="button"
+                      className="shrink-0 px-1 py-1.5 text-xs text-gray-600 underline disabled:opacity-50"
+                      disabled={!reconciled || !!draft.error}
+                      onClick={() =>
+                        setCancelFor({
+                          lineId: line.lineId,
+                          source: current.source,
+                          skuName: line.skuName,
+                          originLocationCode: current.originLocationCode,
+                          receivedAt,
+                        })
+                      }
+                    >
+                      잘못 입고 · 취소
+                    </button>
+                  ) : null}
                   {(line.canceledQty ?? 0) > 0 ? (
                     <span>취소됨</span>
                   ) : line.putawayDoneQty >= line.quantity ? (
@@ -802,6 +832,19 @@ function QuickInboundScreenContent() {
           </Button>
         </section>
       )}
+
+      {cancelFor && warehouseId ? (
+        <CancelReceiptDialog
+          target={cancelFor}
+          warehouseId={warehouseId}
+          onClose={() => setCancelFor(null)}
+          onFinished={(message) => {
+            setCancelFor(null);
+            setNotice(message);
+            void reconcileRef.current?.().catch(() => {});
+          }}
+        />
+      ) : null}
 
       {putawayFor ? (
         <PutawaySheet

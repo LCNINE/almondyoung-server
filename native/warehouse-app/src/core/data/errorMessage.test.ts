@@ -145,10 +145,19 @@ describe('inbound 문맥', () => {
     ).toBe('입고기본존 재고가 부족해요. 새로고침 후 확인해 주세요.');
   });
 
-  it('취소 실패(400)는 적치/당일 제약을 함께 안내한다', () => {
+  it('취소 실패(400)는 적치·취소된 입고를 함께 안내한다', () => {
     expect(
       errorMessage(new Error('POST /inbound/cancel → 400'), 'inbound-cancel')
-    ).toBe('이미 적치했거나 오늘 입고분이 아니라 취소할 수 없어요.');
+    ).toBe('이미 적치했거나 취소된 입고라 취소할 수 없어요. 목록을 다시 확인해 주세요.');
+  });
+
+  it.each([
+    ['바로 온 거절', new ConflictError('x', 'CONFLICT')],
+    ['저장된 거절', new ApiError('x', 409, 'CONFLICT')],
+  ])('취소 실패(409)는 재고를 잡은 주문을 안내한다 — %s', (_name, error) => {
+    expect(errorMessage(error, 'inbound-cancel')).toBe(
+      '이 재고를 잡은 주문 때문에 취소하지 못했어요. 입고내역에서 다시 열어 확인해 주세요.'
+    );
   });
 });
 
