@@ -683,7 +683,12 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
         <WorkGrid
           left={
             <>
-              <BoxCard trackingNo={view.box.trackingNo} recipient={view.box.recipientMasked} ownerName={view.box.ownerName} />
+              <BoxCard
+                trackingNo={view.box.trackingNo}
+                recipient={view.box.recipientMasked}
+                ownerName={view.box.ownerName}
+                split={view.box.split}
+              />
               {/* 방금 찍은 것의 거절 사유가 출력 상태보다 먼저다(§6.2 «오류음 + 사유 한 줄»).
                   새 송장을 먼저 찍으라는 거절만은 새 송장 안내를 남기고 그 아래에 한 줄로 — 할 일이 그대로다 */}
               {alert && alert.message !== NEW_WAYBILL_FIRST_MESSAGE ? (

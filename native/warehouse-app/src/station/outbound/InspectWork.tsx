@@ -355,7 +355,13 @@ export function InspectWork({
         intake={work.intakeBlocked || cancelWaiting ? 'blocked' : 'open'}
         left={
           <>
-            <BoxCard trackingNo={box.trackingNo} recipient={box.recipientMasked} deliveryNote={box.deliveryNote} ownerName={box.ownerName} />
+            <BoxCard
+              trackingNo={box.trackingNo}
+              recipient={box.recipientMasked}
+              deliveryNote={box.deliveryNote}
+              ownerName={box.ownerName}
+              split={box.split}
+            />
             <BigPanel content={big} />
             {work.checking.length > 0 ? (
               <ScanChecking
