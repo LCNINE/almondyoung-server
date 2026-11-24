@@ -7,7 +7,7 @@ import { Button } from '../../core/design/Button';
 import { printRaw, readLabelPrinter, type PrintRaw } from '../../core/hardware/print/labelPrinter';
 import { useScanner } from '../../core/hardware/scan/useScanner';
 import { fetchJoinCandidates, joinBoxIntoBatch, type JoinCandidate, type JoinOutcome } from './batchJoin';
-import { ReprintLabelButton } from './ReprintLabelButton';
+import { JoinOutcomeView } from './JoinOutcomeView';
 
 const NOT_FOUND = '이 번호로 넣을 수 있는 박스를 찾지 못했어요. 이 창고의 출고 대상인지 확인해 주세요.';
 
@@ -126,31 +126,7 @@ export function JoinBoxPanel({
           ))}
         </ul>
       )}
-      {outcome?.kind === 'blocked' && <p role="alert">{outcome.message}</p>}
-      {outcome?.kind === 'join_blocked' && (
-        <div role="alert" className="space-y-1">
-          <p className="font-medium">넣지 못했어요 — 아래 사유를 먼저 처리해 주세요</p>
-          {outcome.groups.map((group) => (
-            <div key={group.reason}>
-              <p className="text-sm font-medium">{group.title}</p>
-              <ul className="text-sm">
-                {group.rows.map((row, index) => (
-                  <li key={`${index}-${row}`}>{row}</li>
-                ))}
-              </ul>
-              <p className="text-sm text-neutral-500">{group.guidance}</p>
-            </div>
-          ))}
-        </div>
-      )}
-      {outcome?.kind === 'joined' && (
-        <div className="space-y-1">
-          <p role="status">{outcome.message}</p>
-          {labelPrinting && (outcome.print === 'failed' || outcome.print === 'no_printer') && (
-            <ReprintLabelButton shipmentId={outcome.shipmentId} prefs={prefs} print={print} />
-          )}
-        </div>
-      )}
+      <JoinOutcomeView outcome={outcome} labelPrinting={labelPrinting} prefs={prefs} print={print} />
       <Button type="button" className="border border-gray-300 bg-white text-gray-700" onClick={onClose}>
         닫기
       </Button>

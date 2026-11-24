@@ -8,6 +8,7 @@ import { ApiClientProvider } from '../../core/data/ApiClientProvider';
 import { ConflictError, type ApiClient } from '../../core/data/httpClient';
 import { JOIN_BLOCKER_TEXT } from '../outbound/batchJoin';
 import type { Session } from '../../core/auth/session';
+import type { DevicePrefs } from '../../core/data/devicePrefs';
 import { ReadyShipmentsSection } from './ReadyShipmentsSection';
 
 const session = {
@@ -37,11 +38,15 @@ function mount(opts: {
   items?: unknown[]; waiting?: number;
   picking?: unknown[]; created?: unknown[];
   handler?: (o: Req) => Promise<unknown> | unknown;
+  failBatches?: boolean;
+  station?: boolean;
+  print?: () => Promise<void>;
 }) {
   const calls: Req[] = [];
   const request = async (o: Req) => {
     calls.push(o);
     if (o.path.startsWith('/ready-shipments')) return { items: opts.items ?? [], waitingOnOtherSkus: opts.waiting ?? 0 };
+    if (opts.failBatches && o.path.includes('/outbound-batches/v2')) throw new Error('down');
     if (o.path.includes('status=picking')) return opts.picking ?? [];
     if (o.path.includes('status=created')) return opts.created ?? [];
     return opts.handler ? opts.handler(o) : {};
@@ -55,8 +60,9 @@ function mount(opts: {
       </QueryClientProvider>
     </SessionProvider>
   );
+  const prefs = { get: () => 'printer-1', set: () => {}, remove: () => {} } as unknown as DevicePrefs;
   const view = render(
-    <ReadyShipmentsSection warehouseId="w-1" receiptLineIds={['l-1']} labelPrinting={false} />,
+    <ReadyShipmentsSection warehouseId="w-1" receiptLineIds={['l-1']} labelPrinting={opts.station ?? false} prefs={prefs} print={opts.print} />,
     { wrapper },
   );
   return { calls, user: userEvent.setup(), container: view.container };
@@ -187,5 +193,32 @@ describe('ReadyShipmentsSection', () => {
     await waitFor(() => expect(screen.getAllByRole('button', { name: '송장 출력' })[1]).toBeDisabled());
     release();
     await screen.findByRole('status');
+  });
+
+  it('배치 목록을 못 읽으면 배치가 없다고 하지 않는다', async () => {
+    const { user } = mount({ items: [ready('s-1', 'A-1')], failBatches: true });
+    await user.click(await screen.findByRole('button', { name: '송장 출력' }));
+    expect(await screen.findByText('배치 목록을 불러오지 못했어요.')).toBeInTheDocument();
+    expect(screen.queryByText(/진행 중인 배치가 없어요/)).not.toBeInTheDocument();
+  });
+
+  it('출력이 실패하면 다시 출력 버튼을 보인다', async () => {
+    const { user } = mount({
+      items: [ready('s-1', 'A-1')],
+      picking: [batch('p1', '2026-11-25T01:00:00Z')],
+      station: true,
+      print: async () => {
+        throw new Error('printer down');
+      },
+      handler: (o) => {
+        if (o.path.includes('join-candidates')) return [{ ...candidate('s-1'), waybill: { ...candidate('s-1').waybill, printable: true } }];
+        if (o.path.includes('/label')) return { trackingNo: '1', zpl: '^XA^XZ', fingerprint: 'f' };
+        return {};
+      },
+    });
+    await user.click(await screen.findByRole('button', { name: '송장 출력' }));
+    await user.click(await within(await screen.findByRole('list', { name: '배치 고르기' })).findByRole('button'));
+    expect(await screen.findByRole('status')).toHaveTextContent('다시 출력');
+    expect(screen.getByRole('button', { name: '송장 재출력' })).toBeInTheDocument();
   });
 });

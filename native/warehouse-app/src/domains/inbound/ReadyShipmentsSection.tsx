@@ -7,6 +7,7 @@ import { printRaw, readLabelPrinter, type PrintRaw } from '../../core/hardware/p
 import { isStationDevice } from '../../app/station';
 import { batchNameOf } from '../outbound/batchStatus';
 import type { JoinOutcome } from '../outbound/batchJoin';
+import { JoinOutcomeView } from '../outbound/JoinOutcomeView';
 import { printReadyShipmentIntoBatch } from '../outbound/printIntoBatch';
 import { useOutboundBatches } from '../outbound/queries';
 import { READY_SHIPMENTS_KEY, useReadyShipments, type ReadyShipment } from './readyShipments';
@@ -48,6 +49,7 @@ export function ReadyShipmentsSection({
   const picking = useOutboundBatches(pickingFor ? warehouseId : null, 'picking');
   const created = useOutboundBatches(pickingFor ? warehouseId : null, 'created');
   const loadingBatches = picking.isPending || created.isPending;
+  const batchesFailed = picking.isError || created.isError;
   const startedBatches = [...(picking.data ?? []), ...(created.data ?? [])].filter(
     (batch, index, all) => batch.startedAt !== null && all.findIndex((b) => b.id === batch.id) === index,
   );
@@ -64,7 +66,10 @@ export function ReadyShipmentsSection({
       );
       setOutcome(result);
       setPickingFor(null);
-      if (result.kind === 'joined') await queryClient.invalidateQueries({ queryKey: ['outbound-batches'] });
+      if (result.kind === 'joined') {
+        await queryClient.invalidateQueries({ queryKey: ['outbound-batches'] });
+        await queryClient.invalidateQueries({ queryKey: ['waybill-label-states'] });
+      }
       await queryClient.invalidateQueries({ queryKey: [READY_SHIPMENTS_KEY] });
     } finally {
       running.current = false;
@@ -104,7 +109,10 @@ export function ReadyShipmentsSection({
           </ul>
         </div>
       )}
-      {pickingFor !== null && !loadingBatches && startedBatches.length === 0 && <p className="text-sm">{NO_BATCH}</p>}
+      {pickingFor !== null && batchesFailed && <p className="text-sm">배치 목록을 불러오지 못했어요.</p>}
+      {pickingFor !== null && !loadingBatches && !batchesFailed && startedBatches.length === 0 && (
+        <p className="text-sm">{NO_BATCH}</p>
+      )}
       {pickingFor !== null && startedBatches.length > 0 && (
         <ul aria-label="배치 고르기" className="space-y-1">
           {startedBatches.map((batch) => (
@@ -123,24 +131,7 @@ export function ReadyShipmentsSection({
           ))}
         </ul>
       )}
-      {outcome?.kind === 'blocked' && <p role="alert">{outcome.message}</p>}
-      {outcome?.kind === 'join_blocked' && (
-        <div role="alert" className="space-y-1">
-          <p className="font-medium">넣지 못했어요 — 아래 사유를 먼저 처리해 주세요</p>
-          {outcome.groups.map((group) => (
-            <div key={group.reason}>
-              <p className="text-sm font-medium">{group.title}</p>
-              <ul className="text-sm">
-                {group.rows.map((row, index) => (
-                  <li key={`${index}-${row}`}>{row}</li>
-                ))}
-              </ul>
-              <p className="text-sm text-neutral-500">{group.guidance}</p>
-            </div>
-          ))}
-        </div>
-      )}
-      {outcome?.kind === 'joined' && <p role="status">{outcome.message}</p>}
+      <JoinOutcomeView outcome={outcome} labelPrinting={labelPrinting} prefs={prefs} print={print} />
       {ready.waitingOnOtherSkus > 0 && (
         <p className="text-xs text-amber-700">다른 상품을 기다리는 주문 {ready.waitingOnOtherSkus}건</p>
       )}
