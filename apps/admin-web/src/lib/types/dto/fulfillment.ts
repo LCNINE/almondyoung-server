@@ -1012,6 +1012,9 @@ export interface ShipmentSplitShare {
   orderQty: number;
   boxNo: number;
   boxCount: number;
+  // 이 상자를 나눈 이유. 서버가 주기 전 응답과 코드 없이 남은 옛 기록은 없다.
+  reasonCode?: string | null;
+  reason?: string | null;
 }
 
 // 상자에 담긴 상품별 수량. 서버가 주기 전 응답에는 없다.

@@ -5,6 +5,7 @@ import { assembleConsolidationBoard } from './consolidation-board.reader';
 import { CONSOLIDATION_RECOVERY_CODE } from './consolidation-recovery';
 import {
   loadInHouseProfileIds,
+  loadKeptApartSplits,
   loadShipmentLines,
   OPTION_STATUSES,
   OptionLine,
@@ -183,8 +184,12 @@ export async function loadFoConsolidations(
 
   const profileIds = uniqueInOrder(openShipments.flatMap((shipment) => shipment.shippingProfileId ?? []));
   const inHouseProfileIds = await loadInHouseProfileIds(db, profileIds);
+  const keptApart = await loadKeptApartSplits(
+    db,
+    openShipments.map((shipment) => shipment.id),
+  );
   const groups = [...partitions.values()].flatMap((members) =>
-    assembleConsolidationBoard(members, lines, emptyProgress, inHouseProfileIds),
+    assembleConsolidationBoard(members, lines, emptyProgress, inHouseProfileIds, keptApart),
   );
   const groupByShipment = new Map<string, string[]>();
 

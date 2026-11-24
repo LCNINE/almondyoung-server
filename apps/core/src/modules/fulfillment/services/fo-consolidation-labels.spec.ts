@@ -177,6 +177,71 @@ describe('loadFoConsolidations 조회 횟수', () => {
     expect(JSON.stringify([...result.values()])).not.toContain('김알몬');
   });
 
+  it('크기 때문에 나눈 두 상자에 각각 다른 주문이 남아 있어도 서로를 합칠 수 있다고 하지 않는다', async () => {
+    const recipient = {
+      recipientName: '김알몬',
+      phone: '010-1234-5678',
+      postalCode: '14500',
+      roadAddress: '경기 부천시 원미로 12',
+      detailAddress: '101호',
+    };
+    const shipment = (id: string, warehouseId = 'wh-1') => ({
+      id,
+      warehouseId,
+      shippingProfileId: 'profile-1',
+      status: 'draft',
+      supplierId: null,
+      recoveryCode: null,
+      recipientSnapshot: recipient,
+      manifestVersion: 1,
+      reservationVersion: 1,
+      createdAt: new Date('2026-11-01T00:00:00Z'),
+    });
+    const line = (shipmentId: string, salesOrderId: string, displayOrderNo: string) => ({
+      shipmentId,
+      qty: 1,
+      salesOrderId,
+      fulfillmentMode: 'in_house',
+      skuStockType: 'stocked',
+      skuProfileId: 'profile-1',
+      skuName: '상품',
+      customerId: 'c1',
+      customerName: '김알몬',
+      customerPhone: '01012345678',
+      displayOrderNo,
+      channelOrderId: null,
+      salesChannel: 'medusa',
+      salesOrderCreatedAt: new Date('2026-11-01T00:00:00Z'),
+    });
+    const fake = countingDb(1, [
+      [{ customerId: 'c1', phone: '01012345678' }],
+      [{ shipmentId: 'sh-other' }],
+      [shipment('sh-0'), shipment('sh-other')],
+      [line('sh-0', 'so-0', 'A-1'), line('sh-other', 'so-x', 'B-2')],
+      [{ id: 'profile-1', modes: ['in_house'] }],
+      [
+        {
+          operationId: 'op',
+          shipmentId: 'sh-0',
+          reason: '한 상자에 다 들어가지 않음',
+          reasonCode: 'does_not_fit',
+          completedAtMicros: 1,
+        },
+        {
+          operationId: 'op',
+          shipmentId: 'sh-other',
+          reason: '한 상자에 다 들어가지 않음',
+          reasonCode: 'does_not_fit',
+          completedAtMicros: 1,
+        },
+      ],
+    ]);
+
+    const result = await loadFoConsolidations(fake.db, targets(1));
+
+    expect(result.get('fo-0')).toEqual({ state: 'none', partnerOrderNos: [] });
+  });
+
   it('같은 고객 같은 주소의 다른 주문 상자를 SKU 배송 프로필이 상자와 다르거나 프로필이 in_house 를 지원하지 않으면 none 이다', async () => {
     const recipient = {
       recipientName: '김알몬',

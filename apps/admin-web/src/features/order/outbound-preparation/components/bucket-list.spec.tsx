@@ -516,3 +516,43 @@ describe('주문일·경과·받는 분', () => {
     expect(screen.getByText('1일 지남').className).toContain('text-amber-700');
   });
 });
+
+it('나눈 상자는 사유 칸에 나눈 이유를 보이고, 다른 사유가 있으면 그 아래에 붙인다', () => {
+  const split = (reason: string | null) => ({
+    boxQty: 1,
+    orderQty: 2,
+    boxNo: 1,
+    boxCount: 2,
+    reasonCode: null,
+    reason,
+  });
+
+  render(
+    list({
+      bucket: 'resume',
+      count: 3,
+      singleCount: 3,
+      multiCount: 0,
+      shipments: [
+        { ...shipment('s1', null), split: split('한 상자에 다 들어가지 않음') },
+        {
+          ...shipment('s2', '운송사가 송장 번호를 주지 않았어요'),
+          split: split('고객이 일부 먼저 보내 달라고 요청'),
+        },
+        { ...shipment('s3', null), split: split(null) },
+      ],
+    })
+  );
+
+  const headers = screen.getAllByRole('columnheader');
+  const reasonColumn = headers.findIndex((cell) => cell.textContent === '사유');
+  const rows = screen.getAllByRole('row').slice(1);
+  const reasonOf = (index: number) =>
+    rows[index].querySelectorAll('td')[reasonColumn]?.textContent;
+
+  expect(reasonOf(0)).toBe('나눈 이유 · 한 상자에 다 들어가지 않음');
+  expect(reasonOf(1)).toBe(
+    '운송사가 송장 번호를 주지 않았어요나눈 이유 · 고객이 일부 먼저 보내 달라고 요청'
+  );
+  expect(reasonOf(2)).toBe('-');
+});
