@@ -30,6 +30,7 @@ import {
   useClaimBatchPacker,
   useClaimBatchPicker,
   useExcludeShipmentFromBatch,
+  useFollowBatchScanRejections,
   useHandoffBatchWorkItem,
   useOutboundBatchEligibleShipments,
   useOutboundBatchV2,
@@ -76,6 +77,7 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
     isLoading,
     refetch,
   } = useOutboundBatchV2(batchId);
+  useFollowBatchScanRejections(batchId, batch, batchUpdatedAt);
   const closed = !!batch && isClosed(batch);
   const joinBlocked = batch ? joinBlockedReason(batch) : null;
   const acceptsShipments = !!batch && !closed && !joinBlocked;

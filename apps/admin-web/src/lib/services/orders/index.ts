@@ -28,6 +28,7 @@ export {
   useOutboundPreparationCounts,
   useLoadMoreOutboundPreparation,
   useOutboundBatchV2,
+  useFollowBatchScanRejections,
   useLoadOutboundBatchV2,
   useOutboundBatchEligibleShipments,
   useOutboundBatchWorkItems,

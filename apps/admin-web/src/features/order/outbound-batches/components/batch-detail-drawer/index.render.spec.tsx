@@ -65,6 +65,7 @@ jest.mock('@/lib/services/orders', () => ({
     dataUpdatedAt: mockBatchAt,
     refetch: mockRefetch,
   }),
+  useFollowBatchScanRejections: () => undefined,
   useOutboundBatchEligibleShipments: (
     _id: string,
     options?: { enabled?: boolean; snapshotAt?: number }
