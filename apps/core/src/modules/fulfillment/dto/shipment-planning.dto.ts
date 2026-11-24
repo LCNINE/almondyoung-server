@@ -377,6 +377,9 @@ export class ShipmentSummaryResponseDto {
 
   @ApiProperty({ nullable: true })
   recoveryCode: string | null;
+
+  @ApiProperty({ description: '우선할당한 상자 — 합포장이면 담긴 주문이 모두 우선할당일 때만 true' })
+  stockPriority: boolean;
 }
 
 export class PendingCancellationItemResponseDto {

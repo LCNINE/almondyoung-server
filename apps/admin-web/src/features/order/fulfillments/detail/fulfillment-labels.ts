@@ -79,6 +79,8 @@ const OPERATION_TYPE: Record<string, string> = {
   force_dispatch: '강제 출고',
   waybill_void: '송장 무효화',
   waybill_reissue: '송장 재발급',
+  stock_priority: '우선할당',
+  stock_priority_cancel: '우선할당 취소',
 };
 
 export const operationTypeLabel = (type: string) =>

@@ -1341,13 +1341,25 @@ export class ShipmentPlanningService {
         )
         .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, fulfillmentOrderId));
       const rows = await trx
-        .select({ shipment: wmsTables.shipments, line: wmsTables.shipmentLines })
+        .select({
+          shipment: wmsTables.shipments,
+          line: wmsTables.shipmentLines,
+          stockAllocation: wmsTables.fulfillmentOrders.stockAllocation,
+        })
         .from(wmsTables.shipmentLines)
         .innerJoin(wmsTables.shipments, eq(wmsTables.shipments.id, wmsTables.shipmentLines.shipmentId))
+        .innerJoin(
+          wmsTables.fulfillmentOrderItems,
+          eq(wmsTables.fulfillmentOrderItems.id, wmsTables.shipmentLines.fulfillmentOrderItemId),
+        )
+        .innerJoin(
+          wmsTables.fulfillmentOrders,
+          eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId),
+        )
         .where(inArray(wmsTables.shipmentLines.shipmentId, ownShipmentIds))
         .orderBy(asc(wmsTables.shipments.createdAt), asc(wmsTables.shipments.id), asc(wmsTables.shipmentLines.id));
       const byShipment = new Map<string, ShipmentSummaryResponseDto>();
-      for (const { shipment, line } of rows) {
+      for (const { shipment, line, stockAllocation } of rows) {
         const summary = byShipment.get(shipment.id) ?? {
           id: shipment.id,
           status: shipment.status,
@@ -1359,7 +1371,9 @@ export class ShipmentPlanningService {
           reservedQty: 0,
           inspectedQty: 0,
           recoveryCode: shipment.recoveryCode,
+          stockPriority: true,
         };
+        summary.stockPriority &&= stockAllocation === 'priority';
         summary.totalQty += line.qty;
         summary.reservedQty += line.reservedQty;
         summary.inspectedQty += line.inspectedQty;

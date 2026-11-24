@@ -704,6 +704,8 @@ export interface ShipmentAdminSummary {
   reservedQty: number;
   inspectedQty: number;
   recoveryCode: string | null;
+  // 우선할당한 상자. 옛 core 응답엔 없다
+  stockPriority?: boolean;
 }
 
 export interface ShipmentLineOrigin {
@@ -908,6 +910,53 @@ export interface SplitShipmentRequest extends ShipmentCommandReason {
 
 export interface SplitUnreservedShipmentRequest extends ShipmentCommandReason {
   expectedManifestVersion: number;
+}
+
+export interface StockPriorityTake {
+  shipmentId: string;
+  orderNos: string[];
+  skuName: string;
+  qty: number;
+  // 가져오기 전에 나갈 수 있던 상자인가
+  ready: boolean;
+  // 가져온 뒤 이 상자에 잡힌 재고가 하나도 없는가
+  emptied: boolean;
+}
+
+export interface StockPriorityPlan {
+  freeQty: number;
+  takes: StockPriorityTake[];
+  missingQty: number;
+  token: string;
+}
+
+export interface StockPriorityPreview {
+  shipmentId: string;
+  orderNos: string[];
+  stockAllocation: 'normal' | 'priority';
+  blocked: string | null;
+  lines: {
+    skuId: string;
+    skuName: string;
+    qty: number;
+    reservedQty: number;
+    missingQty: number;
+  }[];
+  plan: StockPriorityPlan | null;
+  planWithReady: StockPriorityPlan | null;
+}
+
+export interface SetStockPriorityRequest extends ShipmentCommandReason {
+  planToken: string;
+  includeReady?: boolean;
+}
+
+export interface StockPriorityResult {
+  shipmentId: string;
+  movedQty: number;
+  freeQty: number;
+  missingQty: number;
+  operationId: string;
 }
 
 export interface ReviseShipmentRecipientRequest extends ShipmentCommandReason {
@@ -1154,6 +1203,8 @@ export interface PreparationShipmentDto {
   batchReturn?: PreparationBatchReturn | null;
   // 위탁 업체(3pl) 상자면 그 화주. 자사 상자는 null
   owner?: { id: string; name: string } | null;
+  // 우선할당한 상자. 옛 core 응답엔 없다
+  stockPriority?: boolean;
   // 정보 부족 상자만: 고쳐야 할 것 전부. 서버가 주기 전 응답에는 없다
   needsInfo?: NeedsInfoIssue[];
   /** 배송 프로필이 섞인 정보 부족 상자만 — 그 자리에서 나누는 데 쓰는 줄. 옛 core 응답엔 없다 */

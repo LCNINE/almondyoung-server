@@ -506,6 +506,16 @@ export const useFulfillmentShipments = (
   });
 };
 
+/** 재고는 계속 바뀐다 — 창을 열 때마다 새로 읽고 남기지 않는다 */
+export const useStockPriorityPreview = (shipmentId: string) => {
+  return useQuery({
+    queryKey: orderQueryKeys.stockPriority(shipmentId),
+    queryFn: () => orders.fulfillmentOrder.getStockPriority(shipmentId),
+    staleTime: 0,
+    gcTime: 0,
+  });
+};
+
 export const useShipmentDetail = (
   shipmentId: string,
   options?: { followScanRejection?: boolean }

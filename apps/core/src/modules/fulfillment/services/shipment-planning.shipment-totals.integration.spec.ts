@@ -136,6 +136,28 @@ describeIfDb('ShipmentPlanningService.getFulfillmentShipments (DB integration)',
     });
   });
 
+  it('합쳐진 상자는 담긴 주문이 모두 우선할당일 때만 우선할당 상자로 돌려준다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const base = await consolidationBase(tx);
+      const customerId = randomUUID();
+      const a = await createConsolidationSource(tx, wired, base, { quantity: 1, customerId });
+      const b = await createConsolidationSource(tx, wired, base, { quantity: 1, customerId });
+      const boxId = await mergedBox(tx, a, b);
+      const prioritize = (id: string) =>
+        tx
+          .update(wmsTables.fulfillmentOrders)
+          .set({ stockAllocation: 'priority' })
+          .where(eq(wmsTables.fulfillmentOrders.id, id));
+      const box = async () =>
+        (await planning.getFulfillmentShipments(a.fulfillmentOrderId, tx)).find((shipment) => shipment.id === boxId);
+
+      await prioritize(a.fulfillmentOrderId);
+      expect(await box()).toMatchObject({ stockPriority: false });
+      await prioritize(b.fulfillmentOrderId);
+      expect(await box()).toMatchObject({ stockPriority: true });
+    });
+  });
+
   it('대체된 옛 상자는 새 상자 수량에 섞이지 않고 자기 상태와 수량으로 따로 나온다', async () => {
     await inRollbackTx(db, async (tx) => {
       const base = await consolidationBase(tx);
@@ -178,6 +200,7 @@ describeIfDb('ShipmentPlanningService.getFulfillmentShipments (DB integration)',
           reservedQty: 2,
           inspectedQty: 1,
           recoveryCode: source.shipment.recoveryCode,
+          stockPriority: false,
         },
       ]);
     });

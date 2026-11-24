@@ -142,11 +142,17 @@ export class OutboundPreparationReader {
 
       const lines = await loadShipmentLines(trx, ids);
       const orderedAt = earliestOrderDates(lines);
-      // 분류마다 결품으로 돌아온 상자, 배치에서 빠져 돌아온 상자 순으로 앞에 모으고, 그 안에서는 오래된 주문부터 —
+      // 분류마다 결품으로 돌아온 상자, 배치에서 빠져 돌아온 상자 순으로 앞에 모으고, 그 안에서는 우선할당, 오래된 주문 순 —
       // 쪽 나누기 전에 정렬해야 다음 쪽에 묻히지 않는다. 주문일이 없거나 같으면 상자를 만든 순서 그대로다
       const rank = (id: string) => (shortPicks.has(id) ? 0 : returned.has(id) ? 1 : 2);
+      const waiting = new Set(
+        lines.filter((line) => line.stockAllocation !== 'priority').map((line) => line.shipmentId),
+      );
       const shipments = [...kept].sort(
-        (a, b) => rank(a.id) - rank(b.id) || compareOrderedAt(orderedAt.get(a.id), orderedAt.get(b.id)),
+        (a, b) =>
+          rank(a.id) - rank(b.id) ||
+          Number(waiting.has(a.id)) - Number(waiting.has(b.id)) ||
+          compareOrderedAt(orderedAt.get(a.id), orderedAt.get(b.id)),
       );
       const quantitiesByShipment = await this.lineQuantities(ids, trx);
       const splits = await loadSplitShares(trx, ids);
@@ -271,6 +277,7 @@ export class OutboundPreparationReader {
               }
             : null,
           owner: owner.key === OUR_HOLDER_KEY ? null : { id: owner.key, name: owner.name },
+          stockPriority: !waiting.has(shipment.id),
         });
       }
 

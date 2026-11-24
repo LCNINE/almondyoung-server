@@ -287,6 +287,9 @@ export const shipmentOperationTypeEnum = pgEnum('shipment_operation_type', [
   // 운영자가 송장을 무효로 하거나 다시 받은 기록. 자동 무효화(박스 빼기·결품 이탈)는 그 작업이 남긴다.
   'waybill_void',
   'waybill_reissue',
+  // 재고를 이 상자에 먼저 배정하거나 그 표시를 거둔 기록. 재고를 내준 상자도 구성원(source)으로 남는다.
+  'stock_priority',
+  'stock_priority_cancel',
 ]);
 export const shipmentOperationStatusEnum = pgEnum('shipment_operation_status', [
   'pending',
@@ -2147,6 +2150,8 @@ export const mergeGroups = pgTable('merge_groups', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+export type StockAllocation = 'normal' | 'priority';
+
 // Fulfillment Orders (FO)
 export const fulfillmentOrders = pgTable(
   'fulfillment_orders',
@@ -2160,6 +2165,8 @@ export const fulfillmentOrders = pgTable(
     // 출고 관련 필드들 (batchId 는 Task 25 contract 에서 제거 — FO↔batch 링크 은퇴, batch 단위는 shipment)
     fulfillmentMode: fulfillmentModeEnum('fulfillment_mode'),
     priority: taskPriorityEnum('priority').notNull().default('normal'),
+    // 재고 배정 순서. priority 는 대기 순번과 상관없이 먼저 받는다(여럿이면 그 안에서 대기 순번).
+    stockAllocation: varchar('stock_allocation', { length: 16 }).$type<StockAllocation>().notNull().default('normal'),
 
     // 수량 관련 필드들
     totalItems: integer('total_items').notNull().default(0),
@@ -2190,6 +2197,14 @@ export const fulfillmentOrders = pgTable(
     uqSalesOrder: uniqueIndex('uq_fulfillment_orders_sales_order')
       .on(t.salesOrderId)
       .where(sql`${t.salesOrderId} IS NOT NULL`),
+    // 우선할당 줄이 받을 몫은 예약마다 읽는다 — 표시된 주문만 담는다
+    idxStockPriority: index('idx_fulfillment_orders_stock_priority')
+      .on(t.id)
+      .where(sql`${t.stockAllocation} = 'priority'`),
+    ckStockAllocation: check(
+      'ck_fulfillment_orders_stock_allocation',
+      sql`${t.stockAllocation} IN ('normal', 'priority')`,
+    ),
   }),
 );
 
