@@ -1,4 +1,4 @@
-import { useRef, useState, type DragEvent, type MouseEvent } from "react"
+import { useState, type DragEvent, type MouseEvent } from "react"
 import {
   ChevronDown,
   ChevronRight,
@@ -7,11 +7,13 @@ import {
   Folder,
   Lock,
   LockOpen,
+  Merge,
   SquarePen,
 } from "lucide-react"
 import { LayerGraphic } from "../../graphic"
 import type { AlmondEditor } from "../../../hooks/use-almond-editor"
 import type { Layer } from "../../../lib/document"
+import { toggleLayerSelection } from "../../../lib/layer"
 
 const DRAG_TYPE = "application/x-almond-layer"
 
@@ -65,8 +67,7 @@ export function moveLayers(
     )
   const rest = layers.filter((layer) => !ids.includes(layer.id))
   const below =
-    layers.findIndex((layer) => ids.includes(layer.id)) <
-    layers.indexOf(target)
+    layers.findIndex((layer) => ids.includes(layer.id)) < layers.indexOf(target)
   const splits =
     keepGroup && !!target.groupId && moving[0].groupId !== target.groupId
   const siblings = splits
@@ -96,17 +97,15 @@ export function LayersPanel({ editor }: { editor: AlmondEditor }) {
     mergeGroup,
     splitGroup,
     mergedGroup,
+    mergeDown,
+    mergeDownReason,
     setPinnedId,
     setLayerInspect,
   } = editor
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set())
-  const anchor = useRef<string | null>(null)
   const selection = groupIds.length ? groupIds : selectedId ? [selectedId] : []
   const rows = toRows(layers, collapsed)
-  const order = rows.flatMap((row) =>
-    row.kind === "layer" ? [row.layer.id] : []
-  )
 
   const patchMany = (ids: string[], value: Partial<Layer>) =>
     change({
@@ -116,22 +115,14 @@ export function LayersPanel({ editor }: { editor: AlmondEditor }) {
       ),
     })
 
-  // Shift 는 범위, Cmd·Ctrl 은 하나씩 더하거나 뺀다
+  // Shift·Cmd·Ctrl 은 클릭한 레이어 하나만 선택에 더하거나 뺀다
   const pick = (event: MouseEvent, id: string) => {
-    if (event.shiftKey && anchor.current && order.includes(anchor.current)) {
-      const [a, b] = [order.indexOf(anchor.current), order.indexOf(id)].sort(
-        (x, y) => x - y
-      )
-      return selectLayers(order.slice(a, b + 1))
-    }
-    anchor.current = id
     setPinnedId(null)
-    if (event.metaKey || event.ctrlKey)
-      return selectLayers(
-        selection.includes(id)
-          ? selection.filter((item) => item !== id)
-          : [...selection, id]
-      )
+
+    if (event.shiftKey || event.metaKey || event.ctrlKey) {
+      return selectLayers(toggleLayerSelection(selection, id))
+    }
+
     selectLayers([id])
     setPinnedId(id)
   }
@@ -257,7 +248,6 @@ export function LayersPanel({ editor }: { editor: AlmondEditor }) {
                 aria-label={`그룹 ${row.name} 선택`}
                 className="flex min-w-0 flex-1 items-center gap-1.5"
                 onClick={() => {
-                  anchor.current = null
                   selectLayers(ids)
                 }}
               >
@@ -281,6 +271,8 @@ export function LayersPanel({ editor }: { editor: AlmondEditor }) {
         }
         const { layer, nested } = row
         const dragIds = selection.includes(layer.id) ? selection : [layer.id]
+        const mergeReason = mergeDownReason(layer.id)
+
         return (
           <div
             key={layer.id}
@@ -343,6 +335,17 @@ export function LayersPanel({ editor }: { editor: AlmondEditor }) {
             >
               <SquarePen size={15} />
             </button>
+            <span title={mergeReason || "아래 레이어와 병합"}>
+              <button
+                type="button"
+                aria-label={`${layer.name} 아래 레이어와 병합`}
+                disabled={!!mergeReason}
+                className="disabled:opacity-40"
+                onClick={() => void mergeDown(layer.id)}
+              >
+                <Merge size={15} />
+              </button>
+            </span>
             {toggles([layer], layer.name)}
           </div>
         )

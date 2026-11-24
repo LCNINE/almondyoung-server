@@ -6,6 +6,7 @@ import {
   replaceEverywhere,
   swapColor,
   textLayerName,
+  toggleLayerSelection,
 } from "./layer"
 import { newDesign, parseDesign, type Layer } from "./document"
 
@@ -119,5 +120,21 @@ describe("replaceEverywhere", () => {
       (item) => swapColor(item, "#123456", "#0000ff")
     )
     expect(next.front[1]).toBe(design.front[1])
+  })
+})
+
+describe("레이어 선택 토글", () => {
+  it("클릭한 행만 추가하고 다시 클릭하면 그 행만 해제한다", () => {
+    const selected = ["top", "bottom"]
+
+    expect(toggleLayerSelection(selected, "middle")).toEqual([
+      "top",
+      "bottom",
+      "middle",
+    ])
+    expect(toggleLayerSelection(selected, "top")).toEqual(["bottom"])
+    expect(selected).toEqual(["top", "bottom"])
+    expect(toggleLayerSelection(["top"], "top")).toEqual([])
+    expect(toggleLayerSelection([], "bottom")).toEqual(["bottom"])
   })
 })
