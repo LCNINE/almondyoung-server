@@ -40,6 +40,9 @@ jest.mock('./shortage-stock', () => ({
   loadWaitingQuantities: jest.fn(async () => new Map()),
   readPipelineScope: jest.fn(async () => ({ incoming: false, elsewhere: false })),
 }));
+jest.mock('../stock-priority/stock-given', () => ({
+  loadStockGiven: jest.fn(async () => new Map()),
+}));
 jest.mock('./batch-returns', () => ({
   ...jest.requireActual<typeof import('./batch-returns')>('./batch-returns'),
   loadReturnedWorkItems: jest.fn(async () => new Map()),

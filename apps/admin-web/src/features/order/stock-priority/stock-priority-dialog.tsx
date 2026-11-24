@@ -28,10 +28,12 @@ import { useStockPriorityPreview } from '@/lib/services/orders/queries';
 import type {
   SetStockPriorityRequest,
   ShipmentCommandReason,
+  StockPriorityHeld,
   StockPriorityPlan,
   StockPriorityPreview,
 } from '@/lib/types/dto/fulfillment';
 import {
+  heldText,
   isPlanChanged,
   PLAN_CHANGED_TEXT,
   planOutcomeText,
@@ -154,7 +156,7 @@ export function StockPriorityDialog({
           plan && (
             <div className="space-y-4">
               <MissingLines lines={data.lines} />
-              <PlanSummary plan={plan} />
+              <PlanSummary plan={plan} held={data.held ?? []} />
               {data.planWithReady && (
                 <ReadyChoice
                   checked={includeReady}
@@ -227,7 +229,13 @@ function MissingLines({ lines }: { lines: StockPriorityPreview['lines'] }) {
   );
 }
 
-function PlanSummary({ plan }: { plan: StockPriorityPlan }) {
+function PlanSummary({
+  plan,
+  held,
+}: {
+  plan: StockPriorityPlan;
+  held: StockPriorityHeld[];
+}) {
   return (
     <div className="space-y-2 rounded-md border p-3 text-sm">
       {plan.freeQty > 0 && (
@@ -257,6 +265,12 @@ function PlanSummary({ plan }: { plan: StockPriorityPlan }) {
         </ul>
       )}
       <p className="break-keep font-semibold">{planOutcomeText(plan)}</p>
+      {plan.missingQty > 0 &&
+        held.map((row) => (
+          <p key={row.reason} className="break-keep text-muted-foreground">
+            {heldText(row)}
+          </p>
+        ))}
     </div>
   );
 }

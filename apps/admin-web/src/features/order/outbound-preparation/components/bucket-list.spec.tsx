@@ -32,8 +32,15 @@ jest.mock('./profile-split-dialog', () => ({
     <div role="dialog">{`${orderText} ${shipmentId} v${split?.manifestVersion} 나누기 창`}</div>
   ),
 }));
+let mockCanRun = true;
 jest.mock('@/components/auth/can', () => ({
-  Can: ({ children }: { children: React.ReactNode }) => children,
+  Can: ({
+    children,
+    fallback,
+  }: {
+    children: React.ReactNode;
+    fallback?: React.ReactNode;
+  }) => (mockCanRun ? children : (fallback ?? null)),
 }));
 const mockOpen = { replenishment: true };
 jest.mock('@/hooks/use-permission', () => ({
@@ -43,6 +50,7 @@ jest.mock('@/hooks/use-permission', () => ({
   }),
 }));
 beforeEach(() => {
+  mockCanRun = true;
   mockOpen.replenishment = true;
 });
 
@@ -705,4 +713,44 @@ it('나갈 수 있는 상자에는 우선할당을 두지 않고, 표시한 상�
       .getAllByRole('button', { name: /우선할당/ })
       .map((button) => button.textContent)
   ).toEqual(['우선할당 취소']);
+});
+
+it('우선할당 권한이 없으면 버튼 대신 담당자에게 알리라고 안내한다', () => {
+  mockCanRun = false;
+  render(
+    list({
+      bucket: 'unavailable',
+      count: 1,
+      singleCount: 1,
+      multiCount: 0,
+      shipments: [{ ...shipment('s1', null), stockPriority: false }],
+    })
+  );
+
+  expect(screen.queryByRole('button', { name: '우선할당' })).toBeNull();
+  expect(
+    screen.getByText(/우선할당할 수 있는 담당자에게 알려 주세요/)
+  ).toBeTruthy();
+});
+
+it('재고를 내준 상자는 언제 어느 주문에 내줬는지 보인다', () => {
+  render(
+    list({
+      bucket: 'unavailable',
+      count: 1,
+      singleCount: 1,
+      multiCount: 0,
+      shipments: [
+        {
+          ...shipment('s1', null),
+          stockPriority: false,
+          stockGiven: { at: '2026-01-05T03:04:00Z', orderNos: ['B-1'] },
+        },
+      ],
+    })
+  );
+
+  expect(
+    screen.getByText(/우선할당한 주문\(#B-1\)에 재고를 내줬어요/)
+  ).toBeTruthy();
 });

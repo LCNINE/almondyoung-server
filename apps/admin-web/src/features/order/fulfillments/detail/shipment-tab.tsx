@@ -560,7 +560,7 @@ function ShipmentDetailView({
                 <div>
                   <p className="font-medium">
                     {[
-                      operationTypeLabel(operation.type),
+                      operationTypeLabel(operation.type, operation.role),
                       operationReasonText(
                         operation.type,
                         operation.reasonCode,

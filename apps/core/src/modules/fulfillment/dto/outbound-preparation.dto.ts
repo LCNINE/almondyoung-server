@@ -1,3 +1,4 @@
+import { StockGivenDto } from './stock-given.dto';
 import { Transform, Type } from 'class-transformer';
 import { ArrayMaxSize, ArrayMinSize, IsArray, IsIn, IsInt, IsOptional, IsUUID, Matches, Min } from 'class-validator';
 import { PREPARATION_BUCKETS, PreparationBucket } from '../outbound-preparation/outbound-preparation-classify';
@@ -161,6 +162,8 @@ export class PreparationShipmentDto {
   owner: PreparationOwnerDto | null;
   // 우선할당한 상자 — 재고를 먼저 받는다. 합포장이면 담긴 주문이 모두 우선할당일 때만 true
   stockPriority: boolean;
+  // 다른 주문을 우선할당하면서 재고를 내줬고 아직 모자란 상자면 그 기록
+  stockGiven: StockGivenDto | null;
   // 정보 부족 상자만: 고쳐야 할 것 전부(첫 항목이 사유)
   needsInfo?: NeedsInfoIssueDto[];
   // 배송 프로필이 섞인 정보 부족 상자만: 그 자리에서 프로필별로 나누는 데 쓰는 줄(받는 분 정보 없음)

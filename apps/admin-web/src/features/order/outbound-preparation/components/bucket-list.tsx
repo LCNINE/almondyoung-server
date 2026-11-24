@@ -17,6 +17,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { StockPriorityBadge } from '@/features/order/stock-priority/stock-priority-badge';
+import { stockGivenText } from '@/features/order/stock-priority/stock-priority-copy';
 import {
   StockPriorityCancelDialog,
   StockPriorityDialog,
@@ -134,8 +135,14 @@ export function BucketList({
       </h2>
       {bucket.bucket === 'unavailable' && (
         <p className="text-sm text-muted-foreground">
-          재고가 들어오면 먼저 주문한 순서로 자동으로 확보돼요. 먼저 보내야 하는
-          주문은 «우선할당»을 누르면 다른 대기 주문이 잡은 재고를 옮겨 와요.
+          재고가 들어오면 먼저 주문한 순서로 자동으로 확보돼요.{' '}
+          <Can
+            run={useSetStockPriority}
+            fallback="먼저 보내야 하는 주문은 우선할당할 수 있는 담당자에게 알려 주세요."
+          >
+            먼저 보내야 하는 주문은 «우선할당»을 누르면 다른 대기 주문이 잡은
+            재고를 옮겨 와요.
+          </Can>
         </p>
       )}
       {bucket.bucket === 'mergeable' && (
@@ -417,8 +424,19 @@ function ReasonCell({
   const canOpenReplenishment =
     replenishment.status === 'ready' && replenishment.allowed;
   const blocked = blockedReason(bucket, shipment, canOpenReplenishment, today);
-  const splitReason = shipment.split?.reason && (
-    <span className="block text-xs">나눈 이유 · {shipment.split.reason}</span>
+  const splitReason = (shipment.split?.reason || shipment.stockGiven) && (
+    <>
+      {shipment.stockGiven && (
+        <span className="block break-keep text-xs text-foreground">
+          {stockGivenText(shipment.stockGiven)}
+        </span>
+      )}
+      {shipment.split?.reason && (
+        <span className="block text-xs">
+          나눈 이유 · {shipment.split.reason}
+        </span>
+      )}
+    </>
   );
 
   if (!shipment.shortPick?.length && !shipment.batchReturn) {

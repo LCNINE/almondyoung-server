@@ -81,6 +81,7 @@ import {
   resolveOperationReason,
   type ResolvedOperationReason,
 } from '../shipment/shipment-operation-reasons';
+import { loadStockGiven } from '../stock-priority/stock-given';
 
 type CancelResponse = {
   operationId: string;
@@ -1237,6 +1238,7 @@ export class ShipmentPlanningService {
           .select({
             operationId: wmsTables.shipmentOperations.id,
             type: wmsTables.shipmentOperations.type,
+            role: wmsTables.shipmentOperationMembers.role,
             status: wmsTables.shipmentOperations.status,
             lastError: wmsTables.shipmentOperations.lastError,
             operatorId: wmsTables.shipmentOperations.operatorId,
@@ -1372,6 +1374,7 @@ export class ShipmentPlanningService {
           inspectedQty: 0,
           recoveryCode: shipment.recoveryCode,
           stockPriority: true,
+          stockGiven: null,
         };
         summary.stockPriority &&= stockAllocation === 'priority';
         summary.totalQty += line.qty;
@@ -1379,6 +1382,14 @@ export class ShipmentPlanningService {
         summary.inspectedQty += line.inspectedQty;
         byShipment.set(shipment.id, summary);
       }
+      const short = [...byShipment.values()].filter(
+        (summary) => summary.status === 'draft' && !summary.stockPriority && summary.reservedQty < summary.totalQty,
+      );
+      const given = await loadStockGiven(
+        trx,
+        short.map((summary) => summary.id),
+      );
+      for (const summary of short) summary.stockGiven = given.get(summary.id) ?? null;
       return [...byShipment.values()];
     }, tx);
   }
