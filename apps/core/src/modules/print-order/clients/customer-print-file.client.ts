@@ -54,6 +54,17 @@ export class CustomerPrintFileClient {
     return res.signedUrl;
   }
 
+  // 운영자가 내려받는 링크. 받으면 원래 파일 이름으로 저장되게 download 로 받는다
+  async downloadLink(fileId: string, ownerId: string): Promise<string> {
+    const res = await this.delegated(
+      `/files/${encodeURIComponent(fileId)}/download?expiresIn=${LINK_EXPIRES_SEC}&download=true`,
+      ownerId,
+      download,
+    );
+
+    return res.signedUrl;
+  }
+
   private async internal<T>(path: string, schema: z.ZodType<T>): Promise<T> {
     const key = this.config.get<string>('FILE_SERVICE_INTERNAL_KEY');
     if (!key) {

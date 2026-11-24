@@ -91,7 +91,7 @@ function setup() {
     );
   });
   const remaining = new PrintCancelRemainingReader(runOnly);
-  const service = new PrintOrdersService(reader, manager, storeSalesOrders, remaining);
+  const service = new PrintOrdersService(reader, manager, storeSalesOrders, remaining, {} as never);
   return { reader, manager, adminCancelRequest, service, cancelledByLine, remainingFails };
 }
 

@@ -7,6 +7,7 @@ import { toBoardItem, type PrintOrderBoardItem } from './print-order-board.rules
 import { CANCEL_CLAIM_STALE_MS } from './print-order-cancellation.manager';
 import { PrintOrderAdminManager, type PrintCancelOutcome } from './print-order-admin.manager';
 import { PrintOrderReader, type PrintOrderSummary, type PrintOrderListQuery } from './print-order.reader';
+import { PrintCustomerFileReader, type PrintCustomerFileLink } from './print-customer-file.reader';
 
 export interface PrintOrderActor {
   userId: string;
@@ -29,7 +30,12 @@ export class PrintOrdersService {
     private readonly manager: PrintOrderAdminManager,
     private readonly storeSalesOrders: StoreSalesOrdersService,
     private readonly remaining: PrintCancelRemainingReader,
+    private readonly customerFiles: PrintCustomerFileReader,
   ) {}
+
+  customerFileLink(id: string): Promise<PrintCustomerFileLink> {
+    return this.customerFiles.link(id);
+  }
 
   summary(): Promise<PrintOrderSummary> {
     return this.reader.summary(staleCancellingBefore());

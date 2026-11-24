@@ -14,6 +14,7 @@ export const PII_ROUTES: readonly string[] = [
   'core GET /admin/print-orders',
   'core GET /admin/print-orders/by-design/:almondDesignId',
   'core GET /admin/print-orders/by-line/:lineId',
+  'core GET /admin/print-orders/:id/customer-file',
   'core GET /cs-cases',
   'core GET /cs-cases/:id',
   'core GET /direct-ship/handoffs/:handoffId/sheet',

@@ -4,6 +4,7 @@ import { WowpressCallbackController } from './controllers/wowpress-callback.cont
 import { CustomerPrintFileClient } from './clients/customer-print-file.client';
 import { PrintFileRejectionManager } from './services/print-file-rejection.manager';
 import { PrintFileReuploadManager } from './services/print-file-reupload.manager';
+import { PrintCustomerFileReader } from './services/print-customer-file.reader';
 import { StorePrintOrdersService } from './services/store-print-orders.service';
 import { UgcAlmondDesignClient } from './clients/ugc-almond-design.client';
 import { PrintProductSpecRepository } from './repositories/print-product-spec.repository';
@@ -35,6 +36,7 @@ import { PrintOrderTrackingWorker } from './workers/print-order-tracking.worker'
     PrintFileRejectionManager,
     PrintFileReuploadManager,
     StorePrintOrdersService,
+    PrintCustomerFileReader,
   ],
   exports: [
     WowpressClient,
@@ -42,6 +44,7 @@ import { PrintOrderTrackingWorker } from './workers/print-order-tracking.worker'
     PrintOrderCancellationManager,
     PrintOrderAdminManager,
     PrintProductSpecRepository,
+    PrintCustomerFileReader,
   ],
 })
 export class PrintOrderModule {}
