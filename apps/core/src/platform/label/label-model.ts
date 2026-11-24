@@ -63,16 +63,16 @@ export interface LabelSpec {
  * CODE128: subset B 기준 start·check 포함 (n + 2) 글자 × 11 + stop 13 모듈. 숫자 쌍을 subset C 로
  * 접으면 더 좁아지므로 상한이다.
  */
-export function barcodeWidthMm(b: BarcodePlacement): number {
+export function barcodeWidthMm(b: BarcodePlacement, dotsPerMm: number = DOTS_PER_MM): number {
   if (b.kind === 'CODE128_OPTIMAL') {
     const plan = planCode128(b.data);
     if (!plan) throw new Error(`CODE128_OPTIMAL data is not encodable: "${b.data}"`);
-    return (plan.modules * b.moduleDots) / DOTS_PER_MM;
+    return (plan.modules * b.moduleDots) / dotsPerMm;
   }
-  if (b.kind === 'CODE128') return ((11 * (b.data.length + 2) + 13) * b.moduleDots) / DOTS_PER_MM;
+  if (b.kind === 'CODE128') return ((11 * (b.data.length + 2) + 13) * b.moduleDots) / dotsPerMm;
   const wideDots = Math.ceil(b.moduleDots * (b.wideRatio ?? 2.5));
   return (
-    (4 * b.moduleDots + b.data.length * (3 * b.moduleDots + 2 * wideDots) + (wideDots + 2 * b.moduleDots)) / DOTS_PER_MM
+    (4 * b.moduleDots + b.data.length * (3 * b.moduleDots + 2 * wideDots) + (wideDots + 2 * b.moduleDots)) / dotsPerMm
   );
 }
 

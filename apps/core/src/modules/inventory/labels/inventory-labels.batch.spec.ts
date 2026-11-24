@@ -16,7 +16,7 @@ describe('buildLabelBatch', () => {
     expect(() => buildLabelBatch([candidate(copies)], rasterizer)).toThrow(BadRequestError);
   });
 
-  it('1×3 SKU 라벨을 300dpi(12 dot/mm)로 낸다 — 30mm 는 360dot, 모듈 2→3', () => {
+  it('1×3 SKU 라벨을 300dpi(12 dot/mm)로 내고, 바코드 좌우에 quiet zone 이 남게 가운데에 둔다', () => {
     const batch = buildLabelBatch(
       [
         {
@@ -31,6 +31,7 @@ describe('buildLabelBatch', () => {
 
     expect(batch.data).toContain('^PW360');
     expect(batch.data).toContain('^LL120');
-    expect(batch.data).toMatch(/\^BY3\^BCN,60,/);
+    // 112 모듈 × 2 dot = 224dot, 좌우 (360 − 224) / 2 = 68dot ≥ 모듈 × 10
+    expect(batch.data).toContain('^FO68,7^BY2^BCN,60,');
   });
 });

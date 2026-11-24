@@ -1,5 +1,6 @@
 import { planCode128 } from './code128';
 import {
+  barcodeWidthMm,
   createBitmap,
   DOTS_PER_MM,
   getBit,
@@ -109,8 +110,13 @@ function barcodeField(
   rotation: LabelRotation,
   dotsPerMm: number,
 ): string {
-  // ponytail: 모듈은 내림해 라벨 폭을 넘지 않는다. 3→4 처럼 딱 안 떨어지면 바코드가 조금 좁아지고 가운데에서 살짝 왼쪽에 선다.
-  const b = { ...placed, moduleDots: Math.floor((placed.moduleDots * dotsPerMm) / DOTS_PER_MM) };
+  // 모듈은 내림해 템플릿 폭을 넘지 않되 2 dot 아래로는 안 간다(1→2, 2→3, 3→4 @12). 폭이 바뀐 만큼 가운데를 지켜 옮긴다.
+  const moduleDots =
+    dotsPerMm === DOTS_PER_MM
+      ? placed.moduleDots
+      : Math.max(2, Math.floor((placed.moduleDots * dotsPerMm) / DOTS_PER_MM));
+  const scaled = { ...placed, moduleDots };
+  const b = { ...scaled, xMm: placed.xMm + (barcodeWidthMm(placed) - barcodeWidthMm(scaled, dotsPerMm)) / 2 };
   const x = mmToDots(b.xMm, dotsPerMm);
   const y = mmToDots(b.yMm, dotsPerMm);
   const h = mmToDots(b.heightMm, dotsPerMm);
