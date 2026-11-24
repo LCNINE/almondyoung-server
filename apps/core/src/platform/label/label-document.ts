@@ -1,4 +1,4 @@
-import { mmToDots, type LabelSpec } from './label-model';
+import { DOTS_PER_MM, mmToDots, type LabelSpec } from './label-model';
 import type { SvgRasterizer } from './svg-rasterizer';
 import { encodeZpl } from './zpl-encoder';
 
@@ -26,13 +26,15 @@ export function encodeLabelRuns(
   runs: readonly { spec: LabelSpec; copies: number }[],
   rasterizer: SvgRasterizer,
   compress: boolean,
+  dotsPerMm: number = DOTS_PER_MM,
 ): string {
   return runs
     .map(({ spec, copies }) =>
-      encodeZpl(rasterizer.rasterize(spec.svg, mmToDots(spec.widthMm)), spec.barcodes, {
+      encodeZpl(rasterizer.rasterize(spec.svg, mmToDots(spec.widthMm, dotsPerMm)), spec.barcodes, {
         compress,
         rotation: spec.rotation,
         copies,
+        dotsPerMm,
       }),
     )
     .join('\n');
