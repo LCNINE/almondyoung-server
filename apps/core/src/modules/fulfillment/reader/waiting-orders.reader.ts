@@ -1,10 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { DbService, InjectTypedDb } from '@app/db';
-import { and, asc, eq, inArray, isNull, ne, notInArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, notInArray, sql } from 'drizzle-orm';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
-import { inboundPendingQuantitySql } from '../../inventory/shared/availability/inbound-origin-availability';
 import { reservationQueueOrderSql } from '../services/reservation-queue-key';
 import { loadSellmateShipmentIds } from '../services/sellmate-handed-over-shipments';
+import { loadSkuStockBudgets } from './sku-stock-budget';
 import { DemandLine, StockBudget, waitingTotal } from './waiting-orders.calc';
 
 export interface WaitingOrders {
@@ -36,7 +36,11 @@ export class WaitingOrdersReader {
         demand.map((row) => row.lineId),
       );
       const notOurs = await loadSellmateShipmentIds(trx, [...new Set(demand.map((row) => row.shipmentId))]);
-      const stock = await this.stockBudgets(trx, warehouseId, skuIds);
+      // 확정 예약은 아직 빼지 않은 값이다 — 아래에서 뺀다
+      const stock = new Map<string, StockBudget>();
+      for (const [skuId, budget] of await loadSkuStockBudgets(trx, warehouseId, skuIds)) {
+        stock.set(skuId, { pickableQty: budget.pickableQty, unreservedQty: budget.onHandQty });
+      }
 
       const reservedByLine = new Map(reserved.map((row) => [row.shipmentLineId, Number(row.qty)]));
       for (const row of reserved) {
@@ -135,72 +139,5 @@ export class WaitingOrdersReader {
       )
       .groupBy(wmsTables.pickingSourceAllocations.shipmentLineId);
     return new Map(rows.map((row) => [row.lineId, Number(row.qty)]));
-  }
-
-  /** 확정 예약은 아직 빼지 않은 값이다 */
-  private async stockBudgets(trx: DbTx, warehouseId: string, skuIds: string[]): Promise<Map<string, StockBudget>> {
-    const onHand = await trx
-      .select({
-        skuId: wmsTables.stockLedgers.skuId,
-        qty: sql<number>`sum(${wmsTables.stockLedgers.qty})::int`,
-      })
-      .from(wmsTables.stockLedgers)
-      .where(
-        and(
-          inArray(wmsTables.stockLedgers.skuId, skuIds),
-          eq(wmsTables.stockLedgers.warehouseId, warehouseId),
-          eq(wmsTables.stockLedgers.stockState, 'ON_HAND'),
-        ),
-      )
-      .groupBy(wmsTables.stockLedgers.skuId);
-    const controlled = await trx
-      .select({
-        skuId: wmsTables.batchInventorySessionBalances.skuId,
-        qty: sql<number>`sum(${wmsTables.batchInventorySessionBalances.qty})::int`,
-      })
-      .from(wmsTables.batchInventorySessionBalances)
-      .innerJoin(
-        wmsTables.batchInventorySessions,
-        eq(wmsTables.batchInventorySessions.id, wmsTables.batchInventorySessionBalances.sessionId),
-      )
-      .innerJoin(
-        wmsTables.locations,
-        eq(wmsTables.locations.id, wmsTables.batchInventorySessionBalances.sourceLocationId),
-      )
-      .where(
-        and(
-          inArray(wmsTables.batchInventorySessionBalances.skuId, skuIds),
-          eq(wmsTables.locations.warehouseId, warehouseId),
-          ne(wmsTables.batchInventorySessionBalances.custodyType, 'SETTLED'),
-          inArray(wmsTables.batchInventorySessions.status, ['active', 'recovery_required']),
-        ),
-      )
-      .groupBy(wmsTables.batchInventorySessionBalances.skuId);
-    const skuList = sql.join(
-      skuIds.map((id) => sql`${id}::uuid`),
-      sql`, `,
-    );
-    const inbound = await trx.execute<{ sku_id: string; qty: number }>(sql`
-      SELECT irl.sku_id, SUM(${inboundPendingQuantitySql})::int AS qty
-        FROM inbound_receipt_lines irl
-        JOIN inbound_receipts ir ON ir.id = irl.receipt_id
-        JOIN locations origin ON origin.id = irl.origin_location_id
-       WHERE ir.status = 'posted'
-         AND ir.warehouse_id = ${warehouseId}
-         AND origin.warehouse_id = ir.warehouse_id
-         AND origin.is_system = true
-         AND irl.sku_id IN (${skuList})
-       GROUP BY irl.sku_id
-    `);
-
-    const budgets = new Map<string, StockBudget>();
-    for (const row of onHand) budgets.set(row.skuId, { pickableQty: Number(row.qty), unreservedQty: Number(row.qty) });
-    const unpickable = (skuId: string, qty: number) => {
-      const budget = budgets.get(skuId);
-      if (budget) budget.pickableQty -= qty;
-    };
-    for (const row of controlled) unpickable(row.skuId, Number(row.qty));
-    for (const row of inbound) unpickable(row.sku_id, Number(row.qty));
-    return budgets;
   }
 }
