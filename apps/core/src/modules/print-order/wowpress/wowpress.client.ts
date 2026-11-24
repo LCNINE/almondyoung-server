@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { z } from 'zod';
 import { splitKoreanAddress } from './korean-address';
-import { buildJobs, judgeJobcost, type JobcostVerdict } from './wowpress-body';
+import { buildJobs, judgeJobcost, orderQty, type JobcostVerdict } from './wowpress-body';
 import { httpsWowpressTransport } from './wowpress.transport';
 import {
   type WowpressLineSpec,
@@ -163,6 +163,12 @@ export function toWowpressOrdkey(lineId: string): string {
   return lineId.replace(/-/g, '').slice(-16);
 }
 
+function orderCounts(spec: Pick<WowpressLineSpec, 'prodno' | 'qtyPerUnit'>, qty: number): { ordqty: string; ordcnt: string } {
+  const { ordqty, ordcnt } = orderQty(spec, qty);
+
+  return { ordqty: String(ordqty), ordcnt: String(ordcnt) };
+}
+
 @Injectable()
 export class WowpressClient {
   private readonly logger = new Logger(WowpressClient.name);
@@ -195,8 +201,7 @@ export class WowpressClient {
         url: `${API_BASE}/api/v1/ord/cjson_jobcost`,
         json: {
           prodno: spec.prodno,
-          ordqty: String(spec.qtyPerUnit * qty),
-          ordcnt: '1',
+          ...orderCounts(spec, qty),
           ordtitle: 'quote',
           ...(spec.jobpresetno !== undefined ? { jobpresetno: spec.jobpresetno } : {}),
           ...jobs,
@@ -230,8 +235,7 @@ export class WowpressClient {
           ordreq: items.map(({ spec, qty, ordbody, ordkey }) => [
             {
               prodno: spec.prodno,
-              ordqty: String(spec.qtyPerUnit * qty),
-              ordcnt: '1',
+              ...orderCounts(spec, qty),
               ordtitle: input.ordtitle,
               ordbody,
               ordkey: toWowpressOrdkey(ordkey),
@@ -240,8 +244,7 @@ export class WowpressClient {
             },
             ...(spec.accessories ?? []).map((accessory) => ({
               prodno: accessory.prodno,
-              ordqty: String(accessory.qtyPerUnit * qty),
-              ordcnt: '1',
+              ...orderCounts(accessory, qty),
               ordtitle: input.ordtitle,
               ordbody,
               ordkey: toWowpressOrdkey(ordkey),

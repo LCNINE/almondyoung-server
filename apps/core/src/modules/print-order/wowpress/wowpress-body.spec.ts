@@ -1,7 +1,7 @@
-import { buildJobs, judgeJobcost } from './wowpress-body';
+import { buildJobs, judgeJobcost, orderQty } from './wowpress-body';
 
 const sent = buildJobs(
-  { prsjob: [{ colorno: 256, jobno: 3110, wsize: 90 }], awkjob: [{ jobno: 23010 }], qtyPerUnit: 500 },
+  { prodno: 40073, prsjob: [{ colorno: 256, jobno: 3110, wsize: 90 }], awkjob: [{ jobno: 23010 }], qtyPerUnit: 500 },
   1,
 );
 
@@ -21,10 +21,24 @@ function response(
   };
 }
 
+describe('orderQty', () => {
+  it('keeps one count unless the product has a per-count limit that the total exceeds', () => {
+    expect(orderQty({ prodno: 40073, qtyPerUnit: 500 }, 3)).toEqual({ ordqty: 1500, ordcnt: 1 });
+    expect(orderQty({ prodno: 40572, qtyPerUnit: 50 }, 2)).toEqual({ ordqty: 100, ordcnt: 1 });
+    expect(orderQty({ prodno: 40572, qtyPerUnit: 100 }, 2)).toEqual({ ordqty: 100, ordcnt: 2 });
+    expect(orderQty({ prodno: 40572, qtyPerUnit: 50 }, 3)).toEqual({ ordqty: 50, ordcnt: 3 });
+  });
+
+  it('throws when the units cannot fit the per-count limit or the count list', () => {
+    expect(() => orderQty({ prodno: 40572, qtyPerUnit: 100 }, 13)).toThrow();
+    expect(() => orderQty({ prodno: 40572, qtyPerUnit: 200 }, 1)).toThrow();
+  });
+});
+
 describe('buildJobs', () => {
   it('puts jobqty on every job and mirrors colorno into colorno0', () => {
     expect(
-      buildJobs({ prsjob: [{ colorno: 256, jobno: 3110 }], awkjob: [{ jobno: 23010 }], qtyPerUnit: 500 }, 2),
+      buildJobs({ prodno: 40073, prsjob: [{ colorno: 256, jobno: 3110 }], awkjob: [{ jobno: 23010 }], qtyPerUnit: 500 }, 2),
     ).toEqual({
       prsjob: [{ colorno: 256, colorno0: 256, jobno: 3110, jobqty: 1000 }],
       awkjob: [{ jobno: 23010, jobqty: 1000 }],
@@ -32,7 +46,7 @@ describe('buildJobs', () => {
   });
 
   it('adds no colorno0 when colorno is absent', () => {
-    expect(buildJobs({ prsjob: [{ jobno: 1 }], awkjob: [], qtyPerUnit: 200 }, 1).prsjob).toEqual([
+    expect(buildJobs({ prodno: 40073, prsjob: [{ jobno: 1 }], awkjob: [], qtyPerUnit: 200 }, 1).prsjob).toEqual([
       { jobno: 1, jobqty: 200 },
     ]);
   });
@@ -78,7 +92,7 @@ describe('judgeJobcost', () => {
   });
 
   it('checks awkjob jobqty echo', () => {
-    const s = buildJobs({ prsjob: [], awkjob: [{ jobno: 1 }], qtyPerUnit: 1000 }, 1);
+    const s = buildJobs({ prodno: 40073, prsjob: [], awkjob: [{ jobno: 1 }], qtyPerUnit: 1000 }, 1);
     const res = (awk: Record<string, unknown>) => ({
       status: 200,
       ordcost_sup: 1,
@@ -92,13 +106,13 @@ describe('judgeJobcost', () => {
   });
 
   it('fails when sent value or echo is not numeric', () => {
-    const s = buildJobs({ prsjob: [{ jobno: 1, wsize: 'invalid' }], awkjob: [], qtyPerUnit: 1 }, 1);
+    const s = buildJobs({ prodno: 40073, prsjob: [{ jobno: 1, wsize: 'invalid' }], awkjob: [], qtyPerUnit: 1 }, 1);
     const res = { status: 200, ordcost_sup: 1, ordcost_bill: 1, prsjob: [{ status: 200, jobqty: 1 }], awkjob: [] };
     expect(judgeJobcost(s, res).ok).toBe(false);
   });
 
   it('accepts string echoes of numeric sent sizes', () => {
-    const s = buildJobs({ prsjob: [{ jobno: 1, wsize: 90, hsize: 90 }], awkjob: [], qtyPerUnit: 1 }, 1);
+    const s = buildJobs({ prodno: 40073, prsjob: [{ jobno: 1, wsize: 90, hsize: 90 }], awkjob: [], qtyPerUnit: 1 }, 1);
     const res = {
       status: 200,
       ordcost_sup: 1,
@@ -110,8 +124,8 @@ describe('judgeJobcost', () => {
   });
 
   it('treats a missing awkjob as empty only when none were sent', () => {
-    const none = buildJobs({ prsjob: [{ jobno: 1 }], awkjob: [], qtyPerUnit: 1 }, 1);
-    const some = buildJobs({ prsjob: [{ jobno: 1 }], awkjob: [{ jobno: 2 }], qtyPerUnit: 1 }, 1);
+    const none = buildJobs({ prodno: 40073, prsjob: [{ jobno: 1 }], awkjob: [], qtyPerUnit: 1 }, 1);
+    const some = buildJobs({ prodno: 40073, prsjob: [{ jobno: 1 }], awkjob: [{ jobno: 2 }], qtyPerUnit: 1 }, 1);
     const res = { status: 200, ordcost_sup: 1, ordcost_bill: 1, prsjob: [{ status: 200, jobqty: 1 }] };
     expect(judgeJobcost(none, res).ok).toBe(true);
     expect(judgeJobcost(some, res).ok).toBe(false);

@@ -444,6 +444,24 @@ describe('WowpressClient', () => {
     expect(result.orders).toEqual([{ ordnum: 'WP1', dboxno: 11, prodno: 40026 }]);
   });
 
+  it('splits a small invitation over 100 sheets into one count per unit and keeps the envelopes in one count', async () => {
+    const envelope = { prodno: 40202, jobpresetno: '30', prsjob: [{ covercd: 0, jobno: 30, sizeno: 10203 }], qtyPerUnit: 100 };
+    const invitation = { ...SPEC, prodno: 40572, qtyPerUnit: 100, accessories: [envelope] };
+    const { client, calls } = makeClient({
+      [`${API}/api/login/issue`]: [tokenOk('tok')],
+      [`${API}/api/v1/ord/cjson_order`]: [
+        ok({ resultMap: { cjson_order: { ordinfo: [{ ordnum: 'WP1', prodno: 40572 }, { ordnum: 'WP1', prodno: 40202 }] } } }),
+      ],
+    });
+
+    await client.order({ ...ORDER_INPUT, items: [{ ...ORDER_INPUT.items[0], spec: invitation, qty: 2 }] });
+
+    const ordreq = (calls.find((c) => c.url.endsWith('/cjson_order'))?.json as { ordreq: Record<string, unknown>[][] }).ordreq;
+    expect(ordreq[0][0]).toMatchObject({ prodno: 40572, ordqty: '100', ordcnt: '2' });
+    expect((ordreq[0][0].prsjob as { jobqty: number }[]).map((j) => j.jobqty)).toEqual([100]);
+    expect(ordreq[0][1]).toMatchObject({ prodno: 40202, ordqty: '200', ordcnt: '1' });
+  });
+
   it('throws when ordinfo count differs from items', async () => {
     const { client } = makeClient({
       [`${API}/api/login/issue`]: [tokenOk('tok')],

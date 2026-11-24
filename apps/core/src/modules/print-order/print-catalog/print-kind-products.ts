@@ -77,6 +77,8 @@ export interface PrintAccessoryChoice {
   unitPrice: number;
   // 이 부자재를 쓰려고 주제품에 함께 넣는 후가공(큐방을 꽂을 아일렛·보드타공)
   awk?: number[];
+  // 이 주제품 규격에만 맞는 부자재(봉투). 다른 규격에 고르면 게시를 막는다
+  forSizeno?: number;
 }
 
 export interface PrintAccessoryAxis {
@@ -151,6 +153,25 @@ export const PRINT_KIND_ACCESSORIES: Partial<Record<PrintKind, PrintAccessoryAxi
   ],
   window: [qbang(BANNER_EYELETS, 1000)],
   menu: [qbang(BOARD_HOLES, 1200)],
+  // 소량 청첩장의 엽서봉투(무지) 40202. 115×165 봉투(10203)는 110×158 카드(10611)용이다. 100×180 카드용 봉투는 아직 확인하지 않았다.
+  // 원가는 200매 9,000원(부가세 별도, 2026-11-24 견적)이다
+  invitation: [
+    {
+      key: 'envelope',
+      group: '봉투',
+      choices: [
+        {
+          key: 'envelope-plain',
+          label: '엽서봉투(무지) 카드 수만큼',
+          prodno: 40202,
+          sizeno: 10203,
+          qty: 'perBanner',
+          unitPrice: 60,
+          forSizeno: 10611,
+        },
+      ],
+    },
+  ],
 };
 
 export function accessoryCount(choice: PrintAccessoryChoice, bannerQty: number): number {
