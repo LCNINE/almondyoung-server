@@ -7,6 +7,7 @@ import { type WowpressOrderDetail, type WowpressTransport } from '../wowpress/wo
 import { PRINT_ORDER_TRACK_LIMIT, PrintOrderTrackingWorker } from '../workers/print-order-tracking.worker';
 import { PrintOrderRepository } from './print-order.repository';
 import { PrintOrderTrackingManager } from './print-order-tracking.manager';
+import { PrintFileRejectionManager } from './print-file-rejection.manager';
 
 const noNetwork: WowpressTransport = () => Promise.reject(new Error('real wowpress call in test'));
 
@@ -52,6 +53,8 @@ function row(overrides: Partial<PrintOrderRow> = {}): PrintOrderRow {
     salesOrderLineId: 'sol-1',
     almondDesignId: 'd-1',
     printFileId: null,
+    fileRejectedAt: null,
+    fileResubmittedAt: null,
     vendor: 'wowpress',
     status: 'submitted',
     testMemo: false,
@@ -83,10 +86,18 @@ function row(overrides: Partial<PrintOrderRow> = {}): PrintOrderRow {
   };
 }
 
+class FakeRejections extends PrintFileRejectionManager {
+  constructor() {
+    super({} as unknown as DbService<typeof wmsSchema>, {} as never);
+  }
+  observe = jest.fn<Promise<void>, [PrintOrderRow, WowpressOrderDetail]>(() => Promise.resolve());
+}
+
 function setup() {
   const repo = new FakeRepo();
   const wowpress = new FakeWowpress();
-  return { repo, wowpress, manager: new PrintOrderTrackingManager(repo, wowpress) };
+  const rejections = new FakeRejections();
+  return { repo, wowpress, rejections, manager: new PrintOrderTrackingManager(repo, wowpress, rejections) };
 }
 
 describe('PrintOrderTrackingManager', () => {
@@ -417,6 +428,19 @@ describe('PrintOrderTrackingManager', () => {
 
     expect(repo.updateTracked).toHaveBeenCalledTimes(1);
     expect(repo.updateTracked).toHaveBeenCalledWith('po-1', { lastError: null });
+  });
+});
+
+describe('PrintOrderTrackingManager customer file rejection', () => {
+  it('hands every wowpress reading to the customer file check, apart from the board record', async () => {
+    const { wowpress, rejections, manager } = setup();
+    const detail = { ordstat: 10, jobstat: 123, carrierCode: null, trackingNumber: null, boxNumber: null };
+    wowpress.detail.mockResolvedValue(detail);
+    const current = row({ lastError: 'duplicate wowpress order suspected: WP-1 / WP-2' });
+
+    await manager.refresh(current);
+
+    expect(rejections.observe).toHaveBeenCalledWith(current, detail);
   });
 });
 

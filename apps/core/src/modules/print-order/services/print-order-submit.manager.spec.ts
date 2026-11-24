@@ -261,6 +261,8 @@ function makeRow(overrides: Partial<PrintOrderRow> = {}): PrintOrderRow {
     salesOrderLineId: LINE_ID,
     almondDesignId: DESIGN_ID,
     printFileId: null,
+    fileRejectedAt: null,
+    fileResubmittedAt: null,
     vendor: 'wowpress',
     status: 'submitting',
     testMemo: false,

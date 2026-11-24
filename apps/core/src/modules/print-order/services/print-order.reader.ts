@@ -34,6 +34,22 @@ export const PRINT_ORDER_TABS = [
   'all',
 ] as const;
 export type PrintOrderTab = (typeof PRINT_ORDER_TABS)[number];
+export interface CustomerFileRejection {
+  salesOrderLineId: string;
+  channelOrderId: string;
+  channelOrderItemId: string | null;
+  productName: string;
+  rejectedAt: Date;
+  // 와우프레스 작업상태 코드. 에러 문구는 화면이 이 값으로 고른다
+  jobstat: number | null;
+}
+
+const jobstatOf = (lastError: string | null): number | null => {
+  const code = lastError?.startsWith(VENDOR_JOB_ERROR_PREFIX) ? Number(lastError.slice(VENDOR_JOB_ERROR_PREFIX.length)) : NaN;
+
+  return Number.isInteger(code) ? code : null;
+};
+
 export const PRINT_ORDER_PAGE_SIZE = 50;
 export const PRINT_ORDER_MAX_PAGE_SIZE = 100;
 export const PRINT_ORDER_MAX_PAGE = 10_000;
@@ -100,6 +116,37 @@ export class PrintOrderReader {
     @InjectTypedDb<typeof wmsSchema>()
     private readonly dbService: DbService<typeof wmsSchema>,
   ) {}
+
+  // 고객이 다시 올려야 하는 파일이 있는 자기 인쇄 줄. 스토어프론트 알림 벨이 읽는다
+  async customerFileRejections(customerId: string, tx?: DbTx): Promise<CustomerFileRejection[]> {
+    const t = wmsTables.printOrders;
+    const lines = wmsTables.salesOrderLines;
+    const orders = wmsTables.salesOrders;
+    const rows = await this.dbService.run(
+      (trx) =>
+        trx
+          .select({
+            salesOrderLineId: t.salesOrderLineId,
+            channelOrderId: orders.channelOrderId,
+            channelOrderItemId: lines.channelOrderItemId,
+            productName: lines.productName,
+            rejectedAt: t.fileRejectedAt,
+            lastError: t.lastError,
+          })
+          .from(t)
+          .innerJoin(lines, eq(lines.id, t.salesOrderLineId))
+          .innerJoin(orders, eq(orders.id, t.salesOrderId))
+          .where(
+            and(eq(orders.customerId, customerId), isNotNull(t.fileRejectedAt), inArray(t.status, ['submitted', 'shipped'])),
+          )
+          .orderBy(desc(t.fileRejectedAt)),
+      tx,
+    );
+
+    return rows.flatMap(({ lastError, rejectedAt, ...row }) =>
+      rejectedAt ? [{ ...row, rejectedAt, jobstat: jobstatOf(lastError) }] : [],
+    );
+  }
 
   forSalesOrder(salesOrderId: string, tx?: DbTx): Promise<PrintOrderRow[]> {
     const t = wmsTables.printOrders;

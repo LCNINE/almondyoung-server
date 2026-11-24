@@ -14,6 +14,8 @@ function row(overrides: Partial<PrintOrderListItem> = {}): PrintOrderListItem {
     salesOrderLineId: 'sol-1',
     almondDesignId: 'd-1',
     printFileId: null,
+    fileRejectedAt: null,
+    fileResubmittedAt: null,
     vendor: 'wowpress',
     status: 'submitted',
     testMemo: false,

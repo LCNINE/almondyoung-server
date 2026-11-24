@@ -51,6 +51,10 @@ export const printOrders = pgTable(
     cancelResolvedBy: uuid('cancel_resolved_by'),
     salesCancelFailedAt: timestamp('sales_cancel_failed_at', { withTimezone: true }),
     fileDeliveredAt: timestamp('file_delivered_at', { withTimezone: true }),
+    // 고객 파일 줄에 와우프레스 파일 에러가 떠서 고객이 다시 올려야 하는 동안의 표시(그때 시각)
+    fileRejectedAt: timestamp('file_rejected_at', { withTimezone: true }),
+    // 고객이 새 파일을 넘긴 시각. 와우프레스가 정상 상태를 보일 때까지는 남은 에러를 옛 파일 것으로 본다
+    fileResubmittedAt: timestamp('file_resubmitted_at', { withTimezone: true }),
     vendorAwaitingPayment: boolean('vendor_awaiting_payment').notNull().default(false),
     vendorInProduction: boolean('vendor_in_production').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

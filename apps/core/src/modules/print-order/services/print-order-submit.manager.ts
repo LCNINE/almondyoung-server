@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { z } from 'zod';
-import { CustomerPrintFileClient } from '../clients/customer-print-file.client';
+import { CustomerPrintFileClient, CustomerPrintFileNotFoundError } from '../clients/customer-print-file.client';
 import { UgcAlmondDesignClient, type UgcPrintLink } from '../clients/ugc-almond-design.client';
 import {
   CUSTOMER_FILE_FORMAT_ERROR,
@@ -194,7 +194,16 @@ export class PrintOrderSubmitManager {
     }
 
     const customerId = ctx.order.customerId;
-    const file = customerId ? await this.customerFiles.describe(printFileId, customerId) : null;
+    // 없는 파일은 다시 시도해도 생기지 않으니 바로 기록한다. 그 밖의 조회 실패는 재시도로 넘긴다
+    const file = customerId
+      ? await this.customerFiles.describe(printFileId, customerId).catch((error: unknown) => {
+          if (error instanceof CustomerPrintFileNotFoundError) {
+            return null;
+          }
+
+          throw error;
+        })
+      : null;
     if (!customerId || !file || file.ownerId !== customerId || !file.isPrintFile) {
       await lane.owned({ status: 'failed', lastError: CUSTOMER_FILE_OWNER_MISMATCH_ERROR });
       return null;

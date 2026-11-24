@@ -9,6 +9,7 @@ import {
   WOWPRESS_STATUS_CANCELLED,
   type WowpressOrderDetail,
 } from '../wowpress/wowpress.types';
+import { PrintFileRejectionManager } from './print-file-rejection.manager';
 import { isPreservedLastError, PrintOrderRepository } from './print-order.repository';
 
 export const WOWPRESS_STATUS_DELIVERED = 85;
@@ -38,6 +39,7 @@ export class PrintOrderTrackingManager {
   constructor(
     private readonly repository: PrintOrderRepository,
     private readonly wowpress: WowpressClient,
+    private readonly rejections: PrintFileRejectionManager,
   ) {}
 
   // 콜백 본문은 서명이 없어 믿지 않는다. 주문번호로 우리 행을 찾아 주문상세를 다시 불러 반영한다
@@ -65,6 +67,7 @@ export class PrintOrderTrackingManager {
     await this.fillVendorBox(row, detail.boxNumber);
     await this.markAwaitingPayment(row, detail.ordstat === WOWPRESS_STATUS_AWAITING_PAYMENT);
     await this.markVendorAttention(row, vendorAttention(detail));
+    await this.rejections.observe(row, detail);
     await this.markInProduction(row, !WOWPRESS_CANCELLABLE(detail) && detail.ordstat !== WOWPRESS_STATUS_CANCELLED);
 
     const now = new Date();

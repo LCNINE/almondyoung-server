@@ -16,6 +16,9 @@ const described = z.object({ contextId: z.string(), uploadedBy: z.string(), stat
 const metadata = z.object({ originalName: z.string().min(1) });
 const download = z.object({ signedUrl: z.string().min(1) });
 
+// file-service 에 그 파일이 없다(지워졌거나 잘못된 id)
+export class CustomerPrintFileNotFoundError extends Error {}
+
 export interface CustomerPrintFile {
   ownerId: string;
   isPrintFile: boolean;
@@ -79,6 +82,9 @@ export class CustomerPrintFileClient {
       headers: { Authorization: authorization, ...this.outboundTenant.headers() },
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
+    if (res.status === 404) {
+      throw new CustomerPrintFileNotFoundError(`file-service ${path.split('?')[0]}: not found`);
+    }
     if (!res.ok) {
       throw new Error(`file-service ${path.split('?')[0]} failed: HTTP ${res.status}`);
     }

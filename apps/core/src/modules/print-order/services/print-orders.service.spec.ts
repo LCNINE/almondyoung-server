@@ -101,6 +101,8 @@ const resolvedRow: PrintOrderRow = {
   salesOrderLineId: 'sol-1',
   almondDesignId: 'd-1',
   printFileId: null,
+  fileRejectedAt: null,
+  fileResubmittedAt: null,
   vendor: 'wowpress',
   status: 'cancelled',
   testMemo: false,

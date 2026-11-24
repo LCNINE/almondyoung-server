@@ -232,6 +232,37 @@ export class PrintOrderRepository {
     return this.updateWhere(and(eq(t.id, id), inArray(t.status, TRACKED_STATUSES)), patch, tx);
   }
 
+  // 다시 올리기를 줄마다 하나씩만 하게 행을 잠그고 그 안에서 확인·업로드·기록을 끝낸다. 취소 흐름도 이 잠금을 기다린다
+  withLockedLine<T>(salesOrderLineId: string, fn: (row: PrintOrderRow | null, tx: DbTx) => Promise<T>): Promise<T> {
+    const t = wmsTables.printOrders;
+    return this.dbService.run(async (trx) => {
+      const [row] = await trx.select().from(t).where(eq(t.salesOrderLineId, salesOrderLineId)).for('update');
+
+      return fn(row ?? null, trx);
+    });
+  }
+
+  // 와우프레스가 새 파일을 받았다. 에러 표시를 지우고, 재접수 결과가 나올 때까지 기다리는 표시를 남긴다
+  recordResubmittedFile(id: string, fileId: string, tx: DbTx): Promise<boolean> {
+    const t = wmsTables.printOrders;
+    const now = new Date();
+    return this.updateWhere(
+      and(eq(t.id, id), inArray(t.status, TRACKED_STATUSES)),
+      { printFileId: fileId, fileRejectedAt: null, fileResubmittedAt: now, fileDeliveredAt: now },
+      tx,
+    );
+  }
+
+  async findBySalesOrderLineId(salesOrderLineId: string, tx?: DbTx): Promise<PrintOrderRow | null> {
+    const t = wmsTables.printOrders;
+    const [row] = await this.dbService.run(
+      (trx) => trx.select().from(t).where(eq(t.salesOrderLineId, salesOrderLineId)).limit(1),
+      tx,
+    );
+
+    return row ?? null;
+  }
+
   async updateOwned(id: string, claimedAt: Date, patch: Partial<PrintOrderRow>, tx?: DbTx): Promise<boolean> {
     const t = wmsTables.printOrders;
     return this.updateWhere(and(eq(t.id, id), eq(t.status, 'submitting'), eq(t.submittingAt, claimedAt)), patch, tx);
