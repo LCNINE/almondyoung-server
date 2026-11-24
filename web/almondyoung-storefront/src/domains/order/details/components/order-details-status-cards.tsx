@@ -10,6 +10,8 @@ import type { DigitalAssetOwnership } from "@/lib/types/ui/library.ui"
 import OrderActions from "@/components/orders/order-card/order-actions"
 import OrderStatusCards from "@/components/orders/order-card/order-status-cards"
 import { mapOrderSummaryItems } from "@/components/orders/order-card/order-summary-items"
+import type { PrintFileRejection } from "@/lib/types/ui/print-orders"
+import { PrintFileReupload } from "./print-file-reupload"
 
 export default function OrderDetailsStatusCards({
   order,
@@ -22,6 +24,7 @@ export default function OrderDetailsStatusCards({
   autoOpenRefundMedia,
   digitalOwnerships,
   reviewHrefs,
+  printFileRejections = [],
 }: {
   order: HttpTypes.StoreOrder
   status: string
@@ -34,9 +37,16 @@ export default function OrderDetailsStatusCards({
   autoOpenRefundMedia?: string
   reviewHrefs?: Record<string, string>
   digitalOwnerships: DigitalAssetOwnership[]
+  printFileRejections?: PrintFileRejection[]
 }) {
   const tList = useTranslations("mypage.order.list")
   const items = mapOrderSummaryItems(order, returns ?? [], tList, reviewHrefs)
+  const rejectionByItem = new Map(
+    printFileRejections.map((rejection) => [
+      rejection.channelOrderItemId,
+      rejection,
+    ])
+  )
   const bankTransferStatus = order.metadata?.bank_transfer_status as
     | string
     | undefined
@@ -78,6 +88,13 @@ export default function OrderDetailsStatusCards({
           status={status}
           items={items}
           hideDigitalDownload={digitalOwnerships.length > 0}
+          renderItemExtra={(itemId) => {
+            const rejection = rejectionByItem.get(itemId)
+
+            return rejection ? (
+              <PrintFileReupload rejection={rejection} />
+            ) : null
+          }}
           paymentStatusLabel={awaitingDeposit ? "입금 대기" : undefined}
         >
           {actions}

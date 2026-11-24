@@ -993,6 +993,19 @@
         "discountIncluded": "Already included in the item amount",
         "total": "Total refund amount"
       }
+    },
+    "printFileReupload": {
+      "stopped": "Printing on hold · the printer sent the file back",
+      "reason": "Reason: {reason}",
+      "button": "Upload the file again",
+      "done": "We sent the new file to the printer",
+      "notYours": "This file can't be used. Please upload your own file",
+      "wrongType": "This product doesn't accept that file type",
+      "alreadySent": "A new file was already sent. Please refresh",
+      "failed": "We couldn't send the file to the printer. Please try again shortly",
+      "dialogTitle": "Upload a new print file",
+      "dialogSubtitle": "Upload one corrected file and printing continues on the same order",
+      "submit": "Send this file"
     }
   },
   "membership": {

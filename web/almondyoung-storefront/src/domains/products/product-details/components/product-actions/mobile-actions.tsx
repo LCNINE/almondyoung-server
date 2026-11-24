@@ -1,6 +1,5 @@
 "use client"
 
-import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer"
 import { Separator } from "@/components/ui/separator"
@@ -27,6 +26,8 @@ import {
   CUSTOM_ORDER_NOTICE_PAGE_ID,
 } from "@/domains/almond-template/components/custom-order-notice"
 import LocalizedClientLink from "@/components/shared/localized-client-link"
+import type { AttachedPrintFile } from "@/domains/almond-template/components/print-file-order-dialog"
+import { PrintFileNotice, PrintSourceButtons } from "./print-source"
 
 type MobileActionsProps = {
   paperPreview?: React.ReactNode
@@ -50,6 +51,10 @@ type MobileActionsProps = {
   isPending: boolean
   show: boolean
   templateHref?: string
+  onFileOrder?: () => void
+  printFile?: AttachedPrintFile | null
+  // 주문제작 상품인데 시안도 고객 파일도 없으면 담기·구매를 감춘다
+  purchaseHidden?: boolean
   designAttached?: boolean
   almondDesignId?: string
   almondDesignHint?: string
@@ -81,6 +86,9 @@ const MobileActions: React.FC<MobileActionsProps> = ({
   isPending,
   show,
   templateHref,
+  onFileOrder,
+  printFile,
+  purchaseHidden = false,
   designAttached,
   almondDesignId,
   almondDesignHint,
@@ -88,6 +96,7 @@ const MobileActions: React.FC<MobileActionsProps> = ({
   showCustomOrderNotice = false,
 }) => {
   const t = useTranslations("productDetail.options")
+  const tPrint = useTranslations("productDetail.printFile")
   const tQuantity = useTranslations("productDetail.quantityDiscount")
   const [open, setOpen] = useState(false)
 
@@ -107,7 +116,14 @@ const MobileActions: React.FC<MobileActionsProps> = ({
       !!bundle.hiddenMemberQuantity) &&
     !isWelcomeMembership
   const summary = productQuantitySummary(product, pricingContext)
-  const instantPurchase = isSimple && !hasBundles
+  const instantPurchase = isSimple && !hasBundles && !purchaseHidden
+  // 시트 위에 업로드 창을 겹쳐 띄우면 포커스가 갈린다. 시트를 닫고 연다
+  const fileOrderFromSheet = onFileOrder
+    ? () => {
+        setOpen(false)
+        onFileOrder()
+      }
+    : undefined
 
   const disabledLabel =
     selectedItems.length === 0
@@ -150,18 +166,12 @@ const MobileActions: React.FC<MobileActionsProps> = ({
               <span className="text-mint-deep">{tQuantity("viewBundles")}</span>
             </button>
           )}
-          {templateHref && (
-            <LocalizedClientLink href={templateHref} className="w-full">
-              <Button variant="outline" className="h-12 w-full">
-                <Image
-                  src="/images/almond-template-palette.png"
-                  alt=""
-                  width={20}
-                  height={20}
-                />
-                아몬드템플릿으로 디자인
-              </Button>
-            </LocalizedClientLink>
+          <PrintSourceButtons
+            templateHref={templateHref}
+            onFileOrder={onFileOrder}
+          />
+          {printFile && onFileOrder && (
+            <PrintFileNotice file={printFile} onChange={onFileOrder} />
           )}
           {almondDesignId && (
             <AlmondDesignNotice
@@ -341,21 +351,18 @@ const MobileActions: React.FC<MobileActionsProps> = ({
                 {t("totalPrice", { amount: totalPrice.toLocaleString() })}
               </span>
             </div>
-            {templateHref && (
-              <LocalizedClientLink
-                href={templateHref}
-                className="mb-2 block w-full"
-              >
-                <Button variant="outline" className="h-12 w-full">
-                  <Image
-                    src="/images/almond-template-palette.png"
-                    alt=""
-                    width={20}
-                    height={20}
-                  />
-                  아몬드템플릿으로 디자인
-                </Button>
-              </LocalizedClientLink>
+            <PrintSourceButtons
+              templateHref={templateHref}
+              onFileOrder={fileOrderFromSheet}
+              className="mb-2"
+            />
+            {printFile && fileOrderFromSheet && (
+              <div className="mb-2">
+                <PrintFileNotice
+                  file={printFile}
+                  onChange={fileOrderFromSheet}
+                />
+              </div>
             )}
             {designAttached && (
               <p className="text-muted-foreground mb-2 text-center text-xs">
@@ -381,7 +388,11 @@ const MobileActions: React.FC<MobileActionsProps> = ({
               ) : ( ... )} */}
 
               {/* 품절 시: 입고예정 있으면 재입고 안내, 없으면 품절 버튼 */}
-              {membersOnlyPurchase ? (
+              {purchaseHidden ? (
+                <p className="text-muted-foreground w-full text-center text-xs">
+                  {tPrint("sourceRequired")}
+                </p>
+              ) : membersOnlyPurchase ? (
                 <LocalizedClientLink
                   href="/mypage/membership"
                   className="w-full"

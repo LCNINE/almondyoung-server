@@ -411,6 +411,9 @@
     "step3Title": "Report defects within 5 days",
     "step3Body": "Send photos to customer service · reprinted once confirmed",
     "otherItems": "Other items in the same order can still be canceled separately",
-    "agree": "I have read the above and agree that print items cannot be canceled or returned for a change of mind after payment"
+    "agree": "I have read the above and agree that print items cannot be canceled or returned for a change of mind after payment",
+    "fileStepTitle": "Orders with your file are printed as is",
+    "fileStepBody": "No reprint or refund for defects caused by the file",
+    "agreeWithFile": "I have read the above and agree that print items cannot be cancelled or returned for a change of mind after payment, and that defects caused by my own file are not reprinted or refunded"
   }
 }

@@ -35,6 +35,7 @@ import {
 import {
   CUSTOM_ORDER_NOTICE_PAGE_ID,
   CustomOrderNotice,
+  cartHasCustomerPrintFile,
   isCustomOrderPaymentBlocked,
 } from "@/domains/almond-template/components/custom-order-notice"
 import { ensureCustomOrderAgreement } from "@/domains/almond-template/custom-order-agreement"
@@ -443,6 +444,7 @@ export default function CheckoutTemplate({
                       "animate-shake border-2 border-red-500"
                   )}
                   withAgreement
+                  withCustomerFile={cartHasCustomerPrintFile(cartItems)}
                   agreed={customOrderAgreed}
                   onAgreeChange={setCustomOrderAgreed}
                 />

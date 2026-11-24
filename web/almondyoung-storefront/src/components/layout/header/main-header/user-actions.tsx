@@ -7,15 +7,13 @@ import { ShoppingCart, User } from "lucide-react"
 import { useTranslations } from "next-intl"
 import Link from "next/link"
 import { useParams } from "next/navigation"
-// import { Bell } from "lucide-react"
+import { PrintFileBell } from "./print-file-bell"
 
 export function AccountMenu({ tone = "light" }: { tone?: "light" | "dark" }) {
   const { countryCode } = useParams()
   const { user } = useUser()
   const { itemCount: cartItemCount } = useCart()
   const t = useTranslations("account")
-  // todo: 알림 기능 활성화 시 복구
-  // const hasNotification = true
 
   return (
     <div className="flex items-center gap-4 md:gap-[clamp(0.5px,2vw,1.5rem)]">
@@ -39,13 +37,7 @@ export function AccountMenu({ tone = "light" }: { tone?: "light" | "dark" }) {
         />
       </div>
 
-      {/* todo: 알림 기능 미연결로 임시 비활성화 */}
-      {/* <AccountMenuItem
-        onClick={() => console.log("알림 열기")}
-        icon={<Bell className="h-6 w-6 md:h-8 md:w-8" color="white" />}
-        label="알림"
-        showDot={hasNotification}
-      /> */}
+      <PrintFileBell tone={tone} />
     </div>
   )
 }

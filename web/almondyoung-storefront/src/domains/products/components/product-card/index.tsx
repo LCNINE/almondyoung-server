@@ -247,6 +247,11 @@ export default function ProductCard({
             countryCode={countryCode}
             isWishlisted={isWishlisted}
             membersOnlyPurchase={membersOnlyPurchase}
+            printMasterId={
+              typeof product.metadata?.pimMasterId === "string"
+                ? product.metadata.pimMasterId
+                : undefined
+            }
           />
         </div>
 

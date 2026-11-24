@@ -1,6 +1,5 @@
 "use client"
 
-import Image from "next/image"
 import { useQuantityDiscountNow } from "@/hooks/use-quantity-discount-now"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
@@ -37,6 +36,17 @@ import {
 } from "react"
 import { toast } from "sonner"
 import { CustomOrderNotice } from "@/domains/almond-template/components/custom-order-notice"
+import {
+  PrintFileOrderDialog,
+  type AttachedPrintFile,
+} from "@/domains/almond-template/components/print-file-order-dialog"
+import {
+  acceptsCustomerFile,
+  customerFileExtensions,
+  isMadeToOrder,
+  printFileSpec,
+} from "@/domains/almond-template/lib/customer-print-file"
+import { PrintFileNotice, PrintSourceButtons } from "./print-source"
 import { useTranslations } from "next-intl"
 import ProductPreviewPrice from "../product-preview-price"
 import { ProductShippingNotice } from "../product-shipping-notice"
@@ -104,7 +114,10 @@ export default function ProductActions({
   templates,
 }: ProductActionsProps) {
   const t = useTranslations("productDetail.options")
+  const tPrint = useTranslations("productDetail.printFile")
   const [isPending, startTransition] = useTransition()
+  const [printFile, setPrintFile] = useState<AttachedPrintFile | null>(null)
+  const [fileOrderOpen, setFileOrderOpen] = useState(false)
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -409,6 +422,38 @@ export default function ProductActions({
     /^[0-9a-f-]{36}$/.test(almondDesignId)
       ? { almond_design_id: almondDesignId }
       : undefined
+  // 고객 파일은 고른 크기에 맞춰 만든 것이라 크기가 바뀌면 떼어 낸다
+  const printSizeKey = printSize?.join("x")
+  useEffect(() => {
+    setPrintFile(null)
+  }, [printSizeKey])
+  const canOrderWithFile =
+    !!printKind &&
+    acceptsCustomerFile(printKind) &&
+    !!templateVariant &&
+    !!printSize &&
+    !almondDesignShown
+  const printFileMetadata =
+    canOrderWithFile && printFile
+      ? { print_file_id: printFile.id, print_file_name: printFile.name }
+      : undefined
+  const lineMetadata = almondDesignMetadata ?? printFileMetadata
+  // 템플릿으로 게시한 주문제작 상품은 시안이나 고객 파일이 있어야 인쇄할 것이 생긴다. 완성품은 그대로 산다
+  const needsPrintSource =
+    hasAlmondTemplate &&
+    !!printProductId &&
+    isMadeToOrder(printProductId) &&
+    !lineMetadata
+  const openFileOrder = () => {
+    if (!customer) {
+      startTransition(() => {
+        throw new Error("UNAUTHORIZED")
+      })
+      return
+    }
+
+    setFileOrderOpen(true)
+  }
   const templateHref =
     hasAlmondTemplate && templateVariant
       ? `/almond-template?product=${printProductId}&variant=${templateVariant.id}${printSize ? `&size=${printSize.join("x")}` : ""}`
@@ -496,7 +541,8 @@ export default function ProductActions({
 
   // 장바구니 담기
   const handleAddToCart = () => {
-    if (selectedItems.length === 0 || almondSizeMismatch) return
+    if (selectedItems.length === 0 || almondSizeMismatch || needsPrintSource)
+      return
 
     setPriceChange(null)
 
@@ -509,7 +555,7 @@ export default function ProductActions({
             variantId: item.variantId,
             quantity: item.quantity,
             countryCode,
-            metadata: almondDesignMetadata,
+            metadata: lineMetadata,
           })
           // 세일이 방금 끝났으면 화면이 보여준 가격과 담긴 가격이 다르다. 조용히 넘기면
           // "4,491원인 줄 알고 담았는데 4,990원" 이 된다.
@@ -560,7 +606,8 @@ export default function ProductActions({
 
   // 바로구매
   const handleBuyNow = () => {
-    if (selectedItems.length === 0 || almondSizeMismatch) return
+    if (selectedItems.length === 0 || almondSizeMismatch || needsPrintSource)
+      return
 
     startTransition(async () => {
       try {
@@ -571,7 +618,7 @@ export default function ProductActions({
           items: selectedItems.map((item) => ({
             variantId: item.variantId,
             quantity: item.quantity,
-            metadata: almondDesignMetadata,
+            metadata: lineMetadata,
           })),
         })
         if (result.error) {
@@ -626,6 +673,10 @@ export default function ProductActions({
               attached={!!almondDesignMetadata}
               hint={almondSizeHint}
             />
+          )}
+
+          {printFile && printFileMetadata && (
+            <PrintFileNotice file={printFile} onChange={openFileOrder} />
           )}
 
           {/* 옵션 선택 - variant가 2개 이상일 때만 표시 */}
@@ -711,21 +762,17 @@ export default function ProductActions({
           className="flex w-full flex-col gap-2 border-t border-gray-200 bg-white py-4"
           data-testid="mobile-actions"
         >
-          {templateHref && (
-            <LocalizedClientLink href={templateHref} className="w-full">
-              <Button variant="outline" className="h-12 w-full">
-                <Image
-                  src="/images/almond-template-palette.png"
-                  alt=""
-                  width={20}
-                  height={20}
-                />
-                아몬드템플릿으로 디자인
-              </Button>
-            </LocalizedClientLink>
-          )}
-          <div className="flex w-full gap-x-3">
-            {/* TODO: 재입고 알림 기능 추가 후 활성화
+          <PrintSourceButtons
+            templateHref={templateHref}
+            onFileOrder={canOrderWithFile ? openFileOrder : undefined}
+          />
+          {needsPrintSource ? (
+            <p className="text-muted-foreground text-center text-xs">
+              {tPrint("sourceRequired")}
+            </p>
+          ) : (
+            <div className="flex w-full gap-x-3">
+              {/* TODO: 재입고 알림 기능 추가 후 활성화
           {!allInStock && selectedItems.length > 0 ? (
             <Button
               variant="default"
@@ -737,63 +784,67 @@ export default function ProductActions({
             </Button>
           ) : ( ... )} */}
 
-            {membersOnlyPurchase ? (
-              <LocalizedClientLink href="/mypage/membership" className="w-full">
-                <Button
-                  className="h-12 w-full cursor-pointer text-base font-medium"
-                  data-testid="members-only-cta"
+              {membersOnlyPurchase ? (
+                <LocalizedClientLink
+                  href="/mypage/membership"
+                  className="w-full"
                 >
-                  {t("membersOnlyCta")}
-                </Button>
-              </LocalizedClientLink>
-            ) : !allInStock && selectedItems.length > 0 ? (
-              <div className="w-full">
-                {hasStockNotice(selectedItems.map((i) => i.variant)) ? (
-                  <RestockNotice
-                    variants={selectedItems.map((i) => i.variant)}
-                  />
-                ) : (
                   <Button
-                    variant="default"
-                    disabled
                     className="h-12 w-full cursor-pointer text-base font-medium"
-                    data-testid="sold-out-button"
+                    data-testid="members-only-cta"
                   >
-                    {t("soldOut")}
+                    {t("membersOnlyCta")}
                   </Button>
-                )}
-              </div>
-            ) : (
-              <>
-                <Button
-                  variant="outline"
-                  onClick={handleAddToCart}
-                  disabled={!!disabledLabel || !!disabled || isPending}
-                  className="border-primary text-primary hover:text-primary/80 h-12 w-full flex-1 cursor-pointer text-base hover:bg-transparent"
-                  data-testid="add-product-button"
-                >
-                  {isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                </LocalizedClientLink>
+              ) : !allInStock && selectedItems.length > 0 ? (
+                <div className="w-full">
+                  {hasStockNotice(selectedItems.map((i) => i.variant)) ? (
+                    <RestockNotice
+                      variants={selectedItems.map((i) => i.variant)}
+                    />
                   ) : (
-                    (disabledLabel ?? t("addToCart"))
+                    <Button
+                      variant="default"
+                      disabled
+                      className="h-12 w-full cursor-pointer text-base font-medium"
+                      data-testid="sold-out-button"
+                    >
+                      {t("soldOut")}
+                    </Button>
                   )}
-                </Button>
+                </div>
+              ) : (
+                <>
+                  <Button
+                    variant="outline"
+                    onClick={handleAddToCart}
+                    disabled={!!disabledLabel || !!disabled || isPending}
+                    className="border-primary text-primary hover:text-primary/80 h-12 w-full flex-1 cursor-pointer text-base hover:bg-transparent"
+                    data-testid="add-product-button"
+                  >
+                    {isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      (disabledLabel ?? t("addToCart"))
+                    )}
+                  </Button>
 
-                <Button
-                  onClick={handleBuyNow}
-                  disabled={!!disabledLabel || !!disabled || isPending}
-                  className="h-12 w-full flex-1 cursor-pointer text-base"
-                  data-testid="buy-now-button"
-                >
-                  {isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    (disabledLabel ?? t("buyNow"))
-                  )}
-                </Button>
-              </>
-            )}
-          </div>
+                  <Button
+                    onClick={handleBuyNow}
+                    disabled={!!disabledLabel || !!disabled || isPending}
+                    className="h-12 w-full flex-1 cursor-pointer text-base"
+                    data-testid="buy-now-button"
+                  >
+                    {isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      (disabledLabel ?? t("buyNow"))
+                    )}
+                  </Button>
+                </>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -817,8 +868,11 @@ export default function ProductActions({
         handleAddToCart={handleAddToCart}
         handleBuyNow={handleBuyNow}
         isPending={isPending}
-        show={!inView}
+        show={!inView && !fileOrderOpen}
         templateHref={templateHref}
+        onFileOrder={canOrderWithFile ? openFileOrder : undefined}
+        printFile={printFileMetadata ? printFile : null}
+        purchaseHidden={needsPrintSource}
         designAttached={!!almondDesignMetadata}
         showCustomOrderNotice={hasAlmondTemplate}
         almondDesignId={almondDesignShown ? almondDesignId : undefined}
@@ -827,6 +881,16 @@ export default function ProductActions({
           almondSizeMismatch ? t("almondDesignSizeMismatch") : undefined
         }
       />
+
+      {canOrderWithFile && printKind && printSize && (
+        <PrintFileOrderDialog
+          open={fileOrderOpen}
+          onOpenChange={setFileOrderOpen}
+          extensions={customerFileExtensions(printKind)}
+          spec={printFileSpec(printKind, printSize)}
+          onUploaded={setPrintFile}
+        />
+      )}
 
       <CartAddedModal
         open={showCartModal}

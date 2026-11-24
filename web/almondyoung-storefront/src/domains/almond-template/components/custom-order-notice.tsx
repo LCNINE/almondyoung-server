@@ -10,14 +10,23 @@ interface CustomOrderNoticeProps {
   withAgreement?: boolean
   agreed?: boolean
   onAgreeChange?: (agreed: boolean) => void
+  // 내 파일로 주문한 인쇄 상품이 있으면 파일 문제로 생긴 불량은 재제작·환불되지 않는다는 것까지 동의받는다
+  withCustomerFile?: boolean
 }
 
 interface MetadataCarrier {
   metadata?: Record<string, unknown> | null
 }
 
+// 아몬드템플릿 시안이나 고객이 올린 인쇄 파일이 붙은 줄 = 주문제작 인쇄 줄
 export function cartHasAlmondDesign(items: readonly MetadataCarrier[]) {
-  return items.some((item) => !!item.metadata?.almond_design_id)
+  return items.some(
+    (item) => !!item.metadata?.almond_design_id || !!item.metadata?.print_file_id
+  )
+}
+
+export function cartHasCustomerPrintFile(items: readonly MetadataCarrier[]) {
+  return items.some((item) => !!item.metadata?.print_file_id)
 }
 
 export function isCustomOrderPaymentBlocked(
@@ -37,6 +46,7 @@ export function CustomOrderNotice({
   withAgreement = false,
   agreed = false,
   onAgreeChange,
+  withCustomerFile = false,
 }: CustomOrderNoticeProps) {
   const t = useTranslations(
     withAgreement
@@ -92,6 +102,13 @@ export function CustomOrderNotice({
           })}
         </ol>
 
+        {withAgreement && withCustomerFile && (
+          <div className="mt-4 rounded-lg border border-border px-3 py-2.5">
+            <p className="text-sm font-bold text-foreground">{t("fileStepTitle")}</p>
+            <p className="mt-0.5 text-[13px] text-muted-foreground">{t("fileStepBody")}</p>
+          </div>
+        )}
+
         <p className="mt-4 rounded-lg bg-muted px-3 py-2.5 text-[13px] text-muted-foreground">
           {t("otherItems")}
         </p>
@@ -118,7 +135,7 @@ export function CustomOrderNotice({
           >
             <Check className="size-3.5" strokeWidth={3} />
           </span>
-          <span className="pt-0.5">{t("agree")}</span>
+          <span className="pt-0.5">{t(withCustomerFile ? "agreeWithFile" : "agree")}</span>
         </label>
       )}
     </div>
