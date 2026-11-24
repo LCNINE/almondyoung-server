@@ -8,6 +8,7 @@ import type {
   OutboundBatchSummary,
   ShipmentByWaybill,
   SimpleOutboundState,
+  SplitShare,
   WithdrawalRemoval,
 } from '../../../domains/outbound/types';
 import type { LabelState } from '../../../domains/outbound/waybillLabel';
@@ -45,6 +46,8 @@ export interface FakeBox {
   canceling?: boolean;
   /** 부분 취소를 기다리는 상자 — 줄마다 취소될 수량(legacy 면 응답에 싣지 않는다) */
   cancelWaiting?: Array<{ shipmentLineId: string; qty: number }>;
+  /** 나눈 상자 — legacy 면 응답에 싣지 않는다 */
+  split?: SplitShare | null;
   lines: FakeLine[];
 }
 
@@ -237,6 +240,7 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
         ? {}
         : {
             deliveryNote: box.deliveryNote ?? null,
+            split: box.split ?? null,
             shortPickContext: active(box)
               ? { workItemLeaseVersion: 3, sessionId: `ses-${box.batchId}`, sessionVersion: 5, manifestVersion: 2 }
               : null,

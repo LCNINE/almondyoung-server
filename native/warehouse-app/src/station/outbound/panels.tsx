@@ -3,7 +3,8 @@ import { Check, CircleHelp, Package, Printer, ScanLine, X } from 'lucide-react';
 import { Button } from '../../core/design/Button';
 import { cn } from '../../core/design/cn';
 import { SCAN_STORAGE_MESSAGE } from '../../core/hardware/scan/useWorkScanQueue';
-import { formatTrackingNo, type InspectionRow } from '../../domains/outbound/inspection';
+import { formatTrackingNo, splitShareLines, type InspectionRow } from '../../domains/outbound/inspection';
+import type { SplitShare } from '../../domains/outbound/types';
 import type { LabelItemChange } from '../../domains/outbound/waybillLabel';
 import { Kbd } from '../Kbd';
 import { bigTextPx, type LastBox } from './model';
@@ -28,12 +29,15 @@ export function BoxCard({
   recipient,
   deliveryNote,
   ownerName,
+  split,
 }: {
   trackingNo: string;
   recipient: string;
   deliveryNote?: string | null;
   ownerName?: string | null;
+  split?: SplitShare | null;
 }) {
+  const share = splitShareLines(split);
   return (
     <div className={cn(CARD, 'flex shrink-0 flex-col gap-2.5 p-[18px]')}>
       {ownerName ? (
@@ -41,6 +45,12 @@ export function BoxCard({
       ) : null}
       <h2 className="font-mono text-[30px] font-semibold">{formatTrackingNo(trackingNo)}</h2>
       <div className="text-lg font-medium">{recipient}</div>
+      {share ? (
+        <div aria-label="나눈 상자" className="rounded-md bg-[#E3ECFC] px-3 py-2 text-[#1D5BD8]">
+          <div className="text-lg font-bold">{share.title}</div>
+          <div className="text-[15px] font-medium">{share.detail}</div>
+        </div>
+      ) : null}
       {deliveryNote ? (
         <div className="rounded-md bg-[#FFF1C7] px-3 py-2.5 text-base font-semibold text-[#5E3B00]">{deliveryNote}</div>
       ) : null}

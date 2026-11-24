@@ -15,6 +15,7 @@ import {
   scannedLineOf,
   lineOfBarcode,
   scanNamesOf,
+  splitShareLines,
 } from './inspection';
 import type { ShipmentByWaybill, ShipmentByWaybillLine } from './types';
 
@@ -208,5 +209,17 @@ describe('lineOfBarcode — 찍은 바코드가 어느 줄인가(이름 표시�
 
   it('scanNamesOf 는 아는 바코드만 이름으로 남긴다', () => {
     expect(scanNamesOf(lines, ['8801001', '9999999'])).toEqual({ '8801001': '컬러크림' });
+  });
+});
+
+describe('splitShareLines', () => {
+  it('나눈 상자면 주문의 몇 번째 상자인지와 수량을, 아니면 null', () => {
+    expect(splitShareLines({ boxQty: 3, orderQty: 5, boxNo: 2, boxCount: 2 })).toEqual({
+      title: '이 주문 2상자 중 2',
+      detail: '주문 5개 중 이 상자 3개',
+    });
+    expect(splitShareLines(null)).toBeNull();
+    expect(splitShareLines(undefined)).toBeNull();
+    expect(splitShareLines({ boxQty: 3, orderQty: 3, boxNo: 1, boxCount: 1 })).toBeNull();
   });
 });

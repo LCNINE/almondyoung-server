@@ -34,6 +34,27 @@ describe('F1 출고 검수 — 송장 스캔 즉시 시작, 상품 스캔 = +1, 
     expect(progress()).toHaveTextContent('0 / 4');
   });
 
+  it('나눈 상자를 찍으면 이 주문의 몇 번째 상자인지와 수량을 보인다 — 나누지 않은 상자는 보이지 않는다', async () => {
+    await setupInspection({ boxes: [{ ...BOX1, split: { boxQty: 4, orderQty: 6, boxNo: 1, boxCount: 2 } }, BOX2] });
+    await openBox('421033881907');
+    const share = screen.getByLabelText('나눈 상자');
+    expect(share).toHaveTextContent('이 주문 2상자 중 1');
+    expect(share).toHaveTextContent('주문 6개 중 이 상자 4개');
+
+    for (const code of ['8801002', '8801002', '8801002', '8801001']) scan(code);
+    expect(await screen.findByText('출고 완료')).toBeInTheDocument();
+    await openBox('421033881915');
+    expect(screen.queryByLabelText('나눈 상자')).toBeNull();
+  });
+
+  it('새 송장을 출력해야 하는 나눈 상자도 송장 카드에 나눈 상자를 보인다', async () => {
+    await setupInspection({
+      boxes: [{ ...BOX1, labelState: 'reprint_required', split: { boxQty: 4, orderQty: 6, boxNo: 2, boxCount: 2 } }],
+    });
+    scan('421033881907');
+    expect(await screen.findByLabelText('나눈 상자')).toHaveTextContent('이 주문 2상자 중 2');
+  });
+
   it('상품을 찍으면 그 줄이 오르고, 마지막 상품이면 출고되어 송장 대기로 — 직전 박스 완료를 보인다', async () => {
     const { server } = await setupInspection();
     await openBox('421033881907');

@@ -56,6 +56,50 @@ describeIfDb('ShipmentWaybillReader', () => {
     });
   });
 
+  it('나누기로 이어진 상자면 묶음 안의 번호와 수량을 싣는다 — 나누지 않은 상자는 null', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const first = await seedPickableShipment(tx, 2);
+      const second = await seedPickableShipment(tx, 3);
+      const reader = new ShipmentWaybillReader(ambientDbService(tx), assembleLabels(ambientDbService(tx)).states);
+
+      expect((await reader.byTrackingNo(first.trackingNo)).split).toBeNull();
+
+      await tx
+        .update(wmsTables.shipments)
+        .set({ createdAt: new Date(Date.now() + 60_000) })
+        .where(eq(wmsTables.shipments.id, second.shipmentId));
+      const [operation] = await tx
+        .insert(wmsTables.shipmentOperations)
+        .values({
+          type: 'split',
+          status: 'completed',
+          operatorId: randomUUID(),
+          reason: '나눠 보내기',
+          idempotencyKey: randomUUID(),
+          requestHash: 'a'.repeat(64),
+          completedAt: new Date(),
+        })
+        .returning();
+      await tx.insert(wmsTables.shipmentOperationMembers).values([
+        { operationId: operation.id, shipmentId: first.shipmentId, role: 'source' },
+        { operationId: operation.id, shipmentId: second.shipmentId, role: 'target' },
+      ]);
+
+      expect((await reader.byTrackingNo(first.trackingNo)).split).toEqual({
+        boxQty: 2,
+        orderQty: 5,
+        boxNo: 1,
+        boxCount: 2,
+      });
+      expect((await reader.byTrackingNo(second.trackingNo)).split).toEqual({
+        boxQty: 3,
+        orderQty: 5,
+        boxNo: 2,
+        boxCount: 2,
+      });
+    });
+  });
+
   it('줄마다 그 SKU 에 등록된 바코드를 모두 싣는다 — 등록 바코드가 없는 SKU 는 빈 목록', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await seedPickableShipment(tx, 2);
