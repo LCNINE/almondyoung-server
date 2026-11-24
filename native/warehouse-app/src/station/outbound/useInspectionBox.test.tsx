@@ -5,13 +5,18 @@ import { describe, expect, it, vi } from 'vitest';
 import { SessionProvider } from '../../app/session-context';
 import type { Session } from '../../core/auth/session';
 import { ApiClientProvider } from '../../core/data/ApiClientProvider';
+import { ApiError } from '../../core/data/httpClient';
 import { OperationContext, type WorkRuntime } from '../../core/operations/OperationContext';
 import { WorkBoundary } from '../../core/operations/WorkBoundary';
+import { AreaContext } from '../../core/operations/workArea';
+import type { StoredOperation } from '../../core/operations/operationStore';
 import type { ShipmentByWaybill } from '../../domains/outbound/types';
 import { createOutboundServer, createTestRuntime, type FakeBox } from './__fixtures__/outboundServer';
 import {
   STATION_FORCE_REASON,
+  INTAKE_BLOCKED_MESSAGE,
   UNCERTAIN_SCAN_MESSAGE,
+  otherWorkMessage,
   useInspectionBox,
   type InspectionBoxEvents,
 } from './useInspectionBox';
@@ -310,7 +315,7 @@ describe('useInspectionBox — 박스 하나의 스캔 큐(스펙 §6.3·§10.1)
     expect(box.checking).toEqual([]);
   });
 
-  it('다른 일(입고 등)의 확인 못 한 작업은 여전히 입력을 막는다', async () => {
+  it('다른 일(입고 등)의 확인 못 한 작업은 여전히 입력을 막고 그 작업을 알리지만, 보낼 스캔이 없는 박스는 내려놓을 수 있다', async () => {
     const server = createOutboundServer({ boxes: [BOX] });
     const runtime = createTestRuntime(server);
     await runtime.store.begin({
@@ -329,6 +334,110 @@ describe('useInspectionBox — 박스 하나의 스캔 큐(스펙 §6.3·§10.1)
     await act(async () => runtime.runner.restore());
     await waitFor(() => expect(box.intakeBlocked).toBe(true));
     expect(box.accept('A', 1)).toBe(false);
+    expect(box.blockedMessage()).toBe(otherWorkMessage('입고'));
+    await expect(box.settle()).resolves.toBe('settled');
+  });
+
+  it('강제출고를 보내는 동안에는 보낼 스캔이 없어도 내려놓기를 거절한다', async () => {
+    const { server } = await setup();
+    const release = server.holdWrites();
+    let forcing!: Promise<void>;
+    act(() => {
+      forcing = box.forceOut();
+    });
+    // 보내기 시작한 그 렌더에서도 — 화면이 아직 «보내는 중» 으로 다시 그려지기 전
+    await expect(box.settle()).rejects.toThrow(UNCERTAIN_SCAN_MESSAGE);
+    await waitFor(() =>
+      expect(server.requests.filter((r) => r.path.endsWith('/simple-outbound-forces'))).toHaveLength(1)
+    );
+    await expect(box.settle()).rejects.toThrow(UNCERTAIN_SCAN_MESSAGE);
+    release();
+    await act(async () => forcing);
+  });
+
+  it('보내던 스캔을 기다리는 사이 다른 일의 결과 모름이 생겨도 그 스캔이 반영되면 내려놓는다', async () => {
+    const { server, runtime } = await setup();
+    const release = server.holdSends();
+    act(() => {
+      box.accept('A', 1);
+    });
+    await waitFor(() => expect(server.scanCalls).toHaveLength(1));
+    let settling!: Promise<unknown>;
+    act(() => {
+      settling = box.settle();
+    });
+    await runtime.store.begin({
+      id: 'inbound',
+      scope: 'scope',
+      resource: '/inbound/simple:w',
+      path: '/inbound/simple',
+      method: 'POST',
+      createdAt: Date.now(),
+      bodyJson: JSON.stringify({ barcode: 'A', quantity: 1 }),
+    });
+    await runtime.store.finish('inbound', 'uncertain');
+    await act(async () => runtime.runner.restore());
+    await waitFor(() => expect(box.intakeBlocked).toBe(true));
+    release();
+    await expect(settling).resolves.toBe('settled');
+  });
+
+  it('서버 연결을 확인하지 못한 동안에는 다른 일이 남아 있어도 그 일을 탓하지 않는다', async () => {
+    const server = createOutboundServer({ boxes: [BOX] });
+    const runtime = createTestRuntime(server);
+    const found = await server.request<ShipmentByWaybill>({ path: `/shipments/by-waybill?trackingNo=${BOX.trackingNo}` });
+    const inbound = { id: 'inbound', path: '/inbound/simple', status: 'uncertain' } as StoredOperation;
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    render(
+      <SessionProvider session={session}>
+        <QueryClientProvider client={queryClient}>
+          <ApiClientProvider client={runtime.runner}>
+            <OperationContext.Provider value={runtime}>
+              <AreaContext.Provider
+                value={{ operations: [inbound], scope: 'scope', problem: true, restoring: false, recheck: async () => {} }}
+              >
+                <Probe found={found} events={newEvents()} />
+              </AreaContext.Provider>
+            </OperationContext.Provider>
+          </ApiClientProvider>
+        </QueryClientProvider>
+      </SessionProvider>
+    );
+    await screen.findByTestId('progress');
+    expect(box.intakeBlocked).toBe(true);
+    expect(box.blockedMessage()).toBe(INTAKE_BLOCKED_MESSAGE);
+    await expect(box.settle()).rejects.toThrow(UNCERTAIN_SCAN_MESSAGE);
+  });
+
+  it('이 박스의 스캔이 로그인 만료로 결과를 모르면 다른 일이 있어도 내려놓기를 거절하고 앞 스캔을 알린다', async () => {
+    const server = createOutboundServer({ boxes: [BOX] });
+    const runtime = createTestRuntime({
+      request: async <T,>(o: Parameters<typeof server.request>[0]): Promise<T> => {
+        if (o.path.endsWith('/simple-outbound-scans')) throw new ApiError('로그인 만료', 401, 'UNAUTHORIZED');
+        return server.request<T>(o);
+      },
+    });
+    const found = await server.request<ShipmentByWaybill>({ path: `/shipments/by-waybill?trackingNo=${BOX.trackingNo}` });
+    mount(runtime, found, newEvents());
+    await waitFor(() => expect(box.intakeBlocked).toBe(false));
+    act(() => {
+      box.accept('A', 1);
+    });
+    await waitFor(async () => expect((await runtime.store.pending('scope'))[0]?.status).toBe('uncertain'));
+    await runtime.store.begin({
+      id: 'inbound',
+      scope: 'scope',
+      resource: '/inbound/simple:w',
+      path: '/inbound/simple',
+      method: 'POST',
+      createdAt: Date.now(),
+      bodyJson: JSON.stringify({ barcode: 'A', quantity: 1 }),
+    });
+    await runtime.store.finish('inbound', 'uncertain');
+    await act(async () => runtime.runner.restore());
+    await waitFor(() => expect(box.intakeBlocked).toBe(true));
+    expect(box.blockedMessage()).toBe(INTAKE_BLOCKED_MESSAGE);
+    await expect(box.settle()).rejects.toThrow(UNCERTAIN_SCAN_MESSAGE);
   });
 
   it('내려놓은 박스의 늦은 결과는 화면에 알리지 않고, 뒤에 줄 선 스캔도 보내지 않는다', async () => {

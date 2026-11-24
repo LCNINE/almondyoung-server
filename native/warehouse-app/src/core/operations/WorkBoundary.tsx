@@ -25,17 +25,21 @@ const SCAN_PATH = /^\/shipments\/[^/]+\/(location|simple)-outbound-scans$/;
 /**
  * A scan region can accept more inputs only for its first, normal send.
  * 출고는 박스 단위다 — `shipmentId` 를 주면 그 박스의 작업만 보고, 안 주면(목록 화면) 다른 박스의 결과 모름은 보지 않는다.
+ * `boxOnly` 면 박스에 묶이지 않은 다른 작업(입고 등)도 보지 않는다 — 그 박스를 내려놓아도 되는지 볼 때.
  */
 export function useWorkAreaBlocked(
   kind: string,
   scanAllowance?: ScanAllowance,
-  shipmentId?: string
+  shipmentId?: string,
+  boxOnly = false
 ) {
   const state = useContext(AreaContext);
   if (state.problem || state.restoring) return true;
   const box = shipmentId ?? (scanAllowance && shipmentOf(scanAllowance.path));
   const operations = state.operations.filter((op) =>
-    box ? shipmentOf(op.path) === box || !shipmentOf(op.path) : !isBoxCheck(op)
+    box
+      ? shipmentOf(op.path) === box || (!boxOnly && !shipmentOf(op.path))
+      : !isBoxCheck(op)
   );
   if (scanAllowance && operations.length) {
     return !operations.every((op) => {
