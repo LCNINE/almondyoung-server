@@ -69,7 +69,7 @@ describeIfDb('입고 취소·회송이 놓는 예약 (DB integration)', () => {
   async function addOrder(tx: DbTx, world: World, qty: number, at: string): Promise<Box> {
     const variantId = randomUUID();
     const orderNo = `it-${randomUUID().slice(0, 8)}`;
-    const { salesOrderId } = await seedSalesOrder(tx, { lines: [{ variantId, quantity: qty, skuId: world.skuId }] });
+    const { salesOrderId } = await seedSalesOrder(tx, { lines: [{ variantId, quantity: qty }] });
     await tx
       .update(wmsTables.salesOrders)
       .set({ displayOrderNo: orderNo })

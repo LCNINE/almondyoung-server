@@ -8,6 +8,8 @@ import {
 } from '../../../apps/core/src/modules/fulfillment/services/__support__/logistics-wiring';
 import { InboundService } from '../../../apps/core/src/modules/inventory/inbound/services/inbound.service';
 import { InboundReceiptKernel } from '../../../apps/core/src/modules/inventory/inbound/kernel/inbound-receipt.kernel';
+import { BatchControlledStockGuard } from '../../../apps/core/src/modules/inventory/core/services/batch-controlled-stock.guard';
+import { StockRemovalReservations } from '../../../apps/core/src/modules/fulfillment/stock-removal/stock-removal-reservations';
 import { SkuCatalogService } from '../../../apps/core/src/modules/inventory/sku-catalog/services/sku-catalog.service';
 import { SkuCatalogReader } from '../../../apps/core/src/modules/inventory/sku-catalog/services/sku-catalog.reader';
 import { SkuCatalogManager } from '../../../apps/core/src/modules/inventory/sku-catalog/services/sku-catalog.manager';
@@ -103,18 +105,25 @@ async function main(): Promise<void> {
     const skuCatalogManager = new SkuCatalogManager(dbService, skuCatalogReader);
     const skuCatalogService = new SkuCatalogService(skuCatalogReader, skuCatalogManager);
     const idempotency = new InventoryIdempotencyService(dbService);
+    const receiptKernel = new InboundReceiptKernel(
+      wired.command,
+      wired.location,
+      wired.eventStore,
+      new BatchControlledStockGuard(),
+      new StockRemovalReservations(wired.shipmentReservations),
+    );
     const inboundService = new InboundService(
       dbService,
       skuCatalogService,
       wired.eventStore,
       idempotency,
-      new InboundReceiptKernel(wired.command, wired.location, wired.eventStore),
+      receiptKernel,
     );
     const headerDeriver = new PurchaseOrderHeaderDeriver();
     const poReader = new PurchaseOrderReader(dbService);
     const receiving = new PurchaseOrderReceivingManager(
       dbService,
-      new InboundReceiptKernel(wired.command, wired.location, wired.eventStore),
+      receiptKernel,
       idempotency,
       headerDeriver,
       poReader,

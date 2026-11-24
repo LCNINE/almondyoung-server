@@ -33,6 +33,12 @@ import { SkuCatalogService } from '../../apps/core/src/modules/inventory/sku-cat
 import { InboundService } from '../../apps/core/src/modules/inventory/inbound/services/inbound.service';
 import { InventoryIdempotencyService } from '../../apps/core/src/modules/inventory/core/services/inventory-idempotency.service';
 import { InboundReceiptKernel } from '../../apps/core/src/modules/inventory/inbound/kernel/inbound-receipt.kernel';
+import { BatchControlledStockGuard } from '../../apps/core/src/modules/inventory/core/services/batch-controlled-stock.guard';
+import { UnifiedReservationService } from '../../apps/core/src/modules/inventory/shared/services/unified-reservation.service';
+import { StockRemovalReservations } from '../../apps/core/src/modules/fulfillment/stock-removal/stock-removal-reservations';
+import { ShipmentReservationService } from '../../apps/core/src/modules/fulfillment/services/shipment-reservation.service';
+import { FulfillmentProgressService } from '../../apps/core/src/modules/fulfillment/services/fulfillment-progress.service';
+import { FulfillmentInvariantService } from '../../apps/core/src/modules/fulfillment/services/fulfillment-invariant.service';
 
 // scripts/seeding/constants/uuids.ts 의 WAREHOUSE_BUCHEON_DOMESTIC
 const WAREHOUSE_BUCHEON = '019d0001-0001-7000-a000-000000000001';
@@ -88,7 +94,20 @@ async function main() {
     skuCatalog,
     eventStore,
     idempotency,
-    new InboundReceiptKernel(command, location, eventStore),
+    new InboundReceiptKernel(
+      command,
+      location,
+      eventStore,
+      new BatchControlledStockGuard(),
+      new StockRemovalReservations(
+        new ShipmentReservationService(
+          dbService,
+          new UnifiedReservationService(dbService, sellable),
+          new FulfillmentProgressService(),
+          new FulfillmentInvariantService(),
+        ),
+      ),
+    ),
   );
 
   try {
