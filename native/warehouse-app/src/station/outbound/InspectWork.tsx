@@ -26,7 +26,7 @@ import type { Alert, BoxWorkHandle } from './model';
 import { BigPanel, BoxCard, LineTable, QueueTrouble, RecentList, ScanChecking, ScanWaiting, WorkGrid, type BigPanelContent } from './panels';
 import type { RecentEntry } from './recent';
 import { ShortPickDialog } from './ShortPickDialog';
-import { INTAKE_BLOCKED_MESSAGE, STATION_WITHDRAW_REASON, useInspectionBox } from './useInspectionBox';
+import { STATION_WITHDRAW_REASON, useInspectionBox } from './useInspectionBox';
 
 /**
  * 결과를 모르는 결품(응답을 잃음·5xx·처리 중) — 반영됐을 수 있다. 다음 F9 는 이것을 같은 키·같은 본문으로 다시 보낸다(서버가
@@ -146,7 +146,7 @@ export function InspectWork({
         const typed = quantityRef.current;
         if (typed !== null) setQuantity(null);
         const count = typed ? Math.max(1, Number(typed)) : 1;
-        if (!latest.current.accept(code, count)) onAlert(INTAKE_BLOCKED_MESSAGE, code);
+        if (!latest.current.accept(code, count)) onAlert(latest.current.blockedMessage(), code);
       },
       disarm: () => setArmed(null),
       settle: () => latest.current.settle(),
@@ -271,7 +271,7 @@ export function InspectWork({
     remaining > 0 && rows.every((row) => row.done || row.shipmentLineId === work.lastScan?.shipmentLineId);
   // 직전에 찍은 줄의 «주문 − 스캔» 을 그 바코드로 한 번 더 — 서버에는 일반 스캔이다(§6.3)
   const sendAll = () => {
-    if (work.lastScan && !work.accept(work.lastScan.barcode, remaining)) onAlert(INTAKE_BLOCKED_MESSAGE);
+    if (work.lastScan && !work.accept(work.lastScan.barcode, remaining)) onAlert(work.blockedMessage());
   };
 
   const actions: StationAction[] = [

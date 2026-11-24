@@ -215,6 +215,35 @@ describe('F1 출고 검수 — 송장 스캔 즉시 시작, 상품 스캔 = +1, 
     expect(screen.queryByRole('button', { name: /확인할 일/ })).toBeNull();
   });
 
+  it('입고 작업의 결과를 모르는 동안에도 보낸 스캔이 없는 상자는 다른 송장으로 바꾸고 내려놓을 수 있다 — 상품은 받지 않고 그 작업을 알린다', async () => {
+    const slow = { timeout: 4000 };
+    const { server, runtime } = await setupInspection();
+    await runtime.store.begin({
+      id: 'inbound',
+      scope: 'scope',
+      resource: '/inbound/simple:w',
+      path: '/inbound/simple',
+      method: 'POST',
+      createdAt: Date.now(),
+      bodyJson: JSON.stringify({ barcode: '8801009', quantity: 1 }),
+    });
+    await runtime.store.finish('inbound', 'uncertain');
+    await act(async () => runtime.runner.restore());
+    scan('421033881907');
+    expect(await screen.findByRole('heading', { name: '4210-3388-1907' }, slow)).toBeInTheDocument();
+    await act(async () => {});
+    scan('8801002');
+    expect(await screen.findByRole('alert', undefined, slow)).toHaveTextContent(
+      '입고 작업의 처리 여부를 확인하고 있어요. 아래 «처리 내역 확인»을 먼저 눌러 주세요.'
+    );
+    scan('421033881915');
+    expect(await screen.findByRole('heading', { name: '4210-3388-1915' }, slow)).toBeInTheDocument();
+    await act(async () => {});
+    press('Escape');
+    expect(await screen.findByText('송장 바코드', undefined, slow)).toBeInTheDocument();
+    expect(server.scans).toEqual([]);
+  });
+
   it('다시 연 박스가 저장된 스캔을 다시 보내면 최근 목록에 그 상품 이름이 남는다', async () => {
     const { server, runtime } = await setupInspection();
     await openBox('421033881907');
