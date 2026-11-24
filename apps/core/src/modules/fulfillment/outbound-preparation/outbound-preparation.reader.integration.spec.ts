@@ -335,6 +335,144 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
     });
   });
 
+  it.each([
+    ['does_not_fit', '한 상자에 다 들어가지 않음', 'ready'],
+    ['other', '선물 포장 따로', 'mergeable'],
+  ])('%s 사유로 나눈 두 상자는 %s 로 사유를 싣고 %s 로 간다', async (reasonCode, reason, bucket) => {
+    await inRollbackTx(db, async (tx) => {
+      const base = await consolidationBase(tx, 2);
+      const source = await createConsolidationSource(tx, wired, base, { quantity: 2, customerId: randomUUID() });
+      const actor = { id: randomUUID(), roles: ['master'] };
+      const split = await planning.split(
+        source.shipment.id,
+        {
+          reason,
+          reasonCode,
+          expectedManifestVersion: source.shipment.manifestVersion,
+          moves: [{ shipmentLineId: source.line.id, expectedLineVersion: source.line.lineVersion, qty: 1 }],
+        },
+        randomUUID(),
+        actor,
+        tx,
+      );
+      const pair = [source.shipment.id, split.target.shipmentId];
+      const summary = await reader.summarize(base.warehouseId, undefined, tx);
+
+      expect(idsIn(summary, bucket)).toEqual(expect.arrayContaining(pair));
+      expect(
+        summary.buckets
+          .flatMap((entry) => entry.shipments)
+          .filter((shipment) => pair.includes(shipment.shipmentId))
+          .map((shipment) => shipment.split?.reason),
+      ).toEqual([reason, reason]);
+
+      const board = await new ConsolidationBoardReader(dbService).findBoard(base.warehouseId, tx);
+      const grouped = board.groups.some((group) =>
+        group.shipments.some((shipment) => pair.includes(shipment.shipmentId)),
+      );
+
+      expect(grouped).toBe(bucket === 'mergeable');
+    });
+  });
+
+  it('크기로 나눈 짝만 보낼 수 있으면 다른 주문 상자가 묶음에 있어도 합칠 주문으로 보지 않는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const base = await consolidationBase(tx, 2);
+      const customerId = randomUUID();
+      const source = await createConsolidationSource(tx, wired, base, { quantity: 2, customerId });
+      const waiting = await createConsolidationSource(tx, wired, base, { quantity: 1, customerId });
+      const split = await planning.split(
+        source.shipment.id,
+        {
+          reason: '한 상자에 다 들어가지 않음',
+          reasonCode: 'does_not_fit',
+          expectedManifestVersion: source.shipment.manifestVersion,
+          moves: [{ shipmentLineId: source.line.id, expectedLineVersion: source.line.lineVersion, qty: 1 }],
+        },
+        randomUUID(),
+        { id: randomUUID(), roles: ['master'] },
+        tx,
+      );
+      const summary = await reader.summarize(base.warehouseId, undefined, tx);
+
+      expect(idsIn(summary, 'unavailable')).toContain(waiting.shipment.id);
+      expect(idsIn(summary, 'ready')).toEqual(expect.arrayContaining([source.shipment.id, split.target.shipmentId]));
+    });
+  });
+
+  it('크기로 나눈 한쪽을 다른 이유로 다시 나누면 그 둘만 합칠 주문으로 가고 반대쪽은 완전출고다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const base = await consolidationBase(tx, 4);
+      const source = await createConsolidationSource(tx, wired, base, { quantity: 4, customerId: randomUUID() });
+      const actor = { id: randomUUID(), roles: ['master'] };
+      const bySize = await planning.split(
+        source.shipment.id,
+        {
+          reason: '한 상자에 다 들어가지 않음',
+          reasonCode: 'does_not_fit',
+          expectedManifestVersion: source.shipment.manifestVersion,
+          moves: [{ shipmentLineId: source.line.id, expectedLineVersion: source.line.lineVersion, qty: 2 }],
+        },
+        randomUUID(),
+        actor,
+        tx,
+      );
+      const [half] = await tx
+        .select()
+        .from(wmsTables.shipmentLines)
+        .where(eq(wmsTables.shipmentLines.shipmentId, bySize.target.shipmentId));
+      const [halfBox] = await tx
+        .select()
+        .from(wmsTables.shipments)
+        .where(eq(wmsTables.shipments.id, bySize.target.shipmentId));
+      const again = await planning.split(
+        halfBox.id,
+        {
+          reason: '선물 포장 따로',
+          reasonCode: 'other',
+          expectedManifestVersion: halfBox.manifestVersion,
+          moves: [{ shipmentLineId: half.id, expectedLineVersion: half.lineVersion, qty: 1 }],
+        },
+        randomUUID(),
+        actor,
+        tx,
+      );
+      const summary = await reader.summarize(base.warehouseId, undefined, tx);
+
+      expect(idsIn(summary, 'ready')).toContain(source.shipment.id);
+      expect(idsIn(summary, 'mergeable')).toEqual(
+        expect.arrayContaining([bySize.target.shipmentId, again.target.shipmentId]),
+      );
+      expect(idsIn(summary, 'mergeable')).not.toContain(source.shipment.id);
+    });
+  });
+
+  it('크기로 나눈 두 쪽과 같은 고객의 다른 주문 상자가 함께 있으면 셋 다 완전출고다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const base = await consolidationBase(tx, 3);
+      const customerId = randomUUID();
+      const source = await createConsolidationSource(tx, wired, base, { quantity: 2, customerId });
+      const other = await createConsolidationSource(tx, wired, base, { quantity: 1, customerId });
+      const split = await planning.split(
+        source.shipment.id,
+        {
+          reason: '한 상자에 다 들어가지 않음',
+          reasonCode: 'does_not_fit',
+          expectedManifestVersion: source.shipment.manifestVersion,
+          moves: [{ shipmentLineId: source.line.id, expectedLineVersion: source.line.lineVersion, qty: 1 }],
+        },
+        randomUUID(),
+        { id: randomUUID(), roles: ['master'] },
+        tx,
+      );
+      const summary = await reader.summarize(base.warehouseId, undefined, tx);
+
+      expect(idsIn(summary, 'ready')).toEqual(
+        expect.arrayContaining([source.shipment.id, split.target.shipmentId, other.shipment.id]),
+      );
+    });
+  });
+
   it('셀메이트 상자는 어느 분류에도 없고 합칠 상대도 되지 않는다', async () => {
     await inRollbackTx(db, async (tx) => {
       const base = await consolidationBase(tx);

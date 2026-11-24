@@ -90,12 +90,16 @@ describeIfDb('ShipmentWaybillReader', () => {
         orderQty: 5,
         boxNo: 1,
         boxCount: 2,
+        reasonCode: null,
+        reason: '나눠 보내기',
       });
       expect((await reader.byTrackingNo(second.trackingNo)).split).toEqual({
         boxQty: 3,
         orderQty: 5,
         boxNo: 2,
         boxCount: 2,
+        reasonCode: null,
+        reason: '나눠 보내기',
       });
     });
   });

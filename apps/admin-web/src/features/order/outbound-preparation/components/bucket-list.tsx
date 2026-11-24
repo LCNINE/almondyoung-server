@@ -344,9 +344,22 @@ function ReasonCell({
   const canOpenReplenishment =
     replenishment.status === 'ready' && replenishment.allowed;
   const blocked = blockedReason(bucket, shipment, canOpenReplenishment);
+  const splitReason = shipment.split?.reason && (
+    <span className="block text-xs">나눈 이유 · {shipment.split.reason}</span>
+  );
 
   if (!shipment.shortPick?.length && !shipment.batchReturn) {
-    return blocked ?? <>{shipment.reason ?? '-'}</>;
+    if (!splitReason) {
+      return blocked ?? <>{shipment.reason ?? '-'}</>;
+    }
+
+    return (
+      <>
+        {blocked ??
+          (shipment.reason && <span className="block">{shipment.reason}</span>)}
+        {splitReason}
+      </>
+    );
   }
 
   return (
@@ -370,6 +383,7 @@ function ReasonCell({
       {blocked ??
         (shipment.reason && <span className="block">{shipment.reason}</span>)}
       {nextStep && <span className="block text-foreground">{nextStep}</span>}
+      {splitReason}
     </>
   );
 }

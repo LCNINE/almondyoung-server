@@ -118,6 +118,18 @@ export class ShipmentSplitShareDto {
   boxNo: number;
   @ApiProperty({ description: '묶음의 살아 있는 상자 수' })
   boxCount: number;
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: '이 상자가 든 가장 최근 나누기의 사유 코드. 옛 기록이면 null',
+  })
+  reasonCode: string | null;
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: '이 상자를 나눈 이유(정해 둔 사유의 이름 또는 적어 둔 글)',
+  })
+  reason: string | null;
 }
 
 export class ConsolidationItemDto {

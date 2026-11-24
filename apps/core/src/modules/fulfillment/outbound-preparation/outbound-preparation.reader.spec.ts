@@ -190,7 +190,9 @@ describe('OutboundPreparationReader consolidation reservations', () => {
 
     jest
       .mocked(loadSplitShares)
-      .mockResolvedValueOnce(new Map([['box', { boxQty: 6, orderQty: 9, boxNo: 1, boxCount: 2 }]]));
+      .mockResolvedValueOnce(
+        new Map([['box', { boxQty: 6, orderQty: 9, boxNo: 1, boxCount: 2, reasonCode: null, reason: null }]]),
+      );
 
     const summary = await module.get(OutboundPreparationReader).summarize('warehouse');
 
@@ -199,6 +201,8 @@ describe('OutboundPreparationReader consolidation reservations', () => {
       orderQty: 9,
       boxNo: 1,
       boxCount: 2,
+      reasonCode: null,
+      reason: null,
     });
     expect(summary.buckets.find((bucket) => bucket.bucket === 'partial')?.shipments[0].lines).toEqual([
       { name: '상품 A', qty: 5, reservedQty: 2 },
