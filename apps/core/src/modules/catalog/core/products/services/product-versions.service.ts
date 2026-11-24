@@ -592,6 +592,8 @@ export class ProductVersionsService {
         alwaysSellableZeroStock: prevPolicy.alwaysSellableZeroStock,
         availabilityOverride: prevPolicy.availabilityOverride,
         comingSoonDate: prevPolicy.comingSoonDate,
+        restockDate: prevPolicy.restockDate,
+        restockApproximate: prevPolicy.restockApproximate,
         discontinuing: prevPolicy.discontinuing,
         effectiveFrom: prevPolicy.effectiveFrom,
         effectiveTo: prevPolicy.effectiveTo,
