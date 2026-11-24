@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { DbService } from '@app/db';
+import { ConflictError, NotFoundError } from '@app/shared';
 import { and, asc, eq, inArray, isNull, notInArray, sql } from 'drizzle-orm';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import {
@@ -59,6 +60,13 @@ export type ReservationTransferResult = {
   affectedReservationIds: string[];
   sourceReservationVersion: number;
   targetReservationVersion: number;
+};
+
+export type ReservationRowReleaseResult = {
+  reservationId: string;
+  shipmentLineId: string;
+  releasedQty: number;
+  reservationVersion: number;
 };
 
 export type DispatchReservationLine = {
@@ -593,6 +601,51 @@ export class ShipmentReservationService {
         releasedQty: qty,
         totalReservedQty: confirmedQty - qty,
         affectedReservationIds: [...new Set(affectedReservationIds)],
+        reservationVersion: await this.loadReservationVersion(line.shipmentId, trx),
+      };
+    }, tx);
+  }
+
+  /**
+   * 상자 줄에 걸린 확정 예약 «한 행»을 풀고 같은 트랜잭션에서 상자·출고주문을 다시 계산한다.
+   * 잠금 순서는 releasePartial 과 같다(상자 묶음 → 재고 → 예약 행).
+   */
+  async releaseReservation(reservationId: string, reason: string, tx?: DbTx): Promise<ReservationRowReleaseResult> {
+    return this.db.run(async (trx) => {
+      const [found] = await trx
+        .select({ id: wmsTables.stockReservations.id, shipmentLineId: wmsTables.stockReservations.shipmentLineId })
+        .from(wmsTables.stockReservations)
+        .where(eq(wmsTables.stockReservations.id, reservationId))
+        .limit(1);
+      if (!found) throw new NotFoundError('예약을 찾을 수 없습니다');
+      if (found.shipmentLineId === null) {
+        throw new Error(`releaseReservation: reservation ${reservationId} is not a shipment-line reservation`);
+      }
+
+      const initial = await this.loadLineContext(found.shipmentLineId, trx);
+      await this.lockConnectedComponents([initial], trx);
+      const line = await this.loadLineContext(found.shipmentLineId, trx);
+      this.assertStableContext(initial, line);
+      if (line.shipmentStatus !== 'draft') throw new ConflictError('작업이 시작된 상자의 예약은 풀 수 없습니다');
+      await acquireStockAvailabilityLock(trx, line.skuId, line.warehouseId);
+
+      const reservations = await this.loadConfirmedReservations(line.id, trx);
+      const row = reservations.find((candidate) => candidate.id === reservationId);
+      if (!row) throw new ConflictError('이미 풀린 예약입니다');
+
+      const now = new Date();
+      await trx
+        .update(wmsTables.stockReservations)
+        .set({ status: 'released', stateReason: reason, invalidatedAt: now, updatedAt: now })
+        .where(eq(wmsTables.stockReservations.id, row.id));
+
+      await this.unifiedReservation.recalculateSellableForSku(line.skuId, trx);
+      await this.bumpReservationVersions([line.shipmentId], trx);
+      await this.recompute(line.shipmentId, trx);
+      return {
+        reservationId,
+        shipmentLineId: line.id,
+        releasedQty: row.quantity,
         reservationVersion: await this.loadReservationVersion(line.shipmentId, trx),
       };
     }, tx);
