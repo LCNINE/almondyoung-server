@@ -56,6 +56,7 @@ import {
   SkuLinkRow,
   SkuLinkState,
   buildSkuLinkFilterCondition,
+  hasSkuBarcodeCondition,
   skuLinkRowsSql,
   summarizeSkuLinks,
 } from './product-masters-sku-link';
@@ -718,10 +719,10 @@ export class ProductMastersService {
       whereConditions.push(ilike(productMasterVersions.brand, `%${filters.brand}%`));
     }
 
-    // 키워드 검색: 상품명 + 품번코드 부분 일치 (대소문자·공백 무시, 토큰 AND)
+    // 키워드 검색: 상품명 + 품번코드 부분 일치 (대소문자·공백 무시, 토큰 AND), 또는 연결된 SKU 바코드 완전 일치
     if (filters.name) {
       const match = keywordMatch(filters.name, [productMasterVersions.name, productMasterVersions.productCode]);
-      if (match) whereConditions.push(match);
+      if (match) whereConditions.push(or(match, hasSkuBarcodeCondition(filters.name.trim())));
     }
 
     // ids 필터 (배치 조회용)

@@ -333,7 +333,7 @@ export function ProductsListFilterBox() {
         <div className="w-[520px] max-w-full">
           <FormInput
             className="bg-white"
-            placeholder="상품명 / 품번코드 검색"
+            placeholder="상품명 / 품번코드 / 바코드 검색"
             value={filters.q}
             onChange={(e) => patch({ q: e.target.value })}
             onKeyDown={(e) => e.key === 'Enter' && handleSearch()}

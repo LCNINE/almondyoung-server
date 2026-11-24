@@ -71,3 +71,17 @@ export function summarizeSkuLinks(rows: SkuLinkRow[]) {
 
   return { byVariant, unlinkedCountByVersion };
 }
+
+export function hasSkuBarcodeCondition(barcode: string): SQL {
+  return sql`
+    EXISTS (
+      SELECT 1
+      FROM product_master_variants pmv_bc
+      INNER JOIN product_matchings pm_bc ON pm_bc.variant_id = pmv_bc.variant_id
+      INNER JOIN product_variant_sku_links k_bc ON k_bc.product_matching_id = pm_bc.id
+      INNER JOIN sku_barcodes sb ON sb.sku_id = k_bc.sku_id
+      WHERE pmv_bc.version_id = ${productMasterVersions.id}
+        AND sb.barcode = ${barcode}
+    )
+  `;
+}
