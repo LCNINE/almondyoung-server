@@ -1,5 +1,7 @@
 import { parseServerError } from '@/lib/api/server-error';
 import type {
+  StockGiven,
+  StockPriorityHeld,
   StockPriorityPlan,
   StockPriorityTake,
 } from '@/lib/types/dto/fulfillment';
@@ -69,5 +71,42 @@ export function resultText(
   const gained = result.movedQty + result.freeQty;
   return gained > 0
     ? `${orderText}에 ${gained}개를 먼저 잡았어요. 모자란 ${result.missingQty}개는 다음 재고를 먼저 받아요.`
-    : `${orderText}을 우선할당했어요. 다음에 들어오는 재고를 먼저 받아요.`;
+    : `${orderText} 우선할당을 했어요. 다음에 들어오는 재고를 먼저 받아요.`;
+}
+
+const orderList = (orderNos: string[]) =>
+  orderNos.length === 0
+    ? '다른 주문'
+    : orderNos.length > 3
+      ? `${orderNos
+          .slice(0, 3)
+          .map((no) => `#${no}`)
+          .join(', ')} 외 ${orderNos.length - 3}건`
+      : orderNos.map((no) => `#${no}`).join(', ');
+
+/** 여기서 가져오지 않는 재고를 누가 잡고 있고 어떻게 하면 되는지 */
+export function heldText(held: StockPriorityHeld): string {
+  const orders = orderList(held.orderNos);
+  if (held.reason === 'priority') {
+    return `우선할당한 주문(${orders})이 ${held.qty}개를 잡고 있어요. 먼저 보낼 필요가 없으면 그 주문의 우선할당을 취소한 뒤 다시 열어 보세요.`;
+  }
+  if (held.reason === 'ready') {
+    return `바로 나갈 수 있는 주문(${orders})이 ${held.qty}개를 잡고 있어요. 다 가져와도 이 주문을 채우지 못해 그대로 둬요.`;
+  }
+  if (held.reason === 'other') {
+    return `복구 중이거나 따로 처리하는 상자(${orders})가 ${held.qty}개를 잡고 있어요. 여기서는 가져오지 않아요.`;
+  }
+  return `송장·배치까지 간 상자(${orders})가 ${held.qty}개를 잡고 있어요. 여기서는 가져오지 않아요.`;
+}
+
+/** 재고를 내준 주문에 보이는 이유 */
+export function stockGivenText(given: StockGiven): string {
+  const at = new Date(given.at).toLocaleString('ko-KR', {
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'Asia/Seoul',
+  });
+  return `${at}에 우선할당한 주문(${orderList(given.orderNos)})에 재고를 내줬어요`;
 }

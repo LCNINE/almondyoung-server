@@ -706,6 +706,8 @@ export interface ShipmentAdminSummary {
   recoveryCode: string | null;
   // 우선할당한 상자. 옛 core 응답엔 없다
   stockPriority?: boolean;
+  // 다른 주문을 우선할당하면서 재고를 내준 기록. 옛 core 응답엔 없다
+  stockGiven?: StockGiven | null;
 }
 
 export interface ShipmentLineOrigin {
@@ -800,6 +802,8 @@ export interface ShipmentOperationHistory {
   lastError?: string | null;
   createdAt: string;
   completedAt: string | null;
+  // 이 작업에서 이 상자의 역할. 옛 core 응답엔 없다
+  role?: 'source' | 'target';
 }
 
 export interface ShipmentWorkItemHistory {
@@ -912,6 +916,17 @@ export interface SplitUnreservedShipmentRequest extends ShipmentCommandReason {
   expectedManifestVersion: number;
 }
 
+export interface StockGiven {
+  at: string;
+  orderNos: string[];
+}
+
+export interface StockPriorityHeld {
+  reason: 'priority' | 'ready' | 'in_progress' | 'other';
+  orderNos: string[];
+  qty: number;
+}
+
 export interface StockPriorityTake {
   shipmentId: string;
   orderNos: string[];
@@ -944,6 +959,8 @@ export interface StockPriorityPreview {
   }[];
   plan: StockPriorityPlan | null;
   planWithReady: StockPriorityPlan | null;
+  // 옛 core 응답엔 없다
+  held?: StockPriorityHeld[];
 }
 
 export interface SetStockPriorityRequest extends ShipmentCommandReason {
@@ -1205,6 +1222,8 @@ export interface PreparationShipmentDto {
   owner?: { id: string; name: string } | null;
   // 우선할당한 상자. 옛 core 응답엔 없다
   stockPriority?: boolean;
+  // 다른 주문을 우선할당하면서 재고를 내준 기록. 옛 core 응답엔 없다
+  stockGiven?: StockGiven | null;
   // 정보 부족 상자만: 고쳐야 할 것 전부. 서버가 주기 전 응답에는 없다
   needsInfo?: NeedsInfoIssue[];
   /** 배송 프로필이 섞인 정보 부족 상자만 — 그 자리에서 나누는 데 쓰는 줄. 옛 core 응답엔 없다 */

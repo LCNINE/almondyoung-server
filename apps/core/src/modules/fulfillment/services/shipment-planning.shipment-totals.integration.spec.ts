@@ -201,6 +201,7 @@ describeIfDb('ShipmentPlanningService.getFulfillmentShipments (DB integration)',
           inspectedQty: 1,
           recoveryCode: source.shipment.recoveryCode,
           stockPriority: false,
+          stockGiven: null,
         },
       ]);
     });

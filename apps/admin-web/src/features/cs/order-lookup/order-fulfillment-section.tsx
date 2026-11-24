@@ -9,6 +9,7 @@ import { FoStatusBadge } from '@/components/table/table-cells/fulfillment/fo-sta
 import { shipmentStatusLabel } from '@/features/order/fulfillments/detail/fulfillment-labels';
 import { fulfillmentDetailHref } from '@/features/order/fulfillments/template/detail-href';
 import { StockPriorityBadge } from '@/features/order/stock-priority/stock-priority-badge';
+import { stockGivenText } from '@/features/order/stock-priority/stock-priority-copy';
 import {
   StockPriorityCancelDialog,
   StockPriorityDialog,
@@ -85,6 +86,11 @@ function FulfillmentShipments({
                 <span className="tabular-nums text-gray-500">
                   재고 {s.reservedQty}/{s.totalQty}
                 </span>
+                {s.stockGiven && (
+                  <span className="break-keep text-gray-700">
+                    {stockGivenText(s.stockGiven)}
+                  </span>
+                )}
                 {s.stockPriority ? (
                   <>
                     <StockPriorityBadge />

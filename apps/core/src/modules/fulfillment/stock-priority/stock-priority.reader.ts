@@ -6,6 +6,7 @@ import { DbTx, StockAllocation, wmsSchema, wmsTables } from '../../inventory/sch
 import { readWarehouseAvailability } from '../../inventory/shared/availability/warehouse-availability';
 import {
   StockPriorityBlock,
+  StockPriorityHeldDto,
   StockPriorityLineDto,
   StockPriorityPlanDto,
   StockPriorityPreviewDto,
@@ -77,6 +78,7 @@ export class StockPriorityReader {
         })),
         plan: facts.blocked ? null : describe(facts.base),
         planWithReady: facts.blocked ? null : describe(facts.withReady),
+        held: await this.heldStock(facts, trx),
       };
     }, tx);
   }
@@ -223,6 +225,73 @@ export class StockPriorityReader {
         },
       ];
     });
+  }
+
+  /** 모자란 상품을 잡고 있는데 가져오지 않는 상자 — 왜 못 옮기는지 보이게 한다 */
+  private async heldStock(facts: StockPriorityFacts, trx: DbTx): Promise<StockPriorityHeldDto[]> {
+    if (facts.blocked || !facts.warehouseId || facts.base.missingQty === 0) return [];
+    const skuIds = [...new Set(facts.targets.map((line) => line.skuId))];
+    const rows = await trx
+      .select({
+        shipmentId: wmsTables.shipmentLines.shipmentId,
+        status: wmsTables.shipments.status,
+        stockAllocation: wmsTables.fulfillmentOrders.stockAllocation,
+        fulfillmentOrderId: wmsTables.fulfillmentOrders.id,
+        orderNo: sql<
+          string | null
+        >`COALESCE(${wmsTables.salesOrders.displayOrderNo}, ${wmsTables.salesOrders.channelOrderId})`,
+        qty: wmsTables.stockReservations.quantity,
+      })
+      .from(wmsTables.stockReservations)
+      .innerJoin(wmsTables.shipmentLines, eq(wmsTables.shipmentLines.id, wmsTables.stockReservations.shipmentLineId))
+      .innerJoin(wmsTables.shipments, eq(wmsTables.shipments.id, wmsTables.shipmentLines.shipmentId))
+      .innerJoin(
+        wmsTables.fulfillmentOrderItems,
+        eq(wmsTables.fulfillmentOrderItems.id, wmsTables.shipmentLines.fulfillmentOrderItemId),
+      )
+      .innerJoin(
+        wmsTables.fulfillmentOrders,
+        eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId),
+      )
+      .leftJoin(wmsTables.salesOrders, eq(wmsTables.salesOrders.id, wmsTables.fulfillmentOrders.salesOrderId))
+      .where(
+        and(
+          inArray(wmsTables.stockReservations.skuId, skuIds),
+          eq(wmsTables.stockReservations.warehouseId, facts.warehouseId),
+          eq(wmsTables.stockReservations.targetType, 'SHIPMENT_LINE'),
+          eq(wmsTables.stockReservations.status, 'confirmed'),
+          ne(wmsTables.shipments.id, facts.shipmentId),
+        ),
+      )
+      .orderBy(wmsTables.shipmentLines.id);
+    const inBatch = await this.inBatch([...new Set(rows.map((row) => row.shipmentId))], trx);
+    const own = new Set(facts.fulfillmentOrderIds);
+    // 완전출고 상자를 더하면 다 채워질 때는 그 선택지가 따로 있다
+    const takeable = new Map(facts.sources.map((source) => [source.shipmentId, source]));
+    const held: Record<StockPriorityHeldDto['reason'], StockPriorityHeldDto> = {
+      priority: { reason: 'priority', orderNos: [], qty: 0 },
+      ready: { reason: 'ready', orderNos: [], qty: 0 },
+      in_progress: { reason: 'in_progress', orderNos: [], qty: 0 },
+      other: { reason: 'other', orderNos: [], qty: 0 },
+    };
+    for (const row of rows) {
+      if (own.has(row.fulfillmentOrderId)) continue;
+      const source = takeable.get(row.shipmentId);
+      const entry =
+        row.status !== 'draft' || inBatch.has(row.shipmentId)
+          ? held.in_progress
+          : row.stockAllocation === 'priority'
+            ? held.priority
+            : !source
+              ? held.other
+              : source.ready && !facts.withReady
+                ? held.ready
+                : null;
+      if (!entry) continue;
+      entry.qty += row.qty;
+      entry.orderNos = uniqueInOrder([...entry.orderNos, ...(row.orderNo ? [row.orderNo] : [])]);
+    }
+    return [held.priority, held.ready, held.in_progress, held.other].filter((entry) => entry.qty > 0);
   }
 
   private linesOf(shipmentIds: string[], trx: DbTx) {

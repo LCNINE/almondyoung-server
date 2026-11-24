@@ -579,7 +579,8 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
   it('분류 안에서 오래된 주문부터 놓고 주문일을 싣고, 받는 분은 완전출고 상자에만 싣는다', async () => {
     await inRollbackTx(db, async (tx) => {
       const base = await consolidationBase(tx);
-      const source = (quantity = 1) => createConsolidationSource(tx, wired, base, { quantity, customerId: randomUUID() });
+      const source = (quantity = 1) =>
+        createConsolidationSource(tx, wired, base, { quantity, customerId: randomUUID() });
       const newest = await source();
       const middle = await source();
       const oldest = await source();
@@ -677,6 +678,46 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
           [mixed.shipment.id, false],
         ]),
       );
+    });
+  });
+
+  it('다른 주문을 우선할당하면서 재고를 내준 부분출고 상자에 그 기록을 싣고, 완전출고 상자에는 싣지 않는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const base = await consolidationBase(tx);
+      const source = (quantity: number) =>
+        createConsolidationSource(tx, wired, base, { quantity, customerId: randomUUID() });
+      const giver = await source(3);
+      const refilled = await source(1);
+      const receiver = await source(1);
+      await tx
+        .update(wmsTables.stockReservations)
+        .set({ quantity: 1 })
+        .where(eq(wmsTables.stockReservations.targetId, giver.line.id));
+      const [operation] = await tx
+        .insert(wmsTables.shipmentOperations)
+        .values({
+          type: 'stock_priority',
+          status: 'completed',
+          operatorId: randomUUID(),
+          reason: '우선할당',
+          idempotencyKey: randomUUID(),
+          requestHash: 'a'.repeat(64),
+          completedAt: new Date(),
+        })
+        .returning();
+      await tx.insert(wmsTables.shipmentOperationMembers).values([
+        { operationId: operation.id, shipmentId: receiver.shipment.id, role: 'target' },
+        { operationId: operation.id, shipmentId: giver.shipment.id, role: 'source' },
+        { operationId: operation.id, shipmentId: refilled.shipment.id, role: 'source' },
+      ]);
+
+      const summary = await reader.summarize(base.warehouseId, undefined, tx);
+      const rows = new Map(summary.buckets.flatMap(({ shipments }) => shipments.map((row) => [row.shipmentId, row])));
+      expect(rows.get(giver.shipment.id)?.stockGiven).toEqual({
+        at: operation.createdAt,
+        orderNos: rows.get(receiver.shipment.id)?.orderNos,
+      });
+      expect(rows.get(refilled.shipment.id)?.stockGiven).toBeNull();
     });
   });
 
@@ -1105,9 +1146,8 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
 
       const summary = await reader.summarize(base.warehouseId, undefined, tx);
       const stockOf = (shipmentId: string) =>
-        summary.buckets
-          .flatMap(({ shipments }) => shipments)
-          .find((shipment) => shipment.shipmentId === shipmentId)?.lines[0].stock;
+        summary.buckets.flatMap(({ shipments }) => shipments).find((shipment) => shipment.shipmentId === shipmentId)
+          ?.lines[0].stock;
 
       // 5 + (3 − 1) + 4
       expect(stockOf(unavailable.shipment.id)?.waiting).toBe(11);

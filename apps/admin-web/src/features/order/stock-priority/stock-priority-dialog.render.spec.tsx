@@ -251,3 +251,23 @@ it('취소 응답을 못 받으면 같은 키로만 다시 보낸다', async () 
   await waitFor(() => expect(onClose).toHaveBeenCalled());
   expect(mockCancel.mock.calls[1][0]).toEqual(mockCancel.mock.calls[0][0]);
 });
+
+it('다 채우지 못하면 누가 잡고 있고 어떻게 하면 되는지 보인다', () => {
+  preview({
+    plan: { freeQty: 0, takes: [], missingQty: 1, token: 'token-1' },
+    held: [
+      { reason: 'priority', orderNos: ['P-1'], qty: 2 },
+      { reason: 'in_progress', orderNos: ['Q-1', 'Q-2', 'Q-3', 'Q-4'], qty: 4 },
+    ],
+  });
+  open();
+
+  expect(
+    screen.getByText(
+      '우선할당한 주문(#P-1)이 2개를 잡고 있어요. 먼저 보낼 필요가 없으면 그 주문의 우선할당을 취소한 뒤 다시 열어 보세요.'
+    )
+  ).toBeTruthy();
+  expect(
+    screen.getByText(/#Q-1, #Q-2, #Q-3 외 1건\)가 4개를 잡고 있어요/)
+  ).toBeTruthy();
+});

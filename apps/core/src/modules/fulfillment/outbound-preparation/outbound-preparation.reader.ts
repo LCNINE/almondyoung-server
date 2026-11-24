@@ -16,6 +16,7 @@ import {
   PREPARATION_BUCKETS,
   PreparationFacts,
 } from './outbound-preparation-classify';
+import { loadStockGiven } from '../stock-priority/stock-given';
 import { loadSellmateShipmentIds } from '../services/sellmate-handed-over-shipments';
 import { waybillFailureText } from '../waybill/waybill-failure-text';
 import { loadShortPickReturns } from './short-pick-returns';
@@ -278,6 +279,7 @@ export class OutboundPreparationReader {
             : null,
           owner: owner.key === OUR_HOLDER_KEY ? null : { id: owner.key, name: owner.name },
           stockPriority: !waiting.has(shipment.id),
+          stockGiven: null,
         });
       }
 
@@ -295,6 +297,10 @@ export class OutboundPreparationReader {
         warehouseId,
         buckets.flatMap(({ bucket, shipments }) => (bucket === 'unavailable' || bucket === 'partial' ? shipments : [])),
         quantitiesByShipment,
+      );
+      await this.fillStockGiven(
+        trx,
+        buckets.flatMap(({ bucket, shipments }) => (bucket === 'unavailable' || bucket === 'partial' ? shipments : [])),
       );
 
       return {
@@ -355,6 +361,16 @@ export class OutboundPreparationReader {
         };
       }
     }
+  }
+
+  // 출고불가·부분출고 상자가 다른 주문을 우선할당하면서 재고를 내준 기록을 싣는다.
+  private async fillStockGiven(trx: DbTx, shipments: PreparationBucketDto['shipments']): Promise<void> {
+    const waiting = shipments.filter((shipment) => !shipment.stockPriority);
+    const given = await loadStockGiven(
+      trx,
+      waiting.map((shipment) => shipment.shipmentId),
+    );
+    for (const shipment of waiting) shipment.stockGiven = given.get(shipment.shipmentId) ?? null;
   }
 
   // 출고불가·부분출고 상자의 모자란 줄마다 이 창고 재고·다른 상자 몫과 들어올 예정을 싣는다.

@@ -21,6 +21,7 @@ import { seedHandedOverOrder } from '../services/__support__/sellmate-handed-ove
 import { FulfillmentCommandService } from '../services/fulfillment-command.service';
 import { FulfillmentWorkflowGate } from '../services/fulfillment-workflow-gate.service';
 import { WaitingOrdersReader } from '../reader/waiting-orders.reader';
+import { loadStockGiven } from './stock-given';
 import { StockPriorityManager } from './stock-priority.manager';
 import { StockPriorityReader } from './stock-priority.reader';
 
@@ -304,7 +305,11 @@ describeIfDb('재고 우선할당 (DB integration)', () => {
         missingQty: 0,
         takes: [{ shipmentId: ready.shipmentId, qty: 1, ready: true, emptied: false }],
       });
-      expect((await reader.preview(tooBig.shipmentId, tx)).planWithReady).toBeNull();
+      expect(await reader.preview(tooBig.shipmentId, tx)).toMatchObject({
+        planWithReady: null,
+        held: [{ reason: 'ready', qty: 2 }],
+      });
+      expect(preview.held).toEqual([]);
 
       await prioritize(tx, urgent, true);
       expect([await reserved(tx, ready), await reserved(tx, urgent)]).toEqual([1, 1]);
@@ -439,6 +444,70 @@ describeIfDb('재고 우선할당 (DB integration)', () => {
         status: 'completed',
         reasonCode: 'blocked_by_waiting_order',
       });
+    });
+  });
+
+  it('못 옮기는 재고를 누가 잡고 있는지 — 다른 우선할당 주문과 송장·배치까지 간 상자를 나눠 보인다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const world = await seedWorld(tx, 3);
+      const planned = await addOrder(tx, world, [{ qty: 1 }], '2026-01-01T00:00:00Z');
+      const urgent = await addOrder(tx, world, [{ qty: 5 }], '2026-01-02T00:00:00Z');
+      const late = await addOrder(tx, world, [{ qty: 1 }], '2026-01-03T00:00:00Z');
+      await tx
+        .update(wmsTables.shipments)
+        .set({ status: 'planned' })
+        .where(eq(wmsTables.shipments.id, planned.shipmentId));
+      await prioritize(tx, urgent);
+
+      expect((await reader.preview(late.shipmentId, tx)).held).toEqual([
+        { reason: 'priority', orderNos: [expect.any(String)], qty: 2 },
+        { reason: 'in_progress', orderNos: [expect.any(String)], qty: 1 },
+      ]);
+      await manager.cancel(urgent.shipmentId, { reason: '', reasonCode: 'no_longer_urgent' }, randomUUID(), actor, tx);
+      const after = await reader.preview(late.shipmentId, tx);
+      expect(after.plan).toMatchObject({ missingQty: 0, takes: [{ shipmentId: urgent.shipmentId, qty: 1 }] });
+      expect(after.held).toEqual([]);
+    });
+  });
+
+  it('복구 중인 상자가 잡은 재고도 어디에 있는지 보인다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const world = await seedWorld(tx, 1);
+      const recovering = await addOrder(tx, world, [{ qty: 5 }], '2026-01-01T00:00:00Z');
+      const late = await addOrder(tx, world, [{ qty: 1 }], '2026-01-03T00:00:00Z');
+      await tx
+        .update(wmsTables.shipments)
+        .set({ recoveryCode: 'CANCEL_REPLAN_PENDING' })
+        .where(eq(wmsTables.shipments.id, recovering.shipmentId));
+
+      expect((await reader.preview(late.shipmentId, tx)).held).toEqual([
+        { reason: 'other', orderNos: [expect.any(String)], qty: 1 },
+      ]);
+    });
+  });
+
+  it('재고를 내준 상자마다 마지막으로 준 때와 받은 주문을 준다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const world = await seedWorld(tx, 2);
+      const big = await addOrder(tx, world, [{ qty: 5 }], '2026-01-01T00:00:00Z');
+      const first = await addOrder(tx, world, [{ qty: 1 }], '2026-01-05T00:00:00Z');
+      const second = await addOrder(tx, world, [{ qty: 1 }], '2026-01-06T00:00:00Z');
+      await prioritize(tx, first);
+      const { operationId } = await prioritize(tx, second);
+      await tx
+        .update(wmsTables.shipmentOperations)
+        .set({ createdAt: new Date('2030-01-01T00:00:00Z') })
+        .where(eq(wmsTables.shipmentOperations.id, operationId));
+
+      const given = await loadStockGiven(tx, [big.shipmentId, first.shipmentId]);
+      const [order] = await tx
+        .select({ no: wmsTables.salesOrders.channelOrderId, display: wmsTables.salesOrders.displayOrderNo })
+        .from(wmsTables.salesOrders)
+        .innerJoin(wmsTables.fulfillmentOrders, eq(wmsTables.fulfillmentOrders.salesOrderId, wmsTables.salesOrders.id))
+        .where(eq(wmsTables.fulfillmentOrders.id, second.fulfillmentOrderId));
+      expect(given).toEqual(
+        new Map([[big.shipmentId, { at: new Date('2030-01-01T00:00:00Z'), orderNos: [order.display ?? order.no] }]]),
+      );
     });
   });
 

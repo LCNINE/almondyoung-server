@@ -83,8 +83,11 @@ const OPERATION_TYPE: Record<string, string> = {
   stock_priority_cancel: '우선할당 취소',
 };
 
-export const operationTypeLabel = (type: string) =>
-  labelOf(OPERATION_TYPE, type);
+/** 우선할당은 받은 상자와 내준 상자에 같은 기록이 남는다 — 내준 쪽은 따로 부른다 */
+export const operationTypeLabel = (type: string, role?: string) =>
+  type === 'stock_priority' && role === 'source'
+    ? '우선할당한 다른 주문에 재고를 내줌'
+    : labelOf(OPERATION_TYPE, type);
 
 const RESERVATION_STATUS: Record<string, string> = {
   pending: '확보 중',
