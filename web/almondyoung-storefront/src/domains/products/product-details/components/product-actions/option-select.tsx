@@ -176,6 +176,18 @@ export default function OptionSelect({
     visibleValues.length > 0 &&
     visibleValues.every((value) => comingSoonByValue[value])
 
+  const discontinuingBadge = (className: string) => (
+    <span
+      className={cn(
+        "rounded-[5px] bg-red-600 px-[7px] text-[12px] leading-5 font-extrabold whitespace-nowrap text-white",
+        className
+      )}
+    >
+      {t("discontinuingBadge")}
+    </span>
+  )
+
+  // 드롭다운 항목엔 칩 모서리가 없어 이름 옆에 붙인다.
   const renderValueLabel = (value: string, isOutOfStock: boolean) => {
     const label = renderStockLabel(value, isOutOfStock)
     if (!discontinuingSet.has(value)) return label
@@ -183,9 +195,7 @@ export default function OptionSelect({
     return (
       <span className="inline-flex items-center gap-1.5">
         {label}
-        <span className="shrink-0 rounded bg-gray-100 px-1.5 py-px text-[11px] leading-[1.4] font-semibold text-gray-700">
-          {t("discontinuingBadge")}
-        </span>
+        {discontinuingBadge("shrink-0")}
       </span>
     )
   }
@@ -262,7 +272,12 @@ export default function OptionSelect({
           </SelectContent>
         </Select>
       ) : (
-        <div className="flex flex-wrap gap-2">
+        <div
+          className={cn(
+            "flex flex-wrap",
+            discontinuingSet.size > 0 ? "gap-x-2 gap-y-4 pt-2.5" : "gap-2"
+          )}
+        >
           {visibleValues.map((v) => {
             const isOutOfStock = outOfStockSet.has(v)
             const isCurrent = v === current
@@ -274,7 +289,7 @@ export default function OptionSelect({
                 onClick={() => updateOption(option.id, v)}
                 disabled={isDisabled}
                 className={cn(
-                  "rounded-full border px-4 py-2 text-sm transition-colors",
+                  "relative rounded-full border px-4 py-2 text-sm transition-colors",
                   getButtonStyle(isCurrent, isOutOfStock),
                   isDisabled && "pointer-events-none"
                 )}
@@ -282,10 +297,12 @@ export default function OptionSelect({
               >
                 <span className="flex flex-col items-center leading-tight">
                   <span>
-                    {renderValueLabel(v, isOutOfStock)}
+                    {renderStockLabel(v, isOutOfStock)}
                   </span>
                   {renderPriceLabel(v)}
                 </span>
+                {discontinuingSet.has(v) &&
+                  discontinuingBadge("absolute -top-[11px] right-1.5")}
               </button>
             )
           })}

@@ -1,5 +1,7 @@
 {
   "digitalBadge": "デジタル",
+  "discontinuingBadge": "販売終了予定",
+  "partialDiscontinuingBadge": "一部販売終了予定",
   "partialSoldOutBadge": "一部品切れ",
   "partialComingSoonBadge": "一部近日発売",
   "variantComingSoon": "近日発売",

@@ -19,6 +19,7 @@ interface V1ProductCardProps {
 
 export function V1ProductCard({ item, tag, compact }: V1ProductCardProps) {
   const t = useTranslations("home.v1Card")
+  const tCard = useTranslations("productCard")
 
   return (
     <LocalizedClientLink
@@ -30,10 +31,23 @@ export function V1ProductCard({ item, tag, compact }: V1ProductCardProps) {
           <ThumbnailImage image={item.imageSrc} size="square" />
         )}
         {item.comingSoon && <SoldOutOverlay comingSoon={item.comingSoon} />}
-        {tag && (
-          <span className="bg-mint text-ink absolute top-2.5 left-2.5 grid h-6 place-items-center rounded-[7px] px-2 text-xs font-bold">
-            {tag}
-          </span>
+        {(tag || item.discontinuing) && (
+          <div className="absolute top-2.5 left-2.5 flex flex-col items-start gap-1">
+            {tag && (
+              <span className="bg-mint text-ink grid h-6 place-items-center rounded-[7px] px-2 text-xs font-bold">
+                {tag}
+              </span>
+            )}
+            {item.discontinuing && (
+              <span className="rounded bg-red-600 px-2 py-0.5 text-[11px] font-bold text-white">
+                {tCard(
+                  item.discontinuing === "all"
+                    ? "discontinuingBadge"
+                    : "partialDiscontinuingBadge"
+                )}
+              </span>
+            )}
+          </div>
         )}
       </div>
 
