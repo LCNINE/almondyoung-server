@@ -228,7 +228,7 @@ export class InboundService {
         items: rows[0].items.map(({ receipt, lines }) => ({
           ...InboundReceiptMapper.toBaseDto(receipt),
           lines: lines.map((row) => {
-            const state = receiptStateFromFacts(row, serverTime);
+            const state = receiptStateFromFacts(row);
             return {
               ...InboundReceiptLineMapper.toDto({ ...row, id: row.lineId }),
               skuCode: row.skuCode,

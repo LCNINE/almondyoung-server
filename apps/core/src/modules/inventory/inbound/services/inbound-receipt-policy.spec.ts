@@ -13,7 +13,6 @@ const facts: ReceiptPolicyFacts = {
   onHandQty: 10,
   bucketPendingQty: 10,
   custodyQty: 0,
-  isToday: true,
 };
 
 describe('receiptActionPolicy priority contract', () => {
@@ -49,13 +48,12 @@ describe('receiptActionPolicy priority contract', () => {
       'ALREADY_PUTAWAY',
     ],
     [
-      'partial putaway beats return and date for cancellation',
-      { putawayFromOriginQty: 2, returnedQty: 1, isToday: false },
+      'partial putaway beats return for cancellation',
+      { putawayFromOriginQty: 2, returnedQty: 1 },
       null,
       'ALREADY_PUTAWAY',
     ],
-    ['partial return beats date', { returnedQty: 2, isToday: false }, null, 'RETURN_EXISTS'],
-    ['old receipt can putaway', { isToday: false }, null, 'NOT_TODAY'],
+    ['partial return blocks cancellation', { returnedQty: 2 }, null, 'RETURN_EXISTS'],
     ['eligible', {}, null, null],
   ])('%s', (_name, changes, putawayBlockReason, cancelBlockReason) => {
     expect(receiptActionPolicy({ ...facts, ...changes } as ReceiptPolicyFacts)).toEqual({

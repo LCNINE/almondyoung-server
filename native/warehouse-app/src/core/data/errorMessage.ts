@@ -20,6 +20,9 @@ export type ErrorContext =
 export const STOCK_ADJUST_PERMISSION_MESSAGE =
   '재고 조정 권한이 없어요. 관리자에게 요청해 주세요.';
 
+const INBOUND_CANCEL_CONFLICT_MESSAGE =
+  '이 재고를 잡은 주문 때문에 취소하지 못했어요. 입고내역에서 다시 열어 확인해 주세요.';
+
 const CONTEXTUAL: Record<ErrorContext, Partial<Record<number, string>>> = {
   adjust: { 403: STOCK_ADJUST_PERMISSION_MESSAGE },
   'return-putaway': { 404: '등록되지 않은 되돌림 바구니예요.' },
@@ -29,10 +32,11 @@ const CONTEXTUAL: Record<ErrorContext, Partial<Record<number, string>>> = {
   stocktaking: { 400: '실사가 진행 중이 아니에요. 세션 상태를 확인해 주세요.' },
   movement: { 400: '출발지 재고가 부족해요. 다시 확인해 주세요.' },
   inbound: { 400: '입고기본존 재고가 부족해요. 새로고침 후 확인해 주세요.' },
-  // 취소는 서버가 "적치 존재"·"당일 아님"·"전량 아님"을 모두 400 으로 낸다.
+  // 취소는 서버가 "적치 존재"·"이미 취소"·"전량 아님"을 모두 400 으로 낸다.
   // 현장에서 실제로 부딪히는 건 앞의 둘이고, 앱은 전량만 보내므로 셋째는 안 난다.
   'inbound-cancel': {
-    400: '이미 적치했거나 오늘 입고분이 아니라 취소할 수 없어요.',
+    400: '이미 적치했거나 취소된 입고라 취소할 수 없어요. 목록을 다시 확인해 주세요.',
+    409: INBOUND_CANCEL_CONFLICT_MESSAGE,
   },
   'po-receive': {
     400: '이 발주는 다른 창고에서 받습니다. 창고 선택을 확인해 주세요.',
@@ -351,6 +355,7 @@ export function errorMessage(error: unknown, context?: ErrorContext): string {
       const specific = OUTBOUND_CONFLICT_MESSAGES[error.code];
       if (specific) return specific;
     }
+    if (context === 'inbound-cancel') return INBOUND_CANCEL_CONFLICT_MESSAGE;
     return '다른 작업자가 먼저 변경했어요. 새로고침 후 다시 시도해 주세요.';
   }
   if (error instanceof Error) {

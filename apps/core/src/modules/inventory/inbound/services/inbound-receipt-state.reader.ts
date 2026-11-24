@@ -6,8 +6,8 @@ import {
   inboundPendingQuantitySql,
   inboundReceiptInvalidSql,
 } from '../../shared/availability/inbound-origin-availability';
-import { isTodaySeoul } from '../../shared/services/time.util';
 import { ReceiptLineState } from '../dto/inbound-receipt-state.dto';
+import { InboundReservationRelease } from '../kernel/inbound-reservation-release.port';
 import { receiptActionPolicy, ReceiptPolicyFacts } from './inbound-receipt-policy';
 import { usualShelfOf } from '../../core/services/usual-shelf';
 
@@ -105,13 +105,12 @@ export function receiptFactsCtes(where: SQL, page: SQL = sql``): SQL {
     )`;
 }
 
-export function receiptStateFromFacts(row: ReceiptFactsRow, now = new Date()): ReceiptLineState {
+export function receiptStateFromFacts(row: ReceiptFactsRow): ReceiptLineState {
   const policy = receiptActionPolicy({
     ...row,
     onHandQty: Number(row.onHandQty),
     bucketPendingQty: Number(row.bucketPendingQty),
     custodyQty: Number(row.custodyQty),
-    isToday: isTodaySeoul(new Date(row.receivedAt), now),
   } satisfies ReceiptPolicyFacts);
   return {
     lineId: row.lineId,
@@ -135,7 +134,10 @@ export function receiptStateFromFacts(row: ReceiptFactsRow, now = new Date()): R
 
 @Injectable()
 export class InboundReceiptStateReader {
-  constructor(@InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>) {}
+  constructor(
+    @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
+    private readonly reservations: InboundReservationRelease,
+  ) {}
 
   async getLineState(params: { lineId: string; warehouseId: string }, tx?: DbTx): Promise<ReceiptLineState> {
     return this.dbService.run(async (trx) => {
@@ -162,7 +164,14 @@ export class InboundReceiptStateReader {
         },
         row.warehouseId,
       );
-      return { ...receiptStateFromFacts(row), ...usual };
+      const state = receiptStateFromFacts(row);
+      const cancelReservations = state.canCancel
+        ? await this.reservations.preview(
+            { skuId: state.skuId, warehouseId: state.warehouseId, quantity: state.quantity },
+            trx,
+          )
+        : null;
+      return { ...state, ...usual, cancelReservations };
     }, tx);
   }
 }

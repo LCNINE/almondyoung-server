@@ -14,6 +14,10 @@ import { WarehousePicker } from '../warehouse/WarehousePicker';
 import { PutawaySheet, type LocationRef } from './PutawaySheet';
 import { usePutawayPending, type PutawayDays } from './queries';
 import type { PutawayPendingItem, PutawayTarget } from './types';
+import {
+  CancelReceiptDialog,
+  type CancelReceiptTarget,
+} from './CancelReceiptDialog';
 import { useReturnGoods } from './returnGoods';
 import { useWaitingOrders } from './waitingOrders';
 import { WaitingOrdersFailed, WaitingOrdersNote } from './WaitingOrdersNote';
@@ -71,6 +75,9 @@ export function PutawayQueueScreen({
   const [returnTarget, setReturnTarget] = useState<ReturnPutawayTarget | null>(
     null
   );
+  const [cancelTarget, setCancelTarget] = useState<CancelReceiptTarget | null>(
+    null
+  );
   // 반품 양품은 입고와 따로 반품 자리 재고 기준으로 본다 — 상품·원위치로 좁힌 화면에서는 숨긴다.
   const returnGoods = useReturnGoods(warehouseId, supported && !filtered);
   // 다시 읽기에 실패하면 남아 있는 옛 줄로 시트를 열지 않는다
@@ -100,6 +107,7 @@ export function PutawayQueueScreen({
   useEffect(() => {
     setTarget(null);
     setReturnTarget(null);
+    setCancelTarget(null);
     setLastDest(null);
   }, [warehouseId, skuId, originLocationId]);
 
@@ -123,7 +131,8 @@ export function PutawayQueueScreen({
   );
 
   useScanner((event) => {
-    if (target || returnTarget || !warehouseId || !supported) return;
+    if (target || returnTarget || cancelTarget || !warehouseId || !supported)
+      return;
     clearScanFeedback();
     const id = scanId.current;
     setNotice('상품을 확인하고 있어요.');
@@ -279,10 +288,13 @@ export function PutawayQueueScreen({
       {items.length > 0 && (
         <ul className="space-y-2">
           {items.map((item) => (
-            <li key={item.lineId}>
+            <li
+              key={item.lineId}
+              className="rounded-lg border border-gray-200 bg-white"
+            >
               <button
                 type="button"
-                className="flex w-full items-center gap-3 rounded-lg border border-gray-200 bg-white p-3 text-left active:bg-gray-50"
+                className="flex w-full items-center gap-3 rounded-lg p-3 text-left active:bg-gray-50"
                 disabled={
                   !supported || !isActionablePutaway(item) || queue.isFetching
                 }
@@ -294,7 +306,10 @@ export function PutawayQueueScreen({
                 }}
               >
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium text-gray-800">
+                  <span
+                    id={`putaway-${item.lineId}`}
+                    className="block truncate font-medium text-gray-800"
+                  >
                     {item.skuName}
                   </span>
                   <span className="block text-xs text-gray-500">
@@ -312,6 +327,20 @@ export function PutawayQueueScreen({
                   잔여 {item.pendingQty}
                 </span>
               </button>
+              <div className="flex justify-end border-t border-gray-100 px-3 py-1">
+                <button
+                  type="button"
+                  aria-describedby={`putaway-${item.lineId}`}
+                  className="px-2 py-1 text-sm text-gray-600 underline disabled:opacity-50"
+                  disabled={!supported || queue.isFetching}
+                  onClick={() => {
+                    clearScanFeedback();
+                    setCancelTarget(item);
+                  }}
+                >
+                  잘못 입고 · 취소
+                </button>
+              </div>
             </li>
           ))}
         </ul>
@@ -378,6 +407,21 @@ export function PutawayQueueScreen({
               `${returnTarget.skuName} ${quantity}개를 ${dest.code}에 넣었어요.` +
                 (usualShelfSet ? ` ${usualShelfNotice(dest.code)}` : '')
             );
+          }}
+        />
+      ) : null}
+
+      {cancelTarget && warehouseId ? (
+        <CancelReceiptDialog
+          target={cancelTarget}
+          warehouseId={warehouseId}
+          onClose={() => setCancelTarget(null)}
+          onFinished={(message) => {
+            clearScanFeedback();
+            setCancelTarget(null);
+            setNotice(message);
+            // 실패해도 다른 기기가 먼저 처리했을 수 있다
+            void queue.refetch();
           }}
         />
       ) : null}

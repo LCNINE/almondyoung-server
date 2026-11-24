@@ -3,6 +3,8 @@ import { eq, asc } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../../schema/inventory.schema';
 import { MovementService } from '../movement.service';
 import { InventoryIdempotencyService } from '../../../core/services/inventory-idempotency.service';
+import { BatchControlledStockGuard } from '../../../core/services/batch-controlled-stock.guard';
+import { StockRemovalReservations } from '../../../../fulfillment/stock-removal/stock-removal-reservations';
 import { InboundReceiptKernel } from '../../../inbound/kernel/inbound-receipt.kernel';
 import {
   wireLogistics,
@@ -25,7 +27,13 @@ export function wiringFor(tx: DbTx) {
   return {
     ...wiring,
     movement: new MovementService(service, wiring.eventStore, new InventoryIdempotencyService(service)),
-    kernel: new InboundReceiptKernel(wiring.command, wiring.location, wiring.eventStore),
+    kernel: new InboundReceiptKernel(
+      wiring.command,
+      wiring.location,
+      wiring.eventStore,
+      new BatchControlledStockGuard(),
+      new StockRemovalReservations(wiring.shipmentReservations),
+    ),
   };
 }
 

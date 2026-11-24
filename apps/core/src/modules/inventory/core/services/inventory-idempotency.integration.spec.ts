@@ -17,6 +17,8 @@ import { MovementService } from '../../movement/services/movement.service';
 import { ConflictError } from '@app/shared';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
+import { reservationReleaseFor } from '../../inbound/services/__fixtures__/inbound-harness';
+import { BatchControlledStockGuard } from './batch-controlled-stock.guard';
 import { StockEventStore } from '../repositories/stock-event.store';
 import { InventoryCommandService } from './inventory-command.service';
 import { LocationService } from './location.service';
@@ -63,7 +65,13 @@ describeIfDb('inventory idempotency (DB integration, rollback-only)', () => {
       skuCatalog,
       eventStore,
       idempotency,
-      new InboundReceiptKernel(command, location, eventStore),
+      new InboundReceiptKernel(
+        command,
+        location,
+        eventStore,
+        new BatchControlledStockGuard(),
+        reservationReleaseFor(dbService, sellable),
+      ),
     );
     const module = await Test.createTestingModule({
       controllers: [InboundController, MovementController],

@@ -68,7 +68,7 @@ describeIfDb('warehouse demo native runner → Core HTTP → PostgreSQL', () => 
     db = drizzle(client, { schema: wmsSchema });
     const wiring = buildWiring(db);
     outbound = assembleOutboundWithDb(dbServiceFor(db));
-    const { dbService, command, location, eventStore, idempotency, guard } = wiring;
+    const { dbService, command, location, eventStore, idempotency, guard, reservations } = wiring;
     const catalogReader = new SkuCatalogReader(dbService);
     const catalog = new SkuCatalogService(catalogReader, new SkuCatalogManager(dbService, catalogReader));
     // 강제출고 권한을 도중에 거둘 수 있게 getter 로 둔다
@@ -107,12 +107,12 @@ describeIfDb('warehouse demo native runner → Core HTTP → PostgreSQL', () => 
             catalog,
             eventStore,
             idempotency,
-            new InboundReceiptKernel(command, location, eventStore, guard),
+            new InboundReceiptKernel(command, location, eventStore, guard, reservations),
           ),
         },
         { provide: MovementService, useValue: new MovementService(dbService, eventStore, idempotency) },
         { provide: InboundPutawayReader, useValue: new InboundPutawayReader(dbService) },
-        { provide: InboundReceiptStateReader, useValue: new InboundReceiptStateReader(dbService) },
+        { provide: InboundReceiptStateReader, useValue: new InboundReceiptStateReader(dbService, reservations) },
       ],
     }).compile();
     app = module.createNestApplication();

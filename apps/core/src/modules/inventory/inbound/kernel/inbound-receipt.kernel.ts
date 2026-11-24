@@ -8,9 +8,10 @@ import { StockEventStore } from '../../core/repositories/stock-event.store';
 import { destinationIssue } from '../../shared/policies/location-work-policy';
 import { lockWorkLocations } from '../../shared/locks/location-work-lock';
 import { acquireStockAvailabilityLocks } from '../../shared/locks/stock-availability-lock';
+import { assertReservationInvariant } from '../../shared/locks/reservation-invariant';
 import { BatchControlledStockGuard } from '../../core/services/batch-controlled-stock.guard';
 import { receiptActionPolicy } from '../services/inbound-receipt-policy';
-import { isTodaySeoul } from '../../shared/services/time.util';
+import { InboundReservationRelease, StockRemoval } from './inbound-reservation-release.port';
 import { lockProductVariantsForSkus } from '../../product-sellable-quantity/services/product-variant-lock';
 
 export type DirectArrivalMethod = 'simple' | 'simple_fullscan' | 'individual';
@@ -52,7 +53,7 @@ export interface RecordArrivalResult {
 
 export interface CancelLineInput {
   receiptLineId: string;
-  /** 넘기면 라인 수량과 같은지 본다 — 당일 취소는 전량만 허용한다(현행 `/inbound/cancel` 계약). */
+  /** 넘기면 라인 수량과 같은지 본다 — 취소는 전량만 허용한다(현행 `/inbound/cancel` 계약). */
   quantity?: number;
   expected: { source: InboundReceiptSource };
 }
@@ -93,7 +94,8 @@ export class InboundReceiptKernel {
     private readonly command: InventoryCommandService,
     private readonly location: LocationService,
     private readonly eventStore: StockEventStore,
-    private readonly stockAvailability: BatchControlledStockGuard = new BatchControlledStockGuard(),
+    private readonly stockAvailability: BatchControlledStockGuard,
+    private readonly reservations: InboundReservationRelease,
   ) {}
 
   /**
@@ -193,7 +195,7 @@ export class InboundReceiptKernel {
   }
 
   /**
-   * 당일·전량 취소. 원 RECEIVE 이벤트를 역분개하고, 회차의 모든 라인이 취소되면 회차를 voided 로 돌린다.
+   * 전량 취소 — 물건이 원위치에 그대로 있을 때만. 입고한 날은 따지지 않는다. 원 RECEIVE 이벤트를 역분개하고, 회차의 모든 라인이 취소되면 회차를 voided 로 돌린다.
    * 회차 라인을 **FOR UPDATE** 로 잠근다 — 현행은 잠그지 않고 읽어 적치·회송과 동시에 들어오면 카운터
    * 검증이 샜다(스펙 §7.1).
    *
@@ -219,19 +221,17 @@ export class InboundReceiptKernel {
     if ((line.canceledQty ?? 0) > 0) {
       throw new BadRequestException('already canceled');
     }
-    if (!isTodaySeoul(receipt.occurredAt)) {
-      throw new BadRequestException('cancel is allowed only on the same day (Asia/Seoul)');
-    }
-
     if (!line.eventId) {
       throw new BadRequestException('original receive eventId missing; cannot perform reversal');
     }
     // reverseEvent also locks event → stock. Keep the same order to avoid a cycle.
-    await tx
-      .select({ id: wmsTables.stockEvents.id })
-      .from(wmsTables.stockEvents)
-      .where(eq(wmsTables.stockEvents.id, line.eventId))
-      .for('update');
+    await this.lockEvent(line.eventId, tx);
+    // 없던 재고에 걸린 예약을 함께 놓는다. 출고와 같은 순서(상자 → 재고)로 잠그려고 재고 잠금보다 먼저 부른다.
+    await this.reservations.release(
+      [{ skuId: line.skuId, warehouseId: receipt.warehouseId, quantity: line.quantity }],
+      `inbound-cancel:${line.id}`,
+      tx,
+    );
     const onHand = await this.onHandAt(
       { skuId: line.skuId, warehouseId: receipt.warehouseId, locationId: originLocationId },
       tx,
@@ -273,6 +273,20 @@ export class InboundReceiptKernel {
     }
 
     return line;
+  }
+
+  /** 여러 줄을 한 트랜잭션에서 취소하기 전에, 그 줄들과 원 이벤트를 잠그고 예약을 한 번에 놓는다. */
+  async releaseForCancel(receiptLineIds: readonly string[], tx: DbTx): Promise<void> {
+    // 적치는 «줄 → 헤더» 로 잠근다 — 헤더를 쥔 채 다음 줄을 기다리지 않게 줄을 모두 먼저 잠근다
+    const lines: InboundReceiptLine[] = [];
+    for (const id of receiptLineIds) lines.push(await this.lockLine(id, tx));
+    const removals: StockRemoval[] = [];
+    for (const line of lines) {
+      const receipt = await this.loadReceipt(line.receiptId, tx);
+      removals.push({ skuId: line.skuId, warehouseId: receipt.warehouseId, quantity: line.quantity });
+    }
+    for (const line of lines) if (line.eventId) await this.lockEvent(line.eventId, tx);
+    await this.reservations.release(removals, 'inbound-cancel:lines', tx);
   }
 
   /** 즉시 적치 — 원위치(입고 로케이션)에서 같은 창고의 목적지로 내부 이동. 정산에 영향 없음. */
@@ -330,7 +344,6 @@ export class InboundReceiptKernel {
       onHandQty: availability.onHandQty,
       bucketPendingQty: availability.inboundPendingQty,
       custodyQty: availability.batchControlledQty,
-      isToday: isTodaySeoul(receipt.occurredAt),
     });
     if (!policy.canPutaway) {
       throw new BadRequestException({
@@ -386,6 +399,12 @@ export class InboundReceiptKernel {
       throw new BadRequestException('quantity exceeds origin available');
     }
 
+    // 원장을 바로 줄이는 경로라 예약 불변식을 여기서 지킨다.
+    await this.reservations.release(
+      [{ skuId: line.skuId, warehouseId: receipt.warehouseId, quantity: input.quantity }],
+      `inbound-return:${line.id}`,
+      tx,
+    );
     const onHand = await this.onHandAt(
       { skuId: line.skuId, warehouseId: receipt.warehouseId, locationId: originLocationId },
       tx,
@@ -393,6 +412,7 @@ export class InboundReceiptKernel {
     if (onHand < input.quantity) {
       throw new BadRequestException('insufficient on-hand at origin');
     }
+    await assertReservationInvariant(tx, line.skuId, receipt.warehouseId, input.quantity);
 
     await tx
       .update(wmsTables.inboundReceiptLines)
@@ -433,6 +453,14 @@ export class InboundReceiptKernel {
     const inboundZone = await this.location.getSystemLocationByRole(warehouseId, 'inbound_default', tx);
     if (!inboundZone) throw new BadRequestException('입고 기본존이 존재하지 않습니다.');
     return inboundZone.id;
+  }
+
+  private async lockEvent(eventId: string, tx: DbTx): Promise<void> {
+    await tx
+      .select({ id: wmsTables.stockEvents.id })
+      .from(wmsTables.stockEvents)
+      .where(eq(wmsTables.stockEvents.id, eventId))
+      .for('update');
   }
 
   /** 커널 조작마다 **첫 DB 문장**이어야 한다(회차 라인 잠금 → 원장 잠금 순서; 뒤바뀌면 적치·취소가 교착할 수 있다). */
