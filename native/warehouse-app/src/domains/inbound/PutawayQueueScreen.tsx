@@ -20,6 +20,7 @@ import {
 } from './CancelReceiptDialog';
 import { useReturnGoods } from './returnGoods';
 import { useWaitingOrders } from './waitingOrders';
+import { ReadyShipmentsSection } from './ReadyShipmentsSection';
 import { WaitingOrdersFailed, WaitingOrdersNote } from './WaitingOrdersNote';
 import {
   ReturnPutawaySheet,
@@ -345,6 +346,11 @@ export function PutawayQueueScreen({
           ))}
         </ul>
       )}
+
+      <ReadyShipmentsSection
+        warehouseId={warehouseId}
+        receiptLineIds={items.map((item) => item.lineId)}
+      />
 
       {queue.hasNextPage && !queue.isFetchNextPageError ? (
         <Button

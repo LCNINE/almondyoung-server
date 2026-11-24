@@ -54,6 +54,8 @@ interface ClientOpts {
   receiptDelayMs?: number;
   /** GET /waiting-orders 응답 — 없으면 기다리는 주문 없음, 'error' 면 실패 */
   waiting?: Array<{ skuId: string; orders: number; qty: number }> | 'error';
+  /** GET /ready-shipments 의 상자 줄 — 없으면 없음 */
+  ready?: unknown[];
 }
 
 interface Call {
@@ -207,6 +209,8 @@ function makeClient(calls: Call[], opts: ClientOpts = {}): ApiClient {
           throw new Error('GET /waiting-orders → 500');
         return { items: opts.waiting ?? [] };
       }
+      if (o.path.startsWith('/ready-shipments?'))
+        return { items: opts.ready ?? [], waitingOnOtherSkus: 0 };
       if (o.path === '/inbound/putaway') {
         putawayAttempts += 1;
         if (opts.failPutawayOnce && putawayAttempts === 1) {
@@ -272,7 +276,32 @@ function renderSheet(
   return { onDone, onCancel, rerender: view.rerender };
 }
 
+const READY_BOX = {
+  shipmentId: 'sh-1',
+  status: 'planned',
+  orderNos: ['A-1001'],
+  recipientMasked: '김*영',
+  skuCount: 1,
+  totalQty: 2,
+  readiness: 'putaway_required',
+};
+
 describe('PutawaySheet', () => {
+  it('미발송 주문 칸을 그 화면의 입고 줄로 보인다', async () => {
+    const calls: Call[] = [];
+    renderSheet({}, calls, { ready: [READY_BOX] });
+
+    expect(await screen.findByText('미발송 주문')).toBeInTheDocument();
+    expect(screen.getByText('적치하면 나갈 수 있어요')).toBeInTheDocument();
+    expect(
+      calls.some(
+        (c) =>
+          c.path.startsWith('/ready-shipments?') &&
+          c.path.includes('receiptLineIds=ln-1')
+      )
+    ).toBe(true);
+  });
+
   it.each([
     ['direct', '지우기', 5],
     ['direct', '전량', 50],
