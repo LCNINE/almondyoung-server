@@ -79,6 +79,10 @@ import { BatchPickListReader } from './reader/batch-pick-list';
 import { BatchPickListController } from './controllers/batch-pick-list.controller';
 import { WaitingOrdersReader } from './reader/waiting-orders.reader';
 import { WaitingOrdersController } from './controllers/waiting-orders.controller';
+import { StockPriorityController } from './controllers/stock-priority.controller';
+import { StockPriorityManager } from './stock-priority/stock-priority.manager';
+import { StockPriorityReader } from './stock-priority/stock-priority.reader';
+import { StockPriorityService } from './stock-priority/stock-priority.service';
 import { RefillPendingReader } from './reader/refill-pending.reader';
 import { OutboundRefillController } from './controllers/outbound-refill.controller';
 import { DraftBoxAmender } from './draft-box/draft-box-amender';
@@ -154,6 +158,7 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     OutboundBatchV2Controller,
     BatchPickListController,
     WaitingOrdersController,
+    StockPriorityController,
     PickingV2Controller,
     PickingCommandV2Controller,
     ToteController,
@@ -229,6 +234,9 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     ShipmentWaybillReader,
     BatchPickListReader,
     WaitingOrdersReader,
+    StockPriorityReader,
+    StockPriorityManager,
+    StockPriorityService,
     RefillPendingReader,
     DraftBoxAmender,
     LineCompositionEditReader,

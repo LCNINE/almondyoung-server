@@ -641,6 +641,45 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
     });
   });
 
+  it('우선할당한 상자를 앞에 놓고 표시하고, 합포장은 담긴 주문이 모두 우선할당일 때만 표시한다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const base = await consolidationBase(tx);
+      const source = () => createConsolidationSource(tx, wired, base, { quantity: 1, customerId: randomUUID() });
+      const plain = await source();
+      const mixed = await source();
+      const joined = await source();
+      const urgent = await source();
+      const prioritize = (fulfillmentOrderId: string) =>
+        tx
+          .update(wmsTables.fulfillmentOrders)
+          .set({ stockAllocation: 'priority' })
+          .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId));
+
+      await tx
+        .update(wmsTables.shipmentLines)
+        .set({ shipmentId: mixed.shipment.id })
+        .where(eq(wmsTables.shipmentLines.id, joined.line.id));
+      await tx
+        .update(wmsTables.shipments)
+        .set({ status: 'canceled' })
+        .where(eq(wmsTables.shipments.id, joined.shipment.id));
+      await prioritize(urgent.fulfillmentOrderId);
+      await prioritize(joined.fulfillmentOrderId);
+
+      const summary = await reader.summarize(base.warehouseId, undefined, tx);
+      const ready = summary.buckets.find(({ bucket }) => bucket === 'ready')?.shipments ?? [];
+
+      expect(ready[0]).toMatchObject({ shipmentId: urgent.shipment.id, stockPriority: true });
+      expect(new Map(ready.map((row) => [row.shipmentId, row.stockPriority]))).toEqual(
+        new Map([
+          [urgent.shipment.id, true],
+          [plain.shipment.id, false],
+          [mixed.shipment.id, false],
+        ]),
+      );
+    });
+  });
+
   it('버킷 전체 건수를 유지하면서 생성 순으로 최대 200개만 반환한다', async () => {
     await inRollbackTx(db, async (tx) => {
       const base = await consolidationBase(tx);

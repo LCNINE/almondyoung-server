@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, inArray, notInArray, sql } from 'drizzle-orm';
 import { DbService } from '@app/db';
-import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
+import { DbTx, StockAllocation, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import {
   ConsolidationItemDto,
   ConsolidationOptionShipmentDto,
@@ -40,6 +40,7 @@ export interface OptionLine {
   // 위탁 업체 출고(3pl)면 그 화주. 자사 출고는 null
   ownerId?: string | null;
   ownerName?: string | null;
+  stockAllocation?: StockAllocation;
 }
 
 export interface ShipmentProgress {
@@ -82,6 +83,7 @@ export async function loadShipmentLines(trx: ReadDb, shipmentIds: string[]): Pro
       salesOrderCreatedAt: wmsTables.salesOrders.orderDate,
       ownerId: wmsTables.fulfillmentOrders.ownerId,
       ownerName: wmsTables.holders.name,
+      stockAllocation: wmsTables.fulfillmentOrders.stockAllocation,
     })
     .from(wmsTables.shipmentLines)
     .innerJoin(

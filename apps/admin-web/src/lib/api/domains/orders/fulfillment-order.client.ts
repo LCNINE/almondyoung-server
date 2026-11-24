@@ -22,6 +22,10 @@ import type {
   FulfillmentRequestOutcome,
   SplitShipmentRequest,
   SplitUnreservedShipmentRequest,
+  SetStockPriorityRequest,
+  ShipmentCommandReason,
+  StockPriorityPreview,
+  StockPriorityResult,
   ReviseShipmentRecipientRequest,
   PlanShipmentRequest,
   ShipmentPlanningCommandResponse,
@@ -124,6 +128,40 @@ export const fulfillmentOrder = {
       { headers: { 'Idempotency-Key': idempotencyKey } }
     );
     return response.data;
+  },
+
+  getStockPriority: async (
+    shipmentId: string
+  ): Promise<StockPriorityPreview> => {
+    const response = await client.get(
+      `${ALMONDYOUNG_API_BASE_URL}/shipments/${encodeURIComponent(shipmentId)}/stock-priority`
+    );
+    return response.data;
+  },
+
+  setStockPriority: async (
+    shipmentId: string,
+    data: SetStockPriorityRequest,
+    idempotencyKey: string
+  ): Promise<StockPriorityResult> => {
+    const response = await client.post(
+      `${ALMONDYOUNG_API_BASE_URL}/shipments/${encodeURIComponent(shipmentId)}/stock-priority`,
+      data,
+      { headers: { 'Idempotency-Key': idempotencyKey } }
+    );
+    return response.data;
+  },
+
+  cancelStockPriority: async (
+    shipmentId: string,
+    data: ShipmentCommandReason,
+    idempotencyKey: string
+  ): Promise<void> => {
+    await client.post(
+      `${ALMONDYOUNG_API_BASE_URL}/shipments/${encodeURIComponent(shipmentId)}/stock-priority/cancel`,
+      data,
+      { headers: { 'Idempotency-Key': idempotencyKey } }
+    );
   },
 
   reviseShipmentRecipient: async (

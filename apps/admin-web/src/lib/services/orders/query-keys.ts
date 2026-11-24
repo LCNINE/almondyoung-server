@@ -50,6 +50,7 @@ export const orderQueryKeys = {
   fulfillmentShipments: (id: string) =>
     ['fulfillments', id, 'shipments'] as const,
   shipment: (id: string) => ['shipments', id] as const,
+  stockPriority: (id: string) => ['stock-priority', id] as const,
   fulfillmentOperation: (id: string) => ['fulfillment-operations', id] as const,
   fulfillmentRequestOutcome: (commandType: string, idempotencyKey: string) =>
     [

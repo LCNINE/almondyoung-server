@@ -3,11 +3,21 @@
 import { useState } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
+import { Can } from '@/components/auth/can';
 import { Button } from '@/components/ui/button';
 import { FoStatusBadge } from '@/components/table/table-cells/fulfillment/fo-status-cell';
 import { shipmentStatusLabel } from '@/features/order/fulfillments/detail/fulfillment-labels';
 import { fulfillmentDetailHref } from '@/features/order/fulfillments/template/detail-href';
+import { StockPriorityBadge } from '@/features/order/stock-priority/stock-priority-badge';
+import {
+  StockPriorityCancelDialog,
+  StockPriorityDialog,
+} from '@/features/order/stock-priority/stock-priority-dialog';
 import { useReadGate } from '@/features/main/read-gate';
+import {
+  useCancelStockPriority,
+  useSetStockPriority,
+} from '@/lib/services/orders/mutations';
 import { useFulfillmentShipments } from '@/lib/services/orders/queries';
 
 // 이력 창은 주문 이력 표 모듈에 있다 — 누를 때만 불러온다
@@ -19,7 +29,17 @@ const BusinessTimelineModal = dynamic(
   { ssr: false }
 );
 
-function FulfillmentShipments({ fo }: { fo: { id: string } }) {
+function FulfillmentShipments({
+  fo,
+  orderNo,
+}: {
+  fo: { id: string };
+  orderNo: string;
+}) {
+  const [prioritizing, setPrioritizing] = useState<{
+    shipmentId: string;
+    cancel: boolean;
+  } | null>(null);
   const gate = useReadGate(['fulfillment.shipment.read']);
   const { data, isPending, isError, refetch } = useFulfillmentShipments(fo.id, {
     enabled: gate.enabled,
@@ -49,19 +69,75 @@ function FulfillmentShipments({ fo }: { fo: { id: string } }) {
     return <p className="text-xs text-gray-500">아직 상자가 없어요.</p>;
 
   return (
-    <ul className="flex flex-col gap-1">
-      {boxes.map((s) => (
-        <li key={s.id} className="text-xs">
-          <Link
-            href={fulfillmentDetailHref(fo.id, s.id)}
-            className="text-primary underline"
-          >
-            상자 <span className="font-mono">{s.id.slice(0, 8)}</span> ·{' '}
-            {shipmentStatusLabel(s.status)} — 배송·송장 보기
-          </Link>
-        </li>
-      ))}
-    </ul>
+    <>
+      <ul className="flex flex-col gap-1">
+        {boxes.map((s) => (
+          <li key={s.id} className="flex flex-wrap items-center gap-2 text-xs">
+            <Link
+              href={fulfillmentDetailHref(fo.id, s.id)}
+              className="text-primary underline"
+            >
+              상자 <span className="font-mono">{s.id.slice(0, 8)}</span> ·{' '}
+              {shipmentStatusLabel(s.status)} — 배송·송장 보기
+            </Link>
+            {s.status === 'draft' && s.supplierId === null && (
+              <>
+                <span className="tabular-nums text-gray-500">
+                  재고 {s.reservedQty}/{s.totalQty}
+                </span>
+                {s.stockPriority ? (
+                  <>
+                    <StockPriorityBadge />
+                    <Can run={useCancelStockPriority}>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          setPrioritizing({ shipmentId: s.id, cancel: true })
+                        }
+                      >
+                        우선할당 취소
+                      </Button>
+                    </Can>
+                  </>
+                ) : (
+                  s.stockPriority === false &&
+                  s.reservedQty < s.totalQty && (
+                    <Can run={useSetStockPriority}>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          setPrioritizing({ shipmentId: s.id, cancel: false })
+                        }
+                      >
+                        우선할당
+                      </Button>
+                    </Can>
+                  )
+                )}
+              </>
+            )}
+          </li>
+        ))}
+      </ul>
+      {prioritizing &&
+        (prioritizing.cancel ? (
+          <StockPriorityCancelDialog
+            shipmentId={prioritizing.shipmentId}
+            orderText={`#${orderNo}`}
+            onClose={() => setPrioritizing(null)}
+          />
+        ) : (
+          <StockPriorityDialog
+            shipmentId={prioritizing.shipmentId}
+            orderText={`#${orderNo}`}
+            onClose={() => setPrioritizing(null)}
+          />
+        ))}
+    </>
   );
 }
 
@@ -148,7 +224,7 @@ export function OrderFulfillmentSection({
               출고주문 상세
             </Link>
           </div>
-          <FulfillmentShipments fo={fulfillmentOrder} />
+          <FulfillmentShipments fo={fulfillmentOrder} orderNo={orderNo} />
           {lineRouteCounts && <OffWarehouseNotes counts={lineRouteCounts} />}
         </div>
       )}

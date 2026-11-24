@@ -16,9 +16,16 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { StockPriorityBadge } from '@/features/order/stock-priority/stock-priority-badge';
 import {
+  StockPriorityCancelDialog,
+  StockPriorityDialog,
+} from '@/features/order/stock-priority/stock-priority-dialog';
+import {
+  useCancelStockPriority,
   useCreateShipmentConsolidation,
   useRunOutboundPreparation,
+  useSetStockPriority,
   useSplitShipment,
 } from '@/lib/services/orders';
 import type { PreparationBucketDto } from '@/lib/types/dto/fulfillment';
@@ -66,6 +73,11 @@ export function BucketList({
   const [splitting, setSplitting] = useState<{
     shipmentId: string;
     orderText: string;
+  } | null>(null);
+  const [prioritizing, setPrioritizing] = useState<{
+    shipmentId: string;
+    orderText: string;
+    cancel: boolean;
   } | null>(null);
   const selected = new Set(selectedIds);
   const choosable = SELECTABLE_BUCKETS.has(bucket.bucket);
@@ -122,8 +134,8 @@ export function BucketList({
       </h2>
       {bucket.bucket === 'unavailable' && (
         <p className="text-sm text-muted-foreground">
-          재고가 들어오면 자동으로 확보돼 완전출고·부분출고로 넘어가요. 따로
-          누를 것은 없어요.
+          재고가 들어오면 먼저 주문한 순서로 자동으로 확보돼요. 먼저 보내야 하는
+          주문은 «우선할당»을 누르면 다른 대기 주문이 잡은 재고를 옮겨 와요.
         </p>
       )}
       {bucket.bucket === 'mergeable' && (
@@ -206,6 +218,7 @@ export function BucketList({
                   )}
                   <TableCell className="tabular-nums">
                     {plannedOrderText(shipment)}
+                    {shipment.stockPriority && <StockPriorityBadge />}
                     {shipment.owner && (
                       <span className="mt-1 block w-fit rounded bg-muted px-1.5 py-0.5 text-xs font-semibold text-foreground">
                         3PL · {shipment.owner.name}
@@ -299,6 +312,44 @@ export function BucketList({
                             </Button>
                           </Can>
                         )}
+                      {(bucket.bucket === 'unavailable' ||
+                        bucket.bucket === 'partial') &&
+                        !shipment.stockPriority && (
+                          <Can run={useSetStockPriority}>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={busy}
+                              onClick={() =>
+                                setPrioritizing({
+                                  shipmentId: shipment.shipmentId,
+                                  orderText: plannedOrderText(shipment),
+                                  cancel: false,
+                                })
+                              }
+                            >
+                              우선할당
+                            </Button>
+                          </Can>
+                        )}
+                      {shipment.stockPriority && (
+                        <Can run={useCancelStockPriority}>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={busy}
+                            onClick={() =>
+                              setPrioritizing({
+                                shipmentId: shipment.shipmentId,
+                                orderText: plannedOrderText(shipment),
+                                cancel: true,
+                              })
+                            }
+                          >
+                            우선할당 취소
+                          </Button>
+                        </Can>
+                      )}
                       {bucket.bucket === 'unavailable' && (
                         <Button size="sm" variant="outline" asChild>
                           <Link href="/inventory/inbound">입고 화면</Link>
@@ -334,6 +385,20 @@ export function BucketList({
           onClose={() => setSplitting(null)}
         />
       )}
+      {prioritizing &&
+        (prioritizing.cancel ? (
+          <StockPriorityCancelDialog
+            shipmentId={prioritizing.shipmentId}
+            orderText={prioritizing.orderText}
+            onClose={() => setPrioritizing(null)}
+          />
+        ) : (
+          <StockPriorityDialog
+            shipmentId={prioritizing.shipmentId}
+            orderText={prioritizing.orderText}
+            onClose={() => setPrioritizing(null)}
+          />
+        ))}
     </section>
   );
 }

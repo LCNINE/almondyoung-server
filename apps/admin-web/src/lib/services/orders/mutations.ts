@@ -24,6 +24,8 @@ import type {
 import type {
   SplitShipmentRequest,
   SplitUnreservedShipmentRequest,
+  SetStockPriorityRequest,
+  ShipmentCommandReason,
   ReviseShipmentRecipientRequest,
   PlanShipmentRequest,
   RecallShipmentRequest,
@@ -658,6 +660,70 @@ export const useSplitUnreservedShipment = () => {
 };
 useSplitUnreservedShipment.permission = [
   'fulfillment.warehouse.operate',
+] as const satisfies PermissionRequirement;
+
+// 다른 주문의 상자도 바뀐다 — 상자·출고주문·출고 준비·정체 보드·재고를 모두 다시 읽는다
+function invalidateStockPriority(
+  queryClient: ReturnType<typeof useQueryClient>
+) {
+  for (const queryKey of [
+    ['shipments'],
+    ['order-progress'],
+    ['inventory'],
+    orderQueryKeys.fulfillments,
+    orderQueryKeys.outboundPreparation,
+    orderQueryKeys.orderStats,
+  ]) {
+    void queryClient.invalidateQueries({ queryKey });
+  }
+}
+
+export const useSetStockPriority = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      shipmentId,
+      data,
+      idempotencyKey,
+    }: {
+      shipmentId: string;
+      data: SetStockPriorityRequest;
+      idempotencyKey: string;
+    }) =>
+      orders.fulfillmentOrder.setStockPriority(
+        shipmentId,
+        data,
+        idempotencyKey
+      ),
+    onSettled: () => invalidateStockPriority(queryClient),
+  });
+};
+useSetStockPriority.permission = [
+  'fulfillment.reservation.transfer',
+] as const satisfies PermissionRequirement;
+
+export const useCancelStockPriority = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      shipmentId,
+      data,
+      idempotencyKey,
+    }: {
+      shipmentId: string;
+      data: ShipmentCommandReason;
+      idempotencyKey: string;
+    }) =>
+      orders.fulfillmentOrder.cancelStockPriority(
+        shipmentId,
+        data,
+        idempotencyKey
+      ),
+    onSettled: () => invalidateStockPriority(queryClient),
+  });
+};
+useCancelStockPriority.permission = [
+  'fulfillment.reservation.transfer',
 ] as const satisfies PermissionRequirement;
 
 export const useSplitUnreservedMany = () => {

@@ -3,7 +3,7 @@ import { DbService, InjectTypedDb } from '@app/db';
 import { and, asc, eq, inArray, isNull, ne, notInArray, sql } from 'drizzle-orm';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { inboundPendingQuantitySql } from '../../inventory/shared/availability/inbound-origin-availability';
-import { reservationQueueKeySql } from '../services/reservation-queue-key';
+import { reservationQueueOrderSql } from '../services/reservation-queue-key';
 import { loadSellmateShipmentIds } from '../services/sellmate-handed-over-shipments';
 import { DemandLine, StockBudget, waitingTotal } from './waiting-orders.calc';
 
@@ -93,7 +93,7 @@ export class WaitingOrdersReader {
           inArray(wmsTables.shipmentLines.skuId, skuIds),
         ),
       )
-      .orderBy(reservationQueueKeySql(sql`shipment_lines`), asc(wmsTables.shipmentLines.id));
+      .orderBy(reservationQueueOrderSql(sql`shipment_lines`, sql`fulfillment_orders`), asc(wmsTables.shipmentLines.id));
   }
 
   private confirmedReservations(trx: DbTx, warehouseId: string, skuIds: string[]) {

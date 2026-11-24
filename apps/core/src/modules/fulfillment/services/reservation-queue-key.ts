@@ -28,6 +28,24 @@ export function reservationQueueKeySql(line: SQL): SQL {
 }
 
 /**
+ * 우선할당이 지금 효력이 있는 출고주문인가. 셀메이트에 넘긴 주문은 우리가 내보내지 않으므로 먼저 받지 않는다.
+ * `order` 는 fulfillment_orders 의 SQL 별칭이다.
+ */
+export function hasStockPrioritySql(order: SQL): SQL<boolean> {
+  return sql<boolean>`(${order}.stock_allocation = 'priority' AND NOT EXISTS (
+    SELECT 1 FROM sellmate_handed_over_orders handed_over WHERE handed_over.sales_order_id = ${order}.sales_order_id
+  ))`;
+}
+
+/**
+ * 재고를 받을 순서 — 우선할당한 출고주문의 줄이 먼저고, 그다음은 대기 순번이다. ORDER BY 에 그대로 쓴다.
+ * `line` 은 shipment_lines, `order` 는 fulfillment_orders 의 SQL 별칭이다.
+ */
+export function reservationQueueOrderSql(line: SQL, order: SQL): SQL {
+  return sql`${hasStockPrioritySql(order)} DESC, ${reservationQueueKeySql(line)}`;
+}
+
+/**
  * 라인 하나의 지금 순번. 분할이 새 라인에 물려줄 값을 구할 때 쓴다 — 원래 라인의
  * 수량을 줄이거나 예약을 옮기기 «전에» 불러야 원래 라인의 예약 행이 그대로 남아 있다.
  */

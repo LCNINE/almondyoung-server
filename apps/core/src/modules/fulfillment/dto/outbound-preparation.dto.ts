@@ -159,6 +159,8 @@ export class PreparationShipmentDto {
   batchReturn: PreparationBatchReturnDto | null;
   // 위탁 업체(3pl) 상자면 그 화주. 자사 상자는 null
   owner: PreparationOwnerDto | null;
+  // 우선할당한 상자 — 재고를 먼저 받는다. 합포장이면 담긴 주문이 모두 우선할당일 때만 true
+  stockPriority: boolean;
   // 정보 부족 상자만: 고쳐야 할 것 전부(첫 항목이 사유)
   needsInfo?: NeedsInfoIssueDto[];
   // 배송 프로필이 섞인 정보 부족 상자만: 그 자리에서 프로필별로 나누는 데 쓰는 줄(받는 분 정보 없음)

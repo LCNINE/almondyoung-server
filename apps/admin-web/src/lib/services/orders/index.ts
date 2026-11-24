@@ -57,6 +57,7 @@ export {
   useFulfillmentOutboxEvents,
   useFulfillmentShipments,
   useShipmentDetail,
+  useStockPriorityPreview,
   useFulfillmentOperation,
   useFulfillmentRequestOutcome,
   useShipmentRecallOperation,
@@ -89,6 +90,8 @@ export {
   // 출고주문(FO) 액션
   useSplitShipment,
   useSplitUnreservedShipment,
+  useSetStockPriority,
+  useCancelStockPriority,
   useSplitUnreservedMany,
   useRunOutboundPreparation,
   useReviseShipmentRecipient,

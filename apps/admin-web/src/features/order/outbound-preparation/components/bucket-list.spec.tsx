@@ -4,7 +4,17 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { BucketList } from './bucket-list';
 import type { PreparationBucketDto } from '@/lib/types/dto/fulfillment';
 
+jest.mock('@/features/order/stock-priority/stock-priority-dialog', () => ({
+  StockPriorityDialog: ({ orderText }: { orderText: string }) => (
+    <div role="dialog">{`${orderText} 우선할당 창`}</div>
+  ),
+  StockPriorityCancelDialog: ({ orderText }: { orderText: string }) => (
+    <div role="dialog">{`${orderText} 우선할당 취소 창`}</div>
+  ),
+}));
 jest.mock('@/lib/services/orders', () => ({
+  useCancelStockPriority: jest.fn(),
+  useSetStockPriority: jest.fn(),
   useCreateShipmentConsolidation: jest.fn(),
   useRunOutboundPreparation: jest.fn(),
   useSplitShipment: jest.fn(),
@@ -649,4 +659,50 @@ it('나눈 상자는 사유 칸에 나눈 이유를 보이고, 다른 사유가 
     '운송사가 송장 번호를 주지 않았어요나눈 이유 · 고객이 일부 먼저 보내 달라고 요청'
   );
   expect(reasonOf(2)).toBe('-');
+});
+
+it('못 나가는 상자에서 우선할당을 열고, 우선할당한 상자는 표시와 취소를 보인다', () => {
+  render(
+    list({
+      bucket: 'partial',
+      count: 2,
+      singleCount: 2,
+      multiCount: 0,
+      shipments: [
+        { ...shipment('s1', null), stockPriority: false },
+        { ...shipment('s2', null), stockPriority: true },
+      ],
+    })
+  );
+
+  const buttons = screen.getAllByRole('button', { name: /우선할당/ });
+  expect(buttons.map((button) => button.textContent)).toEqual([
+    '우선할당',
+    '우선할당 취소',
+  ]);
+  fireEvent.click(buttons[0]);
+  expect(screen.getByRole('dialog').textContent).toBe('#S1 우선할당 창');
+  fireEvent.click(buttons[1]);
+  expect(screen.getByRole('dialog').textContent).toBe('#S2 우선할당 취소 창');
+});
+
+it('나갈 수 있는 상자에는 우선할당을 두지 않고, 표시한 상자의 취소만 둔다', () => {
+  render(
+    list({
+      bucket: 'ready',
+      count: 2,
+      singleCount: 2,
+      multiCount: 0,
+      shipments: [
+        { ...shipment('s1', null), stockPriority: false },
+        { ...shipment('s2', null), stockPriority: true },
+      ],
+    })
+  );
+
+  expect(
+    screen
+      .getAllByRole('button', { name: /우선할당/ })
+      .map((button) => button.textContent)
+  ).toEqual(['우선할당 취소']);
 });

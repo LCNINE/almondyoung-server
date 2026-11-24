@@ -1170,6 +1170,13 @@
       "when": 1795077455511,
       "tag": "20261119083735_add-outbound-scan-rejections",
       "breakpoints": true
+    },
+    {
+      "idx": 167,
+      "version": "7",
+      "when": 1795497625271,
+      "tag": "20261124052025_add-fulfillment-order-stock-allocation",
+      "breakpoints": true
     }
   ]
 }
