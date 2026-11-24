@@ -99,6 +99,11 @@ export function ReadyShipmentsSection({
                     onClick={() => {
                       setOutcome(null);
                       setPickingFor(shipment);
+                      // 이미 열려 있으면 다시 읽는다 — 못 읽은 배치 목록을 이 버튼으로 다시 시도한다
+                      if (pickingFor !== null) {
+                        void picking.refetch();
+                        void created.refetch();
+                      }
                     }}
                   >
                     송장 출력
@@ -107,6 +112,19 @@ export function ReadyShipmentsSection({
               </li>
             ))}
           </ul>
+        </div>
+      )}
+      {pickingFor !== null && (
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-sm font-medium">#{pickingFor.orderNos[0]} — 배치 고르기</p>
+          <Button
+            type="button"
+            className="border border-gray-300 bg-white text-gray-700"
+            disabled={busy}
+            onClick={() => setPickingFor(null)}
+          >
+            닫기
+          </Button>
         </div>
       )}
       {pickingFor !== null && batchesFailed && <p className="text-sm">배치 목록을 불러오지 못했어요.</p>}

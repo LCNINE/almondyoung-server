@@ -32,37 +32,27 @@ export function useReadyShipments(
   receiptLineIds: readonly string[]
 ) {
   const api = useApiClient();
-  const ids = [...new Set(receiptLineIds)].sort();
+  // 서버는 한 번에 100줄까지 받는다. 나눠 부르면 같은 상자가 겹쳐 두 번 나오고
+  // 조각마다 재고를 따로 세므로, 부른 쪽이 준 순서(화면 순서)로 앞의 100줄만 보낸다
+  const ids = [...new Set(receiptLineIds)].slice(0, MAX_RECEIPT_LINE_IDS);
   const query = useQuery({
-    queryKey: [READY_SHIPMENTS_KEY, warehouseId, ids.join(',')],
+    queryKey: [READY_SHIPMENTS_KEY, warehouseId, [...ids].sort().join(',')],
     enabled: warehouseId !== null && ids.length > 0,
     refetchOnMount: 'always',
     // 입고 줄이 늘 때 이미 본 목록이 깜빡이지 않게 — 다른 창고 것은 쓰지 않는다
     placeholderData: (previous, previousQuery) =>
       previousQuery?.queryKey[1] === warehouseId ? previous : undefined,
     queryFn: async (): Promise<ReadyShipmentsPage> => {
-      const chunks: string[][] = [];
-      for (let i = 0; i < ids.length; i += MAX_RECEIPT_LINE_IDS)
-        chunks.push(ids.slice(i, i + MAX_RECEIPT_LINE_IDS));
       try {
-        const pages = await Promise.all(
-          chunks.map((chunk) =>
-            api.request<ReadyShipmentsPage>({
-              path: `/ready-shipments?${new URLSearchParams({
-                warehouseId: warehouseId ?? '',
-                receiptLineIds: chunk.join(','),
-              }).toString()}`,
-            })
-          )
-        );
-        const merged: ReadyShipmentsPage = { items: [], waitingOnOtherSkus: 0 };
-        for (const page of pages) {
-          if (!Array.isArray(page?.items))
-            throw new Error('ready shipments response is malformed');
-          merged.items.push(...page.items);
-          merged.waitingOnOtherSkus += page.waitingOnOtherSkus ?? 0;
-        }
-        return merged;
+        const page = await api.request<ReadyShipmentsPage>({
+          path: `/ready-shipments?${new URLSearchParams({
+            warehouseId: warehouseId ?? '',
+            receiptLineIds: ids.join(','),
+          }).toString()}`,
+        });
+        if (!Array.isArray(page?.items))
+          throw new Error('ready shipments response is malformed');
+        return { items: page.items, waitingOnOtherSkus: page.waitingOnOtherSkus ?? 0 };
       } catch (error) {
         if (error instanceof ApiError && error.status === 404)
           return { items: [], waitingOnOtherSkus: 0 };

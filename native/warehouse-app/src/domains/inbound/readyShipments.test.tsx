@@ -52,17 +52,30 @@ function setup(
 }
 
 describe('useReadyShipments', () => {
-  it('입고 줄 100개씩 나눠 부르고 합친다', async () => {
-    const ids = Array.from({ length: 150 }, (_, i) => `r${String(i).padStart(3, '0')}`);
+  it('입고 줄이 100개를 넘으면 앞의 100개로 한 번만 부른다', async () => {
+    // 화면에 보인 순서 그대로 — 정렬하면 앞의 100개가 화면 앞쪽이 아니게 된다
+    const ids = Array.from({ length: 150 }, (_, i) => `r${String(149 - i).padStart(3, '0')}`);
     const { result, request } = setup(
-      (chunk) => ({ items: [box(`b-${chunk.length}`)], waitingOnOtherSkus: 2 }),
+      () => ({ items: [box('b1')], waitingOnOtherSkus: 2 }),
       { warehouseId: 'w-1', ids }
     );
-    await waitFor(() => expect(result.current.items).toHaveLength(2));
-    expect(request).toHaveBeenCalledTimes(2);
-    expect(request.mock.calls[0][0].path).toContain('receiptLineIds=');
-    expect(result.current.waitingOnOtherSkus).toBe(4);
+    await waitFor(() => expect(result.current.items).toHaveLength(1));
+    expect(request).toHaveBeenCalledTimes(1);
+    const sent = new URL(request.mock.calls[0][0].path, 'http://localhost').searchParams;
+    expect((sent.get('receiptLineIds') ?? '').split(',')).toEqual(ids.slice(0, 100));
+    expect(result.current.waitingOnOtherSkus).toBe(2);
     expect(result.current.failed).toBe(false);
+  });
+
+  it('같은 입고 줄은 한 번만 보낸다', async () => {
+    const { result, request } = setup(
+      () => ({ items: [box('b1')], waitingOnOtherSkus: 0 }),
+      { warehouseId: 'w-1', ids: ['r2', 'r1', 'r2', 'r1'] }
+    );
+    await waitFor(() => expect(result.current.items).toHaveLength(1));
+    expect(request).toHaveBeenCalledTimes(1);
+    const sent = new URL(request.mock.calls[0][0].path, 'http://localhost').searchParams;
+    expect(sent.get('receiptLineIds')).toBe('r2,r1');
   });
 
   it('404 면 빈 목록', async () => {

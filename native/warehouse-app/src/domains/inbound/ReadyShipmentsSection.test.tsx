@@ -39,6 +39,7 @@ function mount(opts: {
   picking?: unknown[]; created?: unknown[];
   handler?: (o: Req) => Promise<unknown> | unknown;
   failBatches?: boolean;
+  batchesDown?: { down: boolean };
   station?: boolean;
   print?: () => Promise<void>;
 }) {
@@ -46,7 +47,7 @@ function mount(opts: {
   const request = async (o: Req) => {
     calls.push(o);
     if (o.path.startsWith('/ready-shipments')) return { items: opts.items ?? [], waitingOnOtherSkus: opts.waiting ?? 0 };
-    if (opts.failBatches && o.path.includes('/outbound-batches/v2')) throw new Error('down');
+    if ((opts.failBatches || opts.batchesDown?.down) && o.path.includes('/outbound-batches/v2')) throw new Error('down');
     if (o.path.includes('status=picking')) return opts.picking ?? [];
     if (o.path.includes('status=created')) return opts.created ?? [];
     return opts.handler ? opts.handler(o) : {};
@@ -200,6 +201,42 @@ describe('ReadyShipmentsSection', () => {
     await user.click(await screen.findByRole('button', { name: '송장 출력' }));
     expect(await screen.findByText('배치 목록을 불러오지 못했어요.')).toBeInTheDocument();
     expect(screen.queryByText(/진행 중인 배치가 없어요/)).not.toBeInTheDocument();
+  });
+
+  it('배치 고르기 위에 고른 주문 번호를 보인다', async () => {
+    const { user } = mount({
+      items: [ready('s-1', 'A-1'), ready('s-2', 'A-2')],
+      picking: [batch('p1', '2026-11-25T01:00:00Z')],
+    });
+    const buttons = await screen.findAllByRole('button', { name: '송장 출력' });
+    await user.click(buttons[1]);
+    expect(await screen.findByText('#A-2 — 배치 고르기')).toBeInTheDocument();
+    expect(screen.queryByText('#A-1 — 배치 고르기')).not.toBeInTheDocument();
+  });
+
+  it('[닫기]는 아무 요청 없이 배치 고르기를 닫는다', async () => {
+    const { user, calls } = mount({ items: [ready('s-1', 'A-1')], picking: [batch('p1', '2026-11-25T01:00:00Z')] });
+    await user.click(await screen.findByRole('button', { name: '송장 출력' }));
+    await screen.findByRole('list', { name: '배치 고르기' });
+    const before = calls.length;
+    await user.click(screen.getByRole('button', { name: '닫기' }));
+    await waitFor(() => expect(screen.queryByRole('list', { name: '배치 고르기' })).not.toBeInTheDocument());
+    expect(screen.queryByText('#A-1 — 배치 고르기')).not.toBeInTheDocument();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(calls.length).toBe(before);
+    expect(writes(calls)).toHaveLength(0);
+  });
+
+  it('배치 목록을 못 읽었으면 [송장 출력]을 다시 눌러 다시 읽는다', async () => {
+    const batchesDown = { down: true };
+    const { user } = mount({ items: [ready('s-1', 'A-1')], picking: [batch('p1', '2026-11-25T01:00:00Z')], batchesDown });
+    await user.click(await screen.findByRole('button', { name: '송장 출력' }));
+    expect(await screen.findByText('배치 목록을 불러오지 못했어요.')).toBeInTheDocument();
+    batchesDown.down = false;
+    await user.click(screen.getByRole('button', { name: '송장 출력' }));
+    const list = await screen.findByRole('list', { name: '배치 고르기' });
+    expect(within(list).getByText(/p1/)).toBeInTheDocument();
+    expect(screen.queryByText('배치 목록을 불러오지 못했어요.')).not.toBeInTheDocument();
   });
 
   it('출력이 실패하면 다시 출력 버튼을 보인다', async () => {
