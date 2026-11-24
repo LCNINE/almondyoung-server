@@ -734,7 +734,7 @@ export class StoreSalesOrdersService {
       definitelyShipped || maybeMaskedByRecovery ? await this.loadActiveShipmentStatuses(salesOrderId) : [];
 
     const base = { foCount, allFoCanceled, activeShipmentStatuses, supplierShipmentStages };
-    const prints = (await this.printOrders.forSalesOrder(salesOrderId)).filter((p) => p.status !== 'cancelled');
+    const prints = (await this.printOrders.forSalesOrder(salesOrderId)).filter(isLivePrint);
     if (prints.length === 0) return base;
     return {
       ...base,
@@ -856,7 +856,7 @@ export class StoreSalesOrdersService {
 
     const printRows = await this.printOrders.forSalesOrder(so.id);
     const printShipments = buildPrintShipments(printRows);
-    const untrackedPrints = printRows.filter((p) => !p.trackingNumber && p.status !== 'cancelled').length;
+    const untrackedPrints = printRows.filter((p) => !p.trackingNumber && isLivePrint(p)).length;
 
     // 출고주문이 없으면 배송 정보 없음
     if (foIds.length === 0) {

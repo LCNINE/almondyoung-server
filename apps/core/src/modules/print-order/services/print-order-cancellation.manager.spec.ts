@@ -135,6 +135,7 @@ function row(overrides: Partial<PrintOrderRow> = {}): PrintOrderRow {
     almondDesignId: 'd-1',
     printFileId: null,
     fileRejectedAt: null,
+    fileRejectedJobstat: null,
     fileResubmittedAt: null,
     vendor: 'wowpress',
     status: 'pending',
@@ -845,6 +846,16 @@ describe('PrintOrderCancellationManager', () => {
       await expect(
         manager.cancelForOrder('so-1', 'gate', [{ salesOrderLineId: r.salesOrderLineId, quantity: 1 }]),
       ).resolves.toEqual(NOTHING_CANCELLED);
+      expect(wowpress.cancel).not.toHaveBeenCalled();
+    });
+
+    it('accepts a partial quantity on a made-to-order line that has no design or file', async () => {
+      const r = row({ status: 'failed', almondDesignId: null, printFileId: null, orderAttemptedAt: null });
+      const { manager, store, wowpress } = setup(r);
+      store.quantities.set(r.salesOrderLineId, 2);
+      await expect(
+        manager.cancelForOrder('so-1', 'gate', [{ salesOrderLineId: r.salesOrderLineId, quantity: 1 }]),
+      ).resolves.toBeDefined();
       expect(wowpress.cancel).not.toHaveBeenCalled();
     });
 

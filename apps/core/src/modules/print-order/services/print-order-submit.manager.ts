@@ -5,6 +5,7 @@ import { UgcAlmondDesignClient, type UgcPrintLink } from '../clients/ugc-almond-
 import {
   CUSTOMER_FILE_FORMAT_ERROR,
   CUSTOMER_FILE_OWNER_MISMATCH_ERROR,
+  CUSTOMER_FILE_UNDELIVERED_ERROR,
   customerFileExtension,
   PRINT_SOURCE_MISSING_ERROR,
 } from '../print-source';
@@ -106,7 +107,7 @@ export class PrintOrderSubmitManager {
       const ordnum = lane.state.ordnum ?? (await this.confirmSentOrder(row));
       lane.state.ordnum = ordnum;
       // 시안은 주문할 때 이미 대조했다. 고객 파일은 다시 확인해도 조회 두 번이라 그대로 둔다
-      const link = await this.printLink(lane, line.ctx, line.spec, { designChecked: true });
+      const link = await this.printLink(lane, line.ctx, line.spec, { designChecked: true, ordered: true });
       if (!link) return;
       await this.deliver(lane, ordnum, link);
     } catch (error) {
@@ -175,13 +176,19 @@ export class PrintOrderSubmitManager {
   }
 
   // 시안·고객 파일 ID 는 고객이 장바구니 메타데이터로 넣는 값이다. 남의 것을 인쇄해 받지 못하게 주문 고객과 대조한다.
-  // 확인에 실패하면 failed 로 기록하고 null 이다
+  // 확인에 실패하면 failed 로 기록하고 null 이다. 이미 주문한 행(ordered)은 와우프레스 주문이 살아 있어 추적에 남기고 운영자에게 넘긴다
   private async printLink(
     lane: Lane,
     ctx: PrintOrderLineContext,
     spec: WowpressLineSpec,
-    { designChecked = false }: { designChecked?: boolean } = {},
+    { designChecked = false, ordered = false }: { designChecked?: boolean; ordered?: boolean } = {},
   ): Promise<UgcPrintLink | null> {
+    const refuseFile = (lastError: string) =>
+      lane.owned(
+        ordered
+          ? { status: 'submitted', submittingAt: null, lastError: CUSTOMER_FILE_UNDELIVERED_ERROR }
+          : { status: 'failed', lastError },
+      );
     const { almondDesignId, printFileId } = lane.row;
     if (almondDesignId) {
       return designChecked || (await this.designMatches(lane, ctx, spec, almondDesignId))
@@ -205,12 +212,12 @@ export class PrintOrderSubmitManager {
         })
       : null;
     if (!customerId || !file || file.ownerId !== customerId || !file.isPrintFile) {
-      await lane.owned({ status: 'failed', lastError: CUSTOMER_FILE_OWNER_MISMATCH_ERROR });
+      await refuseFile(CUSTOMER_FILE_OWNER_MISMATCH_ERROR);
       return null;
     }
     const extension = customerFileExtension(spec.prodno, file.fileName);
     if (!extension) {
-      await lane.owned({ status: 'failed', lastError: CUSTOMER_FILE_FORMAT_ERROR });
+      await refuseFile(CUSTOMER_FILE_FORMAT_ERROR);
       return null;
     }
 

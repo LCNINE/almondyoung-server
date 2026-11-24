@@ -19,6 +19,7 @@ import {
   type SQLWrapper,
 } from 'drizzle-orm';
 import { wmsSchema, wmsTables, type DbTx } from '../../inventory/schema/inventory.schema';
+import { CUSTOMER_FILE_UNDELIVERED_ERROR } from '../print-source';
 import { type PrintOrderRow } from '../schema/print-order.schema';
 import { VENDOR_CANCELLED, VENDOR_JOB_ERROR_PREFIX } from './print-order-tracking.manager';
 import { lineCanceledQuantitySql, lineRemainingSql } from '../../sales-order/line-quantities/line-quantities.sql';
@@ -44,12 +45,6 @@ export interface CustomerFileRejection {
   // 와우프레스 작업상태 코드. 에러 문구는 화면이 이 값으로 고른다
   jobstat: number | null;
 }
-
-const jobstatOf = (lastError: string | null): number | null => {
-  const code = lastError?.startsWith(VENDOR_JOB_ERROR_PREFIX) ? Number(lastError.slice(VENDOR_JOB_ERROR_PREFIX.length)) : NaN;
-
-  return Number.isInteger(code) ? code : null;
-};
 
 export const PRINT_ORDER_PAGE_SIZE = 50;
 export const PRINT_ORDER_MAX_PAGE_SIZE = 100;
@@ -133,7 +128,7 @@ export class PrintOrderReader {
             channelOrderItemId: lines.channelOrderItemId,
             productName: lines.productName,
             rejectedAt: t.fileRejectedAt,
-            lastError: t.lastError,
+            jobstat: t.fileRejectedJobstat,
           })
           .from(t)
           .innerJoin(lines, eq(lines.id, t.salesOrderLineId))
@@ -145,9 +140,7 @@ export class PrintOrderReader {
       tx,
     );
 
-    return rows.flatMap(({ lastError, rejectedAt, ...row }) =>
-      rejectedAt ? [{ ...row, rejectedAt, jobstat: jobstatOf(lastError) }] : [],
-    );
+    return rows.flatMap(({ rejectedAt, ...row }) => (rejectedAt ? [{ ...row, rejectedAt }] : []));
   }
 
   forSalesOrder(salesOrderId: string, tx?: DbTx): Promise<PrintOrderRow[]> {
@@ -338,7 +331,10 @@ export class PrintOrderReader {
       case 'vendor_attention':
         return and(
           inArray(t.status, ['submitted', 'shipped']),
-          sql`starts_with(coalesce(${t.lastError}, ''), ${VENDOR_JOB_ERROR_PREFIX})`,
+          or(
+            sql`starts_with(coalesce(${t.lastError}, ''), ${VENDOR_JOB_ERROR_PREFIX})`,
+            eq(t.lastError, CUSTOMER_FILE_UNDELIVERED_ERROR),
+          ),
         );
       case 'test_pending':
         return and(eq(t.testMemo, true), isNull(t.testConfirmedAt), ne(t.status, 'cancelled'));

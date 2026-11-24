@@ -16,6 +16,7 @@ import { PrintOrderRepository } from './print-order.repository';
 export const PRINT_FILE_NOT_YOURS = 'PRINT_FILE_NOT_YOURS';
 export const PRINT_FILE_TYPE_NOT_ACCEPTED = 'PRINT_FILE_TYPE_NOT_ACCEPTED';
 export const PRINT_FILE_NOT_REJECTED = 'PRINT_FILE_NOT_REJECTED';
+export const PRINT_FILE_SAME_AS_REJECTED = 'PRINT_FILE_SAME_AS_REJECTED';
 export const PRINT_FILE_DELIVERY_FAILED = 'PRINT_FILE_DELIVERY_FAILED';
 
 const isTracked = (status: PrintOrderStatus): boolean => status === 'submitted' || status === 'shipped';
@@ -34,11 +35,23 @@ export class PrintFileReuploadManager {
   ) {}
 
   // 와우프레스가 파일 에러로 돌려보낸 고객 파일 줄에 새 파일을 같은 주문번호로 다시 넘긴다(와우프레스는 재접수로 받는다).
-  // 줄을 잠근 채 상태를 다시 보고 넘긴 뒤에만 기록한다. 중간에 멈추면 에러 표시가 그대로 남아 고객이 다시 올릴 수 있다
+  // 거절 표시를 선점한 뒤 넘기고, 넘기지 못하면 표시를 되돌려 고객이 다시 올릴 수 있게 한다
   async reupload(customerId: string, salesOrderLineId: string, fileId: string): Promise<void> {
     const ctx = await this.repository.findLineContext(salesOrderLineId);
     if (!ctx || ctx.order.customerId !== customerId) {
       throw new NotFoundError('Print order not found');
+    }
+
+    const row = await this.repository.findBySalesOrderLineId(salesOrderLineId);
+    if (!row) {
+      throw new NotFoundError('Print order not found');
+    }
+    const { fileRejectedAt, vendorOrderNumber } = row;
+    if (!fileRejectedAt || !row.printFileId || !vendorOrderNumber || !isTracked(row.status)) {
+      throw new ConflictError(PRINT_FILE_NOT_REJECTED);
+    }
+    if (fileId === row.printFileId) {
+      throw new BadRequestError(PRINT_FILE_SAME_AS_REJECTED);
     }
 
     const spec = (await this.specs.findSpec(ctx.line.variantId)) ?? WOWPRESS_PRODUCTS[ctx.line.variantId];
@@ -51,26 +64,24 @@ export class PrintFileReuploadManager {
       throw new BadRequestError(PRINT_FILE_TYPE_NOT_ACCEPTED);
     }
 
-    await this.repository.withLockedLine(salesOrderLineId, async (row, tx) => {
-      if (!row) {
-        throw new NotFoundError('Print order not found');
-      }
-      if (!row.fileRejectedAt || !row.printFileId || !row.vendorOrderNumber || !isTracked(row.status)) {
-        throw new ConflictError(PRINT_FILE_NOT_REJECTED);
-      }
+    const claimedAt = await this.repository.claimReupload(row.id, fileRejectedAt);
+    if (!claimedAt) {
+      throw new ConflictError(PRINT_FILE_NOT_REJECTED);
+    }
 
-      try {
-        const url = await this.customerFiles.link(fileId, customerId);
-        await this.wowpress.uploadFileUrl(row.vendorOrderNumber, `${salesOrderLineId}.${extension}`, url);
-      } catch (error) {
-        this.logger.warn(`print order ${row.id} file reupload failed: ${errorMessage(error)}`);
-        throw new ServiceUnavailableError(PRINT_FILE_DELIVERY_FAILED);
-      }
+    try {
+      const url = await this.customerFiles.link(fileId, customerId);
+      await this.wowpress.uploadFileUrl(vendorOrderNumber, `${salesOrderLineId}.${extension}`, url);
+    } catch (error) {
+      this.logger.warn(`print order ${row.id} file reupload failed: ${errorMessage(error)}`);
+      await this.repository.releaseReupload(row.id, claimedAt, fileRejectedAt);
+      throw new ServiceUnavailableError(PRINT_FILE_DELIVERY_FAILED);
+    }
 
-      if (!(await this.repository.recordResubmittedFile(row.id, fileId, tx))) {
-        throw new Error(`print order ${row.id} took a new file but could not record it`);
-      }
-    });
+    // 파일은 이미 와우프레스에 갔다. 더 새 기록이 있어 못 남긴 것이니 고객에게는 실패로 돌리지 않는다
+    if (!(await this.repository.recordResubmittedFile(row.id, fileId, claimedAt))) {
+      this.logger.warn(`print order ${row.id} took file ${fileId} but a newer reupload or rejection was recorded`);
+    }
   }
 
   private async describe(fileId: string, customerId: string): Promise<CustomerPrintFile> {

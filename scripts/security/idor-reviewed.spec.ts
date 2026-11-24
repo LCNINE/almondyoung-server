@@ -195,7 +195,7 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'core GET /store/print-orders/file-rejections': {
     verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/print-order/services/print-order.reader.ts:142',
+    evidence: 'apps/core/src/modules/print-order/services/print-order.reader.ts:136',
     predicate: 'eq(orders.customerId, customerId)',
     note: 'fileRejections(customer.userId) -> reader.customerFileRejections 가 sales_orders.customer_id 로 자기 주문 줄만 읽는다. 경로에 id 가 없다.',
   },

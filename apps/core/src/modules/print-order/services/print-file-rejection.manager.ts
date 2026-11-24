@@ -67,7 +67,7 @@ export class PrintFileRejectionManager {
     await this.dbService.run(async (trx) => {
       const written = await trx
         .update(t)
-        .set({ fileRejectedAt: now, fileResubmittedAt: null, updatedAt: now })
+        .set({ fileRejectedAt: now, fileRejectedJobstat: jobstat, fileResubmittedAt: null, updatedAt: now })
         .where(
           and(
             eq(t.id, row.id),
@@ -128,7 +128,7 @@ export class PrintFileRejectionManager {
     await this.dbService.run((trx) =>
       trx
         .update(t)
-        .set({ fileRejectedAt: null, fileResubmittedAt: null, updatedAt: new Date() })
+        .set({ fileRejectedAt: null, fileRejectedJobstat: null, fileResubmittedAt: null, updatedAt: new Date() })
         .where(
           and(
             eq(t.id, row.id),

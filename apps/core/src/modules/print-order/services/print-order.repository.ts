@@ -232,24 +232,40 @@ export class PrintOrderRepository {
     return this.updateWhere(and(eq(t.id, id), inArray(t.status, TRACKED_STATUSES)), patch, tx);
   }
 
-  // 다시 올리기를 줄마다 하나씩만 하게 행을 잠그고 그 안에서 확인·업로드·기록을 끝낸다. 취소 흐름도 이 잠금을 기다린다
-  withLockedLine<T>(salesOrderLineId: string, fn: (row: PrintOrderRow | null, tx: DbTx) => Promise<T>): Promise<T> {
+  // 다시 올리기를 줄마다 하나씩만 하게, 본 거절 표시를 재접수 대기로 바꿔 선점한다. 외부 호출은 잠금 밖에서 한다.
+  // 선점한 채 멈추면 대기 시간이 지난 뒤 폴러가 다시 거절을 찍는다
+  async claimReupload(id: string, rejectedAt: Date): Promise<Date | null> {
     const t = wmsTables.printOrders;
-    return this.dbService.run(async (trx) => {
-      const [row] = await trx.select().from(t).where(eq(t.salesOrderLineId, salesOrderLineId)).for('update');
+    const claimedAt = new Date();
+    const claimed = await this.updateWhere(
+      and(eq(t.id, id), inArray(t.status, TRACKED_STATUSES), eq(t.fileRejectedAt, rejectedAt)),
+      { fileRejectedAt: null, fileResubmittedAt: claimedAt },
+    );
 
-      return fn(row ?? null, trx);
+    return claimed ? claimedAt : null;
+  }
+
+  // 넘기지 못했으면 거절 표시를 되돌려 고객이 다시 올릴 수 있게 한다. 그사이 새 관찰이 표시를 바꿨으면 두지 않는다
+  async releaseReupload(id: string, claimedAt: Date, rejectedAt: Date): Promise<void> {
+    const t = wmsTables.printOrders;
+    await this.updateWhere(and(eq(t.id, id), isNull(t.fileRejectedAt), eq(t.fileResubmittedAt, claimedAt)), {
+      fileRejectedAt: rejectedAt,
+      fileResubmittedAt: null,
     });
   }
 
-  // 와우프레스가 새 파일을 받았다. 에러 표시를 지우고, 재접수 결과가 나올 때까지 기다리는 표시를 남긴다
-  recordResubmittedFile(id: string, fileId: string, tx: DbTx): Promise<boolean> {
+  // 와우프레스가 새 파일을 받았다. 재접수 대기 표시는 선점할 때 남겼다. 와우프레스가 정상을 보여 표시가 지워졌어도 기록한다.
+  // 그 뒤 다른 다시 올리기가 선점했거나 새 거절이 찍혔으면 이 파일은 더 최신이 아니라 0행이다
+  recordResubmittedFile(id: string, fileId: string, claimedAt: Date): Promise<boolean> {
     const t = wmsTables.printOrders;
-    const now = new Date();
     return this.updateWhere(
-      and(eq(t.id, id), inArray(t.status, TRACKED_STATUSES)),
-      { printFileId: fileId, fileRejectedAt: null, fileResubmittedAt: now, fileDeliveredAt: now },
-      tx,
+      and(
+        eq(t.id, id),
+        inArray(t.status, TRACKED_STATUSES),
+        isNull(t.fileRejectedAt),
+        or(isNull(t.fileResubmittedAt), eq(t.fileResubmittedAt, claimedAt)),
+      ),
+      { printFileId: fileId, fileDeliveredAt: new Date() },
     );
   }
 

@@ -2,7 +2,7 @@ import { ConfigService } from '@nestjs/config';
 import { DbService } from '@app/db';
 import { outboundTenantForTesting } from '@app/tenancy';
 import { BadRequestError, ConflictError, NotFoundError, ServiceUnavailableError } from '@app/shared';
-import { type DbTx, wmsSchema } from '../../inventory/schema/inventory.schema';
+import { wmsSchema } from '../../inventory/schema/inventory.schema';
 import {
   CustomerPrintFileClient,
   CustomerPrintFileNotFoundError,
@@ -37,11 +37,12 @@ class FakeRepo extends PrintOrderRepository {
   constructor() {
     super(noDb);
   }
-  override withLockedLine<T>(_lineId: string, fn: (row: PrintOrderRow | null, tx: DbTx) => Promise<T>): Promise<T> {
-    return fn(this.row, {} as DbTx);
-  }
+  claimedAt = new Date('2026-11-24T01:00:00Z');
+  findBySalesOrderLineId = jest.fn(() => Promise.resolve(this.row));
   findLineContext = jest.fn(() => Promise.resolve(this.context));
-  recordResubmittedFile = jest.fn<Promise<boolean>, [string, string, unknown]>(() => Promise.resolve(true));
+  claimReupload = jest.fn<Promise<Date | null>, [string, Date]>(() => Promise.resolve(this.claimedAt));
+  releaseReupload = jest.fn<Promise<void>, [string, Date, Date]>(() => Promise.resolve());
+  recordResubmittedFile = jest.fn<Promise<boolean>, [string, string, Date]>(() => Promise.resolve(true));
 }
 
 class FakeSpecs extends PrintProductSpecRepository {
@@ -83,7 +84,24 @@ describe('PrintFileReuploadManager', () => {
     await manager.reupload(CUSTOMER, LINE, NEW_FILE);
 
     expect(wowpress.uploadFileUrl).toHaveBeenCalledWith('W-1', `${LINE}.eps`, 'https://s3/new.eps');
-    expect(repo.recordResubmittedFile).toHaveBeenCalledWith('po-1', NEW_FILE, expect.anything());
+    expect(repo.claimReupload).toHaveBeenCalledWith('po-1', REJECTED_AT);
+    expect(repo.recordResubmittedFile).toHaveBeenCalledWith('po-1', NEW_FILE, repo.claimedAt);
+  });
+
+  it('refuses the very file wowpress sent back', async () => {
+    const { repo, wowpress, manager } = setup();
+
+    await expect(manager.reupload(CUSTOMER, LINE, repo.row!.printFileId!)).rejects.toBeInstanceOf(BadRequestError);
+    expect(repo.claimReupload).not.toHaveBeenCalled();
+    expect(wowpress.uploadFileUrl).not.toHaveBeenCalled();
+  });
+
+  it('does not upload when another reupload already took the notice', async () => {
+    const { repo, wowpress, manager } = setup();
+    repo.claimReupload.mockResolvedValue(null);
+
+    await expect(manager.reupload(CUSTOMER, LINE, NEW_FILE)).rejects.toBeInstanceOf(ConflictError);
+    expect(wowpress.uploadFileUrl).not.toHaveBeenCalled();
   });
 
   it("hides another customer's print", async () => {
@@ -132,6 +150,7 @@ describe('PrintFileReuploadManager', () => {
     wowpress.uploadFileUrl.mockRejectedValue(new Error('upload down'));
 
     await expect(manager.reupload(CUSTOMER, LINE, NEW_FILE)).rejects.toBeInstanceOf(ServiceUnavailableError);
+    expect(repo.releaseReupload).toHaveBeenCalledWith('po-1', repo.claimedAt, REJECTED_AT);
     expect(repo.recordResubmittedFile).not.toHaveBeenCalled();
   });
 });

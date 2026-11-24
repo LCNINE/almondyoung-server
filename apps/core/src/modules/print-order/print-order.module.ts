@@ -3,6 +3,7 @@ import { StorePrintOrdersController } from './controllers/store-print-orders.con
 import { WowpressCallbackController } from './controllers/wowpress-callback.controller';
 import { CustomerPrintFileClient } from './clients/customer-print-file.client';
 import { PrintFileRejectionManager } from './services/print-file-rejection.manager';
+import { CustomerFileRejectionReader } from './services/customer-file-rejection.reader';
 import { PrintFileReuploadManager } from './services/print-file-reupload.manager';
 import { PrintCustomerFileReader } from './services/print-customer-file.reader';
 import { StorePrintOrdersService } from './services/store-print-orders.service';
@@ -35,6 +36,7 @@ import { PrintOrderTrackingWorker } from './workers/print-order-tracking.worker'
     CustomerPrintFileClient,
     PrintFileRejectionManager,
     PrintFileReuploadManager,
+    CustomerFileRejectionReader,
     StorePrintOrdersService,
     PrintCustomerFileReader,
   ],

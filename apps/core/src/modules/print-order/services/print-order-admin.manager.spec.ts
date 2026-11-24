@@ -105,6 +105,7 @@ function row(overrides: Partial<PrintOrderRow> = {}): PrintOrderRow {
     almondDesignId: 'd-1',
     printFileId: null,
     fileRejectedAt: null,
+    fileRejectedJobstat: null,
     fileResubmittedAt: null,
     vendor: 'wowpress',
     status: 'pending',

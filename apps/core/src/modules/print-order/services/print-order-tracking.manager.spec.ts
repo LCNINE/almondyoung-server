@@ -1,6 +1,7 @@
 import { ConfigService } from '@nestjs/config';
 import { DbService, type DatabaseRun } from '@app/db';
 import { wmsSchema } from '../../inventory/schema/inventory.schema';
+import { CUSTOMER_FILE_UNDELIVERED_ERROR } from '../print-source';
 import { type PrintOrderRow } from '../schema/print-order.schema';
 import { WowpressClient } from '../wowpress/wowpress.client';
 import { type WowpressOrderDetail, type WowpressTransport } from '../wowpress/wowpress.types';
@@ -54,6 +55,7 @@ function row(overrides: Partial<PrintOrderRow> = {}): PrintOrderRow {
     almondDesignId: 'd-1',
     printFileId: null,
     fileRejectedAt: null,
+    fileRejectedJobstat: null,
     fileResubmittedAt: null,
     vendor: 'wowpress',
     status: 'submitted',
@@ -428,6 +430,26 @@ describe('PrintOrderTrackingManager', () => {
 
     expect(repo.updateTracked).toHaveBeenCalledTimes(1);
     expect(repo.updateTracked).toHaveBeenCalledWith('po-1', { lastError: null });
+  });
+
+  it('keeps the undelivered customer file record until the file reaches wowpress', async () => {
+    const { repo, wowpress, manager } = setup();
+    wowpress.detail.mockResolvedValue({
+      ordstat: 10,
+      jobstat: 129,
+      carrierCode: null,
+      trackingNumber: null,
+      boxNumber: null,
+    });
+
+    await manager.refresh(row({ lastError: CUSTOMER_FILE_UNDELIVERED_ERROR, fileDeliveredAt: null }));
+    expect(repo.updateTracked).not.toHaveBeenCalledWith(
+      'po-1',
+      expect.objectContaining({ lastError: expect.anything() }),
+    );
+
+    await manager.refresh(row({ lastError: CUSTOMER_FILE_UNDELIVERED_ERROR, fileDeliveredAt: new Date() }));
+    expect(repo.updateTracked).toHaveBeenCalledWith('po-1', { lastError: 'wowpress needs attention: job error 129' });
   });
 });
 

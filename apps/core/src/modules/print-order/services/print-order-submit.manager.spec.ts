@@ -12,6 +12,7 @@ import { CustomerPrintFileClient, type CustomerPrintFile } from '../clients/cust
 import {
   CUSTOMER_FILE_FORMAT_ERROR,
   CUSTOMER_FILE_OWNER_MISMATCH_ERROR,
+  CUSTOMER_FILE_UNDELIVERED_ERROR,
   PRINT_SOURCE_MISSING_ERROR,
 } from '../print-source';
 import { PrintProductSpecRepository } from '../repositories/print-product-spec.repository';
@@ -262,6 +263,7 @@ function makeRow(overrides: Partial<PrintOrderRow> = {}): PrintOrderRow {
     almondDesignId: DESIGN_ID,
     printFileId: null,
     fileRejectedAt: null,
+    fileRejectedJobstat: null,
     fileResubmittedAt: null,
     vendor: 'wowpress',
     status: 'submitting',
@@ -364,6 +366,24 @@ describe('PrintOrderSubmitManager', () => {
 
       expect(wowpress.order).not.toHaveBeenCalled();
       expect(repo.get('po-1')).toMatchObject({ status: 'failed', lastError: CUSTOMER_FILE_FORMAT_ERROR });
+    });
+
+    it('keeps tracking an ordered line whose file is gone before the upload', async () => {
+      const { repo, wowpress, customerFiles, manager } = setup(CONFIRMED_VARIANT, fileRow(), accepting());
+      wowpress.uploadFileUrl.mockRejectedValueOnce(new Error('upload down'));
+      await manager.submit(repo.get('po-1'));
+      customerFiles.describe.mockResolvedValue({ ownerId: CUSTOMER_ID, isPrintFile: false, fileName: 'a.ai' });
+
+      await manager.submit(repo.claim('po-1'));
+
+      expect(wowpress.order).toHaveBeenCalledTimes(1);
+      expect(wowpress.uploadFileUrl).toHaveBeenCalledTimes(1);
+      expect(repo.get('po-1')).toMatchObject({
+        status: 'submitted',
+        vendorOrderNumber: 'W-1',
+        fileDeliveredAt: null,
+        lastError: CUSTOMER_FILE_UNDELIVERED_ERROR,
+      });
     });
 
     it('does not order a line with neither a design nor a file', async () => {
