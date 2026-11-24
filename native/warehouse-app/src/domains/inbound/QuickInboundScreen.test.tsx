@@ -78,6 +78,19 @@ const BOX_SKU = [
   },
 ];
 
+const SECOND_SKU = [
+  {
+    id: 's2',
+    code: 'PT-002',
+    name: '면바지',
+    currentStock: 0,
+    safetyStock: 0,
+    barcodes: [
+      { id: 'b3', barcode: '7701', isPrimary: true, packingUnit: null },
+    ],
+  },
+];
+
 interface Call {
   path: string;
   method?: string;
@@ -156,6 +169,7 @@ async function renderScreen(
       if (o.path.startsWith('/inventory/skus/search/advanced?'))
         return { items: BOX_SKU, total: 1 };
       if (o.path.startsWith('/inventory/skus?barcode=880')) return BOX_SKU;
+      if (o.path.startsWith('/inventory/skus?barcode=7701')) return SECOND_SKU;
       if (o.path.startsWith('/inventory/skus?barcode=')) return [];
       if (o.path === '/inbound/simple') {
         return {
@@ -277,6 +291,7 @@ async function renderScreen(
       <>
         <ScanButton code="8801" />
         <ScanButton code="8802" />
+        <ScanButton code="7701" />
         {/* 미등록 바코드 — 등록 후 재스캔이 가드를 뚫는지 확인하는 테스트 전용 */}
         <ScanButton code="9999" />
         <QuickInboundScreen />
@@ -728,6 +743,71 @@ it('상품 검색과 키보드 수량 입력만으로 간편입고하고 재선�
       { items: [{ skuId: 's1', quantity: 10 }] }
     )
   );
+});
+
+it('상품을 고른 직후 수정이 열려 있어도 그 줄을 지우면 수정이 닫히고 다른 작업이 풀린다', async () => {
+  await renderScreen([]);
+  await screen.findByText('간편입고');
+  await userEvent.click(screen.getByRole('button', { name: '스캔:7701' }));
+  await screen.findByText('면바지');
+  await userEvent.type(
+    await screen.findByLabelText('상품명·코드 검색'),
+    '셔츠{Enter}'
+  );
+  await userEvent.click(
+    await screen.findByRole('button', { name: '코튼셔츠 선택' })
+  );
+  await screen.findByLabelText(/입고 수량 직접 입력/);
+
+  const trash = screen.getByRole('button', { name: '코튼셔츠 삭제' });
+  expect(trash).toBeEnabled();
+  await userEvent.click(trash);
+
+  await waitFor(() =>
+    expect(
+      screen.queryByRole('button', { name: '코튼셔츠 삭제' })
+    ).not.toBeInTheDocument()
+  );
+  expect(
+    screen.queryByLabelText(/입고 수량 직접 입력/)
+  ).not.toBeInTheDocument();
+  await waitFor(() =>
+    expect(screen.getByLabelText('면바지 수량')).toBeEnabled()
+  );
+  await userEvent.click(screen.getByRole('button', { name: '스캔:7701' }));
+  await waitFor(() =>
+    expect(screen.getByLabelText('면바지 수량')).toHaveTextContent('2')
+  );
+});
+
+it('한 줄을 수정하는 중에 다른 줄을 지워도 수정창과 입력한 숫자가 남는다', async () => {
+  await renderScreen([]);
+  await screen.findByText('간편입고');
+  await userEvent.click(screen.getByRole('button', { name: '스캔:8801' }));
+  await screen.findByText('코튼셔츠');
+  await userEvent.click(screen.getByRole('button', { name: '스캔:7701' }));
+  await screen.findByText('면바지');
+
+  await userEvent.click(screen.getByLabelText('코튼셔츠 수량'));
+  const input = await screen.findByLabelText(/입고 수량 직접 입력/);
+  await userEvent.clear(input);
+  await userEvent.type(input, '7');
+
+  const otherQty = screen.getByLabelText('면바지 수량');
+  expect(otherQty).toBeDisabled();
+  expect(otherQty).toHaveClass('disabled:opacity-40');
+  expect(screen.getByRole('button', { name: '면바지 삭제' })).toHaveClass(
+    'disabled:opacity-40'
+  );
+
+  await userEvent.click(screen.getByRole('button', { name: '면바지 삭제' }));
+
+  await waitFor(() =>
+    expect(
+      screen.queryByRole('button', { name: '면바지 삭제' })
+    ).not.toBeInTheDocument()
+  );
+  expect(screen.getByLabelText(/입고 수량 직접 입력/)).toHaveValue('7');
 });
 
 for (const returned of [3, 10]) {

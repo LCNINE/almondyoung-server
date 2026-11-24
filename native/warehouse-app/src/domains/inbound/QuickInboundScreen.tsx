@@ -684,7 +684,7 @@ function QuickInboundScreenContent() {
                     <button
                       type="button"
                       aria-label={`${row.skuName} 수량`}
-                      className="text-lg font-semibold text-gray-900 underline"
+                      className="text-lg font-semibold text-gray-900 underline disabled:opacity-40"
                       disabled={
                         !reconciled ||
                         !draft.ready ||
@@ -704,14 +704,13 @@ function QuickInboundScreenContent() {
                     <button
                       type="button"
                       aria-label={`${row.skuName} 삭제`}
-                      className="shrink-0 rounded p-1 text-gray-400 active:bg-gray-100"
+                      className="shrink-0 rounded p-1 text-gray-400 active:bg-gray-100 disabled:opacity-40"
                       disabled={
                         !reconciled ||
                         !draft.ready ||
                         scanQueue.blocked() ||
                         submit.isPending ||
-                        saving ||
-                        !!editing
+                        saving
                       }
                       onClick={async () => {
                         if (!reconciled || savingRef.current) return;
@@ -721,6 +720,8 @@ function QuickInboundScreenContent() {
                           await setCart((prev) =>
                             prev.filter((r) => r.skuId !== row.skuId)
                           );
+                          // 지운 줄을 고치던 중이었으면 수정도 닫는다 — 다른 줄의 수정은 그대로 둔다.
+                          setEditing((cur) => (cur === row.skuId ? null : cur));
                         } catch {
                           setNotice(
                             '삭제를 저장하지 못했어요. 다시 시도해 주세요.'
