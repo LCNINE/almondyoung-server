@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { and, eq, sql as sqlQuery } from 'drizzle-orm';
+import { and, eq, inArray, sql as sqlQuery } from 'drizzle-orm';
 import { ConfigService } from '@nestjs/config';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { buildWiring, makeInboundReceiptKernel } from '../../inventory/inbound/services/__fixtures__/inbound-harness';
@@ -10,7 +10,8 @@ import { FulfillmentWorkflowGate } from '../services/fulfillment-workflow-gate.s
 import { ShipmentReservationService } from '../services/shipment-reservation.service';
 import { inRollbackTx, makeDb, seedPickableShipment, seedShipmentForExistingStock } from '../services/__support__';
 import { ambientDbService } from '../services/__support__/simple-outbound-wiring';
-import { ArrivalReservationRetry } from './arrival-reservation-retry';
+import { addSecondSimpleOutboundLine } from '../services/__support__/simple-outbound-fixtures';
+import { ARRIVAL_RETRY_LIMIT, ArrivalReservationRetry } from './arrival-reservation-retry';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -181,6 +182,40 @@ describeIfDb('입고 직후 예약 재시도', () => {
         first.shipmentLineId,
         second.shipmentLineId,
       ]);
+    });
+  });
+
+  it('한 상품의 대기 줄이 많아도 같은 입고의 다른 상품 줄을 잡는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      // 상품 A: 상한보다 많은 줄이 오래 기다린다
+      const first = await waitingBox(tx, 2);
+      const others: Box[] = [];
+      for (let i = 0; i < ARRIVAL_RETRY_LIMIT; i++) others.push(await sibling(tx, first, 2));
+      // 상품 B: A 상자에 덧붙인 한 줄 — 선반에 1개, 예약은 풀려 있다
+      const host = others[others.length - 1];
+      const b = await addSecondSimpleOutboundLine(tx, host, 1);
+      await tx
+        .update(wmsTables.stockReservations)
+        .set({ status: 'released' })
+        .where(eq(wmsTables.stockReservations.shipmentLineId, b.shipmentLineId));
+      await tx
+        .update(wmsTables.shipmentLines)
+        .set({ demandRequestedAt: sqlQuery`now() - make_interval(mins => 60)` })
+        .where(
+          inArray(
+            wmsTables.shipmentLines.id,
+            [first, ...others].map((box) => box.shipmentLineId),
+          ),
+        );
+      await queuedAt(tx, first, 61);
+      await queuedAt(tx, b, 1);
+      // A 는 조금만 들어온다
+      await arrive(tx, first, 1);
+
+      await retry(tx).retryForSkus(first.warehouseId, [first.skuId, b.skuId], tx);
+
+      expect(await confirmedQty(tx, first)).toBe(1);
+      expect(await confirmedQty(tx, b)).toBe(1);
     });
   });
 

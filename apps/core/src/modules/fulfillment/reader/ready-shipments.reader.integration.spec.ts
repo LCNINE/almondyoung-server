@@ -13,8 +13,13 @@ import { FulfillmentProgressService } from '../services/fulfillment-progress.ser
 import { ShipmentReservationService } from '../services/shipment-reservation.service';
 import { inRollbackTx, makeDb, seedPickableShipment, seedShipmentForExistingStock } from '../services/__support__';
 import { seedHandedOverOrder } from '../services/__support__/sellmate-handed-over-fixtures';
-import { addSecondSimpleOutboundLine } from '../services/__support__/simple-outbound-fixtures';
-import { ambientDbService, startBatchFor } from '../services/__support__/simple-outbound-wiring';
+import {
+  addSecondSimpleOutboundLine,
+  seedLooseBox,
+  seedTwoBoxBatch,
+} from '../services/__support__/simple-outbound-fixtures';
+import { seedRegisteredWaybill } from '../services/__support__/outbound-v2-warehouse-harness';
+import { ambientDbService, assembleOutbound, startBatchFor } from '../services/__support__/simple-outbound-wiring';
 import { ReadyShipmentsReader } from './ready-shipments.reader';
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -344,6 +349,92 @@ describeIfDb('입고로 갖춰진 상자', () => {
 
       const { items } = await ready(tx, box.warehouseId, [receiptLineId]);
       expect(items.map((item) => [item.shipmentId, item.status])).toEqual([[box.shipmentId, 'planned']]);
+    });
+  });
+
+  /**
+   * 시작한 배치(재고 3을 다 쥠) + 배치 밖 상자 하나. 그 상자를 재고를 기다리는 draft 로 돌리고(예약·송장 없음), 같은 상품 2개를
+   * 입고한 뒤 다시 예약하고 계획한다. 송장 발급은 이 경로 밖이라 계획 뒤 registered 송장 행으로 대신한다.
+   * 적치 전에는 입고분이 적치 대기라 putaway_required, 적치하면 ready 다.
+   */
+  async function startedBatchAndArrivedBox(tx: DbTx) {
+    const { first } = await seedTwoBoxBatch(tx, 1, 3);
+    const actor = { id: first.actorId, roles: ['master'] };
+    const wiring = assembleOutbound(tx);
+    await wiring.picking.start(
+      { batchId: first.batchId, actorId: first.actorId, idempotencyKey: `s-${randomUUID()}` },
+      tx,
+    );
+    const loose = await seedLooseBox(tx, first, 2);
+    await tx
+      .update(wmsTables.stockReservations)
+      .set({ status: 'released' })
+      .where(eq(wmsTables.stockReservations.shipmentLineId, loose.shipmentLineId));
+    await tx.update(wmsTables.waybills).set({ status: 'voided' }).where(eq(wmsTables.waybills.id, loose.waybillId));
+    await setShipment(tx, loose, { status: 'draft' });
+
+    const kernel = makeInboundReceiptKernel(tx as never);
+    const receipt = await kernel.recordArrival(
+      {
+        source: 'direct',
+        method: 'simple',
+        warehouseId: first.warehouseId,
+        reason: 'ready shipments join',
+        lines: [{ skuId: first.skuId, quantity: 2, eventKey: randomUUID() }],
+      },
+      tx,
+    );
+    const receiptLineId = receipt.lines[0].id;
+    const reserved = await reservations(tx).reservePartial(loose.shipmentLineId, 2, tx);
+    expect(reserved.totalReservedQty).toBe(2);
+    const [draft] = await tx.select().from(wmsTables.shipments).where(eq(wmsTables.shipments.id, loose.shipmentId));
+    await wiring.planning.plan(
+      loose.shipmentId,
+      {
+        shippingProfileId: draft.shippingProfileId ?? '',
+        expectedManifestVersion: draft.manifestVersion,
+        expectedReservationVersion: draft.reservationVersion,
+      },
+      `plan-${randomUUID()}`,
+      actor,
+      tx,
+    );
+    await seedRegisteredWaybill(tx, loose.shipmentId);
+    const putaway = () =>
+      kernel.putaway({ receiptLineId, toLocationId: first.locationId, quantity: 2, eventKey: randomUUID() }, tx);
+    const join = () =>
+      tx.transaction((trx) =>
+        wiring.batches.addShipment(first.batchId, loose.shipmentId, `j-${randomUUID()}`, actor, trx),
+      );
+    return { first, loose, receiptLineId, putaway, join };
+  }
+
+  it('ready 로 나온 상자는 시작한 배치에 INBOUND_PENDING 없이 들어간다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { first, loose, receiptLineId, putaway, join } = await startedBatchAndArrivedBox(tx);
+      await putaway();
+      const { items } = await ready(tx, first.warehouseId, [receiptLineId]);
+      expect(items.map((item) => [item.shipmentId, item.status, item.readiness])).toEqual([
+        [loose.shipmentId, 'planned', 'ready'],
+      ]);
+
+      const joined = await join();
+      expect(joined.workItem).toMatchObject({ batchId: first.batchId, shipmentId: loose.shipmentId });
+    });
+  });
+
+  it('putaway_required 로 나온 상자는 합류가 INBOUND_PENDING 으로 막힌다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { first, loose, receiptLineId, join } = await startedBatchAndArrivedBox(tx);
+      const { items } = await ready(tx, first.warehouseId, [receiptLineId]);
+      expect(items.map((item) => [item.shipmentId, item.readiness])).toEqual([[loose.shipmentId, 'putaway_required']]);
+
+      await expect(join()).rejects.toMatchObject({
+        response: {
+          code: 'BATCH_JOIN_BLOCKED',
+          errors: [expect.objectContaining({ shipmentId: loose.shipmentId, reason: 'INBOUND_PENDING' })],
+        },
+      });
     });
   });
 });

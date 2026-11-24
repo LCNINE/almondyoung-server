@@ -182,6 +182,9 @@ export class ReadyShipmentsReader {
          AND r.target_id = sl.id
          AND r.status = 'confirmed'
          AND r.updated_at >= base.since
+         -- 줄과 같은 상품·창고 — stock_reservations_sku_warehouse_idx 를 타게
+         AND r.sku_id = base.sku_id
+         AND r.warehouse_id = s.warehouse_id
        WHERE s.warehouse_id = ${warehouseId}
          AND s.supplier_id IS NULL
          AND s.status IN ('draft', 'planned')

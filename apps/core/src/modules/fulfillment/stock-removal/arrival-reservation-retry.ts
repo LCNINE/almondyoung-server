@@ -34,7 +34,7 @@ export class ArrivalReservationRetry extends InboundArrivalReservations {
       warehouseId,
       skuIds,
     });
-    // 후보는 우선할당 → 대기 순번이다. 한 상품의 줄이 다 못 받으면 그 뒤 줄도 못 받는다 — 잠금을 더 잡지 않는다
+    // 후보는 상품마다 우선할당 → 대기 순번이다. 한 상품의 줄이 다 못 받으면 그 상품의 뒤 줄도 못 받는다 — 잠금을 더 잡지 않는다
     const exhausted = new Set<string>();
     for (const candidate of candidates) {
       if (exhausted.has(candidate.skuId)) continue;

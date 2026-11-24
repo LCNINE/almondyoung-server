@@ -1,6 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 
 export class ReadyShipmentDto {
+  @ApiProperty({ format: 'uuid', description: '상자 id' })
   shipmentId: string;
   @ApiProperty({ enum: ['draft', 'planned'] })
   status: 'draft' | 'planned';

@@ -14,7 +14,9 @@ export interface ReservationRetryCandidate {
  * 후보: 미예약 수량이 남은 active draft shipment line 중 SKU 에 가용재고가 있는 것.
  * 우선할당한 출고주문부터, 그 안에서는 원 요청 시각(requested_at, short-pick 해제 이력 포함) asc — 오래된 요청부터.
  * 예약 이력이 없는 분할 라인은 원래 라인에서 물려받은 순번(demand_requested_at)을 쓴다.
- * `filter` 가 있으면 그 창고·상품의 줄만 고른다(입고 직후 재시도). 잠금 없는 SELECT 다.
+ * `filter` 가 있으면 그 창고·상품의 줄만 고른다(입고 직후 재시도). 이때는 상품마다 앞줄부터 번갈아 고른다 —
+ * 대기 줄이 많은 상품 하나가 상한을 다 채워 같은 입고의 다른 상품 줄이 빠지지 않게. 상품 안의 순서는 같다.
+ * 잠금 없는 SELECT 다.
  */
 export async function findReservationRetryCandidates(
   db: DbTx | DbService<typeof wmsSchema>['db'],
@@ -29,6 +31,10 @@ export async function findReservationRetryCandidates(
             sql`, `,
           )})`
     : sql``;
+  const queueOrder = sql`${reservationQueueOrderSql(sql`sl`, sql`fo`)}, sl.id`;
+  const order = filter
+    ? sql`ROW_NUMBER() OVER (PARTITION BY sl.sku_id ORDER BY ${queueOrder}), ${queueOrder}`
+    : queueOrder;
   const rows = await db.execute<{ id: string; sku_id: string; qty: number }>(sql`
     SELECT sl.id, sl.sku_id, sl.qty
       FROM shipment_lines sl
@@ -48,7 +54,7 @@ export async function findReservationRetryCandidates(
             AND reservation.status = 'confirmed'
        ), 0)
        ${narrowed}
-     ORDER BY ${reservationQueueOrderSql(sql`sl`, sql`fo`)}, sl.id
+     ORDER BY ${order}
      LIMIT ${limit}
   `);
   // execute 는 postgres.js RowList 를 돌려준다 — 행 모양은 위 SELECT 가 정한다
