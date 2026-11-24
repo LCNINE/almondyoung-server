@@ -8,6 +8,7 @@ import {
   SettlementView,
   toSettlementView,
 } from '../../sales-order/channel-cancel-request/channel-cancel-request.types';
+import { followUpDueSql, type OrderCsBrief } from './order-cs.reader';
 import { ReserveShortage } from './reserve-shortage.reader';
 import { decodeCursor, encodeCursor } from './order-progress.cursor';
 import { judgedRowsSql, judgedShipmentsSql, openShipmentScopeSql, shipmentScopeSql } from './order-progress.judge-sql';
@@ -62,6 +63,7 @@ export type ListQuery = {
   stage: OrderProgressStage;
   state?: string;
   stuck?: boolean;
+  followUpDue?: boolean;
   channel?: string;
   sort: 'dwell' | 'ordered';
   limit: number;
@@ -84,6 +86,8 @@ export type OrderProgressItem = {
   walletIntentId: string | null;
   /** 예약 단계의 부족 품목·입고 예정(#1016 15번). 서비스가 채운다 — 리더는 늘 null 로 낸다 */
   shortage: ReserveShortage | null;
+  /** 서비스가 채운다 — 리더는 늘 null 로 낸다 */
+  cs: OrderCsBrief | null;
 };
 export type OrderProgressPage = { items: OrderProgressItem[]; nextCursor: string | null };
 
@@ -171,6 +175,7 @@ export class OrderProgressReader {
     const cutoff = stuckCutoffSql(now);
     if (query.stuck === true) conds.push(sql`${t.stageEnteredAt} < ${cutoff}`);
     if (query.stuck === false) conds.push(sql`coalesce(${t.stageEnteredAt} < ${cutoff}, false) = false`);
+    if (query.followUpDue) conds.push(followUpDueSql(sql`${t.salesOrderId}`, now));
     if (query.cursor) {
       const c = decodeCursor(query.cursor);
       conds.push(
@@ -259,6 +264,7 @@ export class OrderProgressReader {
           settlement: settlements.get(row.salesOrderId) ?? null,
           walletIntentId: row.walletIntentId ?? null,
           shortage: null,
+          cs: null,
         })),
         nextCursor:
           rows.length > query.limit && last

@@ -517,10 +517,20 @@ export class SalesOrdersService {
       if (dto.memo !== undefined) updateData.memo = dto.memo;
 
       if (Object.keys(updateData).length > 0) {
-        await trx
+        const memoUnchanged =
+          dto.memo !== undefined && dto.expectedMemo !== undefined
+            ? sql`coalesce(${wmsTables.salesOrders.memo}, '') = ${dto.expectedMemo}`
+            : undefined;
+        const write = trx
           .update(wmsTables.salesOrders)
           .set({ ...updateData, updatedAt: new Date() })
-          .where(eq(wmsTables.salesOrders.id, id));
+          .where(and(eq(wmsTables.salesOrders.id, id), memoUnchanged));
+        const missed = memoUnchanged
+          ? (await write.returning({ id: wmsTables.salesOrders.id })).length === 0
+          : void (await write);
+        if (missed) {
+          throw new ConflictError('그 사이 다른 사람이 메모를 바꿨습니다. 바뀐 메모를 확인하고 다시 저장해 주세요.');
+        }
 
         await this.fulfillmentsV1.enqueue(
           {

@@ -4,6 +4,7 @@ import { eq, sql } from 'drizzle-orm';
 import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { makeDbService } from '../services/__support__';
+import { OrderCsReader } from './order-cs.reader';
 import { OrderProgressManager } from './order-progress.manager';
 import { OrderProgressReader } from './order-progress.reader';
 import { OrderProgressService } from './order-progress.service';
@@ -367,7 +368,11 @@ describeIfDb('ReserveShortageReader (PostgreSQL integration)', () => {
   it('서비스: 예약 단계 목록에만 shortage 를 싣고, 다른 단계는 null', async () => {
     await rollback(async (tx) => {
       const dbs = makeDbService(db);
-      const service = new OrderProgressService(new OrderProgressReader(dbs), new ReserveShortageReader(dbs));
+      const service = new OrderProgressService(
+        new OrderProgressReader(dbs),
+        new ReserveShortageReader(dbs),
+        new OrderCsReader(dbs),
+      );
       const manager = new OrderProgressManager(dbs);
       const w = await f.seedWorld(tx);
       const s = await seedSku(tx, w, '클립');

@@ -898,6 +898,7 @@ export function useOrderProgressOrders(params: {
   stage: string;
   state: string;
   stuck: boolean;
+  followUpDue: boolean;
   channel: string;
   sort: 'dwell' | 'ordered';
 }) {
@@ -908,6 +909,7 @@ export function useOrderProgressOrders(params: {
         stage: params.stage,
         state: params.state || undefined,
         stuck: params.stuck || undefined,
+        followUpDue: params.followUpDue || undefined,
         channel: params.channel || undefined,
         sort: params.sort,
         limit: 50,

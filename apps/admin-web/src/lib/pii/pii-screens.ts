@@ -98,7 +98,7 @@ const SHOWN: Readonly<Record<string, PiiScreen>> = {
   '/order/fulfillments/[id]': RECIPIENT_MIXED,
   '/order/inspection': RECIPIENT_ALL_DETAIL,
   '/order/picking-list': RECIPIENT_ALL_MIXED,
-  '/order/stall-board': { opens: 'recipient' },
+  '/order/stall-board': RECIPIENT_MIXED,
   '/order/waybill-issue': RECIPIENT_ALL,
   '/order/history': CUSTOMER_MIXED,
   '/order/manual-single': CUSTOMER_MIXED,

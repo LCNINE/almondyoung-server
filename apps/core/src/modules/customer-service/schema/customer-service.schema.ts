@@ -1,10 +1,12 @@
 import { type InferInsertModel, type InferSelectModel, relations, sql } from 'drizzle-orm';
-import { boolean, index, integer, jsonb, pgTable, text, timestamp, unique, uuid, varchar } from 'drizzle-orm/pg-core';
+import { boolean, date, index, integer, jsonb, pgTable, text, timestamp, unique, uuid, varchar } from 'drizzle-orm/pg-core';
 import { v7 as uuidv7 } from 'uuid';
 
 export type CsCaseStatus = 'open' | 'pending' | 'closed';
 export type CsCasePriority = 'low' | 'normal' | 'high' | 'urgent';
 export type CsCaseSourceChannel = 'kakao' | 'web_messenger' | 'manual';
+/** 통화함 · 부재 · 문자·카톡 보냄 */
+export type OrderContactOutcome = 'reached' | 'no_answer' | 'messaged';
 export type CsCaseEventType = 'status_changed' | 'assigned' | 'unassigned' | 'label_added' | 'label_removed';
 
 export const csCases = pgTable(
@@ -137,6 +139,22 @@ export const csCaseLabels = pgTable(
   (t) => [unique('uq_cs_case_label').on(t.csCaseId, t.labelId), index('idx_cs_case_labels_case_id').on(t.csCaseId)],
 );
 
+/** 주문 고객에게 연락한 기록. 고치거나 지우지 않고 쌓는다 — 다시 연락할 날은 가장 최근 기록의 것만 유효하다. */
+export const salesOrderContacts = pgTable(
+  'sales_order_contacts',
+  {
+    // 화면이 정해 보내는 요청 id 다 — 같은 저장이 두 번 와도 한 행만 남는다
+    id: uuid('id').primaryKey(),
+    salesOrderId: uuid('sales_order_id').notNull(),
+    outcome: varchar('outcome', { length: 16 }).$type<OrderContactOutcome>().notNull(),
+    body: text('body').notNull(),
+    followUpOn: date('follow_up_on'),
+    authorId: uuid('author_id').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('idx_sales_order_contacts_order').on(t.salesOrderId, t.createdAt)],
+);
+
 export const csCasesRelations = relations(csCases, () => ({}));
 
 export const customerServiceSchema = {
@@ -147,6 +165,7 @@ export const customerServiceSchema = {
   csCaseEvents,
   csLabels,
   csCaseLabels,
+  salesOrderContacts,
   csCasesRelations,
 };
 
@@ -157,3 +176,4 @@ export type CsCaseComment = InferSelectModel<typeof csCaseComments>;
 export type CsCaseEvent = InferSelectModel<typeof csCaseEvents>;
 export type CsLabel = InferSelectModel<typeof csLabels>;
 export type CsCaseCommentAttachment = InferSelectModel<typeof csCaseCommentAttachments>;
+export type SalesOrderContact = InferSelectModel<typeof salesOrderContacts>;

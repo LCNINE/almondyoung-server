@@ -12,6 +12,7 @@ export type OrderProgressListParams = {
   stage: string;
   state?: string;
   stuck?: boolean;
+  followUpDue?: boolean;
   channel?: string;
   sort?: 'dwell' | 'ordered';
   limit?: number;
