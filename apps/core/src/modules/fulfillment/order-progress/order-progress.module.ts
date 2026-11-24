@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { OrderCsReader } from './order-cs.reader';
 import { OrderProgressController } from './order-progress.controller';
 import { OrderProgressManager } from './order-progress.manager';
 import { OrderProgressReader } from './order-progress.reader';
@@ -19,6 +20,7 @@ import { ReserveShortageReader } from './reserve-shortage.reader';
     OrderProgressRefreshJob,
     OrderProgressService,
     ReserveShortageReader,
+    OrderCsReader,
   ],
   exports: [OrderProgressReader],
 })

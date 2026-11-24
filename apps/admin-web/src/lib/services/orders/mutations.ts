@@ -100,8 +100,20 @@ export const useUpdateSalesOrderMemo = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ id, memo }: { id: string; memo: string }) =>
-      orders.salesOrders.updateSalesOrder(id, { memo }),
+    // expectedMemo 를 주면 그 사이 메모가 바뀐 저장을 서버가 거절한다
+    mutationFn: ({
+      id,
+      memo,
+      expectedMemo,
+    }: {
+      id: string;
+      memo: string;
+      expectedMemo?: string;
+    }) =>
+      orders.salesOrders.updateSalesOrder(
+        id,
+        expectedMemo === undefined ? { memo } : { memo, expectedMemo }
+      ),
     onSuccess: async (_, { id, memo }) => {
       // 다른 페이지·검색에 남은 상세는 옛 메모라, 돌아갔을 때 새로 읽기 전에는 고칠 수 없게 지운다
       queryClient.removeQueries({

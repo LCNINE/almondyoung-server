@@ -29,6 +29,7 @@ import { useReadGate } from '@/features/main/read-gate';
 import { useCarrierTrackingAttention } from '@/lib/services/orders/carrier-tracking';
 import { usePendingRefunds } from '@/lib/services/wallet/queries';
 import { pendingTransfersOf } from '@/lib/api/domains/wallet/refund-execution';
+import { emptyCsDraft, type CsDrafts } from '../cs/cs-drafts';
 import { cn } from '@/lib/utils/ui';
 
 export default function StallBoardTemplate() {
@@ -47,6 +48,7 @@ export default function StallBoardTemplate() {
     const id = setInterval(() => setNow(new Date()), 15_000);
     return () => clearInterval(id);
   }, []);
+  const [drafts, setDrafts] = useState<CsDrafts>({});
   const summary = useOrderProgressSummary();
   // 수집 칸(격리·채널과 어긋남)은 판매처 조회 권한이다 — 없으면 요청하지 않고 그 칸을 «가림»으로 그린다
   const channelRead = useCan(['channel.account.read']);
@@ -165,6 +167,13 @@ export default function StallBoardTemplate() {
           stage={selected}
           summary={stages.find((s) => s.stage === selected)}
           now={now}
+          drafts={drafts}
+          setDraft={(id, change) =>
+            setDrafts((all) => ({
+              ...all,
+              [id]: change(all[id] ?? emptyCsDraft()),
+            }))
+          }
         />
       )}
     </div>

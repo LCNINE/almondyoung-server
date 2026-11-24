@@ -4,6 +4,7 @@
 // 서버 원형: apps/core/src/modules/fulfillment/order-progress/order-progress.controller.ts
 
 import { formatDwell } from '../../../utils/format-dwell';
+import { toCsBrief, type CsBrief } from './order-cs.shape';
 import { toSettlementView } from './cancel-request.shape';
 import type { SettlementView } from './cancel-request.shape';
 import {
@@ -82,6 +83,8 @@ export interface ProgressItem {
   walletIntentId: string | null;
   /** 예약 단계의 부족 품목·입고 예정(#1016 15번). 옛 core 응답엔 없다 → null */
   shortage: ReserveShortageView | null;
+  /** 고객에게 연락할 때 보는 값. 옛 core 응답엔 없다 → null */
+  cs: CsBrief | null;
 }
 export interface ReserveShortageItemView {
   skuId: string;
@@ -159,12 +162,13 @@ export function toProgressPage(body: unknown): ProgressPage {
     return { items: [], nextCursor: null };
   return {
     items: v.items.map((item) => {
-      const row = item as ProgressItem & { settlement?: unknown; walletIntentId?: unknown; shortage?: unknown };
+      const row = item as ProgressItem & { settlement?: unknown; walletIntentId?: unknown; shortage?: unknown; cs?: unknown };
       return {
         ...row,
         settlement: toSettlementView(row.settlement),
         walletIntentId: typeof row.walletIntentId === 'string' ? row.walletIntentId : null,
         shortage: toShortageView(row.shortage),
+        cs: toCsBrief(row.cs),
       };
     }),
     nextCursor: typeof v.nextCursor === 'string' ? v.nextCursor : null,

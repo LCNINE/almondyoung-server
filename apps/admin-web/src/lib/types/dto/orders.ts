@@ -107,6 +107,7 @@ export interface SalesOrderDto {
   shippingAddressHash: string | null;
   totalAmount: number | null;
   shippingFee: number;
+  memo?: string | null;
   mergeGroupId: string | null;
   isMerged: boolean;
   orderDate: Date;
@@ -370,6 +371,8 @@ export interface InvoicesResponseDto {
 export interface UpdateSalesOrderDto {
   processedAt?: string;
   memo?: string;
+  /** 보고 있던 메모. 그 사이 바뀌었으면 서버가 409 로 거절한다 */
+  expectedMemo?: string;
 }
 
 export interface UpdateSalesOrderResponseDto {

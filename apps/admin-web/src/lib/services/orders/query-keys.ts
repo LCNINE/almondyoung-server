@@ -153,6 +153,7 @@ export const orderQueryKeys = {
     stage: string;
     state: string;
     stuck: boolean;
+    followUpDue: boolean;
     channel: string;
     sort: string;
   }) => ['order-progress', 'orders', params] as const,

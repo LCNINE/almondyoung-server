@@ -1,6 +1,7 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, Param, ParseUUIDPipe, Query } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { ListOrderProgressQueryDto } from './dto/list-order-progress.dto';
+import { OrderCsContextDto } from './dto/order-cs.dto';
 import { OrderProgressPageDto, OrderProgressSummaryResponseDto } from './dto/order-progress-response.dto';
 import { OrderProgressService } from './order-progress.service';
 import { RequirePermission, PiiResponse, OPEN_WITH_RECIPIENT } from '@app/authorization';
@@ -22,12 +23,18 @@ export class OrderProgressController {
   @PiiResponse({
     fields: {
       'items[].customerName': 'name',
+      'items[].cs.customerPhone': 'phone',
+      'items[].cs.recipientName': 'name',
+      'items[].cs.recipientPhone': 'phone',
     },
     subjects: [
       { path: 'items[].salesOrderId', type: 'sales_order' },
     ],
     rawWithByField: {
       'items[].customerName': OPEN_WITH_RECIPIENT,
+      'items[].cs.customerPhone': OPEN_WITH_RECIPIENT,
+      'items[].cs.recipientName': OPEN_WITH_RECIPIENT,
+      'items[].cs.recipientPhone': OPEN_WITH_RECIPIENT,
     },
   })
   @RequirePermission('fulfillment.order.read')
@@ -39,10 +46,19 @@ export class OrderProgressController {
       stage: q.stage,
       state: q.state,
       stuck: q.stuck,
+      followUpDue: q.followUpDue,
       channel: q.channel,
       sort: q.sort ?? 'dwell',
       limit: q.limit ?? 50,
       cursor: q.cursor,
     });
+  }
+
+  @RequirePermission('fulfillment.order.read')
+  @Get('orders/:salesOrderId/cs-context')
+  @ApiOperation({ summary: '주문의 상자·송장과 같은 고객의 다른 주문 — 정체 보드 CS 상세' })
+  @ApiResponse({ status: 200, type: OrderCsContextDto })
+  csContext(@Param('salesOrderId', ParseUUIDPipe) salesOrderId: string) {
+    return this.service.csContext(salesOrderId);
   }
 }
