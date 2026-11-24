@@ -16,4 +16,5 @@ export class CustomerFileRejectionDto {
   @ApiProperty() productName!: string;
   @ApiProperty() rejectedAt!: Date;
   @ApiProperty({ description: '와우프레스 작업상태 코드', nullable: true, type: Number }) jobstat!: number | null;
+  @ApiProperty({ description: '다시 올릴 때 받는 확장자', type: [String] }) acceptedExtensions!: string[];
 }

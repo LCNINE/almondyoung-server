@@ -36,6 +36,7 @@ export const PRINT_ORDER_TABS = [
 export type PrintOrderTab = (typeof PRINT_ORDER_TABS)[number];
 export interface CustomerFileRejection {
   salesOrderLineId: string;
+  variantId: string;
   channelOrderId: string;
   channelOrderItemId: string | null;
   productName: string;
@@ -127,6 +128,7 @@ export class PrintOrderReader {
         trx
           .select({
             salesOrderLineId: t.salesOrderLineId,
+            variantId: lines.variantId,
             channelOrderId: orders.channelOrderId,
             channelOrderItemId: lines.channelOrderItemId,
             productName: lines.productName,
