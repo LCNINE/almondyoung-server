@@ -33,7 +33,7 @@ export interface ReadyShipments {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * 이번 입고로 다 갖춰진 상자(#1533). 받은 입고 줄의 상품마다 그 입고 시각 이후에 만든 확정 예약이 있고, 모든 줄이
+ * 이번 입고로 다 갖춰진 상자(#1533). 받은 입고 줄의 상품마다 그 입고 시각 이후에 만들거나 늘린 확정 예약이 있고, 모든 줄이
  * 확정 예약으로 다 찼고, 출고 준비가 계획을 막지 않는 상자다. 판정은 대기 순번대로 상품 재고를 나눠 쓰며 한다.
  */
 @Injectable()
@@ -163,7 +163,10 @@ export class ReadyShipmentsReader {
     return new Map(rows.map((row) => [row.skuId, row.since]));
   }
 
-  /** 기준 상품 줄에 그 상품의 입고 시각 이후 만든 확정 예약이 있는 상자 */
+  /**
+   * 기준 상품 줄에 그 상품의 입고 시각 이후 만들거나 늘린 확정 예약이 있는 상자.
+   * `reservePartial` 은 있던 예약 행을 제자리에서 늘리고 updated_at 만 바꾼다 — created_at 으로 보면 그 상자가 빠진다.
+   */
   private async reservedSinceArrival(trx: DbTx, warehouseId: string, since: Map<string, string>): Promise<string[]> {
     const base = sql.join(
       [...since].map(([skuId, at]) => sql`(${skuId}::uuid, ${at}::timestamptz)`),
@@ -178,7 +181,7 @@ export class ReadyShipmentsReader {
           ON r.target_type = 'SHIPMENT_LINE'
          AND r.target_id = sl.id
          AND r.status = 'confirmed'
-         AND r.created_at >= base.since
+         AND r.updated_at >= base.since
        WHERE s.warehouse_id = ${warehouseId}
          AND s.supplier_id IS NULL
          AND s.status IN ('draft', 'planned')

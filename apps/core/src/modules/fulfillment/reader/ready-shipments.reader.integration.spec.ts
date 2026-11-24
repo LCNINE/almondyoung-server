@@ -107,9 +107,20 @@ describeIfDb('입고로 갖춰진 상자', () => {
       .set({ qty })
       .where(and(eq(wmsTables.stockLedgers.skuId, box.skuId), eq(wmsTables.stockLedgers.locationId, box.locationId)));
 
+  // 입고 전에 만들고 마지막으로 늘린 예약으로 만든다
+  const reservedBeforeArrival = (tx: DbTx, box: Pick<Box, 'shipmentLineId'>, quantity?: number) =>
+    tx
+      .update(wmsTables.stockReservations)
+      .set({
+        createdAt: sqlQuery`now() - interval '1 minute'`,
+        updatedAt: sqlQuery`now() - interval '1 minute'`,
+        ...(quantity === undefined ? {} : { quantity }),
+      })
+      .where(eq(wmsTables.stockReservations.shipmentLineId, box.shipmentLineId));
+
   /**
    * 입고 뒤 잡힌 예약으로 다 찬 상자. 선반을 비우고 예약을 푼 상자에 입고하고, 그 줄을 다시 예약한다.
-   * 한 트랜잭션 안이라 입고 줄과 새 예약의 created_at 은 같다(기준은 `>=`).
+   * 한 트랜잭션 안이라 입고 줄의 created_at 과 새 예약의 updated_at 은 같다(기준은 `>=`).
    */
   async function filledByArrival(tx: DbTx, qty = 2) {
     const box = await seedPickableShipment(tx, qty);
@@ -176,10 +187,7 @@ describeIfDb('입고로 갖춰진 상자', () => {
     await inRollbackTx(db, async (tx) => {
       const { box, receiptLineId } = await filledByArrival(tx);
       const earlier = await sibling(tx, box, 1);
-      await tx
-        .update(wmsTables.stockReservations)
-        .set({ createdAt: sqlQuery`now() - interval '1 minute'` })
-        .where(eq(wmsTables.stockReservations.shipmentLineId, earlier.shipmentLineId));
+      await reservedBeforeArrival(tx, earlier);
       // 재고가 모자라 빠지는 것이 아님을 보인다 — 선반에 그 상자 몫이 있다
       await setShelf(tx, box, 1);
 
@@ -187,6 +195,47 @@ describeIfDb('입고로 갖춰진 상자', () => {
         items: [expect.objectContaining({ shipmentId: box.shipmentId })],
         waitingOnOtherSkus: 0,
       });
+    });
+  });
+
+  it('입고 전에 일부만 예약됐다가 이번 입고로 다 찬 상자도 나온다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      // 줄 수량 2 중 선반의 1 만 입고 전에 예약됐다
+      const box = await seedPickableShipment(tx, 2);
+      await setShelf(tx, box, 1);
+      await reservedBeforeArrival(tx, box, 1);
+      await leaveBatch(tx, box);
+      await setShipment(tx, box, { status: 'draft' });
+
+      const receipt = await makeInboundReceiptKernel(tx as never).recordArrival(
+        {
+          source: 'direct',
+          method: 'simple',
+          warehouseId: box.warehouseId,
+          reason: 'ready shipments',
+          lines: [{ skuId: box.skuId, quantity: 1, eventKey: randomUUID() }],
+        },
+        tx,
+      );
+      const receiptLineId = receipt.lines[0].id;
+      expect(await ready(tx, box.warehouseId, [receiptLineId])).toEqual({ items: [], waitingOnOtherSkus: 0 });
+
+      // 재시도는 있던 예약 행을 제자리에서 늘린다
+      const reserved = await reservations(tx).reservePartial(box.shipmentLineId, 1, tx);
+      expect(reserved.totalReservedQty).toBe(2);
+      const rows = await tx
+        .select({ id: wmsTables.stockReservations.id })
+        .from(wmsTables.stockReservations)
+        .where(
+          and(
+            eq(wmsTables.stockReservations.shipmentLineId, box.shipmentLineId),
+            eq(wmsTables.stockReservations.status, 'confirmed'),
+          ),
+        );
+      expect(rows).toHaveLength(1);
+
+      const { items } = await ready(tx, box.warehouseId, [receiptLineId]);
+      expect(items.map((item) => [item.shipmentId, item.readiness])).toEqual([[box.shipmentId, 'putaway_required']]);
     });
   });
 
