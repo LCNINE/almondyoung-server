@@ -88,6 +88,7 @@ export const createDefaultStockPolicy = (): StockPolicyDto => ({
   comingSoonDate: null,
   restockDate: null,
   restockApproximate: false,
+  discontinuing: false,
 });
 
 export const normalizeStockPolicy = (
@@ -99,6 +100,7 @@ export const normalizeStockPolicy = (
   comingSoonDate: policy?.comingSoonDate ?? null,
   restockDate: policy?.restockDate ?? null,
   restockApproximate: policy?.restockApproximate ?? false,
+  discontinuing: policy?.discontinuing ?? false,
 });
 
 /**

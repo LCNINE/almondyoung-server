@@ -1555,6 +1555,8 @@ export const productSellableQuantityProjections = pgTable(
     comingSoonDate: date('coming_soon_date'),
     inboundDate: date('inbound_date'),
     inboundApproximate: boolean('inbound_approximate').notNull().default(false),
+    // comingSoonDate 와 같은 이유로 둔다 — 체크만 바꾸면 reason 이 그대로라 변경 감지에 안 걸린다.
+    discontinuing: boolean('discontinuing').notNull().default(false),
     restockCalculatedAt: timestamp('restock_calculated_at', { withTimezone: true }),
     calculatedAt: timestamp('calculated_at', { withTimezone: true }).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -2630,6 +2632,8 @@ export const salesVariantPolicies = pgTable('sales_variant_policies', {
   comingSoonDate: date('coming_soon_date'),
   restockDate: date('restock_date'),
   restockApproximate: boolean('restock_approximate').notNull().default(false),
+  // 표시 전용 단종 예정. 판매·발주 동작은 바꾸지 않는다.
+  discontinuing: boolean('discontinuing').notNull().default(false),
   effectiveFrom: timestamp('effective_from', { withTimezone: true }),
   effectiveTo: timestamp('effective_to', { withTimezone: true }),
   updatedBy: uuid('updated_by'),

@@ -726,6 +726,7 @@ describe('ProductMatchingService strategy semantics', () => {
       comingSoonDate: null,
       restockDate: null,
       restockApproximate: false,
+      discontinuing: false,
     });
   });
 

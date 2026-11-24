@@ -71,6 +71,7 @@ export class ProductSkuMappingService {
         ? { restockDate: policy?.restockDate ?? null }
         : {}),
       ...(policy?.restockApproximate !== undefined ? { restockApproximate: policy.restockApproximate } : {}),
+      ...(policy?.discontinuing !== undefined ? { discontinuing: policy.discontinuing } : {}),
     };
 
     const variantPolicyValues = {
@@ -147,6 +148,7 @@ export class ProductSkuMappingService {
                 alwaysSellableZeroStock: false,
                 availabilityOverride: null,
                 comingSoonDate: null,
+                discontinuing: false,
               },
               projection: null,
             })),
@@ -187,6 +189,7 @@ export class ProductSkuMappingService {
             comingSoonDate: wmsTables.salesVariantPolicies.comingSoonDate,
             restockDate: wmsTables.salesVariantPolicies.restockDate,
             restockApproximate: wmsTables.salesVariantPolicies.restockApproximate,
+            discontinuing: wmsTables.salesVariantPolicies.discontinuing,
           })
           .from(wmsTables.salesVariantPolicies)
           .where(inArray(wmsTables.salesVariantPolicies.variantId, uniqueVariantIds));
@@ -231,6 +234,7 @@ export class ProductSkuMappingService {
             comingSoonDate: policy?.comingSoonDate ?? null,
             restockDate: policy?.restockDate ?? null,
             restockApproximate: policy?.restockApproximate ?? false,
+            discontinuing: policy?.discontinuing ?? false,
           };
 
           if (!existingVariantIds.has(variantId)) {
@@ -305,6 +309,7 @@ export class ProductSkuMappingService {
             comingSoonDate: policy?.comingSoonDate ?? null,
             restockDate: policy?.restockDate ?? null,
             restockApproximate: policy?.restockApproximate ?? false,
+            discontinuing: policy?.discontinuing ?? false,
           },
         };
       },

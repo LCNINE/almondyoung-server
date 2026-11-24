@@ -388,6 +388,25 @@ export function useProductVariantsTableColumns(
               },
             }),
             columnHelper.display({
+              id: 'discontinuing',
+              header: renderBulkHeader(
+                '단종 예정',
+                (p) => !!p.discontinuing,
+                (p, checked) => ({ ...p, discontinuing: checked })
+              ),
+              cell: ({ row }) => {
+                const policy = normalizeStockPolicy(
+                  row.original.matchingInfo?.stockPolicy
+                );
+                return renderPolicyCheckbox(
+                  row.original,
+                  !!policy.discontinuing,
+                  '단종 예정',
+                  (current, checked) => ({ ...current, discontinuing: checked })
+                );
+              },
+            }),
+            columnHelper.display({
               id: 'preStockSellable',
               header: renderBulkHeader(
                 '선판매',

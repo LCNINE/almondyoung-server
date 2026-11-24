@@ -177,6 +177,7 @@ const PROJECTION_OWNED_VARIANT_METADATA_KEYS = [
   'comingSoonDate',
   'inboundDate',
   'inboundApproximate',
+  'discontinuing',
 ] as const;
 
 const ORDER_FIELDS = [
@@ -1752,6 +1753,10 @@ export class MedusaClient {
     const hasRestockProjection = Object.prototype.hasOwnProperty.call(input, 'inboundDate');
     const desiredInboundDate = input.inboundDate ?? undefined;
     const desiredInboundApproximate = desiredInboundDate ? (input.inboundApproximate ?? false) : undefined;
+    // 필드 생략은 이전 생산자 이벤트라 기존 표시를 건드리지 않는다.
+    const hasDiscontinuingProjection = Object.prototype.hasOwnProperty.call(input, 'discontinuing');
+    const desiredDiscontinuing = input.discontinuing ? true : undefined;
+    const discontinuingChanged = hasDiscontinuingProjection && previousMetadata.discontinuing !== desiredDiscontinuing;
     const restockChanged =
       hasRestockProjection &&
       (previousMetadata.inboundDate !== desiredInboundDate ||
@@ -1759,7 +1764,8 @@ export class MedusaClient {
     if (
       previousMetadata.comingSoon !== desiredComingSoon ||
       previousMetadata.comingSoonDate !== desiredComingSoonDate ||
-      restockChanged
+      restockChanged ||
+      discontinuingChanged
     ) {
       const metadata = { ...previousMetadata };
       // 해제 시엔 키를 남기지 않는다 — 남으면 다음 품절 때 "곧 출시 예정" 이 되살아난다.
@@ -1775,6 +1781,10 @@ export class MedusaClient {
           metadata.inboundDate = desiredInboundDate;
           metadata.inboundApproximate = desiredInboundApproximate;
         }
+      }
+      if (hasDiscontinuingProjection) {
+        delete metadata.discontinuing;
+        if (desiredDiscontinuing) metadata.discontinuing = true;
       }
 
       variantUpdate.metadata = metadata;

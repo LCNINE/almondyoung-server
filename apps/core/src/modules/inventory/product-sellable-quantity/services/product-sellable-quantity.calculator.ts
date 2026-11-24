@@ -31,6 +31,8 @@ export interface ProductSellableQuantityInput {
   availabilityOverride?: ProductAvailabilityOverride;
   /** 표시 전용 출시예정일 (YYYY-MM-DD). 계산에는 쓰이지 않고 그대로 결과에 실려 나간다. */
   comingSoonDate?: string | null;
+  /** 표시 전용 단종 예정. 계산에는 쓰이지 않는다. */
+  discontinuing?: boolean;
   components: ProductSellableQuantityComponentInput[];
 }
 
@@ -51,6 +53,7 @@ export interface ProductSellableQuantityResult {
   alwaysSellableZeroStock: boolean;
   availabilityOverride: ProductAvailabilityOverride;
   comingSoonDate: string | null;
+  discontinuing: boolean;
   inboundDate?: string | null;
   inboundApproximate?: boolean;
   inboundSource?: 'manual' | 'purchase_order' | 'inbound_shipment' | null;
@@ -74,6 +77,7 @@ export function calculateProductSellableQuantity(
     alwaysSellableZeroStock: input.matching?.alwaysSellableZeroStock ?? false,
     availabilityOverride: input.availabilityOverride ?? null,
     comingSoonDate: input.comingSoonDate ?? null,
+    discontinuing: input.discontinuing ?? false,
     calculatedAt,
   };
 

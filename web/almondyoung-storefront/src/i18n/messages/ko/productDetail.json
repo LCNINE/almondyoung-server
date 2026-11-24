@@ -118,6 +118,7 @@
     "restockInfoLabel": "입고 예정일 안내",
     "outOfStockSuffix": "({value} 품절)",
     "optionRestockShort": "{date} 입고",
+    "discontinuingBadge": "단종 예정",
     "defaultLabel": "기본 옵션값",
     "directInput": "직접입력",
     "buyNow": "바로구매",

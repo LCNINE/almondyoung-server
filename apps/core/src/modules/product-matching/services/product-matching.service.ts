@@ -107,7 +107,8 @@ export class ProductMatchingService {
       options.requireAvailabilityOverride &&
       !hasAvailabilityOverride &&
       !Object.prototype.hasOwnProperty.call(stockPolicy ?? {}, 'restockDate') &&
-      !Object.prototype.hasOwnProperty.call(stockPolicy ?? {}, 'restockApproximate')
+      !Object.prototype.hasOwnProperty.call(stockPolicy ?? {}, 'restockApproximate') &&
+      !Object.prototype.hasOwnProperty.call(stockPolicy ?? {}, 'discontinuing')
     ) {
       return;
     }
@@ -128,6 +129,7 @@ export class ProductMatchingService {
         ? { restockDate: stockPolicy?.restockDate ?? null }
         : {}),
       ...(stockPolicy?.restockApproximate !== undefined ? { restockApproximate: stockPolicy.restockApproximate } : {}),
+      ...(stockPolicy?.discontinuing !== undefined ? { discontinuing: stockPolicy.discontinuing } : {}),
     };
 
     const variantPolicyValues = {
@@ -661,6 +663,7 @@ export class ProductMatchingService {
               availabilityOverride: wmsTables.salesVariantPolicies.availabilityOverride,
               restockDate: wmsTables.salesVariantPolicies.restockDate,
               restockApproximate: wmsTables.salesVariantPolicies.restockApproximate,
+              discontinuing: wmsTables.salesVariantPolicies.discontinuing,
             })
             .from(wmsTables.salesVariantPolicies)
             .where(inArray(wmsTables.salesVariantPolicies.variantId, variantIds))
@@ -722,6 +725,7 @@ export class ProductMatchingService {
           availabilityOverride: policiesByVariantId.get(row.variantId)?.availabilityOverride ?? null,
           restockDate: policiesByVariantId.get(row.variantId)?.restockDate ?? null,
           restockApproximate: policiesByVariantId.get(row.variantId)?.restockApproximate ?? false,
+          discontinuing: policiesByVariantId.get(row.variantId)?.discontinuing ?? false,
         },
         isGift: false,
         createdAt: row.createdAt.toISOString(),
@@ -1362,6 +1366,7 @@ export class ProductMatchingService {
     comingSoonDate: string | null;
     restockDate: string | null;
     restockApproximate: boolean;
+    discontinuing: boolean;
   } | null> {
     const { matching, policy } = await this.dbService.run(async (trx) => {
       const [row] = await trx
@@ -1378,6 +1383,7 @@ export class ProductMatchingService {
           comingSoonDate: wmsTables.salesVariantPolicies.comingSoonDate,
           restockDate: wmsTables.salesVariantPolicies.restockDate,
           restockApproximate: wmsTables.salesVariantPolicies.restockApproximate,
+          discontinuing: wmsTables.salesVariantPolicies.discontinuing,
         })
         .from(wmsTables.salesVariantPolicies)
         .where(eq(wmsTables.salesVariantPolicies.variantId, variantId))
@@ -1396,6 +1402,7 @@ export class ProductMatchingService {
       comingSoonDate: policy?.comingSoonDate ?? null,
       restockDate: policy?.restockDate ?? null,
       restockApproximate: policy?.restockApproximate ?? false,
+      discontinuing: policy?.discontinuing ?? false,
     };
   }
 

@@ -121,6 +121,7 @@ export class ProductSellableQuantityService {
             comingSoonDate: wmsTables.salesVariantPolicies.comingSoonDate,
             restockDate: wmsTables.salesVariantPolicies.restockDate,
             restockApproximate: wmsTables.salesVariantPolicies.restockApproximate,
+            discontinuing: wmsTables.salesVariantPolicies.discontinuing,
           })
           .from(wmsTables.salesVariantPolicies)
           .where(inArray(wmsTables.salesVariantPolicies.variantId, existingVariantIds));
@@ -288,6 +289,7 @@ export class ProductSellableQuantityService {
                 : null,
               availabilityOverride: policy?.availabilityOverride ?? null,
               comingSoonDate: policy?.comingSoonDate ?? null,
+              discontinuing: policy?.discontinuing ?? false,
               components: links.map((link) => ({
                 skuId: link.skuId,
                 requiredQuantity: link.quantity,
@@ -430,6 +432,7 @@ export class ProductSellableQuantityService {
             isSellable: projection.isSellable,
             reason: projection.reason,
             comingSoonDate: projection.comingSoonDate,
+            discontinuing: projection.discontinuing,
             inboundDate: projection.inboundDate ?? null,
             inboundApproximate: projection.inboundApproximate ?? false,
             restockCalculatedAt: now,
@@ -447,6 +450,7 @@ export class ProductSellableQuantityService {
               isSellable: projection.isSellable,
               reason: projection.reason,
               comingSoonDate: projection.comingSoonDate,
+              discontinuing: projection.discontinuing,
               inboundDate: projection.inboundDate ?? null,
               inboundApproximate: projection.inboundApproximate ?? false,
               restockCalculatedAt: now,
@@ -713,6 +717,7 @@ export function toProductSellableQuantityChangedPayload(
     reason: projection.reason,
     availabilityOverride: projection.availabilityOverride,
     comingSoonDate: projection.comingSoonDate,
+    discontinuing: projection.discontinuing,
     inboundDate: projection.inboundDate ?? null,
     inboundApproximate: projection.inboundApproximate ?? false,
     preStockSellable: projection.preStockSellable,
@@ -731,6 +736,7 @@ export function hasProductSellableQuantityProjectionChanged(
     isSellable: boolean;
     reason: string;
     comingSoonDate?: string | null;
+    discontinuing?: boolean;
     inboundDate?: string | null;
     inboundApproximate?: boolean;
   },
@@ -744,6 +750,7 @@ export function hasProductSellableQuantityProjectionChanged(
     current.isSellable !== previous.isSellable ||
     current.reason !== previous.reason ||
     (current.comingSoonDate ?? null) !== (previous.comingSoonDate ?? null) ||
+    current.discontinuing !== (previous.discontinuing ?? false) ||
     (current.inboundDate ?? null) !== (previous.inboundDate ?? null) ||
     (current.inboundApproximate ?? false) !== (previous.inboundApproximate ?? false)
   );

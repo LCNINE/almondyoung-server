@@ -36,6 +36,8 @@ export interface StockPolicyDto {
   comingSoonDate?: string | null;
   restockDate?: string | null;
   restockApproximate?: boolean;
+  /** 표시 전용 단종 예정. 스토어프론트 옵션에 라벨만 붙는다. */
+  discontinuing?: boolean;
 }
 
 export interface SkuMappingDto {

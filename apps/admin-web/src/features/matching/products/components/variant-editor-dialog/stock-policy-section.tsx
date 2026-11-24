@@ -99,6 +99,16 @@ export function StockPolicySection({
         </div>
         <div className="flex items-center gap-2">
           <Checkbox
+            id="discontinuing"
+            checked={!!value.discontinuing}
+            onCheckedChange={(c) => onChange({ ...value, discontinuing: !!c })}
+          />
+          <Label htmlFor="discontinuing" className="text-sm cursor-pointer">
+            단종 예정 (고객 화면에 라벨만 표시, 판매는 그대로)
+          </Label>
+        </div>
+        <div className="flex items-center gap-2">
+          <Checkbox
             id="comingSoon"
             checked={isComingSoon}
             onCheckedChange={(c) => setComingSoon(!!c)}
