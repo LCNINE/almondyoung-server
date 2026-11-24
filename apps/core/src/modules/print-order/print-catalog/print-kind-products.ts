@@ -55,12 +55,13 @@ export const PRINT_KIND_PRODUCTS: Record<PrintKind, PrintKindProduct[]> = {
     fileFormat: 'eps' as const,
     fileDpi: 300,
   })),
-  // 소량 청첩장 엽서형(100×180·110×158). AI·EPS 만 받고 작업 크기가 사방 1mm 크다(와우프레스 상품 페이지 CSize 2, 2026-11-23)
+  // 소량 청첩장 엽서형(100×180·110×158). 작업 크기가 사방 1mm 크다(와우프레스 상품 페이지 CSize 2, 2026-11-23).
+  // 상품 페이지는 AI·EPS 만 적지만 PDF 로 재접수한 주문이 통과했다(2026-11-24). 확장자만 .ai 인 PDF 는 거절됐다
   invitation: [10610, 10611].map((sizeno) => ({
     prodno: 40572,
     sizeno,
     bleedMm: 1,
-    fileFormat: 'eps' as const,
+    fileFormat: 'pdf' as const,
     fileDpi: 300,
   })),
 };

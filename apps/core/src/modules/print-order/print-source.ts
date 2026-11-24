@@ -20,7 +20,7 @@ export const CUSTOMER_FILE_EXTENSIONS: Readonly<Record<number, readonly string[]
   40106: ['ai', 'eps', 'jpg', 'jpeg', 'png'],
   40162: ['ai', 'eps'],
   40164: ['ai', 'eps'],
-  40572: ['ai', 'eps'],
+  40572: ['pdf', 'ai', 'eps'],
 };
 
 export function customerFileExtension(prodno: number, fileName: string): string | null {

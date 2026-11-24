@@ -330,7 +330,7 @@ describe('PrintOrderSubmitManager', () => {
     const fileRow = () => makeRow({ almondDesignId: null, printFileId: FILE_ID });
     const accepting = () => {
       const specs = new FakeSpecs();
-      specs.findSpec.mockResolvedValue({ ...mockSpec(true), prodno: 40572 });
+      specs.findSpec.mockResolvedValue({ ...mockSpec(true), prodno: 40164 });
       return specs;
     };
 

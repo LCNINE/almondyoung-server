@@ -11,7 +11,7 @@ export const CUSTOMER_FILE_EXTENSIONS: Partial<
   pet: ["ai", "eps", "jpg", "jpeg", "png"],
   mini: ["ai", "eps"],
   menu: ["ai", "eps"],
-  invitation: ["ai", "eps"],
+  invitation: ["pdf", "ai", "eps"],
 }
 
 export const CUSTOMER_FILE_MAX_BYTES = 300 * 1024 * 1024

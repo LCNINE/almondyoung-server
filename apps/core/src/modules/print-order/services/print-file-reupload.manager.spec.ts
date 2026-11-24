@@ -49,7 +49,7 @@ class FakeSpecs extends PrintProductSpecRepository {
   constructor() {
     super(noDb);
   }
-  findSpec = jest.fn(() => Promise.resolve({ prodno: 40572 } as WowpressLineSpec));
+  findSpec = jest.fn(() => Promise.resolve({ prodno: 40164 } as WowpressLineSpec));
 }
 
 class FakeFiles extends CustomerPrintFileClient {

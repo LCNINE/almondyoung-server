@@ -13,6 +13,9 @@ describe("customer print file", () => {
     ).toBeNull()
     expect(
       customerFileProblem("invitation", { name: "청첩장.pdf", size: 10 })
+    ).toBeNull()
+    expect(
+      customerFileProblem("mini", { name: "mini.pdf", size: 10 })
     ).toBe("type")
     expect(
       customerFileProblem("card", { name: "card.pdf", size: 10 })
