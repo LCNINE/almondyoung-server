@@ -3,10 +3,12 @@ import type {
   PlannedShipment,
   PreparationBatchReturn,
   PreparationBucket,
+  PreparationLineStock,
   PreparationShipmentDto,
   PreparationShortPickLine,
 } from '@/lib/types/dto/fulfillment';
 import { formatDwell } from '@/lib/utils/format-dwell';
+import { arrivalSortKey } from './blocked-copy';
 
 // 이보다 오래 기다린 주문은 눈에 띄게 그린다 — 정체 보드의 계획 대기 기준(1일)과 같은 길이
 export const LONG_WAIT_MS = 24 * 60 * 60 * 1000;
@@ -177,6 +179,59 @@ export function lineSplitText(line: LineQuantity): string {
   const { now, wait } = splitQuantities([line]);
 
   return `주문 ${line.qty} · 지금 보낼 ${now} · 기다릴 ${wait}`;
+}
+
+// 합포장한 상자(주문이 여럿)는 서버가 «있는 것만 먼저 보내기»를 거절한다
+export function isSplittableUnreserved(
+  shipment: Pick<PreparationShipmentDto, 'orderNos' | 'orderCount'>
+): boolean {
+  return (shipment.orderCount ?? shipment.orderNos.length) <= 1;
+}
+
+export interface WaitingProduct {
+  skuId: string;
+  name: string;
+  qty: number;
+  shipmentIds: string[];
+  stock: PreparationLineStock;
+}
+
+/** 나누면 기다리게 되는 상품을 상품마다 모은다. 먼저 들어올 상품이 앞이다. 상품 id 를 싣지 않는 옛 응답이면 비운다. */
+export function waitingProducts(
+  shipments: Pick<PreparationShipmentDto, 'shipmentId' | 'lines'>[]
+): WaitingProduct[] {
+  const products = new Map<string, WaitingProduct>();
+
+  for (const { shipmentId, lines } of shipments) {
+    for (const line of lines ?? []) {
+      const { wait } = splitQuantities([line]);
+      const skuId = line.stock?.skuId;
+
+      if (wait === 0 || !line.stock || !skuId) {
+        continue;
+      }
+
+      const product = products.get(skuId) ?? {
+        skuId,
+        name: line.name,
+        qty: 0,
+        shipmentIds: [],
+        stock: line.stock,
+      };
+
+      product.qty += wait;
+
+      if (!product.shipmentIds.includes(shipmentId)) {
+        product.shipmentIds.push(shipmentId);
+      }
+
+      products.set(skuId, product);
+    }
+  }
+
+  return [...products.values()].sort((a, b) =>
+    arrivalSortKey(a.stock).localeCompare(arrivalSortKey(b.stock))
+  );
 }
 
 export type PreparationTarget =

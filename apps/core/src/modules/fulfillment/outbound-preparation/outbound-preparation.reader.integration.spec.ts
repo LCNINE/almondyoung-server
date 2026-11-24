@@ -876,7 +876,14 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
         name: expect.any(String),
         qty: 5,
         reservedQty: 0,
-        stock: { skuId: base.skuId, onHand: 4, reservedByOthers: reserved, incoming: null, elsewhere: null },
+        stock: {
+          skuId: base.skuId,
+          onHand: 4,
+          reservedByOthers: reserved,
+          available: 4 - reserved,
+          incoming: null,
+          elsewhere: null,
+        },
       });
 
       // 판매 창고가 여럿이면 이 창고로 들어올 수량은 모르고, 판매하지 않는 창고 보유·발주만 안다
@@ -890,6 +897,7 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
         skuId: base.skuId,
         onHand: 4,
         reservedByOthers: reserved,
+        available: 4 - reserved,
         incoming: null,
         elsewhere: expect.objectContaining({ onHand: expect.any(Number), ordered: expect.any(Number) }),
       });
@@ -903,16 +911,68 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
         skuId: base.skuId,
         onHand: 4,
         reservedByOthers: reserved,
+        available: 4 - reserved,
         incoming: { inTransit: 0, inTransitEta: null, ordered: 0, inboundShipment: 0, inboundShipmentEta: null },
         elsewhere: { onHand: 0, ordered: 0, orderedEta: null },
       });
-      // 출고불가가 아닌 상자는 재고를 싣지 않는다
+      // 모자란 줄이 없는 상자는 재고를 싣지 않는다
       expect(
         (await reader.summarize(base.warehouseId, undefined, tx)).buckets
           .flatMap(({ bucket, shipments }) => (bucket === 'unavailable' ? [] : shipments))
           .flatMap(({ lines }) => lines)
           .some((line) => line.stock !== undefined),
       ).toBe(false);
+    });
+  });
+
+  it('부분출고 상자는 모자란 줄에만, 이 상자가 잡은 몫을 뺀 재고와 들어올 예정을 싣는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const base = await consolidationBase(tx, 10);
+      const held = await createConsolidationSource(tx, wired, base, { quantity: 2, customerId: randomUUID() });
+      const partial = await createConsolidationSource(tx, wired, base, { quantity: 3, customerId: randomUUID() });
+      const joined = await createConsolidationSource(tx, wired, base, { quantity: 1, customerId: randomUUID() });
+
+      // 같은 상품의 다른 줄은 다 잡혀 있다
+      await tx
+        .update(wmsTables.shipmentLines)
+        .set({ shipmentId: partial.shipment.id })
+        .where(eq(wmsTables.shipmentLines.id, joined.line.id));
+      await tx
+        .update(wmsTables.stockReservations)
+        .set({ quantity: 1 })
+        .where(eq(wmsTables.stockReservations.targetId, partial.line.id));
+      await tx
+        .update(wmsTables.warehouses)
+        .set({ isSellable: true })
+        .where(eq(wmsTables.warehouses.id, base.warehouseId));
+      await tx
+        .update(wmsTables.warehouses)
+        .set({ isSellable: false })
+        .where(not(eq(wmsTables.warehouses.id, base.warehouseId)));
+
+      const summary = await reader.summarize(base.warehouseId, undefined, tx);
+      const box = summary.buckets
+        .find(({ bucket }) => bucket === 'partial')
+        ?.shipments.find(({ shipmentId }) => shipmentId === partial.shipment.id);
+      // 다른 주문 줄이 든 상자다
+      expect(box?.orderCount).toBe(2);
+      const short = box?.lines.find((line) => line.qty === 3);
+      const full = box?.lines.find((line) => line.qty === 1);
+
+      expect(short?.reservedQty).toBe(1);
+      expect(short?.stock).toEqual({
+        skuId: base.skuId,
+        onHand: 10,
+        // 다른 상자가 잡은 2개만. 이 상자의 두 줄이 잡은 2개는 세지 않는다
+        reservedByOthers: 2,
+        available: 6,
+        incoming: { inTransit: 0, inTransitEta: null, ordered: 0, inboundShipment: 0, inboundShipmentEta: null },
+        elsewhere: { onHand: 0, ordered: 0, orderedEta: null },
+      });
+      expect(full?.reservedQty).toBe(1);
+      expect(full?.stock).toBeUndefined();
+      const ready = summary.buckets.find(({ bucket }) => bucket === 'ready')?.shipments;
+      expect(ready?.find(({ shipmentId }) => shipmentId === held.shipment.id)?.orderCount).toBe(1);
     });
   });
 

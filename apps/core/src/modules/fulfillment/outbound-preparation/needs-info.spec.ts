@@ -82,6 +82,7 @@ describe('shortageStockOf', () => {
     expect(shortageStockOf({ onHand: 2, reserved: 2 }, pipeline, 0, { incoming: true, elsewhere: true })).toEqual({
       onHand: 2,
       reservedByOthers: 2,
+      available: 0,
       incoming: {
         inTransit: 3,
         inTransitEta: '2026-01-05',
@@ -97,6 +98,7 @@ describe('shortageStockOf', () => {
     expect(shortageStockOf({ onHand: 5, reserved: 3 }, pipeline, 1, { incoming: false, elsewhere: true })).toEqual({
       onHand: 5,
       reservedByOthers: 2,
+      available: 2,
       incoming: null,
       elsewhere: { onHand: 4, ordered: 20, orderedEta: '2026-01-20' },
     });
@@ -110,6 +112,7 @@ describe('shortageStockOf', () => {
     expect(shortageStockOf(undefined, undefined, 0, { incoming: true, elsewhere: true })).toEqual({
       onHand: 0,
       reservedByOthers: 0,
+      available: 0,
       incoming: { inTransit: 0, inTransitEta: null, ordered: 0, inboundShipment: 0, inboundShipmentEta: null },
       elsewhere: { onHand: 0, ordered: 0, orderedEta: null },
     });

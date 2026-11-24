@@ -26,6 +26,8 @@ export interface ShortageStock {
   onHand: number;
   // 그중 다른 상자가 잡은 수량(confirmed 예약 합)
   reservedByOthers: number;
+  // 아직 어느 상자도 잡지 않은 수량
+  available: number;
   // 이 창고로 오는 것은 판매 창고가 이 창고 하나일 때만, 다른 창고에 있는 것은 이 창고가 판매 창고일 때만 안다. 모르면 null
   incoming: ShortageIncoming | null;
   elsewhere: ShortageElsewhere | null;
@@ -92,6 +94,7 @@ export function shortageStockOf(
   return {
     onHand: stock?.onHand ?? 0,
     reservedByOthers: Math.max(0, (stock?.reserved ?? 0) - ownReservedQty),
+    available: Math.max(0, (stock?.onHand ?? 0) - (stock?.reserved ?? 0)),
     incoming: scope.incoming
       ? {
           inTransit: pipeline?.inTransitQty ?? 0,

@@ -388,7 +388,7 @@ function ReasonCell({
   );
 }
 
-// 출고불가는 모자란 상품이 언제·어디서 오는지, 정보 부족은 고칠 것과 고치는 곳
+// 출고불가·부분출고는 모자란 상품이 언제·어디서 오는지, 정보 부족은 고칠 것과 고치는 곳
 function blockedReason(
   bucket: PreparationBucketDto['bucket'],
   shipment: PreparationBucketDto['shipments'][number],
@@ -400,7 +400,10 @@ function blockedReason(
 
   const lines = (shipment.lines ?? []).filter((line) => line.stock);
 
-  if (bucket !== 'unavailable' || lines.length === 0) {
+  if (
+    (bucket !== 'unavailable' && bucket !== 'partial') ||
+    lines.length === 0
+  ) {
     return null;
   }
 
@@ -408,7 +411,7 @@ function blockedReason(
     <ul role="list" className="space-y-1">
       {lines.map((line, index) => (
         <li key={index} className="break-keep">
-          {lines.length > 1 && (
+          {(shipment.lines?.length ?? 0) > 1 && (
             <span className="font-medium text-foreground">{line.name}: </span>
           )}
           {line.stock && incomingText(line.stock)}

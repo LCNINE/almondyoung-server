@@ -248,6 +248,7 @@ export class OutboundPreparationReader {
         bucket.shipments.push({
           shipmentId: shipment.id,
           orderNos: uniqueInOrder(shipmentLines.flatMap((line) => line.displayOrderNo ?? line.channelOrderId ?? [])),
+          orderCount: new Set(shipmentLines.map((line) => line.salesOrderId)).size,
           orderedAt: orderedAt.get(shipment.id)?.toISOString() ?? null,
           ...(recipientName && { recipient: { shipmentId: shipment.id, name: recipientName } }),
           itemSummary: names.length > 1 ? `${names[0]} 외 ${names.length - 1}건` : (names[0] ?? ''),
@@ -285,7 +286,7 @@ export class OutboundPreparationReader {
       await this.fillShortageStock(
         trx,
         warehouseId,
-        buckets.find((entry) => entry.bucket === 'unavailable')?.shipments ?? [],
+        buckets.flatMap(({ bucket, shipments }) => (bucket === 'unavailable' || bucket === 'partial' ? shipments : [])),
         quantitiesByShipment,
       );
 
@@ -349,7 +350,7 @@ export class OutboundPreparationReader {
     }
   }
 
-  // 출고불가 상자의 줄마다 이 창고 재고·다른 상자 몫과 들어올 예정을 싣는다.
+  // 출고불가·부분출고 상자의 모자란 줄마다 이 창고 재고·다른 상자 몫과 들어올 예정을 싣는다.
   private async fillShortageStock(
     trx: DbTx,
     warehouseId: string,
@@ -360,8 +361,11 @@ export class OutboundPreparationReader {
       return;
     }
 
+    const isShort = (line: PreparationLineQuantity) => line.confirmedQty < line.qty;
     const skuIds = uniqueInOrder(
-      shipments.flatMap((shipment) => (quantitiesByShipment.get(shipment.shipmentId) ?? []).map((line) => line.skuId)),
+      shipments.flatMap((shipment) =>
+        (quantitiesByShipment.get(shipment.shipmentId) ?? []).filter(isShort).map((line) => line.skuId),
+      ),
     );
     const stock = await loadWarehouseStock(trx, warehouseId, skuIds);
     const scope = await readPipelineScope(trx, warehouseId);
@@ -375,14 +379,22 @@ export class OutboundPreparationReader {
       const quantities = quantitiesByShipment.get(shipment.shipmentId) ?? [];
 
       shipment.lines = shipment.lines.map((line, index) => {
-        const skuId = quantities[index]?.skuId;
+        const quantity = quantities[index];
 
-        return skuId
-          ? {
-              ...line,
-              stock: { skuId, ...shortageStockOf(stock.get(skuId), pipeline.get(skuId), line.reservedQty, scope) },
-            }
-          : line;
+        if (!quantity || !isShort(quantity)) {
+          return line;
+        }
+
+        const { skuId } = quantity;
+        // 같은 상품이 이 상자의 다른 줄에 잡은 몫도 이 상자 것이다
+        const ownReserved = quantities
+          .filter((entry) => entry.skuId === skuId)
+          .reduce((total, entry) => total + entry.confirmedQty, 0);
+
+        return {
+          ...line,
+          stock: { skuId, ...shortageStockOf(stock.get(skuId), pipeline.get(skuId), ownReserved, scope) },
+        };
       });
     }
   }

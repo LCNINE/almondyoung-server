@@ -1099,6 +1099,8 @@ export interface PreparationLineStock {
   skuId?: string;
   onHand: number;
   reservedByOthers: number;
+  // 아직 어느 상자도 잡지 않은 수량. 옛 응답에는 없다
+  available?: number;
   // 판매 창고가 이 창고 하나일 때만 안다
   incoming: PreparationIncoming | null;
   elsewhere: PreparationElsewhere | null;
@@ -1108,7 +1110,7 @@ export interface PreparationLineDto {
   name: string;
   qty: number;
   reservedQty: number;
-  // 출고불가 상자만. 서버가 주기 전 응답에는 없다
+  // 출고불가·부분출고 상자의 모자란 줄만. 서버가 주기 전 응답에는 없다
   stock?: PreparationLineStock;
 }
 
@@ -1129,6 +1131,8 @@ export interface NeedsInfoSku {
 export interface PreparationShipmentDto {
   shipmentId: string;
   orderNos: string[];
+  // 상자에 든 판매 주문 수. 옛 core 응답엔 없다
+  orderCount?: number;
   // 상자에 든 주문 중 가장 이른 주문일. 판매 주문이 없는 상자는 null, 옛 core 응답엔 없다
   orderedAt?: string | null;
   // 완전출고 상자만. 받는 분 정보 권한이 없으면 가린 이름이 온다

@@ -3,16 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -51,11 +41,11 @@ import {
   PREPARATION_BATCH_LIMIT,
   preparationAddress,
   preparationTargetNotice,
-  splitQuantities,
 } from '../preparation-model';
 import { BUCKET_LABELS, BucketTable } from '../components/bucket-table';
 import { BucketList } from '../components/bucket-list';
 import { PrepareDialog } from '../components/prepare-dialog';
+import { SplitConfirmDialog } from '../components/split-confirm-dialog';
 import { SplitResultDialog } from '../components/split-result-dialog';
 import {
   retryTransientBulk,
@@ -169,7 +159,8 @@ function PreparationWarehouse({
     source: 'ready' | 'resume' | 'mergeable';
   } | null>(null);
   const [splitting, setSplitting] = useState(false);
-  const [confirmingSplit, setConfirmingSplit] = useState(false);
+  // 창을 연 때 고른 상자. 열어 둔 사이 새로 들어온 상자는 섞이지 않는다
+  const [confirmingSplit, setConfirmingSplit] = useState<string[] | null>(null);
   const [splitDone, setSplitDone] = useState<{
     shipments: PreparationShipmentDto[];
     failedCount: number;
@@ -362,15 +353,7 @@ function PreparationWarehouse({
     prepare('ready', splitDone.shipments);
   };
 
-  const confirmSplitTotals = splitQuantities(
-    shipmentsOf('partial', selectedIds('partial')).flatMap(
-      (shipment) => shipment.lines ?? []
-    )
-  );
-
-  const splitSelected = async () => {
-    const shipmentIds = selectedIds('partial');
-
+  const splitShipments = async (shipmentIds: string[]) => {
     if (
       !canRun(useSplitUnreservedMany) ||
       splitRunning.current ||
@@ -381,6 +364,8 @@ function PreparationWarehouse({
 
     splitRunning.current = true;
     setSplitting(true);
+    // 실패해 다시 눌러도 창에서 뺀 상자가 되살아나지 않는다
+    setSelections((previous) => ({ ...previous, partial: shipmentIds }));
 
     const before = shipmentsOf('partial', shipmentIds);
 
@@ -594,7 +579,7 @@ function PreparationWarehouse({
                 setActiveBucket(key);
               }}
               onPrepare={prepare}
-              onSplit={() => setConfirmingSplit(true)}
+              onSplit={() => setConfirmingSplit(selectedIds('partial'))}
               holders={holderFilter}
             />
             {bucket && (
@@ -613,31 +598,13 @@ function PreparationWarehouse({
           </>
         )
       )}
-      <AlertDialog open={confirmingSplit} onOpenChange={setConfirmingSplit}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              부분출고 {selectedIds('partial').length}건을 나눌까요?
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              재고가 있는 만큼은 지금 보낼 상자로, 모자란 만큼은 출고불가 상자로
-              나눠요.
-            </AlertDialogDescription>
-            {confirmSplitTotals.now + confirmSplitTotals.wait > 0 && (
-              <p className="text-sm font-semibold text-foreground">
-                지금 보낼 상품 {confirmSplitTotals.now}개, 기다릴 상품{' '}
-                {confirmSplitTotals.wait}개
-              </p>
-            )}
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>취소</AlertDialogCancel>
-            <AlertDialogAction onClick={() => void splitSelected()}>
-              나누기
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {confirmingSplit && (
+        <SplitConfirmDialog
+          shipments={shipmentsOf('partial', confirmingSplit)}
+          onClose={() => setConfirmingSplit(null)}
+          onConfirm={(ids) => void splitShipments(ids)}
+        />
+      )}
       {splitDone && (
         <SplitResultDialog
           shipments={splitDone.shipments}

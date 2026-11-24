@@ -61,6 +61,8 @@ export class PreparationLineStockDto {
   // 이 창고 재고(ON_HAND)와 그중 다른 상자가 잡은 수량
   onHand: number;
   reservedByOthers: number;
+  // 아직 어느 상자도 잡지 않은 수량. 곧 자동 예약된다
+  available: number;
   // 판매 창고가 이 창고 하나일 때만 안다. 모르면 null
   incoming: PreparationIncomingDto | null;
   elsewhere: PreparationElsewhereDto | null;
@@ -71,7 +73,7 @@ export class PreparationLineDto {
   qty: number;
   // 이 줄에 잡힌 예약 수량(주문 수량을 넘지 않는다). 주문 수량과의 차이가 «있는 것만 먼저 보내기»에서 기다릴 몫이다.
   reservedQty: number;
-  // 출고불가 상자만: 재고가 어디에 얼마나 있고 언제 들어오는지
+  // 출고불가·부분출고 상자의 모자란 줄만: 재고가 어디에 얼마나 있고 언제 들어오는지
   stock?: PreparationLineStockDto;
 }
 
@@ -136,6 +138,8 @@ export class PreparationRecipientDto {
 export class PreparationShipmentDto {
   shipmentId: string;
   orderNos: string[];
+  // 상자에 든 판매 주문 수. 둘 이상이면 합포장이라 «있는 것만 먼저 보내기»를 거절한다
+  orderCount: number;
   // 상자에 든 주문 중 가장 이른 주문일. 판매 주문이 없는 상자(위탁 출고 등)는 null
   orderedAt: string | null;
   // 완전출고 상자만

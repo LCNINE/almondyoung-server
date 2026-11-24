@@ -40,11 +40,36 @@ export function shortageLineText(
   return `주문 ${line.qty} · ${stock} · 모자람 ${short}`;
 }
 
+function freeStock(stock: PreparationLineStock): number {
+  return stock.available ?? Math.max(0, stock.onHand - stock.reservedByOthers);
+}
+
+/** 먼저 들어올 상품이 앞: 남는 재고 → 예정일 → 예정일 모름 → 다른 창고 → 예정 없음 */
+export function arrivalSortKey(stock: PreparationLineStock): string {
+  if (freeStock(stock) > 0) return '0';
+
+  const { incoming, elsewhere } = stock;
+
+  if (
+    incoming &&
+    incoming.inTransit + incoming.ordered + incoming.inboundShipment > 0
+  ) {
+    const days = [
+      incoming.inTransit > 0 ? incoming.inTransitEta : null,
+      incoming.inboundShipment > 0 ? incoming.inboundShipmentEta : null,
+    ].filter((day): day is string => day !== null);
+
+    return days.length > 0 ? `1${days.sort()[0]}` : '2';
+  }
+
+  return elsewhere && elsewhere.onHand + elsewhere.ordered > 0 ? '3' : '4';
+}
+
 /** 모자란 상품이 언제·어디서 오는지. 남는 재고 → 이 창고로 오는 것 → 다른 창고에 있는 것 순 */
 export function incomingText(stock: PreparationLineStock): string {
   const { incoming, elsewhere } = stock;
   // 재고가 막 들어와 아직 확보 전이면 발주·이동을 권하지 않는다(확보는 주기적으로 오래 기다린 주문부터 한다)
-  const free = Math.max(0, stock.onHand - stock.reservedByOthers);
+  const free = freeStock(stock);
   const coming = incoming
     ? [
         incoming.inTransit > 0 &&
