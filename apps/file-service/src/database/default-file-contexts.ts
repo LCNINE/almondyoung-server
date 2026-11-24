@@ -43,6 +43,9 @@ export const ALMOND_TEMPLATE_FONT_CONTEXT_ID = 'almond-template-font';
 /** 아몬드템플릿 고객 시안의 인쇄 파일. 어드민 Lambda 응답 상한(6MB)을 피해 S3 서명 URL 로 내려준다. */
 export const ALMOND_PRINT_FILE_CONTEXT_ID = 'almond-print-file';
 
+/** 고객이 직접 만들어 올린 인쇄 파일. core 가 주인을 확인한 뒤 서명 URL 로 와우프레스에 넘긴다. */
+export const CUSTOMER_PRINT_FILE_CONTEXT_ID = 'customer-print-file';
+
 function normalizeAllowedMimeTypes(value: unknown): string[] {
   if (Array.isArray(value)) {
     return value;
@@ -327,6 +330,18 @@ export const FILE_CONTEXTS: FileContextSeed[] = [
     allowedMimeTypes: ['application/pdf', 'application/postscript', 'application/eps', 'image/jpeg'],
     maxFileSize: 314572800,
     pathPrefix: 'almond-template/print',
+    isActive: true,
+  },
+  {
+    id: CUSTOMER_PRINT_FILE_CONTEXT_ID,
+    name: 'Customer Print File',
+    description: '내 파일로 주문에서 고객이 올린 인쇄 파일(AI·EPS·PDF·JPG·PNG)',
+    allowPublic: false,
+    allowPrivate: true,
+    // .ai·.eps 는 브라우저가 MIME 을 못 붙이거나 제각각 붙인다. 형식은 core 가 상품별 확장자로 거른다
+    allowedMimeTypes: ['*/*'],
+    maxFileSize: 314572800,
+    pathPrefix: 'print-order/customer',
     isActive: true,
   },
   {
