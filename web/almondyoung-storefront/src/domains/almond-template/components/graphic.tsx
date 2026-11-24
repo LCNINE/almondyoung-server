@@ -115,7 +115,11 @@ export function textInkBox(layer: Layer) {
       const ink = lineInk(line, layer)
       const width = lineEm(line, layer)
       const start =
-        layer.align === "center" ? -width / 2 : layer.align === "right" ? -width : 0
+        layer.align === "center"
+          ? -width / 2
+          : layer.align === "right"
+            ? -width
+            : 0
 
       return {
         x0: anchor + (start + ink.left) * size * ratio,
@@ -522,6 +526,24 @@ function NeonBody({ glow }: { glow: ReturnType<typeof glowOf> }) {
   )
 }
 
+export function effectPadding(layer: Layer) {
+  const size = effectSize(layer)
+  const shadow = shadowOf(layer)
+  const bevel = bevelOf(layer)
+  const glow = glowOf(layer)
+
+  // 그림자를 멀리 밀어도 잘리지 않게 필터 영역을 실제 좌표로 넉넉히 잡는다
+  return (
+    (layer.shadow
+      ? Math.max(Math.abs(shadow.x), Math.abs(shadow.y)) + shadow.blur * 3
+      : 0) +
+    (layer.bevel ? bevel.size : 0) +
+    (layer.glow ? glow.size * 3.5 + (glow.size * glow.spread) / 100 : 0) +
+    (layer.strokeWidth ?? 0) +
+    Math.max(1, size * 0.2)
+  )
+}
+
 function EffectFilter({
   layer,
   id,
@@ -531,21 +553,12 @@ function EffectFilter({
   id: string
   shadowOnly?: boolean
 }) {
-  const size = effectSize(layer)
   const shadow = shadowOf(layer)
   const offset = toLayerSpace(layer, shadow.x, shadow.y)
-  const bevel = bevelOf(layer)
   const glow = glowOf(layer)
   const texture = layer.texture && (layer.textureAmount ?? 40) > 0
-  // 그림자를 멀리 밀어도 잘리지 않게 필터 영역을 실제 좌표로 넉넉히 잡는다
-  const pad =
-    (layer.shadow
-      ? Math.max(Math.abs(shadow.x), Math.abs(shadow.y)) + shadow.blur * 3
-      : 0) +
-    (layer.bevel ? bevel.size : 0) +
-    (layer.glow ? glow.size * 3.5 + (glow.size * glow.spread) / 100 : 0) +
-    (layer.strokeWidth ?? 0) +
-    Math.max(1, size * 0.2)
+  const pad = effectPadding(layer)
+
   return (
     <filter
       id={id}

@@ -1,6 +1,12 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { PRINT_PRODUCTS, PRINT_SPECS } from "../lib/catalog"
-import { newDesign, type Design, type Layer } from "../lib/document"
+import {
+  layerImageDpi,
+  newDesign,
+  parseDesign,
+  type Design,
+  type Layer,
+} from "../lib/document"
 import {
   isAutoTextName,
   makeLayer,
@@ -11,6 +17,12 @@ import {
 } from "../lib/layer"
 import { unionBounds } from "../lib/canvas-math"
 import { stretchText, textBoxFor } from "../components/graphic"
+import {
+  mergeDownReason as mergeReason,
+  rasterMergedLayer,
+  replaceMergedLayers,
+} from "../lib/merge-layers"
+import { reportFailure } from "./use-auth-retry"
 
 // 바뀌면 글자 덩치가 달라지는 속성. 이때 상자를 글자에 다시 맞춘다
 const TEXT_SHAPE_KEYS = new Set([
@@ -65,6 +77,69 @@ export function useLayerActions({
   setGroupIds,
 }: Params) {
   const [copied, setCopiedState] = useState<Layer[]>([])
+  const [merging, setMerging] = useState(false)
+  const mergePending = useRef(false)
+  const current = useRef({ design, side, mode })
+  current.current = { design, side, mode }
+
+  const mergeDownReason = (id: string) =>
+    mergeReason(layers, id, mode) ||
+    (merging ? "레이어를 병합하고 있습니다" : "")
+
+  const mergeDown = async (id: string) => {
+    const reason = mergeDownReason(id)
+
+    if (reason || mergePending.current) {
+      return
+    }
+
+    mergePending.current = true
+    setMerging(true)
+
+    try {
+      const index = layers.findIndex((layer) => layer.id === id)
+      const merged = await rasterMergedLayer(
+        design,
+        layers[index - 1],
+        layers[index]
+      )
+
+      if (
+        current.current.design !== design ||
+        current.current.side !== side ||
+        current.current.mode !== mode
+      ) {
+        setMessage(
+          "편집 내용이 바뀌어 병합을 취소했습니다. 다시 시도해 주세요."
+        )
+
+        return
+      }
+
+      const next = {
+        ...design,
+        [side]: replaceMergedLayers(layers, id, merged),
+      }
+
+      parseDesign(next)
+      change(next)
+      setSelectedId(merged.id)
+      setMessage(
+        layerImageDpi(design.kind, merged) <
+          PRINT_SPECS[design.kind].minImageDpi
+          ? "레이어를 병합했습니다. 이미지 크기 제한으로 해상도가 낮아졌으니 인쇄 전에 확인해 주세요."
+          : "아래 레이어와 병합했습니다."
+      )
+    } catch (error) {
+      reportFailure(error, "layer_merge")
+      setMessage(
+        "레이어를 병합하지 못했습니다. 이미지 용량(4MB), 레이어 크기와 연결 상태를 확인해 주세요."
+      )
+    } finally {
+      mergePending.current = false
+      setMerging(false)
+    }
+  }
 
   useEffect(() => {
     setCopiedState(readCopied())
@@ -302,6 +377,8 @@ export function useLayerActions({
   }
 
   return {
+    mergeDown,
+    mergeDownReason,
     copied,
     patch,
     patchLayers,
