@@ -60,7 +60,8 @@ export interface PrintOrder {
   id: string;
   salesOrderId: string;
   salesOrderLineId: string;
-  almondDesignId: string;
+  almondDesignId: string | null;
+  printFileId: string | null;
   vendor: string;
   status: PrintOrderStatus;
   testMemo: boolean;

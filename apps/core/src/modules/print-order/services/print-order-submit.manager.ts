@@ -1,6 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { z } from 'zod';
+import { CustomerPrintFileClient } from '../clients/customer-print-file.client';
 import { UgcAlmondDesignClient, type UgcPrintLink } from '../clients/ugc-almond-design.client';
+import {
+  CUSTOMER_FILE_FORMAT_ERROR,
+  CUSTOMER_FILE_OWNER_MISMATCH_ERROR,
+  customerFileExtension,
+  PRINT_SOURCE_MISSING_ERROR,
+} from '../print-source';
 import { PrintProductSpecRepository } from '../repositories/print-product-spec.repository';
 import { type PrintOrderRow } from '../schema/print-order.schema';
 import { WowpressClient, WowpressDuplicateOrdersError, WowpressOrderRejectedError } from '../wowpress/wowpress.client';
@@ -78,6 +85,7 @@ export class PrintOrderSubmitManager {
     private readonly wowpress: WowpressClient,
     private readonly ugc: UgcAlmondDesignClient,
     private readonly specs: PrintProductSpecRepository,
+    private readonly customerFiles: CustomerPrintFileClient,
   ) {}
 
   async submit(row: PrintOrderRow): Promise<void> {
@@ -97,7 +105,9 @@ export class PrintOrderSubmitManager {
       if (!line) return;
       const ordnum = lane.state.ordnum ?? (await this.confirmSentOrder(row));
       lane.state.ordnum = ordnum;
-      const link = await this.ugc.printLink(row.almondDesignId, line.spec.file.format, line.spec.file.dpi);
+      // 시안은 주문할 때 이미 대조했다. 고객 파일은 다시 확인해도 조회 두 번이라 그대로 둔다
+      const link = await this.printLink(lane, line.ctx, line.spec, { designChecked: true });
+      if (!link) return;
       await this.deliver(lane, ordnum, link);
     } catch (error) {
       await this.settle(lane, error);
@@ -155,11 +165,60 @@ export class PrintOrderSubmitManager {
     if (!line) return null;
 
     const { ctx, spec } = line;
-    // 시안 ID 는 고객이 장바구니 메타데이터로 넣는 값이다. 남의 시안을 인쇄해 받지 못하게 주문 고객과 대조한다
-    const design = await this.ugc.design(lane.row.almondDesignId);
+    // 파일을 못 만들면 주문하지 않도록 링크를 주문보다 먼저 받는다
+    const link = await this.printLink(lane, ctx, spec);
+    if (!link) return null;
+    const address = shippingAddress.parse(ctx.order.shippingAddress);
+    await this.wowpress.quote(spec, ctx.line.quantity);
+
+    return { ...lane, ctx, spec, link, address };
+  }
+
+  // 시안·고객 파일 ID 는 고객이 장바구니 메타데이터로 넣는 값이다. 남의 것을 인쇄해 받지 못하게 주문 고객과 대조한다.
+  // 확인에 실패하면 failed 로 기록하고 null 이다
+  private async printLink(
+    lane: Lane,
+    ctx: PrintOrderLineContext,
+    spec: WowpressLineSpec,
+    { designChecked = false }: { designChecked?: boolean } = {},
+  ): Promise<UgcPrintLink | null> {
+    const { almondDesignId, printFileId } = lane.row;
+    if (almondDesignId) {
+      return designChecked || (await this.designMatches(lane, ctx, spec, almondDesignId))
+        ? this.ugc.printLink(almondDesignId, spec.file.format, spec.file.dpi)
+        : null;
+    }
+    if (!printFileId) {
+      await lane.owned({ status: 'failed', lastError: PRINT_SOURCE_MISSING_ERROR });
+      return null;
+    }
+
+    const customerId = ctx.order.customerId;
+    const file = customerId ? await this.customerFiles.describe(printFileId, customerId) : null;
+    if (!customerId || !file || file.ownerId !== customerId || !file.isPrintFile) {
+      await lane.owned({ status: 'failed', lastError: CUSTOMER_FILE_OWNER_MISMATCH_ERROR });
+      return null;
+    }
+    const extension = customerFileExtension(spec.prodno, file.fileName);
+    if (!extension) {
+      await lane.owned({ status: 'failed', lastError: CUSTOMER_FILE_FORMAT_ERROR });
+      return null;
+    }
+
+    // 고객 파일 이름은 한글·공백이 섞일 수 있어 줄 ID 로 바꿔 보낸다. 와우프레스는 확장자로 형식을 읽는다
+    return { url: await this.customerFiles.link(printFileId, customerId), fileName: `${ctx.line.id}.${extension}` };
+  }
+
+  private async designMatches(
+    lane: Lane,
+    ctx: PrintOrderLineContext,
+    spec: WowpressLineSpec,
+    almondDesignId: string,
+  ): Promise<boolean> {
+    const design = await this.ugc.design(almondDesignId);
     if (design.userId !== ctx.order.customerId) {
       await lane.owned({ status: 'failed', lastError: DESIGN_OWNER_MISMATCH_ERROR });
-      return null;
+      return false;
     }
     // 세로 시안(50×90)도 같은 종이를 돌려 찍는 것이라 가로·세로를 가리지 않는다
     const sameSize =
@@ -167,15 +226,10 @@ export class PrintOrderSubmitManager {
       (design.widthMm === spec.design.heightMm && design.heightMm === spec.design.widthMm);
     if (design.productId !== spec.design.productId || !sameSize) {
       await lane.owned({ status: 'failed', lastError: DESIGN_SPEC_MISMATCH_ERROR });
-      return null;
+      return false;
     }
 
-    // 파일을 못 만들면 주문하지 않도록 링크를 주문보다 먼저 받는다
-    const link = await this.ugc.printLink(lane.row.almondDesignId, spec.file.format, spec.file.dpi);
-    const address = shippingAddress.parse(ctx.order.shippingAddress);
-    await this.wowpress.quote(spec, ctx.line.quantity);
-
-    return { ...lane, ctx, spec, link, address };
+    return true;
   }
 
   private async orderNew(lanes: Lane[]): Promise<void> {

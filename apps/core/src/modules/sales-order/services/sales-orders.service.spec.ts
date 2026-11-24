@@ -1,5 +1,6 @@
 import { wmsTables } from '../../inventory/schema/inventory.schema';
 import { printOrders } from '../../print-order/schema/print-order.schema';
+import { PRINT_SOURCE_MISSING_ERROR } from '../../print-order/print-source';
 import { SalesOrderAmendmentsService } from './sales-order-amendments.service';
 import { PRINT_PAYMENT_UNCONFIRMED_ERROR, SalesOrdersService } from './sales-orders.service';
 import { CANCELLABLE_FULFILLMENT_STATUSES } from '../../fulfillment/unboxed-demand/unboxed-demand-cancellation';
@@ -60,10 +61,18 @@ describe('SalesOrdersService external order-line identity', () => {
     const state = {
       salesOrders: [] as Array<Record<string, any>>,
       salesOrderLines: [] as Array<Record<string, any>>,
-      printOrders: [] as Array<{ salesOrderLineId: string; almondDesignId: string }>,
+      printOrders: [] as Array<Record<string, unknown>>,
       printOrderConflictTargets: [] as unknown[],
+      madeToOrderVariants: [] as string[],
     };
     const tx: any = {
+      select: jest.fn(() => ({
+        from: () => ({
+          where: jest.fn(() =>
+            Promise.resolve(state.madeToOrderVariants.map((madeToOrder) => ({ variantId: madeToOrder }))),
+          ),
+        }),
+      })),
       insert: jest.fn((table: unknown) => ({
         values: (values: Record<string, any> | Array<Record<string, any>>) => {
           if (table === wmsTables.salesOrders) {
@@ -174,6 +183,7 @@ describe('SalesOrdersService external order-line identity', () => {
         salesOrderId,
         salesOrderLineId: 'sales-order-line-1',
         almondDesignId: designId,
+        printFileId: null,
         status: 'pending',
       },
     ]);
@@ -212,6 +222,7 @@ describe('SalesOrdersService external order-line identity', () => {
         salesOrderId,
         salesOrderLineId: 'sales-order-line-1',
         almondDesignId: '12121212-1212-4212-8212-121212121212',
+        printFileId: null,
         status: 'failed',
         lastError: PRINT_PAYMENT_UNCONFIRMED_ERROR,
       },
@@ -224,6 +235,53 @@ describe('SalesOrdersService external order-line identity', () => {
     await service.createFromEvent(payload([item()]));
 
     expect(state.printOrders).toHaveLength(0);
+  });
+
+  it('creates a pending print_orders row for a customer print file line', async () => {
+    const { service, state } = makeService();
+    const fileId = '56565656-5656-4656-8656-565656565656';
+
+    await service.createFromEvent(payload([item({ printFileId: fileId })]));
+
+    expect(state.salesOrderLines[0]).toMatchObject({ almondDesignId: null, printFileId: fileId });
+    expect(state.printOrders).toEqual([
+      {
+        salesOrderId,
+        salesOrderLineId: 'sales-order-line-1',
+        almondDesignId: null,
+        printFileId: fileId,
+        status: 'pending',
+      },
+    ]);
+  });
+
+  it('keeps the design and drops the file when a line carries both', async () => {
+    const { service, state } = makeService();
+    const designId = '12121212-1212-4212-8212-121212121212';
+
+    await service.createFromEvent(
+      payload([item({ almondDesignId: designId, printFileId: '56565656-5656-4656-8656-565656565656' })]),
+    );
+
+    expect(state.salesOrderLines[0]).toMatchObject({ almondDesignId: designId, printFileId: null });
+  });
+
+  it('puts a made-to-order line with neither a design nor a file on the board as failed', async () => {
+    const { service, state } = makeService();
+    state.madeToOrderVariants.push(variantId);
+
+    await service.createFromEvent(payload([item()]));
+
+    expect(state.printOrders).toEqual([
+      {
+        salesOrderId,
+        salesOrderLineId: 'sales-order-line-1',
+        almondDesignId: null,
+        printFileId: null,
+        status: 'failed',
+        lastError: PRINT_SOURCE_MISSING_ERROR,
+      },
+    ]);
   });
 
   it('stores absent legacy/manual identity as null without using channelOrderId', async () => {

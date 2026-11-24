@@ -1,4 +1,4 @@
-export type PrintKind = 'card' | 'bizcard' | 'nail' | 'pet' | 'mini' | 'window' | 'menu';
+export type PrintKind = 'card' | 'bizcard' | 'nail' | 'pet' | 'mini' | 'window' | 'menu' | 'invitation';
 
 export interface PrintKindProduct {
   prodno: number;
@@ -52,6 +52,14 @@ export const PRINT_KIND_PRODUCTS: Record<PrintKind, PrintKindProduct[]> = {
     prodno: 40164,
     sizeno,
     bleedMm: 0,
+    fileFormat: 'eps' as const,
+    fileDpi: 300,
+  })),
+  // 소량 청첩장 엽서형(100×180·110×158). AI·EPS 만 받고 작업 크기가 사방 1mm 크다(와우프레스 상품 페이지 CSize 2, 2026-11-23)
+  invitation: [10610, 10611].map((sizeno) => ({
+    prodno: 40572,
+    sizeno,
+    bleedMm: 1,
     fileFormat: 'eps' as const,
     fileDpi: 300,
   })),

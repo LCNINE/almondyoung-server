@@ -40,6 +40,11 @@ export class CreateSalesOrderLineDto {
   @IsOptional()
   almondDesignId?: string;
 
+  @ApiProperty({ description: '고객이 올린 인쇄 파일 ID (file-service, 인쇄 발주 대상 라인)', required: false })
+  @IsUUID()
+  @IsOptional()
+  printFileId?: string;
+
   @ApiProperty({ description: '상품명', required: false })
   @IsString()
   @IsOptional()

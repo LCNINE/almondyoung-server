@@ -133,6 +133,7 @@ function row(overrides: Partial<PrintOrderRow> = {}): PrintOrderRow {
     salesOrderId: 'so-1',
     salesOrderLineId: `sol-${seq}`,
     almondDesignId: 'd-1',
+    printFileId: null,
     vendor: 'wowpress',
     status: 'pending',
     testMemo: false,

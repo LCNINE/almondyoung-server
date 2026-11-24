@@ -42,10 +42,15 @@ const GROUPS = [
       "menu",
       "diploma",
       "nail",
+      "invitation",
     ],
   },
   { id: "sign", label: "배너·현수막", kinds: ["pet", "mini", "window"] },
-  { id: "paper", label: "카드·인쇄물", kinds: ["card", "bizcard", "nail"] },
+  {
+    id: "paper",
+    label: "카드·인쇄물",
+    kinds: ["card", "bizcard", "nail", "invitation"],
+  },
   { id: "board", label: "메뉴판·수료증", kinds: ["menu", "diploma"] },
 ] as const
 
@@ -69,6 +74,7 @@ const COLUMNS: Record<PrintKind | "default", string> = {
   nail: "grid-cols-1 md:grid-cols-4",
   menu: "grid-cols-1 md:grid-cols-4",
   diploma: "grid-cols-1 md:grid-cols-4",
+  invitation: "grid-cols-2 px-[14px] md:grid-cols-5 md:px-0",
   default: "grid-cols-1 md:grid-cols-4",
 }
 
@@ -82,6 +88,7 @@ const MASONRY_COLUMNS: Record<PrintKind | "default", string> = {
   nail: "columns-1 md:columns-4",
   menu: "columns-1 md:columns-4",
   diploma: "columns-1 md:columns-4",
+  invitation: "columns-2 px-[14px] md:columns-5 md:px-0",
   default: "columns-1 md:columns-4",
 }
 
@@ -94,6 +101,7 @@ const SHORT_NAMES: Record<PrintKind, string> = {
   nail: "네일팁 종이",
   menu: "메뉴판",
   diploma: "수료증",
+  invitation: "청첩장",
 }
 
 function groupFor(kind: PrintKind) {

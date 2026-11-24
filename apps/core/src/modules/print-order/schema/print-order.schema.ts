@@ -24,7 +24,10 @@ export const printOrders = pgTable(
       .$defaultFn(() => uuidv7()),
     salesOrderId: uuid('sales_order_id').notNull(),
     salesOrderLineId: uuid('sales_order_line_id').notNull(),
-    almondDesignId: uuid('almond_design_id').notNull(),
+    // 아몬드템플릿 시안(almond_design_id)과 고객이 올린 인쇄 파일(print_file_id) 중 하나로 인쇄한다.
+    // 둘 다 비어 있으면 인쇄 상품인데 시안·파일 없이 들어온 줄이라 failed 로만 만든다
+    almondDesignId: uuid('almond_design_id'),
+    printFileId: uuid('print_file_id'),
     vendor: varchar('vendor', { length: 16 }).notNull().default('wowpress'),
     status: varchar('status', { length: 16 }).$type<PrintOrderStatus>().notNull().default('pending'),
     testMemo: boolean('test_memo').notNull().default(false),

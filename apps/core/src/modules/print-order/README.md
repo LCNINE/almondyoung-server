@@ -5,7 +5,9 @@
 
 ## 하는 일
 
-- 판매주문 라인에 `almond_design_id` 가 있으면 `pending` 행을 만든다.
+- 판매주문 라인에 `almond_design_id`(아몬드템플릿 시안) 또는 `print_file_id`(고객이 직접 올린 인쇄 파일, file-service `customer-print-file` 컨텍스트)가 있으면 `pending` 행을 만든다. 둘 다 있으면 시안을 쓴다.
+- 템플릿으로 게시한 주문제작 상품(`print_product_specs` 에 행이 있는 변형)인데 둘 다 없으면 `failed`(`no almond design or customer print file`)로 만들어 보드에 띄운다. 완성품 카드(`WOWPRESS_PRODUCTS`)는 시안 없이 사면 창고 재고로 나가므로 행을 만들지 않는다.
+- 고객 파일은 file-service 내부 조회로 주인(주문 고객)·용도를 확인하고, 상품별 접수 확장자(`print-source.ts`)가 맞을 때만 서명 URL 로 와우프레스에 넘긴다. 파일 이름은 `<줄 id>.<확장자>` 로 바꿔 보낸다.
 - `PrintOrderSubmitWorker` (매분): 판매주문 하나씩 집어 시안 주인 확인 → ugc 에서 인쇄 파일 링크 → 와우프레스 가격조회 → 주문 → 파일 전달. 아래 묶음 발주 참고.
   시안 ID 는 고객이 장바구니 메타데이터로 넣는 값이라, 시안 주인(ugc `almond_designs.user_id`)과 주문 고객(`sales_orders.customer_id`)이 다르면 주문하지 않고 `failed` 로 둔다.
 - 와우프레스 주문상태 콜백(`POST /wowpress/callback`): 와우프레스가 상태가 바뀔 때마다 알려 주면 그 주문만 바로 다시 읽는다. 아래 상태 콜백 참고.

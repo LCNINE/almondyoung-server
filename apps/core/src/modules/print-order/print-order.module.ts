@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { WowpressCallbackController } from './controllers/wowpress-callback.controller';
+import { CustomerPrintFileClient } from './clients/customer-print-file.client';
 import { UgcAlmondDesignClient } from './clients/ugc-almond-design.client';
 import { PrintProductSpecRepository } from './repositories/print-product-spec.repository';
 import { PrintOrderAdminManager } from './services/print-order-admin.manager';
@@ -26,6 +27,7 @@ import { PrintOrderTrackingWorker } from './workers/print-order-tracking.worker'
     PrintOrderAdminManager,
     WowpressClient,
     UgcAlmondDesignClient,
+    CustomerPrintFileClient,
   ],
   exports: [
     WowpressClient,

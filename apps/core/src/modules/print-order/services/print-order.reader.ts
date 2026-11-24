@@ -22,6 +22,7 @@ import { wmsSchema, wmsTables, type DbTx } from '../../inventory/schema/inventor
 import { type PrintOrderRow } from '../schema/print-order.schema';
 import { VENDOR_CANCELLED, VENDOR_JOB_ERROR_PREFIX } from './print-order-tracking.manager';
 import { lineCanceledQuantitySql, lineRemainingSql } from '../../sales-order/line-quantities/line-quantities.sql';
+import { printLineSql } from '../../product-matching/line-composition/line-resolved.sql';
 
 export const PRINT_ORDER_TABS = [
   'cancel_refused',
@@ -118,7 +119,7 @@ export class PrintOrderReader {
           .where(
             and(
               eq(lines.salesOrderId, salesOrderId),
-              isNull(lines.almondDesignId),
+              sql`NOT ${printLineSql()}`,
               gt(lineRemainingSql(lines.quantity, lines.id), 0),
             ),
           )
@@ -137,7 +138,7 @@ export class PrintOrderReader {
         trx
           .select({
             total: sql<number>`count(*)::int`,
-            warehouse: sql<number>`count(*) filter (where ${isNull(lines.almondDesignId)})::int`,
+            warehouse: sql<number>`count(*) filter (where NOT ${printLineSql()})::int`,
           })
           .from(lines)
           .where(eq(lines.salesOrderId, salesOrderId)),

@@ -37,6 +37,8 @@ export interface OrderItem {
   requiresShipping?: boolean;
   /** 아몬드템플릿 시안 id. 장바구니 라인 metadata.almond_design_id 에서 온다. */
   almondDesignId?: string;
+  /** 고객이 직접 올린 인쇄 파일 id(file-service). 장바구니 라인 metadata.print_file_id 에서 온다. */
+  printFileId?: string;
 }
 
 export interface ShippingAddress {
@@ -344,6 +346,7 @@ const OrderItemSchema = z.object({
   fulfillmentKind: z.enum(['physical', 'digital']).optional(),
   requiresShipping: z.boolean().optional(),
   almondDesignId: z.string().uuid().optional(),
+  printFileId: z.string().uuid().optional(),
 });
 
 const ShippingAddressSchema = z.object({

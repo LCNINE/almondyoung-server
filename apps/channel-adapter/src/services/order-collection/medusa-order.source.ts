@@ -12,7 +12,7 @@ import {
 import { medusaReturnObservations } from './medusa-return-observations';
 import { buildDeliveryNote, readEntrancePassword } from './shipping-memo-label';
 
-const ALMOND_DESIGN_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type MedusaLineItem = NonNullable<MedusaOrder['items']>[number];
 
@@ -124,8 +124,8 @@ export class MedusaOrderSource implements ReplayableChannelOrderSource {
 
   private buildLine(item: MedusaLineItem): ChannelOrderLineSnapshot {
     const { fulfillmentKind, requiresShipping } = this.resolveFulfillment(item);
-    const rawDesignId = this.stringMetadata(item.metadata?.almond_design_id);
-    const almondDesignId = rawDesignId && ALMOND_DESIGN_ID_PATTERN.test(rawDesignId) ? rawDesignId : undefined;
+    const almondDesignId = this.uuidMetadata(item.metadata?.almond_design_id);
+    const printFileId = this.uuidMetadata(item.metadata?.print_file_id);
     return {
       channelOrderItemId: item.id,
       ...(item.variant_id ? { channelProductId: item.variant_id } : {}),
@@ -144,7 +144,14 @@ export class MedusaOrderSource implements ReplayableChannelOrderSource {
       fulfillmentKind,
       requiresShipping,
       ...(almondDesignId ? { almondDesignId } : {}),
+      ...(printFileId ? { printFileId } : {}),
     };
+  }
+
+  private uuidMetadata(value: unknown): string | undefined {
+    const raw = this.stringMetadata(value);
+
+    return raw && UUID_PATTERN.test(raw) ? raw : undefined;
   }
 
   /**

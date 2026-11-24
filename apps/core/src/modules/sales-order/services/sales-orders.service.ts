@@ -58,6 +58,7 @@ import { ProductSkuMappingService } from '../../product-matching/services/produc
 import { FulfillmentOrderCreationBacklogService } from '../../fulfillment/backlog/fulfillment-order-creation-backlog.service';
 import { LibraryService } from '../../library/services/library.service';
 import { randomUUID } from 'crypto';
+import { PRINT_SOURCE_MISSING_ERROR } from '../../print-order/print-source';
 import { CORE_ORDER_STREAM, FULFILLMENT_STREAM } from '@packages/event-contracts/streams';
 import { InjectPublisher, PublisherFor } from '@app/events';
 import { ORDER_EVENTS } from '../common/events';
@@ -376,28 +377,35 @@ export class SalesOrdersService {
               fulfillmentKind: l.fulfillmentKind ?? null,
               requiresShipping: l.requiresShipping ?? null,
               almondDesignId: l.almondDesignId ?? null,
+              printFileId: l.almondDesignId ? null : (l.printFileId ?? null),
             });
           }
-          const insertedLines = await trx
-            .insert(wmsTables.salesOrderLines)
-            .values(values)
-            .returning({ id: wmsTables.salesOrderLines.id, almondDesignId: wmsTables.salesOrderLines.almondDesignId });
+          const insertedLines = await trx.insert(wmsTables.salesOrderLines).values(values).returning({
+            id: wmsTables.salesOrderLines.id,
+            variantId: wmsTables.salesOrderLines.variantId,
+            almondDesignId: wmsTables.salesOrderLines.almondDesignId,
+            printFileId: wmsTables.salesOrderLines.printFileId,
+          });
 
-          const printRows = insertedLines.flatMap(({ id, almondDesignId }) =>
-            almondDesignId
-              ? [
-                  opts.paymentConfirmed
-                    ? { salesOrderId: order.id, salesOrderLineId: id, almondDesignId, status: 'pending' as const }
-                    : {
-                        salesOrderId: order.id,
-                        salesOrderLineId: id,
-                        almondDesignId,
-                        status: 'failed' as const,
-                        lastError: PRINT_PAYMENT_UNCONFIRMED_ERROR,
-                      },
-                ]
-              : [],
+          const madeToOrder = await this.madeToOrderVariants(
+            trx,
+            insertedLines.filter((line) => !line.almondDesignId && !line.printFileId).map((line) => line.variantId),
           );
+          const printRows = insertedLines.flatMap(({ id, variantId, almondDesignId, printFileId }) => {
+            const base = { salesOrderId: order.id, salesOrderLineId: id, almondDesignId, printFileId };
+
+            if (!almondDesignId && !printFileId) {
+              return madeToOrder.has(variantId)
+                ? [{ ...base, status: 'failed' as const, lastError: PRINT_SOURCE_MISSING_ERROR }]
+                : [];
+            }
+
+            return [
+              opts.paymentConfirmed
+                ? { ...base, status: 'pending' as const }
+                : { ...base, status: 'failed' as const, lastError: PRINT_PAYMENT_UNCONFIRMED_ERROR },
+            ];
+          });
           if (printRows.length > 0) {
             await trx
               .insert(wmsTables.printOrders)
@@ -3135,7 +3143,22 @@ export class SalesOrdersService {
       fulfillmentKind: item.fulfillmentKind,
       requiresShipping: item.requiresShipping,
       almondDesignId: item.almondDesignId,
+      printFileId: item.printFileId,
     }));
+  }
+
+  // 템플릿으로 게시한 상품만 print_product_specs 에 행이 있다. 완성품 카드(WOWPRESS_PRODUCTS)는 시안 없이 사면 창고 재고로 나가므로 넣지 않는다
+  private async madeToOrderVariants(trx: DbTx, variantIds: string[]): Promise<Set<string>> {
+    if (variantIds.length === 0) {
+      return new Set();
+    }
+
+    const rows = await trx
+      .select({ variantId: wmsTables.printProductSpecs.variantId })
+      .from(wmsTables.printProductSpecs)
+      .where(inArray(wmsTables.printProductSpecs.variantId, variantIds));
+
+    return new Set(rows.map((row) => row.variantId));
   }
 
   private assertUniqueTrustedChannelOrderItemIds(

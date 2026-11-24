@@ -1677,6 +1677,7 @@ export const salesOrderLines = pgTable(
     compositionSetAt: timestamp('composition_set_at', { withTimezone: true }),
     compositionSetBy: uuid('composition_set_by'),
     almondDesignId: uuid('almond_design_id'),
+    printFileId: uuid('print_file_id'),
 
     productName: varchar('product_name', { length: 255 }).notNull(),
     quantity: integer('quantity').notNull(),

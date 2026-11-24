@@ -155,13 +155,17 @@ describe('external order-line identity real component round trip', () => {
             storedLines.push(...lines.map((line) => ({ id: salesOrderLineId, ...line })));
             const returned = lines.map((line) => ({
               id: salesOrderLineId,
+              variantId: line['variantId'],
               almondDesignId: line['almondDesignId'] ?? null,
+              printFileId: line['printFileId'] ?? null,
             }));
             return { returning: jest.fn().mockResolvedValue(returned) };
           }
           return Promise.resolve();
         },
       })),
+      // 주문제작 상품(print_product_specs) 조회. 이 주문의 상품은 인쇄 상품이 아니다
+      select: jest.fn(() => ({ from: () => ({ where: jest.fn().mockResolvedValue([]) }) })),
     };
     const coreDb = { run: jest.fn((fn: (tx: unknown) => unknown) => fn(coreTx)) };
     const salesOrders = new SalesOrdersService(
