@@ -80,7 +80,7 @@ describeIfDb('UnifiedReservationService reserve→release 원복 (DB integration
     return { wh, sku, loc };
   }
 
-  it('reserve 는 예약수량을 늘리고 release 는 0 으로 원복한다 (ON_HAND 불변)', async () => {
+  it('refuses to release a shipment-line reservation and leaves it confirmed', async () => {
     await inRollbackTx(async (tx) => {
       const { wh, sku, loc } = await seedStock(tx, 100);
 
@@ -94,20 +94,23 @@ describeIfDb('UnifiedReservationService reserve→release 원복 (DB integration
           skuId: sku.id,
           warehouseId: wh.id,
           quantity: 40,
+          requestedAt: new Date(),
         },
         tx,
       );
       expect(await reservation.getTotalReservedQuantity(sku.id, wh.id, tx)).toBe(40);
 
-      await reservation.releaseReservation(res.id, tx);
-      expect(await reservation.getTotalReservedQuantity(sku.id, wh.id, tx)).toBe(0);
+      // 상자 줄 예약은 상자 재계산을 지나는 ShipmentReservationService 만 푼다.
+      await expect(reservation.releaseReservation(res.id, tx)).rejects.toThrow(
+        /ShipmentReservationService\.releaseReservation/,
+      );
+      expect(await reservation.getTotalReservedQuantity(sku.id, wh.id, tx)).toBe(40);
 
-      // 예약 레코드 상태 released
       const [row] = await tx
         .select({ status: wmsTables.stockReservations.status })
         .from(wmsTables.stockReservations)
         .where(eq(wmsTables.stockReservations.id, res.id));
-      expect(row.status).toBe('released');
+      expect(row.status).toBe('confirmed');
 
       // ON_HAND 는 예약/해제와 무관하게 100 유지
       const [ledger] = await tx
@@ -115,6 +118,35 @@ describeIfDb('UnifiedReservationService reserve→release 원복 (DB integration
         .from(wmsTables.stockLedgers)
         .where(eq(wmsTables.stockLedgers.locationId, loc.id));
       expect(ledger.qty).toBe(100);
+    });
+  });
+
+  it('still releases a legacy FULFILLMENT_ORDER-target row', async () => {
+    await inRollbackTx(async (tx) => {
+      const { wh, sku } = await seedStock(tx, 100);
+      // shipment_line_id 는 NOT NULL 이라 옛 행도 줄을 달고 있다 — 가르는 건 targetType 이다.
+      const shipmentLineId = await seedShipmentLineFor(tx, { skuId: sku.id, warehouseId: wh.id, qty: 5 });
+      const [row] = await tx
+        .insert(wmsTables.stockReservations)
+        .values({
+          targetType: 'FULFILLMENT_ORDER',
+          targetId: randomUUID(),
+          shipmentLineId,
+          skuId: sku.id,
+          warehouseId: wh.id,
+          quantity: 5,
+          status: 'confirmed',
+          requestedAt: new Date(),
+        })
+        .returning();
+
+      await expect(reservation.releaseReservation(row.id, tx)).resolves.toBeUndefined();
+
+      const [after] = await tx
+        .select({ status: wmsTables.stockReservations.status })
+        .from(wmsTables.stockReservations)
+        .where(eq(wmsTables.stockReservations.id, row.id));
+      expect(after.status).toBe('released');
     });
   });
 });

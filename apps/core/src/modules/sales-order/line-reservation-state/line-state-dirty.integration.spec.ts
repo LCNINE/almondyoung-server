@@ -89,7 +89,7 @@ describeIfDb('줄 상태 더러움 표시 지점 (#1247)', () => {
     });
   });
 
-  it('관리자 예약 해제(UnifiedReservationService.releaseReservation) → 그 상자 라인의 주문에 표시가 더해진다', async () => {
+  it('관리자 예약 해제(ShipmentReservationService.releaseReservation) → 그 상자 라인의 주문에 표시가 더해진다', async () => {
     await inRollbackTx(db, async (tx) => {
       const wired = wireLogistics(ambientDbService(tx));
       const { warehouseId, locationId } = await seedWarehouseWithZone(tx);
@@ -118,7 +118,7 @@ describeIfDb('줄 상태 더러움 표시 지점 (#1247)', () => {
       expect(reservation).toBeDefined(); // FO 생성이 상자 라인 예약을 잡았다
       const before = await marksOf(tx, salesOrderId);
 
-      await wired.unified.releaseReservation(reservation.id, tx);
+      await wired.shipmentReservations.releaseReservation(reservation.id, 'admin-release', tx);
 
       expect(await marksOf(tx, salesOrderId)).toBe(before + 1);
       expect(await versionOf(tx, salesOrderId)).toBe(0); // 버전은 폴러만 올린다

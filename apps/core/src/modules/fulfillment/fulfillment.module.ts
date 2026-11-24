@@ -113,6 +113,8 @@ import { ReturnBinController } from './controllers/return-bin.controller';
 import { ToteController } from './controllers/tote.controller';
 import { ShipmentTrackingController } from './controllers/shipment-tracking.controller';
 import { ShipmentShortPickController } from './controllers/shipment-short-pick.controller';
+import { ReservationReleaseController } from './controllers/reservation-release.controller';
+import { ReservationReleaseService } from './services/reservation-release.service';
 import { ShipmentRecallController, ShipmentRecallOperationController } from './controllers/shipment-recall.controller';
 
 @Module({
@@ -178,6 +180,7 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     ShipmentTrackingController,
     CarrierTrackingController,
     ShipmentShortPickController,
+    ReservationReleaseController,
     ShipmentRecallController,
     ShipmentRecallOperationController,
     OutboundRefillController,
@@ -225,6 +228,7 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     FulfillmentInvariantService,
     FulfillmentReconciliationService,
     ShipmentReservationService,
+    ReservationReleaseService,
     ShipmentPlanningService,
     BoxAllocationManager,
     BoxWithdrawalService,

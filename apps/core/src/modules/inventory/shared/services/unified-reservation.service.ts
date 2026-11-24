@@ -5,7 +5,6 @@ import { eq, and, sum } from 'drizzle-orm';
 import { ProductSellableQuantityService } from '../../product-sellable-quantity/services/product-sellable-quantity.service';
 import { acquireStockAvailabilityLock } from '../locks/stock-availability-lock';
 import { readWarehouseAvailability } from '../availability/warehouse-availability';
-import { markLineStateDirtyForShipmentLines } from '../../../sales-order/line-reservation-state/line-state-dirty';
 
 export interface ReserveStockDto {
   // Task 25 contract: V2 예약은 shipment-line 단위만 (FO-target 생성 경로는 은퇴). shipmentLineId 필수.
@@ -117,6 +116,21 @@ export class UnifiedReservationService {
    */
   async releaseReservation(id: string, tx?: DbTx): Promise<void> {
     return this.db.run(async (trx) => {
+      const [current] = await trx
+        .select({ targetType: wmsTables.stockReservations.targetType })
+        .from(wmsTables.stockReservations)
+        .where(eq(wmsTables.stockReservations.id, id));
+
+      if (!current) {
+        throw new BadRequestException(`Reservation ${id} not found`);
+      }
+      // 상자 줄 예약은 상자·출고주문 재계산을 지나야 한다 — 여기서 풀면 그 재계산이 빠진다.
+      if (current.targetType === 'SHIPMENT_LINE') {
+        throw new Error(
+          `Shipment-line reservation ${id} must be released by ShipmentReservationService.releaseReservation`,
+        );
+      }
+
       const [updated] = await trx
         .update(wmsTables.stockReservations)
         .set({
@@ -128,12 +142,6 @@ export class UnifiedReservationService {
 
       if (!updated) {
         throw new BadRequestException(`Reservation ${id} not found`);
-      }
-
-      // 상자 라인 예약을 풀면 그 주문의 «잡은 판매 단위»가 줄어 Medusa 목표가 오른다 — 같은 트랜잭션에서 표시한다 (#1247).
-      // 빠지면 폴러가 이 변화를 영영 내보내지 않고 Medusa 예약이 낮은 채로 남는다(과판매 방향).
-      if (updated.shipmentLineId) {
-        await markLineStateDirtyForShipmentLines(trx, [updated.shipmentLineId]);
       }
 
       await this.productSellableQuantity.recalculateAndPublishForSku(updated.skuId, trx);
