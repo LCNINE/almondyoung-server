@@ -13,6 +13,8 @@ import type { LocationItem } from '../warehouse/types';
 import { usePutaway } from './mutations';
 import type { PutawayTarget } from './types';
 import { RememberUsualToggle } from './RememberUsualToggle';
+import { useWaitingOrders } from './waitingOrders';
+import { WaitingOrdersFailed, WaitingOrdersNote } from './WaitingOrdersNote';
 import type { ReceiptLineState } from './receiptState';
 
 export type LocationRef = Pick<
@@ -70,6 +72,7 @@ function PutawaySheetContent({
     'putaway-destination'
   );
   const putaway = usePutaway();
+  const waiting = useWaitingOrders(warehouseId, [target.skuId]);
   const receipt = useReceiptReconciliation({
     lineId: target.lineId,
     warehouseId,
@@ -286,6 +289,11 @@ function PutawaySheetContent({
           <div className="mt-1 text-xs text-gray-500">
             {target.originLocationCode} · 잔여 {pendingQty}개
           </div>
+          <WaitingOrdersNote
+            waiting={waiting.of(target.skuId)}
+            detail="선반에 넣어야 출고할 수 있어요."
+          />
+          <WaitingOrdersFailed failed={waiting.failed} />
         </div>
 
         <section

@@ -145,6 +145,7 @@ export interface PutawayPendingResult {
 /** Actionable sheet snapshot; the detail read revalidates it before submission. */
 export interface PutawayTarget {
   lineId: string;
+  skuId: string;
   source: ReceiptSource;
   skuName: string;
   skuCode: string;

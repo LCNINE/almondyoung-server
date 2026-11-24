@@ -107,6 +107,7 @@ async function renderScreen(
     draftLoadFails?: { now: boolean };
     serverDown?: { now: boolean };
     savedScans?: string[];
+    waiting?: Array<{ skuId: string; orders: number; qty: number }>;
   }
 ) {
   const qc = new QueryClient({
@@ -150,6 +151,8 @@ async function renderScreen(
             },
           ],
         };
+      if (o.path.startsWith('/waiting-orders?'))
+        return { items: [...(hold?.waiting ?? [])] };
       if (o.path.startsWith('/inventory/skus/search/advanced?'))
         return { items: BOX_SKU, total: 1 };
       if (o.path.startsWith('/inventory/skus?barcode=880')) return BOX_SKU;
@@ -799,4 +802,61 @@ it('a blocked diagnostic row does not prevent a valid neighbor from resuming put
   expect(calls.every((call) => !call.method || call.method === 'GET')).toBe(
     true
   );
+});
+
+it('담은 목록과 적치 대기에 기다리는 주문을 보이고, 다 적치하면 숨긴다', async () => {
+  const user = userEvent.setup();
+  await renderScreen([], undefined, false, {
+    waiting: [{ skuId: 's1', orders: 2, qty: 5 }],
+  });
+  await waitFor(() =>
+    expect(document.querySelector('[aria-busy]')).toHaveAttribute(
+      'aria-busy',
+      'false'
+    )
+  );
+  await user.click(screen.getByRole('button', { name: '스캔:8802' }));
+  expect(
+    await screen.findByText('기다리는 주문 2건 · 5개')
+  ).toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: '등록' }));
+  await screen.findByText('적치 대기');
+  expect(screen.getByText('기다리는 주문 2건 · 5개')).toBeInTheDocument();
+
+  const open = screen.getByRole('button', { name: '적치' });
+  await waitFor(() => expect(open).toBeEnabled());
+  await user.click(open);
+  const dialog = await screen.findByRole('dialog', { name: '적치' });
+  scanHid(dialog, 'B-05-03');
+  const submit = within(dialog).getByRole('button', { name: '적치' });
+  await waitFor(() => expect(submit).toBeEnabled());
+  await user.click(submit);
+  expect(await screen.findByText('완료')).toBeInTheDocument();
+  expect(screen.queryByText(/기다리는 주문/)).not.toBeInTheDocument();
+});
+
+it('일부만 적치하면 남은 기다리는 주문을 다시 읽어 보인다', async () => {
+  const waiting = [{ skuId: 's1', orders: 2, qty: 5 }];
+  await renderScreen([], {}, false, { waiting });
+  const open = await screen.findByRole('button', { name: '적치' });
+  await waitFor(() => expect(open).toBeEnabled());
+  expect(
+    await screen.findByText('기다리는 주문 2건 · 5개')
+  ).toBeInTheDocument();
+  await userEvent.click(open);
+  const dialog = await screen.findByRole('dialog', { name: '적치' });
+  expect(
+    await within(dialog).findByText(/기다리는 주문 2건 · 5개/)
+  ).toBeInTheDocument();
+  waiting[0] = { skuId: 's1', orders: 1, qty: 3 };
+  const keypad = within(dialog).getByRole('button', { name: '지우기' });
+  await userEvent.click(keypad);
+  scanHid(keypad, 'B-05-03');
+  const submit = within(dialog).getByRole('button', { name: '적치' });
+  await waitFor(() => expect(submit).toBeEnabled());
+  await userEvent.click(submit);
+  expect(await screen.findByText(/잔여 18개/)).toBeInTheDocument();
+  expect(
+    await screen.findByText('기다리는 주문 1건 · 3개')
+  ).toBeInTheDocument();
 });

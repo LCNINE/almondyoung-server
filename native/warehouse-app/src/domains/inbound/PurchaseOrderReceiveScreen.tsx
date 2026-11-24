@@ -24,6 +24,8 @@ import {
 } from './mutations';
 import { usualShelfNotice } from './RememberUsualToggle';
 import { PutawaySheet, type LocationRef } from './PutawaySheet';
+import { useWaitingOrders } from './waitingOrders';
+import { WaitingOrdersFailed, WaitingOrdersNote } from './WaitingOrdersNote';
 import { ReceiveSheet } from './ReceiveSheet';
 import { parseQuantity } from '../../core/design/QuantityInput';
 import {
@@ -155,6 +157,10 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
       arrival.source === 'purchase_order' && arrival.documentId === poId
   );
   const lines = purchaseOrder?.lines ?? [];
+  const waiting = useWaitingOrders(
+    warehouseId,
+    lines.map((line) => line.skuId)
+  );
 
   // 시트는 열릴 때 스냅샷(active)을 잡지만, 표시는 매 렌더 lines 에서 같은
   // skuId 를 다시 찾아 쓴다 — onSettled 무효화로 잔여/입고 수량이 바뀌어도
@@ -575,6 +581,7 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
                   if (receipt.state?.originLocationId)
                     setPutawayTarget({
                       lineId: fresh.lineId,
+                      skuId: fresh.skuId,
                       skuName: fresh.skuName,
                       skuCode: fresh.skuCode,
                       source: 'purchase_order',
@@ -632,6 +639,7 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
 
       <section className="space-y-2">
         <h2 className="text-sm font-semibold text-gray-700">발주 품목</h2>
+        <WaitingOrdersFailed failed={waiting.failed} />
         {!activeItem && !arrivalsReady ? (
           sheetStatus
         ) : arrivals.isError ? (
@@ -660,6 +668,7 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
                     발주 {item.orderedQty} · 입고 {item.receivedQty} · 남은{' '}
                     {item.outstandingQty}
                   </span>
+                  <WaitingOrdersNote waiting={waiting.of(item.skuId)} />
                 </span>
                 {/* 시트가 열려 있는 동안은 숨긴다 — 시트의 [입고] 버튼과 접근성 이름이
                     겹쳐서 role 쿼리가 모호해지고, 어차피 한 번에 한 항목만 다룬다. */}
@@ -700,6 +709,7 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
       {activeItem ? (
         <ReceiveSheet
           item={activeItem}
+          waiting={<WaitingOrdersNote waiting={waiting.of(activeItem.skuId)} />}
           quantityText={
             draft.value.submitted
               ? String(draft.value.submitted.quantity)

@@ -8,6 +8,7 @@ import type { ExpectedArrivalLine } from './types';
 /** 목록 선택은 잔량을 제안하고, 스캔으로 열면 실제 스캔 수량부터 센다. */
 export function ReceiveSheet({
   item,
+  waiting,
   quantityText,
   onQuantityChange,
   getQuantityText,
@@ -22,6 +23,8 @@ export function ReceiveSheet({
   onCancel,
 }: {
   item: ExpectedArrivalLine;
+  /** 이 상품을 기다리는 주문 */
+  waiting?: ReactNode;
   quantityText: string;
   onQuantityChange: (text: string) => void;
   getQuantityText?: () => string;
@@ -59,6 +62,7 @@ export function ReceiveSheet({
             발주 {item.orderedQty} · 입고 {item.receivedQty} · 남은{' '}
             {item.outstandingQty}
           </div>
+          {waiting}
         </div>
 
         <section className="space-y-2">
