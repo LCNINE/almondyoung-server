@@ -219,12 +219,12 @@ describe('확정된 상자', () => {
     expect(server.cancels()).toHaveLength(0);
   });
 
-  it('서버 거절(당일 아님·적치 시작) 문구를 띄우고 확정된 상자에 남는다 — 다음 취소는 새 키', async () => {
+  it('서버 거절(적치 시작·이미 취소) 문구를 띄우고 확정된 상자에 남는다 — 다음 취소는 새 키', async () => {
     let reject = true;
     const { server } = await setup({ cancel: () => (reject ? new ApiError('POST → 400', 400, 'BAD_REQUEST') : null) });
     await readyReceived();
     await cancelTwice();
-    expect(await screen.findByText('이미 적치했거나 오늘 입고분이 아니라 취소할 수 없어요.')).toBeInTheDocument();
+    expect(await screen.findByText('이미 적치했거나 취소된 입고라 취소할 수 없어요. 목록을 다시 확인해 주세요.')).toBeInTheDocument();
     expect(flash()).toBe('error');
     expect(screen.getByRole('region', { name: '확정된 상자' })).toBeInTheDocument();
     reject = false;

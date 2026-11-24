@@ -320,6 +320,7 @@ describeIfDb('입고 취소·회송이 놓는 예약 (DB integration)', () => {
       const ids = arrival.lines.map((line) => line.id);
 
       await kernel.releaseForCancel(ids, tx);
+      for (const box of boxes) expect((await boxOf(tx, box)).confirmed).toBe(0);
       for (const receiptLineId of ids) {
         await kernel.cancelLine({ receiptLineId, expected: { source: 'inbound_shipment' } }, tx);
       }
