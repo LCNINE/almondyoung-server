@@ -17,7 +17,7 @@
 - `any`·근거 없는 `as` 금지. 새 라우트는 `@RequirePermission(...)` 을 단다(`route-classification.spec.ts`).
 - 목록 조회 권한 `fulfillment.shipment.read`. 쓰기(계획·발급·합류)는 기존 경로 그대로 `fulfillment.warehouse.operate`.
 - 받는 분은 가린 이름(`maskName(readRecipientName(snapshot))`)만 응답한다 — 합류 후보 조회와 같은 수준이라 `@PiiResponse` 선언 없음.
-- 상품 수 상한 100(`/waiting-orders` 와 같다). 앱은 100개씩 나눠 부른다.
+- 목록 기준은 **그 화면의 입고 줄**이다: 그 줄 시각 이후에 잡힌 예약으로 다 찬 상자만(입고 전부터 갖춰진 상자는 빠진다, 사용자 확인 2026-11-25). 입고 줄 상한 100, 앱은 100개씩 나눠 부른다.
 - 시작한 배치 = `startedAt !== null`. 파생 상태 `picking` 만 보지 않는다(spec §[송장 출력] 1).
 - 합배송 가능 상자도 그대로 넣고 표시하지 않는다. 화주로 거르지 않는다. 취소 요청을 따로 거르지 않는다(spec).
 - 입고 직후 재시도: 커밋 뒤, 응답 전에 await, 실패는 로그만(입고는 성공). `FulfillmentWorkflowGate.shouldRunReservationRetry()` 가 false 면 아무것도 안 한다.
@@ -126,30 +126,33 @@
   export interface ReadyShipments { items: ReadyShipment[]; waitingOnOtherSkus: number }
   @Injectable() export class ReadyShipmentsReader {
     constructor(@InjectTypedDb<typeof wmsSchema>() dbService: DbService<typeof wmsSchema>, preparation: OutboundPreparationReader);
-    forSkus(warehouseId: string, skuIds: readonly string[], tx?: DbTx): Promise<ReadyShipments>;
+    forReceiptLines(warehouseId: string, receiptLineIds: readonly string[], tx?: DbTx): Promise<ReadyShipments>;
   }
   ```
 
 - [ ] **Step 1: `loadSkuStockBudgets` 로 옮긴다** — `WaitingOrdersReader.stockBudgets` 의 세 쿼리(ON_HAND·통제·적치 전 입고)를 그대로 옮기고, 적치 전 입고를 `inboundPendingQty` 로 따로 돌려준다. `WaitingOrdersReader` 는 `{ pickableQty, unreservedQty: onHandQty }` 로 바꿔 쓴다.
 - [ ] **Step 2: 기존 스펙으로 동작 불변 확인** — `npm run test:core:integration:local -- waiting-orders.reader.integration` → PASS(로컬 compose DB).
 - [ ] **Step 3: 실패하는 통합 스펙을 쓴다** — `describeIfDb('입고로 갖춰진 상자')`. `waiting-orders.reader.integration.spec.ts` 의 fixture(`seedPickableShipment`·`seedShipmentForExistingStock`·`makeInboundReceiptKernel`·`startBatchFor`·`seedHandedOverOrder`·`inRollbackTx`)를 쓴다.
-  - `선반 재고로 예약이 다 찬 상자는 ready 로 나온다` — items 에 그 상자, `readiness:'ready'`, `orderNos` 비어 있지 않음, `recipientMasked` 는 원문이 아님.
-  - `입고 뒤 적치 전에는 putaway_required, 적치하면 ready` — 입고 → 예약 확정 → `putaway_required` → `kernel.putaway` → `ready`.
-  - `예약이 덜 찬 상자는 빠지고, 다른 상품이 모자라면 waitingOnOtherSkus 에 센다` — 요청 상품 줄은 다 찼고 다른 상품 줄이 모자란 상자 → items 에 없음, `waitingOnOtherSkus: 1`. 요청 상품 줄 자체가 덜 찬 상자는 셈에도 없다.
-  - `진행 중인 배치에 든 상자는 빠진다` — `startBatchFor` 뒤 items 비어 있음.
-  - `셀메이트가 넘겨받은 상자는 빠진다`.
-  - `정보가 부족한 상자는 빠진다` — 받는 분 스냅샷 이름을 비운 상자.
-  - `주문번호가 없는 상자는 빠진다`.
-  - `planned 상자도 나온다` — `status:'planned'`.
+  - `입고 뒤 잡힌 예약으로 다 찬 상자가 적치 전에는 putaway_required, 적치하면 ready` — 예약을 푼 상자 → `recordArrival` → 그 줄에 예약을 새로 만든다(`ArrivalReservationRetry` 가 아직 없으면 `ShipmentReservationService.reservePartial`) → 그 입고 줄 id 로 조회 `putaway_required` → `kernel.putaway` → `ready`. `orderNos` 비어 있지 않음, `recipientMasked` 는 원문이 아님.
+  - `입고 전부터 다 갖춰져 있던 상자는 나오지 않는다` — 같은 상품이 든 상자의 예약이 입고 줄보다 먼저 만들어졌다 → items 에 없음, `waitingOnOtherSkus` 에도 없음.
+  - `다른 창고·취소된 회차·없는 입고 줄은 무시한다` — 빈 결과, 던지지 않는다.
+  - `예약이 덜 찬 상자는 빠지고, 다른 상품이 모자라면 waitingOnOtherSkus 에 센다` — 기준 상품 줄은 입고 뒤 예약으로 다 찼고 다른 상품 줄이 모자란 상자 → items 에 없음, `waitingOnOtherSkus: 1`. 기준 상품 줄 자체가 덜 찬 상자는 셈에도 없다.
+  - 아래 다섯은 모두 «입고 뒤 예약으로 다 찬 상자»를 만든 뒤 한 가지만 바꾼다:
+    - `진행 중인 배치에 든 상자는 빠진다` — `startBatchFor` 뒤 items 비어 있음.
+    - `셀메이트가 넘겨받은 상자는 빠진다`.
+    - `정보가 부족한 상자는 빠진다` — 받는 분 스냅샷 이름을 비운 상자.
+    - `주문번호가 없는 상자는 빠진다`.
+    - `planned 상자도 나온다` — `status:'planned'`.
 - [ ] **Step 4: 실패 확인** — `npm run test:core:integration:local -- ready-shipments.reader.integration` → FAIL(모듈 없음).
-- [ ] **Step 5: `ReadyShipmentsReader.forSkus` 구현** — `dbService.run` 안에서:
-  1. 후보를 고른다. 이 창고, `supplierId IS NULL`, `status IN ('draft','planned')`, 요청 상품 줄이 있는 상자 id(중복 없이)다.
+- [ ] **Step 5: `ReadyShipmentsReader.forReceiptLines` 구현** — `dbService.run` 안에서:
+  0. 기준을 읽는다. `inbound_receipt_lines` ⋈ `inbound_receipts`(`status='posted'`, `warehouse_id = warehouseId`) 에서 받은 id 의 `sku_id` 와 `created_at` 을 읽고, 상품마다 가장 이른 시각을 `since: Map<skuId, Date>` 로 둔다. 비면 `{ items: [], waitingOnOtherSkus: 0 }`.
+  1. 후보를 고른다. 이 창고, `supplierId IS NULL`, `status IN ('draft','planned')` 인 상자 중, 기준 상품 줄에 `stock_reservations`(`target_type='SHIPMENT_LINE'`, `status='confirmed'`, `created_at >= since[그 상품]`) 가 있는 상자 id(중복 없이)다. 상품별 시각 비교는 `(sku_id, since)` 값 목록을 조인해 한 쿼리로 한다.
   2. `loadSellmateShipmentIds` 로 셀메이트 상자를 뺀다. 진행 중 작업 항목(`outbound_batch_work_items.status NOT IN ('excluded','completed')`)이 있는 상자도 뺀다.
   3. 남은 상자의 모든 줄을 읽는다. `loadShipmentLines`(주문번호·`skuProfileId`)와 `this.preparation.lineQuantities`(`qty`·`confirmedQty`)를 쓴다.
      `classifyPreparation({…, consolidationPeerLines: []})` 로 나눈다.
      - `ready`·`resume` 은 판정 대상이다(`consolidationPeerLines: []` 라 `mergeable` 은 나오지 않는다 — 사용자 결정).
      - `needs_info` 는 뺀다. 이때 `recipientComplete` 는 `isRecipientComplete`, `externalLinesTrusted` 는 `loadUntrustedLineSkus` 로 채운다.
-     - `partial`·`unavailable` 중 요청 상품 줄은 모두 다 찼고 다른 상품 줄이 모자란 상자는 `waitingOnOtherSkus` 로 센다.
+     - `partial`·`unavailable` 중 기준 상품 줄은 모두 다 찼고 다른 상품 줄이 모자란 상자는 `waitingOnOtherSkus` 로 센다.
   4. 주문번호(`displayOrderNo ?? channelOrderId`, 중복 제거·정렬)가 없는 상자를 뺀다.
   5. 판정 대상의 줄을 `reservationQueueOrderSql(sql\`shipment_lines\`, sql\`fulfillment_orders\`)` 순으로 읽어, 상자가 처음 나온 순서를 대기 순번으로 쓴다.
   6. 판정 대상 상자들의 모든 상품으로 `loadSkuStockBudgets` 를 부르고 `judgeReadiness` 를 돌린다. Map 에 없는 상자는 뺀다.
@@ -165,13 +168,13 @@
 - Modify: `apps/core/src/modules/fulfillment/fulfillment.module.ts` (controllers·providers)
 
 **Interfaces:**
-- Consumes: Task 2 `ReadyShipmentsReader.forSkus`.
-- Produces: `GET /ready-shipments?warehouseId=<uuid>&skuIds=<uuid,…>` → `ReadyShipmentsDto { items: ReadyShipmentDto[]; waitingOnOtherSkus: number }`. `ReadyShipmentDto` 필드는 Task 2 `ReadyShipment` 와 같다(`readiness` 는 `@ApiProperty({ enum: ['ready','putaway_required'] })`).
+- Consumes: Task 2 `ReadyShipmentsReader.forReceiptLines`.
+- Produces: `GET /ready-shipments?warehouseId=<uuid>&receiptLineIds=<uuid,…>` → `ReadyShipmentsDto { items: ReadyShipmentDto[]; waitingOnOtherSkus: number }`. `ReadyShipmentDto` 필드는 Task 2 `ReadyShipment` 와 같다(`readiness` 는 `@ApiProperty({ enum: ['ready','putaway_required'] })`).
 
 - [ ] **Step 1: 컨트롤러·DTO 작성** — `WaitingOrdersController` 와 같은 꼴이다.
   - `@ApiTags('Outbound')`, `@RequirePermission('fulfillment.shipment.read')`, `@Get('ready-shipments')`.
   - `warehouseId` 는 `ParseUUIDPipe` 로 받는다.
-  - `skuIds` 는 1~100개 UUID 여야 한다. 아니면 `BadRequestException('skuIds must contain between 1 and 100 UUIDs')`.
+  - `receiptLineIds` 는 1~100개 UUID 여야 한다. 아니면 `BadRequestException('receiptLineIds must contain between 1 and 100 UUIDs')`.
   - 넘길 때 소문자로 바꾼다.
 - [ ] **Step 2: 모듈 등록** — `ReadyShipmentsController` 를 controllers 에, `ReadyShipmentsReader` 를 providers 에 둔다(`WaitingOrdersReader` 옆).
 - [ ] **Step 3: 게이트 확인** — `npx jest scripts/security/route-classification.spec.ts scripts/security/pii-routes.spec.ts` → PASS. 그리고 `npm run type-check` → 에러 0.
@@ -265,7 +268,7 @@
   export interface ReadyShipment { shipmentId: string; status: 'draft' | 'planned'; orderNos: string[];
     recipientMasked: string; skuCount: number; totalQty: number; readiness: 'ready' | 'putaway_required' }
   export const READY_SHIPMENTS_KEY = 'ready-shipments';
-  export function useReadyShipments(warehouseId: string | null, skuIds: readonly string[]):
+  export function useReadyShipments(warehouseId: string | null, receiptLineIds: readonly string[]):
     { failed: boolean; items: ReadyShipment[]; waitingOnOtherSkus: number; refetch: () => void };
 
   // printIntoBatch.ts
@@ -274,10 +277,10 @@
 
 - [ ] **Step 1: 실패하는 테스트를 쓴다**
   - `readyShipments.test.tsx` — `waitingOrders.test.tsx` 의 가짜 ApiClient 꼴을 따른다.
-    - `상품 100개씩 나눠 부르고 합친다`(150개 → 요청 2번, items·`waitingOnOtherSkus` 합)
+    - `입고 줄 100개씩 나눠 부르고 합친다`(150개 → 요청 2번, `receiptLineIds=` 쿼리, items·`waitingOnOtherSkus` 합)
     - `404 면 빈 목록`
     - `다시 읽기 실패면 failed 이고 옛 목록을 보이지 않는다`
-    - `창고가 없거나 상품이 없으면 부르지 않는다`
+    - `창고가 없거나 입고 줄이 없으면 부르지 않는다`
   - `printIntoBatch.test.ts` — `batchJoin.test.ts` 의 가짜 deps 꼴을 따른다.
     - `draft 상자는 계획을 부른 뒤 합류한다` — 요청 순서 `POST /outbound-preparation/plans {shipmentIds:[id]}`(idempotencyKey 있음) → `GET /outbound-batches/{batchId}/join-candidates?code={orderNos[0]}` → 이후 `joinBoxIntoBatch` 의 요청.
     - `planned 상자는 계획을 부르지 않는다`
@@ -305,7 +308,7 @@
 - Consumes: Task 5 `useReadyShipments`·`printReadyShipmentIntoBatch`·`READY_SHIPMENTS_KEY`. 기존 `useOutboundBatches`(`outbound/queries.ts`), `isStationDevice`, `readLabelPrinter`, `printRaw`, `localStoragePrefs`.
 - Produces:
   ```tsx
-  export function ReadyShipmentsSection(props: { warehouseId: string | null; skuIds: readonly string[];
+  export function ReadyShipmentsSection(props: { warehouseId: string | null; receiptLineIds: readonly string[];
     prefs?: DevicePrefs; print?: PrintRaw; labelPrinting?: boolean /* 기본 isStationDevice() */ }): JSX.Element | null;
   ```
 
@@ -338,9 +341,13 @@
 **Interfaces:**
 - Consumes: Task 6 `ReadyShipmentsSection`.
 
-- [ ] **Step 1: 실패하는 테스트를 쓴다** — 네 스펙에 `미발송 주문 칸을 그 화면의 상품으로 보인다` 를 하나씩 둔다. 각 화면이 `useWaitingOrders` 에 넘기는 것과 같은 상품 목록으로 `/ready-shipments?…skuIds=` 를 부르고, 가짜 응답의 상자 줄이 보여야 한다.
+- [ ] **Step 1: 실패하는 테스트를 쓴다** — 네 스펙에 `미발송 주문 칸을 그 화면의 입고 줄로 보인다` 를 하나씩 둔다. 각 화면이 들고 있는 입고 줄 id 로 `/ready-shipments?…receiptLineIds=` 를 부르고, 가짜 응답의 상자 줄이 보여야 한다. 간편입고·발주입고는 `확정 전에는 /ready-shipments 를 부르지 않는다` 도 단언한다.
 - [ ] **Step 2: 실패 확인** — `(cd native/warehouse-app && npx vitest run src/domains/inbound)` → 새 4건 FAIL.
-- [ ] **Step 3: 붙인다** — 각 화면에서 `useWaitingOrders` 에 넘기는 상품 배열을 그대로 `ReadyShipmentsSection` 에 넘긴다. 자리는 상품 목록 아래, 확정 버튼 위다. `PutawaySheet` 는 `[target.skuId]` 다.
+- [ ] **Step 3: 붙인다** — 넘기는 입고 줄 id 는 화면마다 다르다. 자리는 상품 목록 아래, 확정 버튼 위다.
+  - `QuickInboundScreen`: `staged.map((row) => row.lineId)`(확정 전 `cart` 단계는 빈 배열).
+  - `PurchaseOrderReceiveScreen`: 줄마다 이번에 받은 `fresh?.lineId` 중 있는 것.
+  - `PutawayQueueScreen`: `items.map((item) => item.lineId)`.
+  - `PutawaySheet`: `[target.lineId]`.
 - [ ] **Step 4: 전체 앱 게이트** — `(cd native/warehouse-app && npx tsc -b && npx vitest run)` → 실패 0.
 - [ ] **Step 5: 저장소 게이트** — `npm run type-check` 에러 0, `npx jest --maxWorkers=2` 실패 0(🔴 E2E 스택이 떠 있지 않을 때만).
 - [ ] **Step 6: 커밋** — `git commit -m "[warehouse-app] #1533 입고·적치 네 화면에 미발송 주문 칸"`
