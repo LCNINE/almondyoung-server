@@ -421,6 +421,40 @@ it('다른 창고에 재고가 있는 상품만 보충 제안의 그 상품으�
   ).toEqual(['/inventory/replenishment?sku=sku%20a']);
 });
 
+it('부분출고는 모자란 상품이 언제 들어오는지 사유 칸에 상품 이름과 함께 보인다', () => {
+  render(
+    list({
+      bucket: 'partial',
+      count: 1,
+      singleCount: 0,
+      multiCount: 1,
+      shipments: [
+        {
+          ...shipment('s1', null),
+          lines: [
+            { name: '상품 A', qty: 1, reservedQty: 1 },
+            {
+              name: '상품 B',
+              qty: 2,
+              reservedQty: 1,
+              stock: awayStock('sku-b', 6),
+            },
+          ],
+        },
+      ],
+    })
+  );
+
+  expect(
+    screen.getByText(/다른 창고에 6개 — 옮겨 와야 해요/).textContent
+  ).toMatch(/^상품 B: /);
+  expect(
+    screen
+      .getByRole('link', { name: '보충 제안에서 보기' })
+      .getAttribute('href')
+  ).toBe('/inventory/replenishment?sku=sku-b');
+});
+
 it('보충 제안 화면을 볼 수 없으면 링크를 보이지 않는다', () => {
   mockOpen.replenishment = false;
   render(unavailable([{ name: '상품 A', stock: awayStock('sku-a', 6) }]));

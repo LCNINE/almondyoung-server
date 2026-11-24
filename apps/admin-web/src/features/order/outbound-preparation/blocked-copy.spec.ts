@@ -1,4 +1,5 @@
 import {
+  arrivalSortKey,
   etaText,
   incomingText,
   needsInfoClosing,
@@ -94,6 +95,54 @@ describe('blocked-copy', () => {
     ).toBe(
       '이 창고에 남는 재고 2개 — 곧 자동으로 확보돼요 · 이 창고로 올 것: 발주 4개'
     );
+  });
+
+  it('이 상자가 잡은 몫은 남는 재고로 보지 않는다', () => {
+    // 재고 2개를 이 상자가 다 잡았다
+    expect(
+      incomingText({ onHand: 2, reservedByOthers: 0, available: 0, ...none })
+    ).toBe('들어올 예정이 없어요 — 발주하거나 다른 창고에서 옮겨 와야 해요');
+    expect(
+      incomingText({ onHand: 5, reservedByOthers: 1, available: 2, ...none })
+    ).toBe(
+      '이 창고에 남는 재고 2개 — 곧 자동으로 확보돼요 · 이 창고로 올 것은 없어요'
+    );
+  });
+
+  it('먼저 들어올 순서로 줄 세운다', () => {
+    const base = { onHand: 0, reservedByOthers: 0, available: 0, ...none };
+    const keys = [
+      arrivalSortKey({ ...base, available: 1 }),
+      arrivalSortKey({
+        ...base,
+        incoming: {
+          ...none.incoming,
+          inTransit: 1,
+          inTransitEta: '2026-01-20',
+          inboundShipment: 1,
+          inboundShipmentEta: '2026-01-10',
+        },
+      }),
+      arrivalSortKey({
+        ...base,
+        incoming: {
+          ...none.incoming,
+          inTransit: 1,
+          inTransitEta: '2026-01-11',
+          // 선적 잔량이 없으면 그 예정일은 보지 않는다
+          inboundShipmentEta: '2026-01-01',
+        },
+      }),
+      arrivalSortKey({ ...base, incoming: { ...none.incoming, ordered: 1 } }),
+      arrivalSortKey({
+        ...base,
+        elsewhere: { ...none.elsewhere, onHand: 1 },
+      }),
+      arrivalSortKey(base),
+    ];
+
+    expect([...keys].reverse().sort()).toEqual(keys);
+    expect(new Set(keys).size).toBe(keys.length);
   });
 
   it('고칠 곳이 모두 화면에 있을 때만 다 고치면 빠진다고 알린다', () => {
