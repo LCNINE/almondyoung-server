@@ -40,8 +40,9 @@ export class PreparationIncomingDto {
   // 이 창고로 오는 이동 지시 잔량과 가장 이른 도착 예정일(YYYY-MM-DD)
   inTransit: number;
   inTransitEta: string | null;
-  // 이 창고로 바로 들어오는 발주 잔량
+  // 이 창고로 바로 들어오는 발주 잔량과 가장 이른 입고 예정일
   ordered: number;
+  orderedEta: string | null;
   // 이 창고로 오는 선적 잔량과 가장 이른 도착 예정일
   inboundShipment: number;
   inboundShipmentEta: string | null;
@@ -63,6 +64,8 @@ export class PreparationLineStockDto {
   reservedByOthers: number;
   // 아직 어느 상자도 잡지 않은 수량. 곧 자동 예약된다
   available: number;
+  // 이 창고에서 이 상품 재고를 아직 못 잡은 수량의 합(이 상자 포함). 들어오는 재고는 이 수량에 오래 기다린 순서로 나뉜다
+  waiting: number;
   // 판매 창고가 이 창고 하나일 때만 안다. 모르면 null
   incoming: PreparationIncomingDto | null;
   elsewhere: PreparationElsewhereDto | null;

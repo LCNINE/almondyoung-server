@@ -36,6 +36,7 @@ import {
   shortPickText,
   showsShipmentDetailLink,
 } from '../preparation-model';
+import { kstToday } from '@/features/order/matching/lib/date-key';
 import { incomingText, shortageLineText } from '../blocked-copy';
 import { BUCKET_LABELS } from './bucket-table';
 import { NeedsInfoList } from './needs-info-list';
@@ -71,6 +72,7 @@ export function BucketList({
   const showsRecipient = bucket.bucket === 'ready';
   const columns = 6 + (choosable ? 1 : 0) + (showsRecipient ? 1 : 0);
   const now = useNow();
+  const today = kstToday(now);
   const shortPicks = bucket.shipments.filter((shipment) => shipment.shortPick);
   // 하나씩 고른 결품 상자만큼 전체 선택이 담을 수 있는 상자가 줄어든다
   const keptCount = shortPicks.filter((shipment) =>
@@ -260,7 +262,11 @@ export function BucketList({
                     {shipment.totalQty}
                   </TableCell>
                   <TableCell className="min-w-72 whitespace-normal text-sm text-muted-foreground">
-                    <ReasonCell bucket={bucket.bucket} shipment={shipment} />
+                    <ReasonCell
+                      bucket={bucket.bucket}
+                      shipment={shipment}
+                      today={today}
+                    />
                   </TableCell>
                   <TableCell>
                     <div className="flex flex-wrap gap-1">
@@ -335,15 +341,17 @@ export function BucketList({
 function ReasonCell({
   bucket,
   shipment,
+  today,
 }: {
   bucket: PreparationBucketDto['bucket'];
   shipment: PreparationBucketDto['shipments'][number];
+  today: string;
 }) {
   const nextStep = batchReturnNextStep(bucket, shipment);
   const replenishment = useCanOpen('/inventory/replenishment');
   const canOpenReplenishment =
     replenishment.status === 'ready' && replenishment.allowed;
-  const blocked = blockedReason(bucket, shipment, canOpenReplenishment);
+  const blocked = blockedReason(bucket, shipment, canOpenReplenishment, today);
   const splitReason = shipment.split?.reason && (
     <span className="block text-xs">나눈 이유 · {shipment.split.reason}</span>
   );
@@ -392,7 +400,8 @@ function ReasonCell({
 function blockedReason(
   bucket: PreparationBucketDto['bucket'],
   shipment: PreparationBucketDto['shipments'][number],
-  canOpenReplenishment: boolean
+  canOpenReplenishment: boolean,
+  today: string
 ) {
   if (bucket === 'needs_info' && shipment.needsInfo?.length) {
     return <NeedsInfoList issues={shipment.needsInfo} />;
@@ -414,7 +423,7 @@ function blockedReason(
           {(shipment.lines?.length ?? 0) > 1 && (
             <span className="font-medium text-foreground">{line.name}: </span>
           )}
-          {line.stock && incomingText(line.stock)}
+          {line.stock && incomingText(line.stock, today)}
           {canOpenReplenishment &&
             line.stock?.skuId &&
             (line.stock.elsewhere?.onHand ?? 0) > 0 && (

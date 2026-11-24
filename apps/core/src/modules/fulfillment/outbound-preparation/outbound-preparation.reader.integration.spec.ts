@@ -881,6 +881,7 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
           onHand: 4,
           reservedByOthers: reserved,
           available: 4 - reserved,
+          waiting: 5,
           incoming: null,
           elsewhere: null,
         },
@@ -898,6 +899,7 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
         onHand: 4,
         reservedByOthers: reserved,
         available: 4 - reserved,
+        waiting: 5,
         incoming: null,
         elsewhere: expect.objectContaining({ onHand: expect.any(Number), ordered: expect.any(Number) }),
       });
@@ -912,7 +914,15 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
         onHand: 4,
         reservedByOthers: reserved,
         available: 4 - reserved,
-        incoming: { inTransit: 0, inTransitEta: null, ordered: 0, inboundShipment: 0, inboundShipmentEta: null },
+        waiting: 5,
+        incoming: {
+          inTransit: 0,
+          inTransitEta: null,
+          ordered: 0,
+          orderedEta: null,
+          inboundShipment: 0,
+          inboundShipmentEta: null,
+        },
         elsewhere: { onHand: 0, ordered: 0, orderedEta: null },
       });
       // 모자란 줄이 없는 상자는 재고를 싣지 않는다
@@ -966,13 +976,108 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
         // 다른 상자가 잡은 2개만. 이 상자의 두 줄이 잡은 2개는 세지 않는다
         reservedByOthers: 2,
         available: 6,
-        incoming: { inTransit: 0, inTransitEta: null, ordered: 0, inboundShipment: 0, inboundShipmentEta: null },
+        waiting: 2,
+        incoming: {
+          inTransit: 0,
+          inTransitEta: null,
+          ordered: 0,
+          orderedEta: null,
+          inboundShipment: 0,
+          inboundShipmentEta: null,
+        },
         elsewhere: { onHand: 0, ordered: 0, orderedEta: null },
       });
       expect(full?.reservedQty).toBe(1);
       expect(full?.stock).toBeUndefined();
       const ready = summary.buckets.find(({ bucket }) => bucket === 'ready')?.shipments;
       expect(ready?.find(({ shipmentId }) => shipmentId === held.shipment.id)?.orderCount).toBe(1);
+    });
+  });
+
+  it('기다리는 수량은 이 창고에서 그 상품 재고를 다 못 잡은 모든 상자를 세고, 바로 오는 발주의 예정일을 싣는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const base = await consolidationBase(tx, 20);
+      const make = (quantity: number) =>
+        createConsolidationSource(tx, wired, base, { quantity, customerId: randomUUID() });
+      const unavailable = await make(5);
+      const partial = await make(3);
+      const ready = await make(2);
+      const handedOver = await make(4);
+      const planned = await make(1);
+      const unreserve = (lineId: string, quantity: number) =>
+        tx
+          .update(wmsTables.stockReservations)
+          .set(quantity > 0 ? { quantity } : { status: 'pending' })
+          .where(eq(wmsTables.stockReservations.targetId, lineId));
+
+      await unreserve(unavailable.line.id, 0);
+      await unreserve(partial.line.id, 1);
+      // 셀메이트가 내보낼 상자도 들어올 재고를 함께 기다린다(목록에는 없다)
+      await unreserve(handedOver.line.id, 0);
+      await seedHandedOverOrder(tx, handedOver.salesOrderId);
+      // 출고 계획이 끝난 상자는 재고를 기다리지 않는다
+      await unreserve(planned.line.id, 0);
+      await tx
+        .update(wmsTables.shipments)
+        .set({ status: 'planned' })
+        .where(eq(wmsTables.shipments.id, planned.shipment.id));
+      // 다른 창고의 상자는 세지 않는다
+      const elsewhere = await seedWarehouseWithZone(tx);
+      const other = await make(9);
+      await unreserve(other.line.id, 0);
+      await tx
+        .update(wmsTables.shipments)
+        .set({ warehouseId: elsewhere.warehouseId })
+        .where(eq(wmsTables.shipments.id, other.shipment.id));
+      await tx
+        .update(wmsTables.warehouses)
+        .set({ isSellable: true })
+        .where(eq(wmsTables.warehouses.id, base.warehouseId));
+      await tx
+        .update(wmsTables.warehouses)
+        .set({ isSellable: false })
+        .where(not(eq(wmsTables.warehouses.id, base.warehouseId)));
+
+      const [supplier] = await tx
+        .insert(wmsTables.suppliers)
+        .values({ name: `it-supplier-${randomUUID().slice(0, 8)}`, defaultWarehouseId: base.warehouseId })
+        .returning({ id: wmsTables.suppliers.id });
+      const [po] = await tx
+        .insert(wmsTables.purchaseOrders)
+        .values({
+          type: 'domestic',
+          supplierId: supplier.id,
+          status: 'confirmed',
+          sourceWarehouseId: base.warehouseId,
+          destinationWarehouseId: base.warehouseId,
+          requiresTransfer: false,
+        })
+        .returning({ id: wmsTables.purchaseOrders.id });
+      await tx.insert(wmsTables.purchaseOrderLines).values({
+        poId: po.id,
+        skuId: base.skuId,
+        quantity: 6,
+        unitPrice: 1000,
+        status: 'ordered',
+        orderedQty: 6,
+        receivedQty: 0,
+        expectedArrival: '2026-01-05',
+      });
+
+      const summary = await reader.summarize(base.warehouseId, undefined, tx);
+      const stockOf = (shipmentId: string) =>
+        summary.buckets
+          .flatMap(({ shipments }) => shipments)
+          .find((shipment) => shipment.shipmentId === shipmentId)?.lines[0].stock;
+
+      // 5 + (3 − 1) + 4
+      expect(stockOf(unavailable.shipment.id)?.waiting).toBe(11);
+      expect(stockOf(partial.shipment.id)?.waiting).toBe(11);
+      expect(stockOf(unavailable.shipment.id)?.incoming).toEqual(
+        expect.objectContaining({ ordered: 6, orderedEta: '2026-01-05' }),
+      );
+      expect(stockOf(ready.shipment.id)).toBeUndefined();
+      expect(stockOf(handedOver.shipment.id)).toBeUndefined();
     });
   });
 

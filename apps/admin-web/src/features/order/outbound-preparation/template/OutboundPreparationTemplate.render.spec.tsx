@@ -753,7 +753,7 @@ describe('OutboundPreparationTemplate', () => {
     available: 0,
     incoming: {
       inTransit,
-      inTransitEta: inTransit > 0 ? '2026-01-05' : null,
+      inTransitEta: inTransit > 0 ? '2099-01-05' : null,
       ordered: 0,
       inboundShipment: 0,
       inboundShipmentEta: null,
@@ -808,6 +808,44 @@ describe('OutboundPreparationTemplate', () => {
 
     return screen.getByRole('alertdialog');
   };
+
+  it('나누기 확인 창은 예정이 지난 발주를 앞날의 발주보다 뒤에 두고, 모자란 수량을 함께 보인다', async () => {
+    partialBoxes();
+    const bucket = mockSummary.buckets.find(
+      (entry) => entry.bucket === 'partial'
+    );
+    const [first] = bucket?.shipments ?? [];
+
+    if (!bucket || !first) throw new Error('Missing partial bucket');
+
+    const line = (sku: string, orderedEta: string) => ({
+      name: `상품 ${sku}`,
+      qty: 2,
+      reservedQty: 1,
+      stock: {
+        ...waitStock(sku, 0),
+        waiting: 9,
+        incoming: { ...waitStock(sku, 0).incoming, ordered: 6, orderedEta },
+      },
+    });
+
+    bucket.shipments = [
+      { ...first, lines: [line('A', '2020-01-05'), line('B', '2099-01-05')] },
+    ];
+    bucket.count = 1;
+    render(<OutboundPreparationTemplate />);
+
+    const dialog = await openSplitConfirm();
+
+    expect(
+      within(within(dialog).getByRole('list', { name: '기다릴 상품' }))
+        .getAllByRole('listitem')
+        .map((item) => item.textContent)
+    ).toEqual([
+      '상품 B상자 1개에서 1개 기다림이 창고로 올 것: 발주 6개(1월 5일 입고 예정) · 모두 9개 기다려 3개 모자라요1건 빼기',
+      '상품 A상자 1개에서 1개 기다림이 창고로 올 것: 발주 6개(1월 5일 예정이 지났어요) · 모두 9개 기다려 3개 모자라요1건 빼기',
+    ]);
+  });
 
   it('나누기 확인 창에서 먼저 들어올 상품의 상자를 빼면 남은 상자만 나누고, 합포장한 상자는 보내지 않는다', async () => {
     partialBoxes();

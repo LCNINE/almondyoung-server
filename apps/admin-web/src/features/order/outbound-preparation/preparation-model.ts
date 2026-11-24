@@ -198,7 +198,8 @@ export interface WaitingProduct {
 
 /** 나누면 기다리게 되는 상품을 상품마다 모은다. 먼저 들어올 상품이 앞이다. 상품 id 를 싣지 않는 옛 응답이면 비운다. */
 export function waitingProducts(
-  shipments: Pick<PreparationShipmentDto, 'shipmentId' | 'lines'>[]
+  shipments: Pick<PreparationShipmentDto, 'shipmentId' | 'lines'>[],
+  today: string
 ): WaitingProduct[] {
   const products = new Map<string, WaitingProduct>();
 
@@ -230,7 +231,7 @@ export function waitingProducts(
   }
 
   return [...products.values()].sort((a, b) =>
-    arrivalSortKey(a.stock).localeCompare(arrivalSortKey(b.stock))
+    arrivalSortKey(a.stock, today).localeCompare(arrivalSortKey(b.stock, today))
   );
 }
 

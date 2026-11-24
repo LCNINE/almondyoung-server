@@ -4,7 +4,7 @@ import { ConsolidationBoardReader } from '../services/consolidation-board.reader
 import { loadShipmentLines, loadSplitShares } from '../services/consolidation-shipment-reads';
 import { InboundPipelineReader } from '../../inventory/stock-projection/services/inbound-pipeline.reader';
 import { OutboundPreparationReader } from './outbound-preparation.reader';
-import { loadWarehouseStock } from './shortage-stock';
+import { loadWaitingQuantities, loadWarehouseStock } from './shortage-stock';
 
 jest.mock('../services/consolidation-shipment-reads', () => ({
   ...jest.requireActual<typeof import('../services/consolidation-shipment-reads')>(
@@ -37,6 +37,7 @@ jest.mock('./needs-info', () => ({
 jest.mock('./shortage-stock', () => ({
   ...jest.requireActual<typeof import('./shortage-stock')>('./shortage-stock'),
   loadWarehouseStock: jest.fn(async () => new Map()),
+  loadWaitingQuantities: jest.fn(async () => new Map()),
   readPipelineScope: jest.fn(async () => ({ incoming: false, elsewhere: false })),
 }));
 jest.mock('./batch-returns', () => ({
@@ -196,6 +197,7 @@ describe('OutboundPreparationReader consolidation reservations', () => {
       );
 
     jest.mocked(loadWarehouseStock).mockResolvedValueOnce(new Map([['sku-0', { onHand: 4, reserved: 3 }]]));
+    jest.mocked(loadWaitingQuantities).mockResolvedValueOnce(new Map([['sku-0', 8]]));
 
     const summary = await module.get(OutboundPreparationReader).summarize('warehouse');
 
@@ -214,7 +216,15 @@ describe('OutboundPreparationReader consolidation reservations', () => {
         qty: 5,
         reservedQty: 2,
         // 재고 4개 중 이 상자가 2개, 다른 상자가 1개를 잡았다
-        stock: { skuId: 'sku-0', onHand: 4, reservedByOthers: 1, available: 1, incoming: null, elsewhere: null },
+        stock: {
+          skuId: 'sku-0',
+          onHand: 4,
+          reservedByOthers: 1,
+          available: 1,
+          waiting: 8,
+          incoming: null,
+          elsewhere: null,
+        },
       },
       { name: '상품 B', qty: 1, reservedQty: 1 },
     ]);

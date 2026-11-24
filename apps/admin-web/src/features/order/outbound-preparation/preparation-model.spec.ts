@@ -41,23 +41,26 @@ describe('waitingProducts', () => {
 
   it('상자마다 모자란 수량을 상품별로 모으고 먼저 들어올 상품을 앞에 둔다', () => {
     expect(
-      waitingProducts([
-        {
-          shipmentId: 'b1',
-          lines: [
-            { name: '상품 A', qty: 3, reservedQty: 1, stock: stock('a', 0) },
-            { name: '상품 A', qty: 1, reservedQty: 0, stock: stock('a', 0) },
-            { name: '상품 C', qty: 2, reservedQty: 2 },
-          ],
-        },
-        {
-          shipmentId: 'b2',
-          lines: [
-            { name: '상품 A', qty: 2, reservedQty: 1, stock: stock('a', 0) },
-            { name: '상품 B', qty: 1, reservedQty: 0, stock: stock('b', 4) },
-          ],
-        },
-      ]).map(({ skuId, qty, shipmentIds }) => ({ skuId, qty, shipmentIds }))
+      waitingProducts(
+        [
+          {
+            shipmentId: 'b1',
+            lines: [
+              { name: '상품 A', qty: 3, reservedQty: 1, stock: stock('a', 0) },
+              { name: '상품 A', qty: 1, reservedQty: 0, stock: stock('a', 0) },
+              { name: '상품 C', qty: 2, reservedQty: 2 },
+            ],
+          },
+          {
+            shipmentId: 'b2',
+            lines: [
+              { name: '상품 A', qty: 2, reservedQty: 1, stock: stock('a', 0) },
+              { name: '상품 B', qty: 1, reservedQty: 0, stock: stock('b', 4) },
+            ],
+          },
+        ],
+        '2026-01-01'
+      ).map(({ skuId, qty, shipmentIds }) => ({ skuId, qty, shipmentIds }))
     ).toEqual([
       { skuId: 'b', qty: 1, shipmentIds: ['b2'] },
       { skuId: 'a', qty: 4, shipmentIds: ['b1', 'b2'] },
@@ -66,12 +69,15 @@ describe('waitingProducts', () => {
 
   it('상품 id 를 싣지 않는 옛 응답이면 비운다', () => {
     expect(
-      waitingProducts([
-        {
-          shipmentId: 'b1',
-          lines: [{ name: '상품 A', qty: 3, reservedQty: 1 }],
-        },
-      ])
+      waitingProducts(
+        [
+          {
+            shipmentId: 'b1',
+            lines: [{ name: '상품 A', qty: 3, reservedQty: 1 }],
+          },
+        ],
+        '2026-01-01'
+      )
     ).toEqual([]);
   });
 
