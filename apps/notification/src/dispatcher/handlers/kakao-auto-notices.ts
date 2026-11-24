@@ -3,7 +3,7 @@
  *
  * 관리자가 승인된 템플릿을 자동 알림에 이을 때 이 목록이 기준이다: 목록에 없는 알림에는 잇지 않고,
  * 템플릿이 여기 없는 변수(#{…})를 쓰면 막는다 — 채워지지 않은 변수가 있으면 카카오가 발송을 거절한다.
- * 시드(`BILLING_NOTICE_TEMPLATES`)와 같은지는 스펙이 지킨다.
+ * 시드(`KAKAO_AUTO_NOTICE_TEMPLATES`)와 같은지는 스펙이 지킨다.
  */
 export interface KakaoAutoNotice {
   eventKey: string;
@@ -43,6 +43,12 @@ export const KAKAO_AUTO_NOTICES: readonly KakaoAutoNotice[] = [
     name: '멤버십 해지 (계좌 심사 거절, 미납 없음)',
     condition: '자동이체 계좌 심사가 거절되어 해지됐지만 남은 요금이 없을 때',
     variables: ['name'],
+  },
+  {
+    eventKey: 'PRINT_FILE_REJECTED',
+    name: '인쇄 파일 다시 올리기 요청',
+    condition: '내 파일로 주문한 인쇄물을 인쇄소가 파일 문제로 돌려보냈을 때',
+    variables: ['name', 'reason'],
   },
 ];
 

@@ -238,7 +238,8 @@ describe('MembershipEventConsumer — 출금 실패·미납 해지 알림톡', (
     const sent = dispatcher.send.mock.calls.map(
       ([dto]: [{ eventKey: string; variables: Record<string, unknown> }]) => dto,
     );
-    expect(sent.map((d) => d.eventKey).sort()).toEqual(KAKAO_AUTO_NOTICES.map((n) => n.eventKey).sort());
+    const membershipNotices = KAKAO_AUTO_NOTICES.filter((n) => n.eventKey.startsWith('MEMBERSHIP_'));
+    expect(sent.map((d) => d.eventKey).sort()).toEqual(membershipNotices.map((n) => n.eventKey).sort());
     for (const dto of sent) {
       const allowed = KAKAO_AUTO_NOTICES.find((n) => n.eventKey === dto.eventKey)?.variables ?? [];
       expect({ eventKey: dto.eventKey, extra: Object.keys(dto.variables).filter((v) => !allowed.includes(v)) }).toEqual(
