@@ -120,4 +120,33 @@ describeIfDb('UnifiedReservationService reserve→release 원복 (DB integration
       expect(ledger.qty).toBe(100);
     });
   });
+
+  it('still releases a legacy FULFILLMENT_ORDER-target row', async () => {
+    await inRollbackTx(async (tx) => {
+      const { wh, sku } = await seedStock(tx, 100);
+      // shipment_line_id 는 NOT NULL 이라 옛 행도 줄을 달고 있다 — 가르는 건 targetType 이다.
+      const shipmentLineId = await seedShipmentLineFor(tx, { skuId: sku.id, warehouseId: wh.id, qty: 5 });
+      const [row] = await tx
+        .insert(wmsTables.stockReservations)
+        .values({
+          targetType: 'FULFILLMENT_ORDER',
+          targetId: randomUUID(),
+          shipmentLineId,
+          skuId: sku.id,
+          warehouseId: wh.id,
+          quantity: 5,
+          status: 'confirmed',
+          requestedAt: new Date(),
+        })
+        .returning();
+
+      await expect(reservation.releaseReservation(row.id, tx)).resolves.toBeUndefined();
+
+      const [after] = await tx
+        .select({ status: wmsTables.stockReservations.status })
+        .from(wmsTables.stockReservations)
+        .where(eq(wmsTables.stockReservations.id, row.id));
+      expect(after.status).toBe('released');
+    });
+  });
 });

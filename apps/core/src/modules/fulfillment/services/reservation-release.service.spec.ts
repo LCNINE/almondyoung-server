@@ -4,7 +4,7 @@ import { ReservationReleaseService } from './reservation-release.service';
 describe('ReservationReleaseService', () => {
   const id = '11111111-1111-4111-8111-111111111111';
 
-  const build = (rows: Array<{ id: string; shipmentLineId: string | null }>) => {
+  const build = (rows: Array<{ id: string; targetType: string }>) => {
     const limit = jest.fn().mockResolvedValue(rows);
     const db = { db: { select: jest.fn(() => ({ from: () => ({ where: () => ({ limit }) }) })) } };
     const shipmentReservations = { releaseReservation: jest.fn().mockResolvedValue(undefined) };
@@ -18,7 +18,7 @@ describe('ReservationReleaseService', () => {
   };
 
   it('routes a shipment-line row to ShipmentReservationService with the given reason', async () => {
-    const { service, shipmentReservations, unifiedReservation } = build([{ id, shipmentLineId: 'line-1' }]);
+    const { service, shipmentReservations, unifiedReservation } = build([{ id, targetType: 'SHIPMENT_LINE' }]);
     await service.release(id, '  재고 이동 ');
     expect(shipmentReservations.releaseReservation).toHaveBeenCalledTimes(1);
     expect(shipmentReservations.releaseReservation).toHaveBeenCalledWith(id, '재고 이동');
@@ -26,15 +26,15 @@ describe('ReservationReleaseService', () => {
   });
 
   it('uses admin-release when reason is missing or blank', async () => {
-    const { service, shipmentReservations } = build([{ id, shipmentLineId: 'line-1' }]);
+    const { service, shipmentReservations } = build([{ id, targetType: 'SHIPMENT_LINE' }]);
     await service.release(id);
     await service.release(id, '   ');
     expect(shipmentReservations.releaseReservation).toHaveBeenNthCalledWith(1, id, 'admin-release');
     expect(shipmentReservations.releaseReservation).toHaveBeenNthCalledWith(2, id, 'admin-release');
   });
 
-  it('routes a legacy row without shipment line to UnifiedReservationService', async () => {
-    const { service, shipmentReservations, unifiedReservation } = build([{ id, shipmentLineId: null }]);
+  it('routes a non-SHIPMENT_LINE (legacy FO) row to UnifiedReservationService', async () => {
+    const { service, shipmentReservations, unifiedReservation } = build([{ id, targetType: 'FULFILLMENT_ORDER' }]);
     await service.release(id, 'x');
     expect(unifiedReservation.releaseReservation).toHaveBeenCalledTimes(1);
     expect(unifiedReservation.releaseReservation).toHaveBeenCalledWith(id);

@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - URL·메서드·권한·성공 응답 그대로: `DELETE /inventory/reservations/:id`, `@RequirePermission('inventory.stock.adjust')`, 204, 본문 `ReleaseReservationDto`(선택 `reason`).
-- 상자 줄 행 판정은 한 가지로 통일한다: `shipmentLineId !== null`. 분기(Task 2)와 Unified 거절(Task 3)이 같은 조건을 쓴다.
+- 상자 줄 행 판정은 한 가지로 통일한다: `targetType === 'SHIPMENT_LINE'`(`shipment_line_id` 는 2026-07 부터 NOT NULL 이라 null 로는 가를 수 없다). 분기(Task 2)와 Unified 거절(Task 3)이 같은 조건을 쓴다.
 - 문구(현장 말, 그대로 쓴다):
   - `draft` 아닌 상자 → `ConflictError('작업이 시작된 상자의 예약은 풀 수 없습니다')`
   - 이미 풀린 행 → `ConflictError('이미 풀린 예약입니다')`
@@ -53,7 +53,7 @@
   };
   async releaseReservation(reservationId: string, reason: string, tx?: DbTx): Promise<ReservationRowReleaseResult>
   ```
-  `shipmentLineId` 가 null 인 행을 받으면 `Error('releaseReservation: reservation <id> is not a shipment-line reservation')`(프로그래밍 오류 → 500). 분기는 Task 2 의 몫이다.
+  `targetType` 이 `'SHIPMENT_LINE'` 이 아닌 행을 받으면 `Error('releaseReservation: reservation <id> is not a shipment-line reservation')`(프로그래밍 오류 → 500). 분기는 Task 2 의 몫이다.
 
 - [ ] **Step 1: 실패하는 통합 테스트 다섯 개를 쓴다** (`describeIfDb` 블록 안, `inRollbackTx` 로)
 
@@ -104,7 +104,7 @@
 - [ ] **Step 3: `releaseReservation` 구현**
 
   순서(`releasePartial` 과 같은 잠금 순서를 지킨다 — 상자 묶음 → 재고 → 예약 행):
-  1. 행을 id 로 읽는다(잠금 없이). 없으면 `NotFoundError('예약을 찾을 수 없습니다')`. `shipmentLineId === null` 이면 위 `Error`.
+  1. 행을 id 로 읽는다(잠금 없이). 없으면 `NotFoundError('예약을 찾을 수 없습니다')`. `targetType !== 'SHIPMENT_LINE'` 이면 위 `Error`.
   2. `initial = loadLineContext(row.shipmentLineId)` → `lockConnectedComponents([initial])` → `line = loadLineContext(...)` → `assertStableContext(initial, line)`.
   3. `line.shipmentStatus !== 'draft'` 이면 `ConflictError('작업이 시작된 상자의 예약은 풀 수 없습니다')` (기존 영어 `assertDraft` 는 쓰지 않는다 — 화면에 뜨는 문구다).
   4. `acquireStockAvailabilityLock(trx, line.skuId, line.warehouseId)`.
@@ -159,11 +159,11 @@
   `reservation-release.service.spec.ts` (db 는 `select().from().where().limit()` 체인이 `[row]` 또는 `[]` 를 돌려주는 가짜):
   ```ts
   it('routes a shipment-line row to ShipmentReservationService with the given reason', …
-    // row { id, shipmentLineId: 'line-1' }, release(id, '  재고 이동 ') → shipmentReservations.releaseReservation(id, '재고 이동') 1회, unified 0회
+    // row { id, targetType: 'SHIPMENT_LINE' }, release(id, '  재고 이동 ') → shipmentReservations.releaseReservation(id, '재고 이동') 1회, unified 0회
   it('uses admin-release when reason is missing or blank', …
     // release(id) 와 release(id, '   ') 둘 다 → releaseReservation(id, 'admin-release')
   it('routes a legacy row without shipment line to UnifiedReservationService', …
-    // row { id, shipmentLineId: null } → unifiedReservation.releaseReservation(id) 1회, shipmentReservations 0회
+    // row { id, targetType: 'FULFILLMENT_ORDER' } → unifiedReservation.releaseReservation(id) 1회, shipmentReservations 0회
   it('throws NotFoundError when the reservation does not exist', …
     // [] → rejects.toBeInstanceOf(NotFoundError), message '예약을 찾을 수 없습니다'
   ```
@@ -181,7 +181,7 @@
 
 - [ ] **Step 3: 서비스·컨트롤러 구현, 모듈 등록, inventory 쪽 DELETE 제거**
 
-  서비스는 `wmsTables.stockReservations` 에서 `{ id, shipmentLineId }` 만 읽어 분기한다(트랜잭션 없이 — 행이 상자 줄 행인지는 바뀌지 않는다. 각 경로가 자기 트랜잭션과 잠금을 쥔다). 컨트롤러는 `return this.service.release(id, dto?.reason)` 한 줄.
+  서비스는 `wmsTables.stockReservations` 에서 `{ id, targetType }` 만 읽어 분기한다(트랜잭션 없이 — 행이 상자 줄 행인지는 바뀌지 않는다. 각 경로가 자기 트랜잭션과 잠금을 쥔다). 컨트롤러는 `return this.service.release(id, dto?.reason)` 한 줄.
 
 - [ ] **Step 4: 통과 확인 + 라우트 게이트**
 
@@ -207,7 +207,7 @@
 
 **Interfaces:**
 - Consumes: Task 1 `ShipmentReservationService.releaseReservation`.
-- Produces: `UnifiedReservationService.releaseReservation(id, tx?)` 는 시그니처 그대로, `shipmentLineId !== null` 행이면 아무것도 쓰지 않고
+- Produces: `UnifiedReservationService.releaseReservation(id, tx?)` 는 시그니처 그대로, `targetType === 'SHIPMENT_LINE'` 행이면 아무것도 쓰지 않고
   `Error('Shipment-line reservation <id> must be released by ShipmentReservationService.releaseReservation')` 를 던진다.
 
 - [ ] **Step 1: 스펙을 먼저 고친다**
@@ -222,7 +222,7 @@
 
 - [ ] **Step 3: `UnifiedReservationService.releaseReservation` 을 고친다**
 
-  UPDATE 전에 행을 읽어 없으면 지금처럼 `BadRequestException(\`Reservation ${id} not found\`)`(옛 호출자 호환), `shipmentLineId !== null` 이면 위 `Error`. 그 뒤 UPDATE·`recalculateAndPublishForSku` 는 그대로. `markLineStateDirtyForShipmentLines` 호출과 import, #1247 주석은 지운다(이제 상자 줄 행이 여기 오지 않는다).
+  UPDATE 전에 행을 읽어 없으면 지금처럼 `BadRequestException(\`Reservation ${id} not found\`)`(옛 호출자 호환), `targetType === 'SHIPMENT_LINE'` 이면 위 `Error`. 그 뒤 UPDATE·`recalculateAndPublishForSku` 는 그대로. `markLineStateDirtyForShipmentLines` 호출과 import, #1247 주석은 지운다(이제 상자 줄 행이 여기 오지 않는다).
 
 - [ ] **Step 4: 통과 확인**
 

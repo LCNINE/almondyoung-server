@@ -608,17 +608,22 @@ export class ShipmentReservationService {
 
   /**
    * 상자 줄에 걸린 확정 예약 «한 행»을 풀고 같은 트랜잭션에서 상자·출고주문을 다시 계산한다.
-   * 잠금 순서는 releasePartial 과 같다(상자 묶음 → 재고 → 예약 행).
+   * 잠금 순서는 releasePartial 과 같다: 상자 묶음(출고주문·상자·줄·확정 예약 행) → 재고 advisory lock
+   * → 잠근 확정 행 중에서 그 행을 찾는다.
    */
   async releaseReservation(reservationId: string, reason: string, tx?: DbTx): Promise<ReservationRowReleaseResult> {
     return this.db.run(async (trx) => {
       const [found] = await trx
-        .select({ id: wmsTables.stockReservations.id, shipmentLineId: wmsTables.stockReservations.shipmentLineId })
+        .select({
+          id: wmsTables.stockReservations.id,
+          targetType: wmsTables.stockReservations.targetType,
+          shipmentLineId: wmsTables.stockReservations.shipmentLineId,
+        })
         .from(wmsTables.stockReservations)
         .where(eq(wmsTables.stockReservations.id, reservationId))
         .limit(1);
       if (!found) throw new NotFoundError('예약을 찾을 수 없습니다');
-      if (found.shipmentLineId === null) {
+      if (found.targetType !== 'SHIPMENT_LINE') {
         throw new Error(`releaseReservation: reservation ${reservationId} is not a shipment-line reservation`);
       }
 

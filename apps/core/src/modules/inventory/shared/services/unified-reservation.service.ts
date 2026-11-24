@@ -117,7 +117,7 @@ export class UnifiedReservationService {
   async releaseReservation(id: string, tx?: DbTx): Promise<void> {
     return this.db.run(async (trx) => {
       const [current] = await trx
-        .select({ shipmentLineId: wmsTables.stockReservations.shipmentLineId })
+        .select({ targetType: wmsTables.stockReservations.targetType })
         .from(wmsTables.stockReservations)
         .where(eq(wmsTables.stockReservations.id, id));
 
@@ -125,7 +125,7 @@ export class UnifiedReservationService {
         throw new BadRequestException(`Reservation ${id} not found`);
       }
       // 상자 줄 예약은 상자·출고주문 재계산을 지나야 한다 — 여기서 풀면 그 재계산이 빠진다.
-      if (current.shipmentLineId !== null) {
+      if (current.targetType === 'SHIPMENT_LINE') {
         throw new Error(
           `Shipment-line reservation ${id} must be released by ShipmentReservationService.releaseReservation`,
         );

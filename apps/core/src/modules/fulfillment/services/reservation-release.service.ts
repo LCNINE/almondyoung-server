@@ -22,13 +22,13 @@ export class ReservationReleaseService {
 
   async release(reservationId: string, reason?: string): Promise<void> {
     const [row] = await this.db.db
-      .select({ id: wmsTables.stockReservations.id, shipmentLineId: wmsTables.stockReservations.shipmentLineId })
+      .select({ id: wmsTables.stockReservations.id, targetType: wmsTables.stockReservations.targetType })
       .from(wmsTables.stockReservations)
       .where(eq(wmsTables.stockReservations.id, reservationId))
       .limit(1);
     if (!row) throw new NotFoundError('예약을 찾을 수 없습니다');
 
-    if (row.shipmentLineId === null) {
+    if (row.targetType !== 'SHIPMENT_LINE') {
       await this.unifiedReservation.releaseReservation(reservationId);
       return;
     }
