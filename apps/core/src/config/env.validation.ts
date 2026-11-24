@@ -84,6 +84,7 @@ export const almondyoungEnvSchema = z
     WOWPRESS_SENDER_ADDR2: z.string().optional(),
     UGC_SERVICE_URL: z.string().optional(),
     UGC_INTERNAL_KEY: z.string().optional(),
+    FILE_SERVICE_INTERNAL_KEY: z.string().optional(),
     PRINT_ORDER_SUBMIT_ENABLED: z.string().optional(),
 
     // OpenTelemetry

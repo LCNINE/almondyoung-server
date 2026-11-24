@@ -8,12 +8,14 @@ import { showActionToast } from "@/components/shared/action-toast"
 import { showCartAddedToast } from "@/components/shared/cart-added-toast"
 import { AnimatedHeart } from "@/components/shared/animated-heart"
 import { Check, Heart, Minus, Plus, ShoppingCart } from "lucide-react"
-import { useState, useTransition } from "react"
+import { useEffect, useState, useTransition } from "react"
 import { toast } from "sonner"
 import { useTranslations } from "next-intl"
 import { Spinner } from "@/components/shared/spinner"
 import { toggleWishlist } from "@lib/api/users/wishlist"
 import { QuickAddDrawer } from "../quick-add-drawer"
+import { useRouter } from "next/navigation"
+import { madeToOrderMasterIds } from "./made-to-order"
 
 interface ProductQuickActionsProps {
   productId: string
@@ -31,6 +33,8 @@ interface ProductQuickActionsProps {
   isWelcomeMembership?: boolean
   /** 멤버십 전용 구매 상품을 비회원이 보는 중인지 */
   membersOnlyPurchase?: boolean
+  /** PIM 상품 id. 주문제작 인쇄 상품이면 바로 담지 않고 상세페이지로 보낸다 */
+  printMasterId?: string
 }
 
 /**
@@ -40,6 +44,8 @@ interface ProductQuickActionsProps {
  */
 export function ProductQuickActions({
   productId,
+  productHandle,
+  printMasterId,
   productTitle = "",
   productImage,
   variantId,
@@ -55,6 +61,14 @@ export function ProductQuickActions({
   const t = useTranslations("productCard")
   const [isPending, startTransition] = useTransition()
   const { addToCart, isLoading: isCartLoading } = useAddToCart()
+  const router = useRouter()
+
+  // 담기를 누르기 전에 받아 둬서 클릭이 서버를 기다리지 않게 한다
+  useEffect(() => {
+    if (printMasterId) {
+      void madeToOrderMasterIds()
+    }
+  }, [printMasterId])
 
   const [showQuantitySelector, setShowQuantitySelector] = useState(false)
   const [quantity, setQuantity] = useState(1)
@@ -115,6 +129,23 @@ export function ProductQuickActions({
     e.preventDefault()
     e.stopPropagation()
 
+    // 주문제작 인쇄 상품은 시안이나 내 파일을 붙여야 하니 상세페이지에서 고르게 한다
+    if (printMasterId) {
+      void madeToOrderMasterIds().then((ids) => {
+        if (ids.has(printMasterId)) {
+          router.push(`/${countryCode}/products/${productHandle}`)
+          return
+        }
+
+        openCartChoice()
+      })
+      return
+    }
+
+    openCartChoice()
+  }
+
+  const openCartChoice = () => {
     if (!isSingleOption) {
       // 다중 옵션: 퀵 옵션 선택 Drawer
       setShowQuickAddDrawer(true)

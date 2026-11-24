@@ -91,7 +91,7 @@ function setup() {
     );
   });
   const remaining = new PrintCancelRemainingReader(runOnly);
-  const service = new PrintOrdersService(reader, manager, storeSalesOrders, remaining);
+  const service = new PrintOrdersService(reader, manager, storeSalesOrders, remaining, {} as never);
   return { reader, manager, adminCancelRequest, service, cancelledByLine, remainingFails };
 }
 
@@ -100,6 +100,10 @@ const resolvedRow: PrintOrderRow = {
   salesOrderId: 'so-1',
   salesOrderLineId: 'sol-1',
   almondDesignId: 'd-1',
+  printFileId: null,
+  fileRejectedAt: null,
+  fileRejectedJobstat: null,
+  fileResubmittedAt: null,
   vendor: 'wowpress',
   status: 'cancelled',
   testMemo: false,

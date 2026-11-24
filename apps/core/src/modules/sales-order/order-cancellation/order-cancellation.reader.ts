@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, eq, ne, sql } from 'drizzle-orm';
+import { and, eq, isNotNull, ne, or, sql } from 'drizzle-orm';
 import { DbTx, SalesOrder, wmsTables } from '../../inventory/schema/inventory.schema';
 import { isDigitalFulfillmentLine } from '../../product-matching/line-composition/line-composition';
 import type { SalesChannelName } from './channel-cancellation-capability';
@@ -76,12 +76,19 @@ export class OrderCancellationReader {
     return new Set(rows.filter(isDigitalFulfillmentLine).map((line) => line.id));
   }
 
+  // isLivePrint 의 SQL 짝
   async hasActivePrintOrder(salesOrderLineId: string, tx: DbTx): Promise<boolean> {
     const t = wmsTables.printOrders;
     const rows = await tx
       .select({ id: t.id })
       .from(t)
-      .where(and(eq(t.salesOrderLineId, salesOrderLineId), ne(t.status, 'cancelled')))
+      .where(
+        and(
+          eq(t.salesOrderLineId, salesOrderLineId),
+          ne(t.status, 'cancelled'),
+          or(isNotNull(t.almondDesignId), isNotNull(t.printFileId)),
+        ),
+      )
       .for('update');
     return rows.length > 0;
   }

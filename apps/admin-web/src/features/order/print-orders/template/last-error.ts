@@ -29,6 +29,18 @@ const REASONS: [prefix: string, korean: string][] = [
     '시안이 구매한 인쇄 상품이나 크기와 달라서 발주하지 않았습니다.',
   ],
   [
+    'customer print file does not belong to the ordering customer',
+    '주문한 고객이 올린 인쇄 파일이 아니라서 발주하지 않았습니다.',
+  ],
+  [
+    'customer print file type is not accepted by this WowPress product',
+    '이 와우프레스 상품이 받지 않는 파일 형식이라 발주하지 않았습니다. 고객에게 맞는 형식으로 다시 받아 주세요.',
+  ],
+  [
+    'no almond design or customer print file',
+    '주문제작 상품인데 시안도 고객 파일도 없이 주문됐습니다. 고객에게 확인해 주세요.',
+  ],
+  [
     'no wowpress spec for variant',
     '와우프레스 품목 매핑이 없는 옵션이라 발주하지 않았습니다.',
   ],

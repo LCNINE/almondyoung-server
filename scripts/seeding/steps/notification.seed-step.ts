@@ -861,6 +861,37 @@ const BILLING_NOTICE_EVENTS = [
   ),
 ];
 
+/** 내 파일로 주문한 인쇄물을 인쇄소가 파일 문제로 돌려보냈을 때. 사유는 컨슈머가 와우프레스 작업상태로 고른다 */
+const PRINT_NOTICE_TEMPLATES = [
+  kakaoNotice(
+    FIXED_UUIDS.TEMPLATE_PRINT_FILE_REJECTED,
+    'PRINT_FILE_REJECTED',
+    'PRINT_FILE_REJ',
+    '인쇄 파일 다시 올리기 안내',
+    [
+      '#{name}님, 주문하신 인쇄물의 파일에 문제가 있어 인쇄가 멈췄어요.',
+      '사유: #{reason}',
+      '주문 상세에서 파일을 고쳐 다시 올려 주시면 인쇄가 이어져요.',
+    ].join('\n'),
+    webLink('주문 내역 보기', '/mypage/order/list'),
+    {
+      name: { type: 'string', required: true },
+      reason: { type: 'string', required: true },
+    },
+  ),
+];
+
+const PRINT_NOTICE_EVENTS = [
+  kakaoNoticeEvent(
+    'PRINT_FILE_REJECTED',
+    '인쇄 파일 다시 올리기 요청',
+    '내 파일로 주문한 인쇄물을 인쇄소가 파일 문제로 돌려보냈을 때',
+  ),
+];
+
+/** 알림톡 자동 알림 전부. 관리자 연결 목록(KAKAO_AUTO_NOTICES)과 같은지는 스펙이 지킨다 */
+export const KAKAO_AUTO_NOTICE_TEMPLATES = [...BILLING_NOTICE_TEMPLATES, ...PRINT_NOTICE_TEMPLATES];
+
 const NOTICE_TEMPLATES = [
   RENEWAL_NOTICE_TEMPLATE,
   EXPIRY_NOTICE_TEMPLATE,
@@ -872,6 +903,7 @@ const NOTICE_TEMPLATES = [
   ...CS_TEMPLATES,
   ...MEMBER_TEMPLATES,
   ...BILLING_NOTICE_TEMPLATES,
+  ...PRINT_NOTICE_TEMPLATES,
 ];
 const NOTICE_EVENTS = [
   RENEWAL_NOTICE_EVENT,
@@ -884,6 +916,7 @@ const NOTICE_EVENTS = [
   ...CS_EVENTS,
   ...MEMBER_EVENTS,
   ...BILLING_NOTICE_EVENTS,
+  ...PRINT_NOTICE_EVENTS,
 ];
 
 const PROVIDER_IDS = [

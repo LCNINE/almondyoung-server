@@ -29,7 +29,12 @@ export function lineResolvedSql(): SQL<boolean> {
   ))`;
 }
 
-// 외주(아몬드) 라인은 매칭 대상이 아니므로 화면 배지에서는 해결된 것으로 본다. 판정 술어(lineResolvedSql)는 그대로 둔다.
+// 외주(인쇄) 라인은 매칭 대상이 아니므로 화면 배지에서는 해결된 것으로 본다. 판정 술어(lineResolvedSql)는 그대로 둔다.
 export function lineMatchingBadgeResolvedSql(): SQL<boolean> {
-  return sql<boolean>`(${wmsTables.salesOrderLines.almondDesignId} IS NOT NULL OR ${lineResolvedSql()})`;
+  return sql<boolean>`(${printLineSql()} OR ${lineResolvedSql()})`;
+}
+
+// 인쇄(외주) 줄 = 아몬드템플릿 시안 또는 고객이 올린 인쇄 파일이 있는 줄. isOutsourcedLine 의 SQL 짝이다
+export function printLineSql(): SQL<boolean> {
+  return sql<boolean>`(${wmsTables.salesOrderLines.almondDesignId} IS NOT NULL OR ${wmsTables.salesOrderLines.printFileId} IS NOT NULL)`;
 }

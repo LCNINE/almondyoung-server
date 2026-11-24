@@ -29,6 +29,7 @@ const FALLBACK_DESCRIPTIONS: Record<PrintKind, string> = {
   nail: "네일팁을 붙여 보여주는 디스플레이",
   menu: "시술 메뉴와 가격을 깔끔하게",
   diploma: "교육 수료를 증명하는 디플로마",
+  invitation: "소중한 날을 알리는 청첩장·초대장",
 }
 
 const FALLBACK_ORDER: PrintKind[] = [
@@ -40,6 +41,7 @@ const FALLBACK_ORDER: PrintKind[] = [
   "nail",
   "menu",
   "diploma",
+  "invitation",
 ]
 
 const isPrintKind = (kind: string): kind is PrintKind => kind in PRINT_SPECS

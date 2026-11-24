@@ -9,6 +9,7 @@ import { getOrderActionsByMedusaId } from "@/lib/api/orders/store-orders"
 import { getCashReceipts, getBankTransferDepositAccount, getActiveRefundRequest } from "@/lib/api/wallet"
 import { getReviewEligibilities } from "@/lib/api/ugc/reviews"
 import { getOwnerships } from "@/lib/api/library/library-api"
+import { listPrintFileRejections } from "@/lib/api/print/print-file-rejections"
 
 interface OrderDetailsPageProps {
   params: Promise<{ countryCode: string }>
@@ -48,8 +49,14 @@ export default async function OrderDetailsPage({
   )?.intentId as string | undefined
   // coreActions.orderId = Core sales order id. 디지털 ownership 은 이 id 로 발급된다.
   const coreOrderId = coreActions?.orderId
-  const [cashReceipts, depositAccount, refundRequest, ownerships, eligibilities] =
-    await Promise.all([
+  const [
+    cashReceipts,
+    depositAccount,
+    refundRequest,
+    ownerships,
+    eligibilities,
+    printFileRejections,
+  ] = await Promise.all([
       intentId ? getCashReceipts(intentId) : Promise.resolve([]),
       intentId ? getBankTransferDepositAccount(intentId) : Promise.resolve(null),
       intentId ? getActiveRefundRequest(intentId) : Promise.resolve(null),
@@ -59,6 +66,12 @@ export default async function OrderDetailsPage({
           )
         : Promise.resolve(null),
       order ? getReviewEligibilities({ limit: 100 }).catch(() => null) : Promise.resolve(null),
+      // 파일 문제로 멈춘 인쇄 줄은 부가 정보다 — 못 받으면 그 표시만 빠진다
+      order
+        ? listPrintFileRejections()
+            .then((rows) => rows.filter((row) => row.channelOrderId === order.id))
+            .catch(() => [])
+        : Promise.resolve([]),
     ])
   const digitalOwnerships = ownerships?.data ?? []
   const reviewHrefs = Object.fromEntries(
@@ -91,6 +104,7 @@ export default async function OrderDetailsPage({
             returns={returns}
             autoOpenRefund={refund === "1"}
             reviewHrefs={reviewHrefs}
+            printFileRejections={printFileRejections}
           />
         </MypageLayout>
       </div>
@@ -109,6 +123,7 @@ export default async function OrderDetailsPage({
           returns={returns}
           autoOpenRefund={refund === "1"}
           reviewHrefs={reviewHrefs}
+          printFileRejections={printFileRejections}
         />
       </div>
     </WithHeaderLayout>

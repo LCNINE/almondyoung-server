@@ -30,6 +30,7 @@ function makeService(existing: unknown = undefined) {
   const inserted: Array<{ table: unknown; values: unknown }> = [];
   const tx: any = {
     query: { salesOrders: { findFirst: jest.fn().mockResolvedValue(existing) } },
+    select: jest.fn(() => ({ from: () => ({ where: jest.fn().mockResolvedValue([]) }) })),
     insert: jest.fn((table: unknown) => ({
       values: (values: Record<string, unknown> | Array<Record<string, unknown>>) => {
         inserted.push({ table, values });

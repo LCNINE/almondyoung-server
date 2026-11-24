@@ -32,6 +32,7 @@ export interface LineForComposition {
   requiresShipping: boolean | null;
   compositionSource: CompositionSource | null;
   almondDesignId: string | null;
+  printFileId: string | null;
 }
 
 // null(미지정 — 기존 데이터·외부 채널)은 물리로 간주한다.
@@ -42,9 +43,9 @@ export function isDigitalFulfillmentLine(line: {
   return line.fulfillmentKind === 'digital' || line.requiresShipping === false;
 }
 
-// 아몬드템플릿 인쇄 라인은 외주사가 고객에게 직배송한다 — 창고 재고·출고와 무관하다.
-export function isOutsourcedLine(line: { almondDesignId?: string | null }): boolean {
-  return line.almondDesignId != null;
+// 인쇄 라인(아몬드템플릿 시안 또는 고객이 올린 인쇄 파일)은 외주사가 고객에게 직배송한다 — 창고 재고·출고와 무관하다.
+export function isOutsourcedLine(line: { almondDesignId?: string | null; printFileId?: string | null }): boolean {
+  return line.almondDesignId != null || line.printFileId != null;
 }
 
 /** 라인이 나가는 길. 창고 라인만 출고주문 항목이 된다 — 디지털을 먼저 본다(구성 판정과 같은 순서) */
@@ -54,6 +55,7 @@ export function lineRouteOf(line: {
   fulfillmentKind?: string | null;
   requiresShipping?: boolean | null;
   almondDesignId?: string | null;
+  printFileId?: string | null;
 }): LineRoute {
   if (isDigitalFulfillmentLine(line)) return 'digital';
   if (isOutsourcedLine(line)) return 'outsourced';

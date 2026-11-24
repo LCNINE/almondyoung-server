@@ -43,6 +43,20 @@ export class AdminPrintOrdersController {
     });
   }
 
+  // 고객이 올린 인쇄 파일엔 이름·연락처·주소가 들어 있다. 시안 인쇄 링크와 같이 주문 조회로 열고 열람마다 접속기록을 남긴다
+  @PiiResponse({
+    fields: { url: 'secret' },
+    subjects: [{ param: 'id', type: 'print_order' }],
+    rawWith: ['customer.pii.read', 'order.order.read'],
+  })
+  @RequirePermission('order.order.read')
+  @Get(':id/customer-file')
+  @ApiOperation({ summary: '내 파일로 주문한 인쇄 줄의 고객 파일 내려받기 링크(5분)' })
+  @ApiParam({ name: 'id', description: '인쇄 발주 ID' })
+  customerFile(@Param('id', ParseUUIDPipe) id: string) {
+    return this.service.customerFileLink(id);
+  }
+
   @PiiResponse({
     fields: {
       'customerName': 'name',

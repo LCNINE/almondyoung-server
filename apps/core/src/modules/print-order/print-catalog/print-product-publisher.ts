@@ -403,6 +403,7 @@ const PRODUCT_USAGE: Record<PrintKind, string> = {
   pet: '거치대에 끼워 매장 앞이나 안에 세워요.',
   window: '유리창 안쪽에 붙여요.',
   menu: '세워 두거나 벽·유리에 붙여 써요.',
+  invitation: '봉투에 넣어 손님께 보내거나 직접 건네요.',
 };
 
 const unique = (values: string[]): string => [...new Set(values)].join(' / ');

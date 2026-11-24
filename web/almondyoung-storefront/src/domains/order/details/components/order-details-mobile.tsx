@@ -28,6 +28,7 @@ import { CashReceiptInfo } from "./cash-receipt-info"
 import { HttpTypes } from "@medusajs/types"
 import { useTranslations } from "next-intl"
 import OrderDetailsStatusCards from "./order-details-status-cards"
+import type { PrintFileRejection } from "@/lib/types/ui/print-orders"
 import { DepositAccountInfo } from "./deposit-account-info"
 import type { BankTransferDepositAccount } from "@/lib/api/wallet"
 import type { DigitalAssetOwnership } from "@lib/types/ui/library.ui"
@@ -50,6 +51,7 @@ export const OrderDetailsMobile = ({
   returns = null,
   autoOpenRefund = false,
   reviewHrefs = {},
+  printFileRejections = [],
 }: {
   order: HttpTypes.StoreOrder | null
   countryCode: string
@@ -62,6 +64,7 @@ export const OrderDetailsMobile = ({
   returns?: CustomerReturn[] | null
   autoOpenRefund?: boolean
   reviewHrefs?: Record<string, string>
+  printFileRejections?: PrintFileRejection[]
 }) => {
   const tLabels = useTranslations("mypage.order.labels")
   const tStatus = useTranslations("mypage.order.status")
@@ -179,6 +182,7 @@ export const OrderDetailsMobile = ({
             autoOpenRefund={autoOpenRefund}
             autoOpenRefundMedia="(max-width: 1023px)"
             reviewHrefs={reviewHrefs}
+            printFileRejections={printFileRejections}
             digitalOwnerships={digitalOwnerships}
           />
           {depositAccount?.accountNumber && (

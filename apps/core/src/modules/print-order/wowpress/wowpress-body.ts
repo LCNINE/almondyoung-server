@@ -38,9 +38,33 @@ function recordList(v: unknown): Record<string, unknown>[] | null {
   return rows.every((r): r is Record<string, unknown> => r !== null) ? rows : null;
 }
 
-// 벤더는 jobqty·colorno0 이 없으면 최소 수량·단면으로 계산한다
-export function buildJobs(spec: Pick<WowpressLineSpec, 'prsjob' | 'awkjob' | 'qtyPerUnit'>, qty: number): WowpressJobs {
-  const jobqty = spec.qtyPerUnit * qty;
+// 한 건에 넣을 수 있는 최대 매수(와우프레스 상품 페이지 수량 목록, 2026-11-24). 소량 청첩장은 100매까지다
+const MAX_QTY_PER_COUNT: Readonly<Record<number, number>> = { 40572: 100 };
+// 와우프레스 상품 페이지의 건수 목록이 12건까지다
+const MAX_COUNT = 12;
+
+// 한 건 최대 매수를 넘으면 판매 단위 하나를 한 건으로 나눠 같은 파일 여러 건으로 보낸다(100매 × 2건)
+export function orderQty(
+  spec: Pick<WowpressLineSpec, 'prodno' | 'qtyPerUnit'>,
+  qty: number,
+): { ordqty: number; ordcnt: number } {
+  const total = spec.qtyPerUnit * qty;
+  const max = MAX_QTY_PER_COUNT[spec.prodno];
+  if (max === undefined || total <= max) return { ordqty: total, ordcnt: 1 };
+
+  if (spec.qtyPerUnit > max || qty > MAX_COUNT) {
+    throw new Error(`${spec.prodno}: ${total}매는 한 건 ${max}매 × ${MAX_COUNT}건 안으로 나눌 수 없습니다`);
+  }
+
+  return { ordqty: spec.qtyPerUnit, ordcnt: qty };
+}
+
+// 벤더는 jobqty·colorno0 이 없으면 최소 수량·단면으로 계산한다. jobqty 는 한 건의 매수다
+export function buildJobs(
+  spec: Pick<WowpressLineSpec, 'prodno' | 'prsjob' | 'awkjob' | 'qtyPerUnit'>,
+  qty: number,
+): WowpressJobs {
+  const jobqty = orderQty(spec, qty).ordqty;
 
   return {
     prsjob: spec.prsjob.map((job) => ({

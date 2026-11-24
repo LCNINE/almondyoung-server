@@ -1,6 +1,6 @@
 import { CANCEL_CLAIM_STALE_MS } from './print-order-cancellation.manager';
 import { PRINT_ORDER_STALE_MS, unsavedOrdnumError } from './print-order-submit.manager';
-import { boardFlags, isActivePrint } from './print-order-board.rules';
+import { boardFlags, isActivePrint, isLivePrint } from './print-order-board.rules';
 import { lateOrdnumError } from './print-order.repository';
 import { type PrintOrderListItem } from './print-order.reader';
 
@@ -13,6 +13,10 @@ function row(overrides: Partial<PrintOrderListItem> = {}): PrintOrderListItem {
     salesOrderId: 'so-1',
     salesOrderLineId: 'sol-1',
     almondDesignId: 'd-1',
+    printFileId: null,
+    fileRejectedAt: null,
+    fileRejectedJobstat: null,
+    fileResubmittedAt: null,
     vendor: 'wowpress',
     status: 'submitted',
     testMemo: false,
@@ -129,5 +133,24 @@ describe('isActivePrint — 결제 상세 환불 제한 판정', () => {
     ['unsupported', null],
   ] as const)('%s (주문권 %s) → 제작 접수 없음', (status, orderAttemptedAt) => {
     expect(isActivePrint({ status, orderAttemptedAt })).toBe(false);
+  });
+});
+
+describe('isLivePrint', () => {
+  it.each([
+    [
+      'a failed design line that can still be resent',
+      { status: 'failed', almondDesignId: 'd', printFileId: null },
+      true,
+    ],
+    ['a customer file line', { status: 'submitted', almondDesignId: null, printFileId: 'f' }, true],
+    ['a cancelled line', { status: 'cancelled', almondDesignId: 'd', printFileId: null }, false],
+    [
+      'a made-to-order line with no design or file',
+      { status: 'failed', almondDesignId: null, printFileId: null },
+      false,
+    ],
+  ] as const)('%s', (_label, row, live) => {
+    expect(isLivePrint(row)).toBe(live);
   });
 });

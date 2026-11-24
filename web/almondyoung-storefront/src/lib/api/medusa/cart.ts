@@ -544,6 +544,8 @@ export async function createCheckoutCartFromLineItems(params: {
         {
           variant_id: variantId,
           quantity: item.quantity,
+          // 인쇄 줄의 시안·고객 파일 id 가 줄 메타데이터에 있다. 빠지면 발주할 것이 없는 줄이 된다
+          ...(item.metadata ? { metadata: item.metadata } : {}),
         },
         {},
         headers

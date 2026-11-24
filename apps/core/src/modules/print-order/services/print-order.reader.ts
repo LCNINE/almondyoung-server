@@ -19,9 +19,11 @@ import {
   type SQLWrapper,
 } from 'drizzle-orm';
 import { wmsSchema, wmsTables, type DbTx } from '../../inventory/schema/inventory.schema';
+import { CUSTOMER_FILE_UNDELIVERED_ERROR } from '../print-source';
 import { type PrintOrderRow } from '../schema/print-order.schema';
 import { VENDOR_CANCELLED, VENDOR_JOB_ERROR_PREFIX } from './print-order-tracking.manager';
 import { lineCanceledQuantitySql, lineRemainingSql } from '../../sales-order/line-quantities/line-quantities.sql';
+import { printLineSql } from '../../product-matching/line-composition/line-resolved.sql';
 
 export const PRINT_ORDER_TABS = [
   'cancel_refused',
@@ -33,6 +35,17 @@ export const PRINT_ORDER_TABS = [
   'all',
 ] as const;
 export type PrintOrderTab = (typeof PRINT_ORDER_TABS)[number];
+export interface CustomerFileRejection {
+  salesOrderLineId: string;
+  variantId: string;
+  channelOrderId: string;
+  channelOrderItemId: string | null;
+  productName: string;
+  rejectedAt: Date;
+  // 와우프레스 작업상태 코드. 에러 문구는 화면이 이 값으로 고른다
+  jobstat: number | null;
+}
+
 export const PRINT_ORDER_PAGE_SIZE = 50;
 export const PRINT_ORDER_MAX_PAGE_SIZE = 100;
 export const PRINT_ORDER_MAX_PAGE = 10_000;
@@ -100,6 +113,36 @@ export class PrintOrderReader {
     private readonly dbService: DbService<typeof wmsSchema>,
   ) {}
 
+  // 고객이 다시 올려야 하는 파일이 있는 자기 인쇄 줄. 스토어프론트 알림 벨이 읽는다
+  async customerFileRejections(customerId: string, tx?: DbTx): Promise<CustomerFileRejection[]> {
+    const t = wmsTables.printOrders;
+    const lines = wmsTables.salesOrderLines;
+    const orders = wmsTables.salesOrders;
+    const rows = await this.dbService.run(
+      (trx) =>
+        trx
+          .select({
+            salesOrderLineId: t.salesOrderLineId,
+            variantId: lines.variantId,
+            channelOrderId: orders.channelOrderId,
+            channelOrderItemId: lines.channelOrderItemId,
+            productName: lines.productName,
+            rejectedAt: t.fileRejectedAt,
+            jobstat: t.fileRejectedJobstat,
+          })
+          .from(t)
+          .innerJoin(lines, eq(lines.id, t.salesOrderLineId))
+          .innerJoin(orders, eq(orders.id, t.salesOrderId))
+          .where(
+            and(eq(orders.customerId, customerId), isNotNull(t.fileRejectedAt), inArray(t.status, ['submitted', 'shipped'])),
+          )
+          .orderBy(desc(t.fileRejectedAt)),
+      tx,
+    );
+
+    return rows.flatMap(({ rejectedAt, ...row }) => (rejectedAt ? [{ ...row, rejectedAt }] : []));
+  }
+
   forSalesOrder(salesOrderId: string, tx?: DbTx): Promise<PrintOrderRow[]> {
     const t = wmsTables.printOrders;
     return this.dbService.run(
@@ -118,7 +161,7 @@ export class PrintOrderReader {
           .where(
             and(
               eq(lines.salesOrderId, salesOrderId),
-              isNull(lines.almondDesignId),
+              sql`NOT ${printLineSql()}`,
               gt(lineRemainingSql(lines.quantity, lines.id), 0),
             ),
           )
@@ -137,7 +180,7 @@ export class PrintOrderReader {
         trx
           .select({
             total: sql<number>`count(*)::int`,
-            warehouse: sql<number>`count(*) filter (where ${isNull(lines.almondDesignId)})::int`,
+            warehouse: sql<number>`count(*) filter (where NOT ${printLineSql()})::int`,
           })
           .from(lines)
           .where(eq(lines.salesOrderId, salesOrderId)),
@@ -288,7 +331,10 @@ export class PrintOrderReader {
       case 'vendor_attention':
         return and(
           inArray(t.status, ['submitted', 'shipped']),
-          sql`starts_with(coalesce(${t.lastError}, ''), ${VENDOR_JOB_ERROR_PREFIX})`,
+          or(
+            sql`starts_with(coalesce(${t.lastError}, ''), ${VENDOR_JOB_ERROR_PREFIX})`,
+            eq(t.lastError, CUSTOMER_FILE_UNDELIVERED_ERROR),
+          ),
         );
       case 'test_pending':
         return and(eq(t.testMemo, true), isNull(t.testConfirmedAt), ne(t.status, 'cancelled'));

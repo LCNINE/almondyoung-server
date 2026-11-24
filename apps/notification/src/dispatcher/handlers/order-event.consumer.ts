@@ -10,6 +10,8 @@ import { Channel, NotificationCategory, NotificationPriority } from '../../share
 import { eventNoticeKey } from './event-notice-key';
 import { SendNotificationDto } from '../dto/send-notification.dto';
 import { formatOrderTotal } from '../../shared/utils/template-helpers';
+import { fitKakaoVariable, nextSendableAt, nhnRequestDateIfQuiet } from './billing-notice.format';
+import { printFileRejectionReason } from './print-file-rejection.format';
 import { CORE_ORDER_STREAM, ORDER_STREAM } from '@packages/event-contracts/streams/orders.stream';
 import type { Carrier } from '@packages/event-contracts/streams/fulfillments.stream';
 import { EventPayloadOf, EnvelopeOf } from '@packages/event-contracts/types';
@@ -172,6 +174,47 @@ export class OrderEventConsumer {
       },
     });
     this.logger.log(`[Event] Dispatched ${eventKey} notification for order ${payload.orderId}`);
+  }
+
+  // 와우프레스가 고객이 올린 인쇄 파일을 돌려보냈다. 알림톡이 안 닿으면 NHN 이 같은 본문으로 문자를 보낸다
+  @On(CORE_ORDER_STREAM, 'PrintFileRejected')
+  async onPrintFileRejected(
+    @EventEnvelope() envelope: EnvelopeOf<typeof CORE_ORDER_STREAM, 'PrintFileRejected'>,
+    @EventPayload() payload: EventPayloadOf<typeof CORE_ORDER_STREAM, 'PrintFileRejected'>,
+  ) {
+    const eventKey = 'PRINT_FILE_REJECTED';
+    const eventMapping = await this.eventMappingService.getEventMapping(eventKey);
+    if (!eventMapping || !eventMapping.isActive) {
+      this.logger.warn(`Event mapping for ${eventKey} not found or inactive.`);
+      return;
+    }
+
+    const contact = (await this.userContactClient.findContacts([payload.customerId])).get(payload.customerId);
+    if (!contact?.phoneNumber) {
+      this.logger.warn(`Skipping ${eventKey}: no phone number (order ${payload.orderId})`);
+      return;
+    }
+
+    const now = new Date();
+    const requestDate = nhnRequestDateIfQuiet(now);
+    await this.notificationDispatcherService.send({
+      userId: payload.customerId,
+      channels: eventMapping.defaultChannels as Channel[],
+      category: eventMapping.category as NotificationCategory,
+      templateKey: eventMapping.templateKey,
+      eventKey: eventMapping.eventKey,
+      payload: { name: contact.username, phoneNumber: contact.phoneNumber },
+      correlationId: envelope.correlationId,
+      idempotencyKey: eventNoticeKey(envelope.messageId, eventMapping.eventKey, payload.customerId),
+      priority: eventMapping.priority as NotificationPriority,
+      variables: {
+        name: fitKakaoVariable(contact.username),
+        reason: printFileRejectionReason(payload.jobstat),
+      },
+      metadata: { smsFallback: true, ...(requestDate && { requestDate }) },
+      sendAt: nextSendableAt(now).toISOString(),
+    });
+    this.logger.log(`[Event] Dispatched ${eventKey} for order ${payload.orderId}`);
   }
 
   @On(CORE_ORDER_STREAM, 'SalesOrderClaimProgressed')

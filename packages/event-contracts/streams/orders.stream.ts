@@ -37,6 +37,8 @@ export interface OrderItem {
   requiresShipping?: boolean;
   /** 아몬드템플릿 시안 id. 장바구니 라인 metadata.almond_design_id 에서 온다. */
   almondDesignId?: string;
+  /** 고객이 직접 올린 인쇄 파일 id(file-service). 장바구니 라인 metadata.print_file_id 에서 온다. */
+  printFileId?: string;
 }
 
 export interface ShippingAddress {
@@ -344,6 +346,7 @@ const OrderItemSchema = z.object({
   fulfillmentKind: z.enum(['physical', 'digital']).optional(),
   requiresShipping: z.boolean().optional(),
   almondDesignId: z.string().uuid().optional(),
+  printFileId: z.string().uuid().optional(),
 });
 
 const ShippingAddressSchema = z.object({
@@ -686,6 +689,28 @@ const SalesOrderReturnedSchema = z.object({
   ),
 });
 
+/** 고객이 올린 인쇄 파일을 와우프레스가 파일 에러로 돌려보냈다. 고객에게 다시 올려 달라고 알린다 */
+export interface PrintFileRejectedPayload {
+  orderId: string;
+  salesOrderLineId: string;
+  channelOrderId: string;
+  customerId: string;
+  productName: string;
+  /** 와우프레스 작업상태 코드(121~131 중 파일·접수 에러) */
+  jobstat: number;
+  rejectedAt: string;
+}
+
+const PrintFileRejectedSchema = z.object({
+  orderId: z.string().min(1),
+  salesOrderLineId: z.string().min(1),
+  channelOrderId: z.string().min(1),
+  customerId: z.string().min(1),
+  productName: z.string(),
+  jobstat: z.number().int(),
+  rejectedAt: z.string().datetime(),
+});
+
 export interface SalesOrderShipmentDispatchedPayload {
   orderId: string;
   channelOrderId: string;
@@ -1016,6 +1041,10 @@ export const CORE_ORDER_STREAM = stream({
     SalesOrderClaimProgressed: event<'SalesOrderClaimProgressed', SalesOrderClaimProgressedPayload>(
       'SalesOrderClaimProgressed',
       SalesOrderClaimProgressedSchema,
+    ),
+    PrintFileRejected: event<'PrintFileRejected', PrintFileRejectedPayload>(
+      'PrintFileRejected',
+      PrintFileRejectedSchema,
     ),
   },
 });

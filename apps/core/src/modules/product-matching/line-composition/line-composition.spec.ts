@@ -17,6 +17,7 @@ const physical: LineForComposition = {
   requiresShipping: null,
   compositionSource: null,
   almondDesignId: null,
+  printFileId: null,
 };
 const variant = (links: Array<{ skuId: string; quantity: number }>) => ({
   status: 'matched',
@@ -36,6 +37,12 @@ describe('resolveLineComposition', () => {
     expect(isOutsourcedLine(line)).toBe(true);
     expect(isOutsourcedLine(physical)).toBe(false);
     expect(isOutsourcedLine({})).toBe(false);
+  });
+
+  it('resolves a customer print file line as outsourced', () => {
+    const line = { ...physical, printFileId: 'f1' };
+    expect(resolveLineComposition(line, [], null)).toEqual({ kind: 'outsourced' });
+    expect(isOutsourcedLine(line)).toBe(true);
   });
 
   it('굳힌 라인은 상품매칭이 무엇이든 굳힌 구성을 쓴다(SKU 순 정렬)', () => {

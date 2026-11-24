@@ -321,7 +321,7 @@ export function clearDraft(templateId: string): void {
 }
 
 export function qtyLabel(kind: PrintKind, qty: number): string {
-  const unit = kind === 'card' || kind === 'bizcard' || kind === 'nail' ? '매' : '개';
+  const unit = kind === 'card' || kind === 'bizcard' || kind === 'nail' || kind === 'invitation' ? '매' : '개';
 
   return `${qty.toLocaleString('ko-KR')}${unit}`;
 }

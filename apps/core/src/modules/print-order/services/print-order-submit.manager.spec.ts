@@ -8,6 +8,13 @@ import {
   type UgcAlmondDesignInfo,
   type UgcPrintLink,
 } from '../clients/ugc-almond-design.client';
+import { CustomerPrintFileClient, type CustomerPrintFile } from '../clients/customer-print-file.client';
+import {
+  CUSTOMER_FILE_FORMAT_ERROR,
+  CUSTOMER_FILE_OWNER_MISMATCH_ERROR,
+  CUSTOMER_FILE_UNDELIVERED_ERROR,
+  PRINT_SOURCE_MISSING_ERROR,
+} from '../print-source';
 import { PrintProductSpecRepository } from '../repositories/print-product-spec.repository';
 import { type PrintOrderRow } from '../schema/print-order.schema';
 import {
@@ -97,6 +104,16 @@ class FakeUgc extends UgcAlmondDesignClient {
   printLink = jest.fn<Promise<UgcPrintLink>, [string, 'jpg' | 'pdf' | 'eps', number]>(() =>
     Promise.resolve({ url: 'https://s3/print.jpg', fileName: 'print.jpg' }),
   );
+  constructor() {
+    super(new ConfigService({}), outboundTenantForTesting(undefined));
+  }
+}
+
+class FakeCustomerFiles extends CustomerPrintFileClient {
+  describe = jest.fn<Promise<CustomerPrintFile>, [string, string]>(() =>
+    Promise.resolve({ ownerId: CUSTOMER_ID, isPrintFile: true, fileName: '우리 청첩장 최종.ai' }),
+  );
+  link = jest.fn<Promise<string>, [string, string]>(() => Promise.resolve('https://s3/customer.ai'));
   constructor() {
     super(new ConfigService({}), outboundTenantForTesting(undefined));
   }
@@ -244,6 +261,10 @@ function makeRow(overrides: Partial<PrintOrderRow> = {}): PrintOrderRow {
     salesOrderId: 'so-1',
     salesOrderLineId: LINE_ID,
     almondDesignId: DESIGN_ID,
+    printFileId: null,
+    fileRejectedAt: null,
+    fileRejectedJobstat: null,
+    fileResubmittedAt: null,
     vendor: 'wowpress',
     status: 'submitting',
     testMemo: false,
@@ -298,11 +319,83 @@ function setup(variantId: string, row: PrintOrderRow = makeRow(), specs = new Fa
   repo.context = context(variantId);
   const wowpress = new FakeWowpress();
   const ugc = new FakeUgc();
-  const manager = new PrintOrderSubmitManager(repo, wowpress, ugc, specs);
-  return { repo, wowpress, ugc, manager };
+  const customerFiles = new FakeCustomerFiles();
+  const manager = new PrintOrderSubmitManager(repo, wowpress, ugc, specs, customerFiles);
+  return { repo, wowpress, ugc, customerFiles, manager };
 }
 
 describe('PrintOrderSubmitManager', () => {
+  describe('customer print file', () => {
+    const FILE_ID = '019d0000-0000-7000-8000-00000000f11e';
+    const fileRow = () => makeRow({ almondDesignId: null, printFileId: FILE_ID });
+    const accepting = () => {
+      const specs = new FakeSpecs();
+      specs.findSpec.mockResolvedValue({ ...mockSpec(true), prodno: 40572 });
+      return specs;
+    };
+
+    it('sends the customer file under the line id with its extension', async () => {
+      const { repo, wowpress, ugc, customerFiles, manager } = setup(CONFIRMED_VARIANT, fileRow(), accepting());
+
+      await manager.submit(repo.get('po-1'));
+
+      expect(customerFiles.describe).toHaveBeenCalledWith(FILE_ID, CUSTOMER_ID);
+      expect(ugc.design).not.toHaveBeenCalled();
+      expect(wowpress.uploadFileUrl).toHaveBeenCalledWith('W-1', `${LINE_ID}.ai`, 'https://s3/customer.ai');
+      expect(repo.get('po-1')).toMatchObject({ status: 'submitted' });
+    });
+
+    it.each([
+      ['another customer', { ownerId: 'someone-else' }],
+      ['another upload purpose', { isPrintFile: false }],
+    ])('does not order a file of %s', async (_label, patch) => {
+      const { repo, wowpress, customerFiles, manager } = setup(CONFIRMED_VARIANT, fileRow(), accepting());
+      customerFiles.describe.mockResolvedValue({ ownerId: CUSTOMER_ID, isPrintFile: true, fileName: 'a.ai', ...patch });
+
+      await manager.submit(repo.get('po-1'));
+
+      expect(wowpress.order).not.toHaveBeenCalled();
+      expect(repo.get('po-1')).toMatchObject({ status: 'failed', lastError: CUSTOMER_FILE_OWNER_MISMATCH_ERROR });
+    });
+
+    it('does not order a file type the product does not accept', async () => {
+      const { repo, wowpress, customerFiles, manager } = setup(CONFIRMED_VARIANT, fileRow(), accepting());
+      customerFiles.describe.mockResolvedValue({ ownerId: CUSTOMER_ID, isPrintFile: true, fileName: 'card.pdf' });
+
+      await manager.submit(repo.get('po-1'));
+
+      expect(wowpress.order).not.toHaveBeenCalled();
+      expect(repo.get('po-1')).toMatchObject({ status: 'failed', lastError: CUSTOMER_FILE_FORMAT_ERROR });
+    });
+
+    it('keeps tracking an ordered line whose file is gone before the upload', async () => {
+      const { repo, wowpress, customerFiles, manager } = setup(CONFIRMED_VARIANT, fileRow(), accepting());
+      wowpress.uploadFileUrl.mockRejectedValueOnce(new Error('upload down'));
+      await manager.submit(repo.get('po-1'));
+      customerFiles.describe.mockResolvedValue({ ownerId: CUSTOMER_ID, isPrintFile: false, fileName: 'a.ai' });
+
+      await manager.submit(repo.claim('po-1'));
+
+      expect(wowpress.order).toHaveBeenCalledTimes(1);
+      expect(wowpress.uploadFileUrl).toHaveBeenCalledTimes(1);
+      expect(repo.get('po-1')).toMatchObject({
+        status: 'submitted',
+        vendorOrderNumber: 'W-1',
+        fileDeliveredAt: null,
+        lastError: CUSTOMER_FILE_UNDELIVERED_ERROR,
+      });
+    });
+
+    it('does not order a line with neither a design nor a file', async () => {
+      const { repo, wowpress, manager } = setup(CONFIRMED_VARIANT, makeRow({ almondDesignId: null }), accepting());
+
+      await manager.submit(repo.get('po-1'));
+
+      expect(wowpress.order).not.toHaveBeenCalled();
+      expect(repo.get('po-1')).toMatchObject({ status: 'failed', lastError: PRINT_SOURCE_MISSING_ERROR });
+    });
+  });
+
   it('uses the spec table before the constant', async () => {
     const specs = new FakeSpecs();
     specs.findSpec.mockResolvedValue({ ...mockSpec(true), prodno: 77777 });
@@ -790,7 +883,7 @@ describe('PrintOrderSubmitManager.submitBatch', () => {
     });
     const wowpress = new FakeWowpress();
     const ugc = new FakeUgc();
-    const manager = new PrintOrderSubmitManager(repo, wowpress, ugc, new FakeSpecs());
+    const manager = new PrintOrderSubmitManager(repo, wowpress, ugc, new FakeSpecs(), new FakeCustomerFiles());
     const claimed = () => [...repo.rows.keys()].map((id) => repo.get(id));
     const listed = (map: Record<string, string>, dboxnum: string | null = null) =>
       wowpress.findByOrdkey.mockImplementation((ordkey) =>
@@ -1450,6 +1543,7 @@ describe('abnormal ord_list through the real WowpressClient', () => {
       new WowpressClient(new ConfigService(ENV), transport),
       new FakeUgc(),
       new FakeSpecs(),
+      new FakeCustomerFiles(),
     );
     return { repo, manager, urls };
   }
@@ -1542,12 +1636,12 @@ describe('PrintOrderSubmitWorker', () => {
       const workerA = new PrintOrderSubmitWorker(
         enabled,
         repo,
-        new PrintOrderSubmitManager(repo, wowA, new FakeUgc(), new FakeSpecs()),
+        new PrintOrderSubmitManager(repo, wowA, new FakeUgc(), new FakeSpecs(), new FakeCustomerFiles()),
       );
       const workerB = new PrintOrderSubmitWorker(
         enabled,
         repo,
-        new PrintOrderSubmitManager(repo, wowB, new FakeUgc(), new FakeSpecs()),
+        new PrintOrderSubmitManager(repo, wowB, new FakeUgc(), new FakeSpecs(), new FakeCustomerFiles()),
       );
       let bRun!: Promise<void>;
       const bStarted = new Promise<void>((resolve) => {
@@ -1582,12 +1676,12 @@ describe('PrintOrderSubmitWorker', () => {
       const workerA = new PrintOrderSubmitWorker(
         enabled,
         repo,
-        new PrintOrderSubmitManager(repo, wowA, ugcA, new FakeSpecs()),
+        new PrintOrderSubmitManager(repo, wowA, ugcA, new FakeSpecs(), new FakeCustomerFiles()),
       );
       const workerB = new PrintOrderSubmitWorker(
         enabled,
         repo,
-        new PrintOrderSubmitManager(repo, wowB, ugcB, new FakeSpecs()),
+        new PrintOrderSubmitManager(repo, wowB, ugcB, new FakeSpecs(), new FakeCustomerFiles()),
       );
       ugcA.printLink.mockImplementationOnce(async () => {
         jest.setSystemTime(Date.now() + PRINT_ORDER_STALE_MS + 60_000);

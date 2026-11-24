@@ -4,6 +4,7 @@ import { DbService, InjectTypedDb } from '@app/db';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { readLineQuantities } from '../line-quantities/line-quantities.reader';
 import { readParcelClaimEligibility } from '../line-quantities/parcel-claim-eligibility.reader';
+import { printLineSql } from '../../product-matching/line-composition/line-resolved.sql';
 import { toReturnEligibilityLines, type ReturnEligibilityResponse } from './return-eligibility';
 
 /** Medusa 주문 하나의 줄별 배송 사실을 한 트랜잭션에서 읽는다. 없는 주문은 `found: false`. */
@@ -21,7 +22,7 @@ export async function readReturnEligibility(trx: DbTx, externalOrderId: string):
     .select({
       id: wmsTables.salesOrderLines.id,
       channelOrderItemId: wmsTables.salesOrderLines.channelOrderItemId,
-      almondDesignId: wmsTables.salesOrderLines.almondDesignId,
+      isPrintLine: printLineSql(),
     })
     .from(wmsTables.salesOrderLines)
     .where(eq(wmsTables.salesOrderLines.salesOrderId, order.id))
@@ -31,7 +32,7 @@ export async function readReturnEligibility(trx: DbTx, externalOrderId: string):
   const lines = lineRows.flatMap((row) => {
     const lineQuantities = quantities.get(row.id);
     return lineQuantities
-      ? [{ channelOrderItemId: row.channelOrderItemId, almondDesignId: row.almondDesignId, quantities: lineQuantities }]
+      ? [{ channelOrderItemId: row.channelOrderItemId, isPrintLine: row.isPrintLine, quantities: lineQuantities }]
       : [];
   });
   const returnRows = await trx
