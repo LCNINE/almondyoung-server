@@ -80,7 +80,7 @@ describeIfDb('UnifiedReservationService reserve→release 원복 (DB integration
     return { wh, sku, loc };
   }
 
-  it('reserve 는 예약수량을 늘리고 release 는 0 으로 원복한다 (ON_HAND 불변)', async () => {
+  it('refuses to release a shipment-line reservation and leaves it confirmed', async () => {
     await inRollbackTx(async (tx) => {
       const { wh, sku, loc } = await seedStock(tx, 100);
 
@@ -94,20 +94,23 @@ describeIfDb('UnifiedReservationService reserve→release 원복 (DB integration
           skuId: sku.id,
           warehouseId: wh.id,
           quantity: 40,
+          requestedAt: new Date(),
         },
         tx,
       );
       expect(await reservation.getTotalReservedQuantity(sku.id, wh.id, tx)).toBe(40);
 
-      await reservation.releaseReservation(res.id, tx);
-      expect(await reservation.getTotalReservedQuantity(sku.id, wh.id, tx)).toBe(0);
+      // 상자 줄 예약은 상자 재계산을 지나는 ShipmentReservationService 만 푼다.
+      await expect(reservation.releaseReservation(res.id, tx)).rejects.toThrow(
+        /ShipmentReservationService\.releaseReservation/,
+      );
+      expect(await reservation.getTotalReservedQuantity(sku.id, wh.id, tx)).toBe(40);
 
-      // 예약 레코드 상태 released
       const [row] = await tx
         .select({ status: wmsTables.stockReservations.status })
         .from(wmsTables.stockReservations)
         .where(eq(wmsTables.stockReservations.id, res.id));
-      expect(row.status).toBe('released');
+      expect(row.status).toBe('confirmed');
 
       // ON_HAND 는 예약/해제와 무관하게 100 유지
       const [ledger] = await tx

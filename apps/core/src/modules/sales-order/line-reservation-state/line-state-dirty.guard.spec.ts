@@ -3,9 +3,9 @@ import { join } from 'path';
 
 /**
  * #1247 — 판매주문 줄 상태(예약·출고·전달·출고 전 취소)가 바뀌는 트랜잭션은 그 주문에 «더러움» 표시를 한다.
- * 표시 지점은 셋이다: 예약·출고·입점사·FO 수량 변화가 전부 지나는 `reprojectFulfillmentOrders`,
- * 취소 기록의 단 하나의 문 `recordSalesOrderCancellation`, 그리고 `reprojectFulfillmentOrders` 를 지나지 않고
- * 확정 예약 행을 푸는 `UnifiedReservationService.releaseReservation`(관리자 예약 해제 라우트가 부른다).
+ * 표시 지점은 둘이다: 예약·출고·입점사·FO 수량 변화가 전부 지나는 `reprojectFulfillmentOrders`,
+ * 취소 기록의 단 하나의 문 `recordSalesOrderCancellation`. 관리자 예약 해제는
+ * `ShipmentReservationService.releaseReservation` 이 `recompute` → `reprojectFulfillmentOrders` 로 지나간다.
  * 표시가 빠지면 폴러가 그 변화를 영영 내보내지 않고 Medusa 예약이 어긋난 채로 남는다 — 그래서 본문이
  * `markLineStateDirty*` 를 부르는지 소스로 지킨다.
  */
@@ -39,12 +39,9 @@ describe('줄 상태 더러움 표시 지점 (#1247)', () => {
     expect(functionBody(path, name)).toMatch(/\bmarkLineStateDirty(ForFulfillmentOrders)?\(\s*(tx|trx)\b/);
   });
 
-  it('UnifiedReservationService.releaseReservation 본문이 상자 라인 예약을 풀 때 markLineStateDirtyForShipmentLines 를 부른다', () => {
+  it('ShipmentReservationService.releaseReservation 본문이 recompute 를 부른다', () => {
     expect(
-      methodBody(
-        'apps/core/src/modules/inventory/shared/services/unified-reservation.service.ts',
-        'releaseReservation',
-      ),
-    ).toMatch(/\bmarkLineStateDirtyForShipmentLines\(\s*trx\s*,\s*\[\s*updated\.shipmentLineId\s*\]/);
+      methodBody('apps/core/src/modules/fulfillment/services/shipment-reservation.service.ts', 'releaseReservation'),
+    ).toMatch(/\bthis\.recompute\(/);
   });
 });
