@@ -265,6 +265,19 @@ describe('HanjinCarrierGateway.track', () => {
     });
   });
 
+  // 번호가 틀렸다는 답만 다시 물어도 같다. 인증·기타 오류는 우리 쪽이나 한진 쪽이 풀리면 답이 달라진다.
+  it.each([
+    ['ERROR-02', true],
+    ['ERROR-90', undefined],
+    ['ERROR-99', undefined],
+  ])('%s 는 «틀린 운송장번호»인가 → %s', async (code, invalidWaybill) => {
+    const post = jest.fn().mockResolvedValue({ resultCode: code });
+    const error: unknown = await new HanjinCarrierGateway(config, { post } as any)
+      .track('777')
+      .catch((e: unknown) => e);
+    expect((error as { details: { invalidWaybill?: boolean } }).details.invalidWaybill).toBe(invalidWaybill);
+  });
+
   it('호출마다 추적 페이서를 거친다 (10 TPS 제한, #916 이관)', async () => {
     const order: string[] = [];
     const pacer = {
@@ -305,7 +318,7 @@ describe('HanjinCarrierGateway.track 상태맵 (#915)', () => {
     ['01', 'pending'], // 예약등록
     ['03', 'canceled'], // 예약취소
     ['05', 'pending'], // 운송장출력
-    ['07', 'in_transit'], // 집하출발
+    ['07', 'pending'], // 집하출발 — 뒤에 미집하가 올 수 있다
     ['08', 'pickup_missed'], // 미집하 — 진행 중이 아니라 예외 상태
     ['11', 'in_transit'], // 집하완료
     ['14', 'in_transit'], // 입고

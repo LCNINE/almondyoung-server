@@ -4298,6 +4298,60 @@ export const dispatchAttempts = pgTable(
   }),
 );
 
+/** 출고 시도마다 택배사에 마지막으로 물은 결과 한 줄. 배송 이력(shipment_tracking)과 달리 «아직 스캔이 없음»·«묻지 못함»도 남는다. */
+export const carrierTrackingChecks = pgTable(
+  'carrier_tracking_checks',
+  {
+    dispatchAttemptId: uuid('dispatch_attempt_id')
+      .primaryKey()
+      .references(() => dispatchAttempts.id, { onDelete: 'cascade' }),
+    /** 마지막으로 물은 시각 */
+    attemptedAt: timestamp('attempted_at', { withTimezone: true }).notNull(),
+    outcome: varchar('outcome', { length: 16 }).$type<'scans' | 'no_scan' | 'rejected' | 'unknown'>().notNull(),
+    errorCode: varchar('error_code', { length: 64 }),
+    /** 택배사가 답을 준 마지막 시각 — 묻지 못한 주기에는 그대로다 */
+    answeredAt: timestamp('answered_at', { withTimezone: true }),
+    scanCode: varchar('scan_code', { length: 16 }),
+    scanStatus: varchar('scan_status', { length: 16 }),
+    scanAt: timestamp('scan_at', { withTimezone: true }),
+    scanLocation: varchar('scan_location', { length: 255 }),
+    scanReason: varchar('scan_reason', { length: 255 }),
+    /** 택배사가 상자를 받은 것으로 보이는 첫 스캔 */
+    acceptedScanAt: timestamp('accepted_scan_at', { withTimezone: true }),
+  },
+  (t) => ({
+    idxAccepted: index('idx_carrier_tracking_checks_accepted')
+      .on(t.acceptedScanAt)
+      .where(sql`${t.acceptedScanAt} IS NOT NULL`),
+  }),
+);
+
+/** 택배사 확인이 필요한 송장을 사람이 확인한 기록. 지우지 않는다 — 다음 사람이 이어받는 이력이다. */
+export const carrierTrackingConfirmations = pgTable(
+  'carrier_tracking_confirmations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    dispatchAttemptId: uuid('dispatch_attempt_id')
+      .notNull()
+      .references(() => dispatchAttempts.id, { onDelete: 'cascade' }),
+    kind: varchar('kind', { length: 32 }).notNull(),
+    /** 확인할 때의 마지막 스캔. 새 스캔이 오면 이 기록은 지난 일이다. */
+    scanKey: varchar('scan_key', { length: 64 }).notNull(),
+    outcome: varchar('outcome', { length: 16 }).$type<'wait' | 'closed'>().notNull(),
+    resumeAt: timestamp('resume_at', { withTimezone: true }),
+    note: varchar('note', { length: 500 }).notNull(),
+    actorId: varchar('actor_id', { length: 255 }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    idxAttempt: index('idx_carrier_tracking_confirmations_attempt').on(t.dispatchAttemptId, t.createdAt),
+    ckResume: check(
+      'ck_carrier_tracking_confirmations_resume',
+      sql`(${t.outcome} = 'wait' AND ${t.resumeAt} IS NOT NULL) OR (${t.outcome} = 'closed' AND ${t.resumeAt} IS NULL)`,
+    ),
+  }),
+);
+
 export const dispatchAttemptSources = pgTable(
   'dispatch_attempt_sources',
   {
@@ -4439,6 +4493,8 @@ export const wmsTables = {
   // Outbound V2 expand model
   fulfillmentCommandRequests,
   outboundScanRejections,
+  carrierTrackingChecks,
+  carrierTrackingConfirmations,
   shipmentOperations,
   shipmentOperationMembers,
   outboundBatchWorkItems,

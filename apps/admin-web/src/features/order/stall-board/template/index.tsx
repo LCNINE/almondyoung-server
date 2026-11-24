@@ -26,6 +26,7 @@ import {
   PENDING_TRANSFER_SERVED,
 } from '../components/pending-transfers';
 import { useReadGate } from '@/features/main/read-gate';
+import { useCarrierTrackingAttention } from '@/lib/services/orders/carrier-tracking';
 import { usePendingRefunds } from '@/lib/services/wallet/queries';
 import { pendingTransfersOf } from '@/lib/api/domains/wallet/refund-execution';
 import { cn } from '@/lib/utils/ui';
@@ -65,10 +66,21 @@ export default function StallBoardTemplate() {
   const transferCount = pendingRefunds.data
     ? pendingTransfersOf(pendingRefunds.data.data).length
     : 0;
-  const notes =
-    transferCount > 0
-      ? { cancel_request: `송금 대기 ${transferCount.toLocaleString('ko-KR')}` }
-      : undefined;
+  // 추적 단계 수는 주문 단위라, 택배사 쪽이 어긋난 송장은 따로 센다(목록과 같은 조회)
+  const carrier = useCarrierTrackingAttention();
+  const carrierNote = !carrier.data
+    ? carrier.isError
+      ? '택배사 확인 못 함'
+      : ''
+    : carrier.data.attention > 0
+      ? `택배사 확인 ${carrier.data.attention.toLocaleString('ko-KR')}`
+      : '';
+  const notes = {
+    ...(transferCount > 0 && {
+      cancel_request: `송금 대기 ${transferCount.toLocaleString('ko-KR')}`,
+    }),
+    ...(carrierNote && { track: carrierNote }),
+  };
 
   const stages = summary.data?.stages ?? [];
   const hasSummary = summary.data !== undefined;
