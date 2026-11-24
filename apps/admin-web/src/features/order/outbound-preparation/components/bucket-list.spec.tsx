@@ -257,7 +257,7 @@ it('출고불가 내역은 고를 칸 없이 상품별 재고·모자람과 들�
   expect(screen.queryByRole('checkbox')).toBeNull();
   expect(screen.getByRole('heading').textContent).toBe('출고불가 내역');
   expect(
-    screen.getByText('주문 5 · 이 창고 재고 2 (다른 주문 몫 2) · 모자람 5')
+    screen.getByText('5개 모자람 · 주문 5 · 이 창고 재고 2 (다른 주문 몫 2)')
   ).toBeTruthy();
   expect(
     screen.getByText('이 창고로 올 것: 이동 중 3개(1월 5일 도착 예정)')

@@ -52,7 +52,7 @@ export function shortageLineText(
       ? `이 창고 재고 ${onHand} (다른 주문 몫 ${Math.min(onHand, reservedByOthers)})`
       : `이 창고 재고 ${Math.max(0, onHand)}`;
 
-  return `주문 ${line.qty} · ${stock} · 모자람 ${short}`;
+  return `${short}개 모자람 · 주문 ${line.qty} · ${stock}`;
 }
 
 function freeStock(stock: PreparationLineStock): number {
