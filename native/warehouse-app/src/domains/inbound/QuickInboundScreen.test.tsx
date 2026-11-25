@@ -3,7 +3,7 @@ import {
   TestWorkProvider,
   receiptFixture,
 } from './__fixtures__/workRuntime';
-import { describe, it, expect } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -23,9 +23,15 @@ import {
   ScanProvider,
   useScanBus,
 } from '../../core/hardware/scan/ScanProvider';
-import type { ApiClient } from '../../core/data/httpClient';
+import { ApiError, type ApiClient } from '../../core/data/httpClient';
 import type { Session } from '../../core/auth/session';
 import { QuickInboundScreen } from './QuickInboundScreen';
+import { playInboundSaved, playInboundSaveFailed } from './saveFeedback';
+
+vi.mock('./saveFeedback', () => ({
+  playInboundSaved: vi.fn(),
+  playInboundSaveFailed: vi.fn(),
+}));
 import { scanHid } from '../../core/hardware/scan/__fixtures__/hid';
 
 it('간편입고 재개에서 숫자패드 → HID 위치 스캔 → 명시적 적치로 이어진다', async () => {
@@ -119,6 +125,7 @@ async function renderScreen(
     draft?: Promise<void>;
     draftLoadFails?: { now: boolean };
     serverDown?: { now: boolean };
+    simpleFails?: boolean;
     savedScans?: string[];
     waiting?: Array<{ skuId: string; orders: number; qty: number }>;
     ready?: unknown[];
@@ -175,6 +182,8 @@ async function renderScreen(
       if (o.path.startsWith('/inventory/skus?barcode=7701')) return SECOND_SKU;
       if (o.path.startsWith('/inventory/skus?barcode=')) return [];
       if (o.path === '/inbound/simple') {
+        if (hold?.simpleFails) throw new ApiError('권한이 없어요', 403);
+
         return {
           id: 'r-1',
           lines: [{ id: 'ln-1', skuId: 's1', quantity: 20 }],
@@ -337,9 +346,44 @@ const READY_BOX = {
 };
 
 describe('QuickInboundScreen', () => {
+  beforeEach(() => {
+    vi.mocked(playInboundSaved).mockClear();
+    vi.mocked(playInboundSaveFailed).mockClear();
+  });
+
+  it('등록에 성공하면 토스트를 보이고 완료음을 한 번 낸다', async () => {
+    const user = userEvent.setup();
+    await renderScreen([]);
+    await screen.findByText('간편입고');
+
+    await user.click(screen.getByRole('button', { name: '스캔:8802' }));
+    await screen.findByText('코튼셔츠');
+    await user.click(screen.getByRole('button', { name: '등록' }));
+
+    expect(await screen.findByText('입고를 저장했어요')).toBeInTheDocument();
+    expect(playInboundSaved).toHaveBeenCalledTimes(1);
+    expect(playInboundSaveFailed).not.toHaveBeenCalled();
+  });
+
+  it('등록에 실패하면 오류음을 내고 완료음과 토스트는 없다', async () => {
+    const user = userEvent.setup();
+    await renderScreen([], undefined, false, { simpleFails: true });
+    await screen.findByText('간편입고');
+
+    await user.click(screen.getByRole('button', { name: '스캔:8802' }));
+    await screen.findByText('코튼셔츠');
+    await user.click(screen.getByRole('button', { name: '등록' }));
+
+    await waitFor(() => expect(playInboundSaveFailed).toHaveBeenCalledTimes(1));
+    expect(playInboundSaved).not.toHaveBeenCalled();
+    expect(screen.queryByText('입고를 저장했어요')).not.toBeInTheDocument();
+  });
+
   it('미발송 주문 칸을 그 화면의 입고 줄로 보인다', async () => {
     const calls: Call[] = [];
-    await renderScreen(calls, { lineId: 'ln-1' }, false, { ready: [READY_BOX] });
+    await renderScreen(calls, { lineId: 'ln-1' }, false, {
+      ready: [READY_BOX],
+    });
 
     expect(await screen.findByText('미발송 주문')).toBeInTheDocument();
     expect(screen.getByText('적치하면 나갈 수 있어요')).toBeInTheDocument();

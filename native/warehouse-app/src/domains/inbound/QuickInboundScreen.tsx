@@ -32,6 +32,8 @@ import { useSkuByBarcode } from '../inventory/useSkuByBarcode';
 import { scanIncrement } from './packingUnit';
 import { useSimpleInbound } from './mutations';
 import { usualShelfNotice } from './RememberUsualToggle';
+import { playInboundSaved, playInboundSaveFailed } from './saveFeedback';
+import { SaveToast, useSaveToast } from './SaveToast';
 import { PutawaySheet, type LocationRef } from './PutawaySheet';
 import { useWaitingOrders } from './waitingOrders';
 import {
@@ -64,6 +66,7 @@ function QuickInboundScreenContent() {
   const lookup = useSkuByBarcode();
   const api = useApiClient();
   const submit = useSimpleInbound();
+  const toast = useSaveToast();
 
   const initialDraft = useRef({
     receiptId: null as string | null,
@@ -429,6 +432,7 @@ function QuickInboundScreenContent() {
 
   return (
     <div className="space-y-4" aria-busy={!draft.ready || !reconciled}>
+      <SaveToast message={toast.message} />
       <ScreenHeader title="간편입고" backTo="/inbound" />
 
       {!stagedMode && !prepFailure && (!draft.ready || !reconciled) ? (
@@ -812,7 +816,10 @@ function QuickInboundScreenContent() {
                   idempotencyKey,
                 },
                 {
+                  onError: () => playInboundSaveFailed(),
                   onSuccess: async (result) => {
+                    playInboundSaved();
+                    toast.show('입고를 저장했어요');
                     // 응답 lines[] 를 카트 행과 skuId 로 맞춰 이름을 되살린다.
                     await draft.update((prev) => ({
                       ...prev,
