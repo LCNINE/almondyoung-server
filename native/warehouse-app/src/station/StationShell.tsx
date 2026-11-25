@@ -116,8 +116,8 @@ function ShellFrame() {
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-[#f5f5f5] text-[#27272a] print:h-auto print:overflow-visible print:bg-white">
-      <header className="flex h-[70px] shrink-0 items-center gap-3.5 border-b border-[#e4e4e7] bg-white px-6 min-[701px]:max-[1330px]:px-[18px] print:hidden">
-        <div className="mr-4 text-[21px] font-extrabold tracking-[-1px] min-[701px]:max-[1330px]:text-lg">
+      <header className="flex h-[70px] shrink-0 items-center gap-3.5 border-b border-[#e4e4e7] bg-white px-6 min-[701px]:max-[1331px]:px-[18px] print:hidden">
+        <div className="mr-4 text-[21px] font-extrabold tracking-[-1px] min-[701px]:max-[1331px]:text-lg">
           {import.meta.env.VITE_APP_STAGE === 'demo' ? 'LCNINE 물류 · DEMO' : 'LCNINE 물류'}
         </div>
         <nav aria-label="탭" className="flex gap-1 self-stretch">
@@ -136,9 +136,9 @@ function ShellFrame() {
                     : 'text-[#71717a]'
                 )}
               >
-                <Icon className="h-[17px] w-[17px] min-[701px]:max-[1330px]:hidden" strokeWidth={1.65} aria-hidden />
+                <Icon className="h-[17px] w-[17px] min-[701px]:max-[1331px]:hidden" strokeWidth={1.65} aria-hidden />
                 {t.label}
-                <Kbd tone="outline" className="text-[9px] min-[701px]:max-[1330px]:hidden">{t.key}</Kbd>
+                <Kbd tone="outline" className="text-[9px] min-[701px]:max-[1331px]:hidden">{t.key}</Kbd>
               </Link>
             );
           })}
