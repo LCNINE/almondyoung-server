@@ -160,6 +160,12 @@ describe('encodeZpl', () => {
     expect(encodeZpl(nsBitmap(), [], { compress: false, rotation: 90 })).toContain('^PQ1');
   });
 
+  it('cutAfterCopies 면 n장 뒤에서 한 번 자르고 프린터 커팅 모드는 건드리지 않는다', () => {
+    const zpl = encodeZpl(nsBitmap(), [], { compress: false, rotation: 90, copies: 3, cutAfterCopies: true });
+    expect(zpl).toContain('^PQ3,3,0,Y');
+    expect(zpl).not.toContain('^MM');
+  });
+
   it('ITF 데이터가 짝수 자리 숫자가 아니면 던진다', () => {
     expect(() => encodeZpl(nsBitmap(), [{ ...ITF, data: '12345' }], { compress: false, rotation: 90 })).toThrow(/ITF/);
     expect(() => encodeZpl(nsBitmap(), [{ ...ITF, data: 'WBL-1234' }], { compress: false, rotation: 90 })).toThrow(
