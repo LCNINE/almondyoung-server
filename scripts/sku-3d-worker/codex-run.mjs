@@ -100,6 +100,14 @@ export function runCodex({ bin, args, cwd, env, prompt, timeoutMs, onEvent, sign
     }, timeoutMs);
 
     signal?.addEventListener('abort', abort);
+
+    // 이미 취소된 신호로 불렸으면 띄우자마자 끈다
+    if (signal?.aborted) {
+      abort();
+
+      return;
+    }
+
     createInterface({ input: child.stdout }).on('line', (line) => {
       const event = readCodexEvent(line);
 

@@ -42,9 +42,13 @@ export function buildPrompt({ kind, iteration, photoPaths, base }) {
 }
 
 function toolVersions(config) {
+  // 버전 조회도 걸러낸 환경으로만 — 워커 키가 Codex 에 닿지 않게
+  const env = childEnv(process.env);
   const first = (bin, args) => {
     try {
-      return execFileSync(bin, args, { encoding: 'utf8', windowsHide: true, timeout: 60_000 }).split(/\r?\n/)[0].trim();
+      return execFileSync(bin, args, { encoding: 'utf8', windowsHide: true, timeout: 60_000, env })
+        .split(/\r?\n/)[0]
+        .trim();
     } catch (error) {
       return `확인 실패: ${String(error).slice(0, 100)}`;
     }
@@ -59,7 +63,7 @@ function toolVersions(config) {
   };
 }
 
-async function prepareFolder(api, job, inputs, config) {
+async function prepareFolder(api, job, inputs, config, assertLive) {
   const workshopDir = join(config.workRoot, job.workshopId);
   const iterDir = join(workshopDir, `iteration-${inputs.iteration}`);
   const photosDir = join(workshopDir, 'inputs', 'photos');
@@ -74,10 +78,17 @@ async function prepareFolder(api, job, inputs, config) {
   const photoPaths = [];
 
   for (const photo of inputs.photos) {
-    const path = join(photosDir, `${String(photo.sortOrder).padStart(2, '0')}-${photo.fileId}.jpg`);
+    const stem = join(photosDir, `${String(photo.sortOrder).padStart(2, '0')}-${photo.fileId}`);
+    const known = ['.jpg', '.png', '.webp'].map((ext) => stem + ext).find((path) => existsSync(path));
+    let path = known;
 
-    if (!existsSync(path)) {
-      writeFileSync(path, await api.download(job, photo.fileId));
+    if (!path) {
+      assertLive();
+
+      const bytes = await api.download(job, photo.fileId);
+
+      path = stem + imageExtOf(bytes);
+      writeFileSync(path, bytes);
     }
 
     photoPaths.push(path);
@@ -91,6 +102,7 @@ async function prepareFolder(api, job, inputs, config) {
       const path = join(baseDir, name);
 
       if (!existsSync(path)) {
+        assertLive();
         mkdirSync(dirname(path), { recursive: true });
         writeFileSync(path, await api.download(job, fileId));
       }
@@ -117,8 +129,12 @@ function eventSink(api, job) {
   return { push: (item) => pending.push(item), flush };
 }
 
-async function uploadAll(api, job, iterDir, judged, viewerShot) {
-  const upload = async (path) => (await api.upload(job, path, MIME[path.slice(path.lastIndexOf('.'))] ?? 'application/octet-stream')).fileId;
+async function uploadAll(api, job, iterDir, judged, viewerShot, assertLive) {
+  const upload = async (path) => {
+    assertLive();
+
+    return (await api.upload(job, path, MIME[path.slice(path.lastIndexOf('.'))] ?? 'application/octet-stream')).fileId;
+  };
   const optional = async (name) => (existsSync(join(iterDir, name)) ? upload(join(iterDir, name)) : undefined);
   const renderFileIds = [];
 
@@ -135,105 +151,176 @@ async function uploadAll(api, job, iterDir, judged, viewerShot) {
   };
 }
 
+export function imageExtOf(bytes) {
+  if (bytes[0] === 0x89 && bytes[1] === 0x50) {
+    return '.png';
+  }
+
+  if (bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP') {
+    return '.webp';
+  }
+
+  return '.jpg';
+}
+
+const abandoned = (message) => Object.assign(new Error(message), { abandoned: true });
+
 export async function runJob(job, { api, config, tools, signal }) {
-  const inputs = await api.inputs(job);
-  const { workshopDir, iterDir, photoPaths } = await prepareFolder(api, job, inputs, config);
-  const events = eventSink(api, job);
   const abort = new AbortController();
-  let sessionId = inputs.sessionId;
   let leaseLost = false;
+  const stopIfAborted = () => abort.abort();
 
-  signal.addEventListener('abort', () => abort.abort());
+  signal.addEventListener('abort', stopIfAborted);
 
-  const beat = setInterval(() => {
-    api.heartbeat(job).catch((error) => {
-      if (isLeaseLost(error)) {
-        leaseLost = true;
-        abort.abort();
-      }
-    });
-    events.flush().catch(() => undefined);
-  }, HEARTBEAT_MS);
-  const flusher = setInterval(() => events.flush().catch(() => undefined), EVENT_FLUSH_MS);
-
-  const turn = async (prompt, images) => {
-    const result = await runCodex({
-      bin: config.codexBin,
-      args: codexArgs({
-        sessionId,
-        workdir: workshopDir,
-        schemaPath: join(workshopDir, 'review.schema.json'),
-        lastMessagePath: join(iterDir, 'review.json'),
-        images,
-      }),
-      cwd: workshopDir,
-      env: { ...childEnv(process.env), BLENDER_PATH: config.blenderPath, NODE_BIN: config.nodeBin, GLTF_TRANSFORM_CLI: config.gltfTransformCli },
-      prompt,
-      timeoutMs: config.jobTimeoutMs,
-      signal: abort.signal,
-      onEvent: (event) => {
-        if (event.kind === 'session' && !sessionId) {
-          sessionId = event.sessionId;
-          // 세션 id 는 받자마자 서버에 적는다 — 여기서 PC 가 꺼져도 다음 시도가 이 세션을 이어 간다
-          api.session(job, sessionId).catch((error) => {
-            if (isLeaseLost(error)) {
-              abort.abort();
-            }
-          });
-        }
-
-        if (event.kind === 'progress' || event.kind === 'error') {
-          events.push({ type: 'progress', body: event.body });
-        }
-      },
-    });
-
-    if (result.aborted) {
-      throw Object.assign(new Error(leaseLost ? 'lease 를 잃었어요' : '워커가 멈췄어요'), { abandoned: true });
-    }
-
-    if (result.timedOut) {
-      throw Object.assign(new Error('제한 시간 안에 끝나지 않았어요'), { retryable: true });
-    }
-
-    if (result.code !== 0) {
-      throw Object.assign(new Error(`Codex 가 ${result.code} 로 끝났어요: ${result.stderr.slice(-500)}`), { retryable: true });
+  // 단계마다 확인한다 — 멈췄거나 lease 를 잃었으면 다음 단계로 가지 않는다
+  const assertLive = () => {
+    if (abort.signal.aborted) {
+      throw abandoned(leaseLost ? 'lease 를 잃었어요' : '워커가 멈췄어요');
     }
   };
+  const loseLease = (error) => {
+    if (isLeaseLost(error)) {
+      leaseLost = true;
+      abort.abort();
+    }
+  };
+  // claim 직후부터 lease 를 붙잡는다 — 입력·사진 받는 동안에도
+  const beat = setInterval(() => api.heartbeat(job).catch(loseLease), HEARTBEAT_MS);
+  const events = eventSink(api, job);
+  const flusher = setInterval(() => events.flush().catch(loseLease), EVENT_FLUSH_MS);
 
   try {
+    const inputs = await api.inputs(job);
+    const { workshopDir, iterDir, photoPaths } = await prepareFolder(api, job, inputs, config, assertLive);
+    let sessionId = inputs.sessionId;
+    let sessionSaved = Promise.resolve();
+
+    const turn = async (prompt, images) => {
+      assertLive();
+
+      const result = await runCodex({
+        bin: config.codexBin,
+        args: codexArgs({
+          sessionId,
+          workdir: workshopDir,
+          schemaPath: join(workshopDir, 'review.schema.json'),
+          lastMessagePath: join(iterDir, 'review.json'),
+          images,
+        }),
+        cwd: workshopDir,
+        env: {
+          ...childEnv(process.env),
+          BLENDER_PATH: config.blenderPath,
+          NODE_BIN: config.nodeBin,
+          GLTF_TRANSFORM_CLI: config.gltfTransformCli,
+        },
+        prompt,
+        timeoutMs: config.jobTimeoutMs,
+        signal: abort.signal,
+        onEvent: (event) => {
+          if (event.kind === 'session' && !sessionId) {
+            sessionId = event.sessionId;
+            // 받자마자 서버에 적는다 — 여기서 PC 가 꺼져도 다음 시도가 이 세션을 잇는다
+            sessionSaved = saveSession(api, job, sessionId);
+            sessionSaved.catch(loseLease);
+          }
+
+          if (event.kind === 'progress' || event.kind === 'error') {
+            events.push({ type: 'progress', body: event.body });
+          }
+        },
+      });
+
+      if (result.aborted) {
+        assertLive();
+      }
+
+      // 세션 id 가 서버에 남지 않으면 다음 수정이 새 세션으로 시작된다 — 성공으로 넘어가지 않는다
+      await sessionSaved;
+
+      if (result.timedOut) {
+        throw Object.assign(new Error('제한 시간 안에 끝나지 않았어요'), { retryable: true });
+      }
+
+      if (result.code !== 0) {
+        throw Object.assign(new Error(`Codex 가 ${result.code} 로 끝났어요: ${result.stderr.slice(-500)}`), {
+          retryable: true,
+        });
+      }
+    };
+    const check = async () => {
+      assertLive();
+
+      const judged = await judgeOutputs(iterDir, { validatorModule: config.gltfValidatorModule });
+
+      if (!judged.ok) {
+        return { judged, viewer: null };
+      }
+
+      assertLive();
+
+      const viewer = await viewerCheck({
+        edgeBin: config.edgeBin,
+        glbPath: judged.glbPath,
+        outDir: join(iterDir, 'viewer'),
+        signal: abort.signal,
+      }).catch((error) => {
+        assertLive();
+
+        return { ok: false, state: `확인 실패: ${String(error).slice(0, 200)}` };
+      });
+
+      return { judged, viewer };
+    };
+
     events.push({ type: 'status', body: sessionId ? '같은 Codex 세션으로 고치기 시작했어요' : 'Codex 가 만들기 시작했어요' });
 
-    const prompt = buildPrompt({ kind: job.kind, iteration: inputs.iteration, photoPaths: photoPaths.map((p) => relative(workshopDir, p)), base: inputs.base });
+    await turn(
+      buildPrompt({
+        kind: job.kind,
+        iteration: inputs.iteration,
+        photoPaths: photoPaths.map((p) => relative(workshopDir, p)),
+        base: inputs.base,
+      }),
+      sessionId ? [] : photoPaths,
+    );
 
-    await turn(prompt, sessionId ? [] : photoPaths);
-
-    let judged = await judgeOutputs(iterDir, { validatorModule: config.gltfValidatorModule });
-    let viewer = judged.ok ? await viewerCheck({ edgeBin: config.edgeBin, glbPath: judged.glbPath, outDir: join(iterDir, 'viewer') }) : null;
+    let { judged, viewer } = await check();
 
     // 명확한 제작 오류는 같은 세션에 한 번 더 고치게 한다 — 그래도 안 되면 실패로 남긴다
-    for (let fix = 0; fix < JUDGE_FIX_TURNS && (!judged.ok || !viewer?.ok); fix += 1) {
+    for (let fix = 0; fix < JUDGE_FIX_TURNS && !(judged.ok && viewer?.ok); fix += 1) {
       const reason = judged.ok ? `웹 뷰어(model-viewer)에서 모델이 보이지 않아요(상태: ${viewer?.state})` : judged.reason;
 
       events.push({ type: 'status', body: `자동 검사에서 걸려서 다시 고쳐요: ${reason.slice(0, 300)}` });
-      await turn(`워커 자동 검사에서 실패했다: ${reason}\niteration-${inputs.iteration} 의 산출물을 고치고 마지막 응답을 review JSON 으로 다시 낸다.`, []);
-      judged = await judgeOutputs(iterDir, { validatorModule: config.gltfValidatorModule });
-      viewer = judged.ok ? await viewerCheck({ edgeBin: config.edgeBin, glbPath: judged.glbPath, outDir: join(iterDir, 'viewer') }) : null;
+      await turn(
+        `워커 자동 검사에서 실패했다: ${reason}\niteration-${inputs.iteration} 의 산출물을 고치고 마지막 응답을 review JSON 으로 다시 낸다.`,
+        [],
+      );
+      ({ judged, viewer } = await check());
     }
 
     if (!judged.ok || !viewer?.ok) {
-      throw Object.assign(new Error(judged.ok ? `웹 뷰어에서 모델이 보이지 않아요(${viewer?.state})` : judged.reason), { retryable: false });
+      throw Object.assign(new Error(judged.ok ? `웹 뷰어에서 모델이 보이지 않아요(${viewer?.state})` : judged.reason), {
+        retryable: false,
+      });
     }
 
     events.push({ type: 'status', body: '자동 검사를 통과했어요. 올리고 있어요' });
     await events.flush();
 
-    const files = await uploadAll(api, job, iterDir, judged, viewer.screenshot);
+    const files = await uploadAll(api, job, iterDir, judged, viewer.screenshot, assertLive);
 
+    assertLive();
     await api.complete(job, {
       ...files,
       review: judged.review,
-      provenance: { tools, validator: judged.validation, glbBytes: judged.bytes, viewer: viewer.state, iteration: inputs.iteration },
+      provenance: {
+        tools,
+        validator: judged.validation,
+        glbBytes: judged.bytes,
+        viewer: viewer.state,
+        iteration: inputs.iteration,
+      },
     });
     console.log(`[${job.id}] v${inputs.iteration} 완료`);
   } catch (error) {
@@ -249,6 +336,23 @@ export async function runJob(job, { api, config, tools, signal }) {
   } finally {
     clearInterval(beat);
     clearInterval(flusher);
+    signal.removeEventListener('abort', stopIfAborted);
+  }
+}
+
+async function saveSession(api, job, sessionId) {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      await api.session(job, sessionId);
+
+      return;
+    } catch (error) {
+      if (isLeaseLost(error) || attempt >= 5) {
+        throw error;
+      }
+
+      await sleep(2_000 * attempt);
+    }
   }
 }
 
@@ -280,7 +384,9 @@ async function main() {
         if (job) {
           console.log(`[${job.id}] ${job.kind} 작업을 가져왔어요(${job.attempts}번째)`);
 
-          const task = runJob(job, { api, config, tools, signal: stop.signal }).finally(() => running.delete(task));
+          const task = runJob(job, { api, config, tools, signal: stop.signal })
+            .catch((error) => console.error(`[${job.id}] 처리하지 못한 오류: ${error.message}`))
+            .finally(() => running.delete(task));
 
           running.add(task);
 

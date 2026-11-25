@@ -1,14 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ApiError, createApi, isLeaseLost } from './api.mjs';
 import { codexArgs, readCodexEvent, runCodex } from './codex-run.mjs';
 import { childEnv, loadConfig, PRODUCTION_SERVER_URL } from './env.mjs';
 import { externalUris, GLB_MAX_BYTES, glbJson, judgeOutputs, reviewProblem } from './judge.mjs';
-import { viewerHtml, viewerStateOf } from './viewer-check.mjs';
-import { buildPrompt } from './worker.mjs';
+import { viewerHtml, viewerShotOf, viewerStateOf } from './viewer-check.mjs';
+import { buildPrompt, imageExtOf, runJob } from './worker.mjs';
 
 function glb(json, padTo = 0) {
   const text = Buffer.from(JSON.stringify(json));
@@ -200,4 +200,89 @@ test('prompt points to the iteration folder and never embeds secrets', () => {
   assert.match(prompt, /iteration-3/);
   assert.match(prompt, /iteration-2/);
   assert.doesNotMatch(prompt, /SKU3D_WORKER_KEY|Bearer/);
+});
+
+test('runCodex does not run a child for an already aborted signal', async () => {
+  const abort = new AbortController();
+  const marker = join(mkdtempSync(join(tmpdir(), 'aborted-')), 'ran');
+
+  abort.abort();
+
+  const result = await runCodex({
+    bin: process.execPath,
+    args: ['-e', `require('fs').writeFileSync(${JSON.stringify(marker)}, 'x')`],
+    cwd: tmpdir(),
+    env: { PATH: process.env.PATH },
+    prompt: '',
+    timeoutMs: 10_000,
+    onEvent: () => undefined,
+    signal: abort.signal,
+  });
+
+  await new Promise((r) => setTimeout(r, 300));
+  assert.equal(result.aborted, true);
+  assert.throws(() => readFileSync(marker));
+});
+
+test('photo extension follows the bytes', () => {
+  assert.equal(imageExtOf(Buffer.from('89504e470d0a1a0a', 'hex')), '.png');
+  assert.equal(imageExtOf(Buffer.from('RIFF0000WEBPVP8 ')), '.webp');
+  assert.equal(imageExtOf(Buffer.from('ffd8ffe0', 'hex')), '.jpg');
+});
+
+test('viewer screenshot comes from the same page as the verdict', () => {
+  const dom = '<body data-viewer="visible" data-shot="data:image/png;base64,aGk=">';
+
+  assert.equal(viewerShotOf(dom).toString(), 'hi');
+  assert.equal(viewerShotOf('<body data-viewer="error" data-shot="">'), null);
+});
+
+function fakeApi(overrides = {}) {
+  const calls = [];
+  const api = {
+    calls,
+    heartbeat: async () => calls.push('heartbeat'),
+    inputs: async () => {
+      calls.push('inputs');
+      throw new Error('네트워크 끊김');
+    },
+    events: async () => calls.push('events'),
+    fail: async (_job, error, retryable) => calls.push(['fail', error, retryable]),
+    complete: async () => calls.push('complete'),
+    ...overrides,
+  };
+
+  return api;
+}
+
+const jobConfig = () => ({
+  workRoot: mkdtempSync(join(tmpdir(), 'jobs-')),
+  codexBin: process.execPath,
+  jobTimeoutMs: 10_000,
+});
+
+test('an input failure is reported as a retryable failure and never crashes the loop', async () => {
+  const api = fakeApi();
+
+  await runJob({ id: 'j', workshopId: 'w', kind: 'create' }, { api, config: jobConfig(), tools: {}, signal: new AbortController().signal });
+
+  assert.deepEqual(api.calls.at(-1), ['fail', '네트워크 끊김', true]);
+  assert.ok(!api.calls.includes('complete'));
+});
+
+test('a stopped worker drops the job without reporting success or failure', async () => {
+  const stop = new AbortController();
+  const api = fakeApi({
+    inputs: async () => {
+      stop.abort();
+
+      return { iteration: 1, sku: {}, photos: [{ fileId: 'p', sortOrder: 1 }], request: '', base: null, sessionId: null };
+    },
+    download: async () => Buffer.from('ffd8', 'hex'),
+  });
+
+  await runJob({ id: 'j', workshopId: 'w', kind: 'create' }, { api, config: jobConfig(), tools: {}, signal: stop.signal });
+
+  assert.ok(!api.calls.includes('complete'));
+  assert.ok(!api.calls.some((c) => Array.isArray(c) && c[0] === 'fail'));
 });
