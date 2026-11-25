@@ -16,11 +16,10 @@ import { useWarehouse } from '../../app/warehouse-context';
 import { errorMessage } from '../../core/data/errorMessage';
 import { ApiError, NetworkError } from '../../core/data/httpClient';
 import { Button } from '../../core/design/Button';
-import { QuantityInput, parseQuantity } from '../../core/design/QuantityInput';
+import { parseQuantity } from '../../core/design/QuantityInput';
 import { SkuPicker, type SelectedSku } from '../inventory/SkuPicker';
 import { BarcodeInput } from '../../core/hardware/scan/BarcodeInput';
 import { useUnsavedWork } from '../../core/operations/useUnsavedWork';
-import { NumberPad } from '../../core/design/NumberPad';
 import { ScreenHeader } from '../../core/design/ScreenHeader';
 import {
   SCAN_STORAGE_MESSAGE,
@@ -45,6 +44,7 @@ import {
   type CancelReceiptTarget,
 } from './CancelReceiptDialog';
 import { ReadyShipmentsSection } from './ReadyShipmentsSection';
+import { QuickQuantitySheet } from './QuickQuantitySheet';
 import { WaitingOrdersFailed, WaitingOrdersNote } from './WaitingOrdersNote';
 import type { FreshLine, PutawayTarget } from './types';
 
@@ -244,6 +244,7 @@ function QuickInboundScreenContent({ station }: { station: boolean }) {
       (!reconciled && cart.length > 0 && staged.length === 0)
   );
   const [notice, setNotice] = useState<string | null>(null);
+  const editingRow = cart.find((row) => row.skuId === editing) ?? null;
 
   const [putawayFor, setPutawayFor] = useState<PutawayTarget | null>(null);
   const [cancelFor, setCancelFor] = useState<CancelReceiptTarget | null>(null);
@@ -390,6 +391,7 @@ function QuickInboundScreenContent({ station }: { station: boolean }) {
             quantity: 1,
           },
         ]);
+      setNotice(null);
       setQuantityText(String(row?.quantity ?? 1));
       setEditing(sku.id);
     } catch {
@@ -476,7 +478,7 @@ function QuickInboundScreenContent({ station }: { station: boolean }) {
           </Button>
         </p>
       ) : null}
-      {notice ? (
+      {notice && !editingRow ? (
         <p
           role="alert"
           className="rounded-md bg-amber-50 p-2 text-sm text-amber-800"
@@ -682,7 +684,7 @@ function QuickInboundScreenContent({ station }: { station: boolean }) {
               {cart.map((row) => (
                 <li
                   key={row.skuId}
-                  className="space-y-2 rounded-lg border border-gray-200 bg-white p-3"
+                  className="rounded-lg border border-gray-200 bg-white p-3"
                 >
                   <div className="flex items-center gap-3">
                     <span className="min-w-0 flex-1">
@@ -708,6 +710,7 @@ function QuickInboundScreenContent({ station }: { station: boolean }) {
                       }
                       onClick={() => {
                         if (!reconciled) return;
+                        setNotice(null);
                         setQuantityText(String(row.quantity));
                         setEditing(row.skuId);
                       }}
@@ -748,41 +751,6 @@ function QuickInboundScreenContent({ station }: { station: boolean }) {
                       <Trash2 className="h-4 w-4" aria-hidden />
                     </button>
                   </div>
-                  {editing === row.skuId &&
-                  !scanQueue.blocked() &&
-                  !submit.isPending ? (
-                    <div className="space-y-2">
-                      <QuantityInput
-                        label="입고 수량 직접 입력"
-                        value={quantityText}
-                        onChange={setQuantityText}
-                        min={1}
-                        disabled={saving}
-                      />
-                      <fieldset disabled={saving}>
-                        <NumberPad
-                          value={parseQuantity(quantityText, 0) ?? 0}
-                          onChange={(next) => setQuantityText(String(next))}
-                        />
-                      </fieldset>
-                      <Button
-                        disabled={
-                          !reconciled ||
-                          saving ||
-                          parseQuantity(quantityText, 1) === null
-                        }
-                        onClick={() => void saveQuantity()}
-                      >
-                        수량 저장
-                      </Button>
-                      <Button
-                        disabled={saving}
-                        onClick={() => setEditing(null)}
-                      >
-                        수정 취소
-                      </Button>
-                    </div>
-                  ) : null}
                 </li>
               ))}
             </ul>
@@ -851,6 +819,23 @@ function QuickInboundScreenContent({ station }: { station: boolean }) {
           </Button>
         </section>
       )}
+
+      {editingRow && !scanQueue.blocked() && !submit.isPending ? (
+        <QuickQuantitySheet
+          skuName={editingRow.skuName}
+          skuCode={editingRow.skuCode}
+          waiting={waiting.of(editingRow.skuId)}
+          value={quantityText}
+          onChange={setQuantityText}
+          saving={saving}
+          notice={notice}
+          onSave={() => void saveQuantity()}
+          onCancel={() => setEditing(null)}
+          onScanBlocked={() =>
+            setNotice('수량 창을 닫은 뒤 다시 찍어 주세요.')
+          }
+        />
+      ) : null}
 
       {cancelFor && warehouseId ? (
         <CancelReceiptDialog

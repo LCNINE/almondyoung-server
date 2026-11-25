@@ -817,19 +817,55 @@ it('상품 검색과 키보드 수량 입력만으로 간편입고하고 재선�
     await screen.findByRole('button', { name: '코튼셔츠 선택' })
   );
   const quantity = await screen.findByLabelText(/입고 수량 직접 입력/);
+  expect(quantity).toHaveFocus();
   await userEvent.clear(quantity);
-  expect(screen.getByRole('button', { name: '수량 저장' })).toBeDisabled();
-  await userEvent.type(quantity, '10');
-  await userEvent.click(screen.getByRole('button', { name: '수량 저장' }));
+  expect(screen.getByRole('button', { name: '담기' })).toBeDisabled();
+  await userEvent.keyboard('10{Enter}');
+  await waitFor(() =>
+    expect(screen.getByLabelText('코튼셔츠 수량')).toHaveTextContent('10')
+  );
   await userEvent.click(screen.getByRole('button', { name: '코튼셔츠 선택' }));
   expect(await screen.findByLabelText(/입고 수량 직접 입력/)).toHaveValue('10');
-  await userEvent.click(screen.getByRole('button', { name: '수량 저장' }));
+  await userEvent.click(screen.getByRole('button', { name: '10개 담기' }));
   await userEvent.click(screen.getByRole('button', { name: '등록' }));
   await waitFor(() =>
     expect(calls.find((c) => c.path === '/inbound/simple')?.body).toMatchObject(
       { items: [{ skuId: 's1', quantity: 10 }] }
     )
   );
+});
+
+it('수량 창은 Esc 로 수량을 바꾸지 않고 닫힌다', async () => {
+  await renderScreen([]);
+  await screen.findByText('간편입고');
+  await userEvent.click(screen.getByRole('button', { name: '스캔:8801' }));
+  await screen.findByText('코튼셔츠');
+  await userEvent.click(screen.getByLabelText('코튼셔츠 수량'));
+  expect(await screen.findByLabelText(/입고 수량 직접 입력/)).toHaveFocus();
+  await userEvent.keyboard('7{Escape}');
+  await waitFor(() =>
+    expect(
+      screen.queryByRole('dialog', { name: '코튼셔츠 입고 수량' })
+    ).not.toBeInTheDocument()
+  );
+  expect(screen.getByLabelText('코튼셔츠 수량')).toHaveTextContent('1');
+});
+
+it('수량 창이 열린 채 스캐너가 수량칸에 바코드를 치면 수량을 되돌리고 담지 않는다', async () => {
+  await renderScreen([]);
+  await screen.findByText('간편입고');
+  await userEvent.click(screen.getByRole('button', { name: '스캔:8801' }));
+  await screen.findByText('코튼셔츠');
+  await userEvent.click(screen.getByLabelText('코튼셔츠 수량'));
+  const input = await screen.findByLabelText(/입고 수량 직접 입력/);
+  await userEvent.clear(input);
+  await userEvent.type(input, '5', { delay: 80 });
+  await userEvent.keyboard('7701{Enter}');
+  expect(input).toHaveValue('5');
+  expect(
+    await screen.findByText('수량 창을 닫은 뒤 다시 찍어 주세요.')
+  ).toBeInTheDocument();
+  expect(screen.getByLabelText('코튼셔츠 수량')).toHaveTextContent('1');
 });
 
 it('상품을 고른 직후 수정이 열려 있어도 그 줄을 지우면 수정이 닫히고 다른 작업이 풀린다', async () => {
