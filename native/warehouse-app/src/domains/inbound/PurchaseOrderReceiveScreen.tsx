@@ -23,6 +23,12 @@ import {
   useReceivePurchaseOrder,
 } from './mutations';
 import { usualShelfNotice } from './RememberUsualToggle';
+import {
+  playInboundSaved,
+  playInboundSaveFailed,
+  primeInboundSaveSound,
+} from './saveFeedback';
+import { SaveToast, useSaveToast } from './SaveToast';
 import { PutawaySheet, type LocationRef } from './PutawaySheet';
 import { useWaitingOrders } from './waitingOrders';
 import { ReadyShipmentsSection } from './ReadyShipmentsSection';
@@ -54,11 +60,18 @@ function createReadinessGate() {
   return { promise, release, open: false };
 }
 
-function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
+function PurchaseOrderReceiveScreenContent({
+  poId,
+  station = false,
+}: {
+  poId: string;
+  station?: boolean;
+}) {
   const { warehouseId, isSet } = useWarehouse();
   const arrivals = useExpectedArrivals(warehouseId);
   const lookup = useSkuByBarcode();
   const receive = useReceivePurchaseOrder();
+  const toast = useSaveToast();
   const cancel = useCancelPurchaseOrderReceipt();
 
   const initial = useRef<PoReceiveDraft>({
@@ -242,9 +255,14 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
       scanQueue.blocked()
     )
       return;
+
+    // 안드로이드 WebView 는 사용자 제스처 안에서 소리를 열어 둬야 한다.
+    primeInboundSaveSound();
+
     submitLock.current = true;
     setSubmitting(true);
     let requestSaved = false;
+    let received = false;
     try {
       const current = normalizePoReceiveDraft(await draft.read());
       if (quantity.isPending() || scanQueue.blocked()) return;
@@ -274,6 +292,11 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
         ],
         idempotencyKey: submission.key,
       });
+      received = true;
+
+      playInboundSaved();
+      toast.show('입고를 저장했어요');
+
       // The runtime reconciles the original key. The runtime-free embedding uses the mutation result.
       if (!runtime) {
         await draft.update((prev) => ({
@@ -293,6 +316,11 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
         }));
       }
     } catch {
+      // 요청이 성공한 뒤 초안 정리가 실패한 경우는 저장 실패가 아니다.
+      if (!received) {
+        playInboundSaveFailed();
+      }
+
       if (!requestSaved) setSubmissionSaveFailed(true);
       // The mutation and draft hooks expose recoverable failures in the open sheet.
     } finally {
@@ -525,6 +553,7 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
 
   return (
     <div className="space-y-4" aria-busy={!draft.ready || !reconciled}>
+      <SaveToast message={toast.message} station={station} />
       <ScreenHeader
         title={purchaseOrder?.supplier?.name ?? '발주 입고'}
         backTo="/inbound"

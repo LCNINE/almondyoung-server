@@ -3,7 +3,7 @@ import {
   TestWorkProvider,
   receiptFixture,
 } from './__fixtures__/workRuntime';
-import { describe, it, expect } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -17,17 +17,33 @@ import {
   Outlet,
 } from '@tanstack/react-router';
 import { SessionProvider } from '../../app/session-context';
+import { ApiClientProvider } from '../../core/data/ApiClientProvider';
 import { WarehouseProvider } from '../../app/warehouse-context';
 import { createMemoryPrefs } from '../../core/data/devicePrefs';
 import {
   ScanProvider,
   useScanBus,
 } from '../../core/hardware/scan/ScanProvider';
-import { ConflictError, type ApiClient } from '../../core/data/httpClient';
+import {
+  ApiError,
+  ConflictError,
+  type ApiClient,
+} from '../../core/data/httpClient';
 import type { Session } from '../../core/auth/session';
 import type { ExpectedArrivalsResult, PurchaseOrderArrival } from './types';
 import { PurchaseOrderReceiveScreen } from './PurchaseOrderReceiveScreen';
 import { scanHid } from '../../core/hardware/scan/__fixtures__/hid';
+import {
+  playInboundSaved,
+  playInboundSaveFailed,
+  primeInboundSaveSound,
+} from './saveFeedback';
+
+vi.mock('./saveFeedback', () => ({
+  playInboundSaved: vi.fn(),
+  playInboundSaveFailed: vi.fn(),
+  primeInboundSaveSound: vi.fn(),
+}));
 
 it('발주입고 후 숫자패드 → HID 위치 스캔 → 명시적 적치로 이어진다', async () => {
   const calls: Call[] = [];
@@ -146,6 +162,12 @@ interface RenderOpts {
   silentCommit?: boolean;
   /** true 면 발주 수령 취소가 항상 400 으로 실패한다(응답 유실 흉내). */
   failCancel?: boolean;
+  /** 서버가 발주 수령을 확정적으로 거절한다(403). */
+  rejectReceive?: boolean;
+  /** 런타임 없이(ApiClientProvider 만) 화면을 그린다. */
+  noRuntime?: boolean;
+  /** 수령은 성공하지만 응답 lines 가 비어 있다. */
+  emptyReceiveLines?: boolean;
   /** 서버가 발주 수령 409 문구를 보낸다. */
   conflictReceive?: boolean;
   /** GET /waiting-orders 응답 — 없으면 기다리는 주문 없음 */
@@ -219,8 +241,11 @@ async function renderScreen(calls: Call[], opts: RenderOpts = {}) {
         if (opts.conflictReceive) {
           throw new ConflictError('이미 전량 입고된 품목입니다: s1');
         }
+        if (opts.rejectReceive) throw new ApiError('권한이 없어요', 403);
         if (opts.failReceive)
           throw new Error('POST /purchase-orders/po-1/receipts → 400');
+        if (opts.emptyReceiveLines)
+          return { receiptId: 'r-1', poId: 'po-1', lines: [] };
         const qty = (o.body as { lines: { quantity: number }[] }).lines[0]
           .quantity;
         current = { ...current, quantity: qty, pendingQty: qty };
@@ -314,11 +339,19 @@ async function renderScreen(calls: Call[], opts: RenderOpts = {}) {
   const wrapper = ({ children }: { children: ReactNode }) => (
     <SessionProvider session={session}>
       <QueryClientProvider client={qc}>
-        <TestWorkProvider runtime={runtime}>
-          <WarehouseProvider prefs={prefs}>
-            <ScanProvider>{children}</ScanProvider>
-          </WarehouseProvider>
-        </TestWorkProvider>
+        {opts.noRuntime ? (
+          <ApiClientProvider client={client}>
+            <WarehouseProvider prefs={prefs}>
+              <ScanProvider>{children}</ScanProvider>
+            </WarehouseProvider>
+          </ApiClientProvider>
+        ) : (
+          <TestWorkProvider runtime={runtime}>
+            <WarehouseProvider prefs={prefs}>
+              <ScanProvider>{children}</ScanProvider>
+            </WarehouseProvider>
+          </TestWorkProvider>
+        )}
       </QueryClientProvider>
     </SessionProvider>
   );
@@ -343,6 +376,63 @@ const READY_BOX = {
 };
 
 describe('PurchaseOrderReceiveScreen', () => {
+  beforeEach(() => {
+    vi.mocked(playInboundSaved).mockClear();
+    vi.mocked(playInboundSaveFailed).mockClear();
+    vi.mocked(primeInboundSaveSound).mockClear();
+  });
+
+  it('입고에 성공하면 토스트를 보이고 완료음을 한 번 낸다', async () => {
+    const user = userEvent.setup();
+    await renderScreen([]);
+    await screen.findByText('코튼셔츠');
+
+    await user.click(screen.getByRole('button', { name: '스캔:8801' }));
+    await screen.findByRole('dialog', { name: '입고 수량' });
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '입고' })).toBeEnabled()
+    );
+    await user.click(screen.getByRole('button', { name: '입고' }));
+
+    expect(await screen.findByText('입고를 저장했어요')).toBeInTheDocument();
+    expect(playInboundSaved).toHaveBeenCalledTimes(1);
+    expect(playInboundSaveFailed).not.toHaveBeenCalled();
+  });
+
+  it('요청이 성공한 뒤 초안 정리가 실패해도 완료음만 내고 오류음은 내지 않는다', async () => {
+    const user = userEvent.setup();
+    await renderScreen([], { noRuntime: true, emptyReceiveLines: true });
+    await screen.findByText('코튼셔츠');
+
+    await user.click(screen.getByRole('button', { name: '스캔:8801' }));
+    await screen.findByRole('dialog', { name: '입고 수량' });
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '입고' })).toBeEnabled()
+    );
+    await user.click(screen.getByRole('button', { name: '입고' }));
+
+    await waitFor(() => expect(playInboundSaved).toHaveBeenCalledTimes(1));
+    expect(playInboundSaveFailed).not.toHaveBeenCalled();
+    expect(primeInboundSaveSound).toHaveBeenCalledTimes(1);
+  });
+
+  it('입고가 거절되면 오류음을 내고 완료음과 토스트는 없다', async () => {
+    const user = userEvent.setup();
+    await renderScreen([], { rejectReceive: true });
+    await screen.findByText('코튼셔츠');
+
+    await user.click(screen.getByRole('button', { name: '스캔:8801' }));
+    await screen.findByRole('dialog', { name: '입고 수량' });
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '입고' })).toBeEnabled()
+    );
+    await user.click(screen.getByRole('button', { name: '입고' }));
+
+    await waitFor(() => expect(playInboundSaveFailed).toHaveBeenCalledTimes(1));
+    expect(playInboundSaved).not.toHaveBeenCalled();
+    expect(screen.queryByText('입고를 저장했어요')).not.toBeInTheDocument();
+  });
+
   it('미발송 주문 칸을 그 화면의 입고 줄로 보인다', async () => {
     const user = userEvent.setup();
     const calls: Call[] = [];
