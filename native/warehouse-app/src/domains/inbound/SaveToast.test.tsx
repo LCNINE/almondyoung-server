@@ -11,6 +11,14 @@ describe('SaveToast', () => {
     expect(screen.queryByRole('status')).toBeNull();
   });
 
+  it('스테이션에서는 탭 헤더를 가리지 않게 헤더 아래에 뜬다', () => {
+    const { rerender } = render(<SaveToast message="입고를 저장했어요" />);
+    expect(screen.getByRole('status').className).toContain('top-4');
+
+    rerender(<SaveToast message="입고를 저장했어요" station />);
+    expect(screen.getByRole('status').className).toContain('top-16');
+  });
+
   it('보였다가 2초 뒤 사라진다', () => {
     const { result } = renderHook(() => useSaveToast());
     act(() => result.current.show('입고를 저장했어요'));

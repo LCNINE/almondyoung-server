@@ -60,7 +60,13 @@ function createReadinessGate() {
   return { promise, release, open: false };
 }
 
-function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
+function PurchaseOrderReceiveScreenContent({
+  poId,
+  station = false,
+}: {
+  poId: string;
+  station?: boolean;
+}) {
   const { warehouseId, isSet } = useWarehouse();
   const arrivals = useExpectedArrivals(warehouseId);
   const lookup = useSkuByBarcode();
@@ -547,7 +553,7 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
 
   return (
     <div className="space-y-4" aria-busy={!draft.ready || !reconciled}>
-      <SaveToast message={toast.message} />
+      <SaveToast message={toast.message} station={station} />
       <ScreenHeader
         title={purchaseOrder?.supplier?.name ?? '발주 입고'}
         backTo="/inbound"

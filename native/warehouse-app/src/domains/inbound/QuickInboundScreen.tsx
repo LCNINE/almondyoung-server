@@ -65,7 +65,7 @@ interface CartRow {
   quantity: number;
 }
 
-function QuickInboundScreenContent() {
+function QuickInboundScreenContent({ station }: { station: boolean }) {
   const { warehouseId, isSet } = useWarehouse();
   const lookup = useSkuByBarcode();
   const api = useApiClient();
@@ -436,7 +436,7 @@ function QuickInboundScreenContent() {
 
   return (
     <div className="space-y-4" aria-busy={!draft.ready || !reconciled}>
-      <SaveToast message={toast.message} />
+      <SaveToast message={toast.message} station={station} />
       <ScreenHeader title="간편입고" backTo="/inbound" />
 
       {!stagedMode && !prepFailure && (!draft.ready || !reconciled) ? (
@@ -883,10 +883,10 @@ function QuickInboundScreenContent() {
   );
 }
 
-export function QuickInboundScreen() {
+export function QuickInboundScreen({ station = false }: { station?: boolean }) {
   return (
     <WorkArea kind="inbound">
-      <QuickInboundScreenContent />
+      <QuickInboundScreenContent station={station} />
     </WorkArea>
   );
 }
