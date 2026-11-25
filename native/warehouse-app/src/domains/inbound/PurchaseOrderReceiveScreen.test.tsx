@@ -394,7 +394,7 @@ describe('PurchaseOrderReceiveScreen', () => {
     );
     await user.click(screen.getByRole('button', { name: '입고' }));
 
-    expect(await screen.findByText('입고를 저장했어요')).toBeInTheDocument();
+    expect(await screen.findByText('입고 완료')).toBeInTheDocument();
     expect(playInboundSaved).toHaveBeenCalledTimes(1);
     expect(playInboundSaveFailed).not.toHaveBeenCalled();
   });
@@ -430,7 +430,7 @@ describe('PurchaseOrderReceiveScreen', () => {
 
     await waitFor(() => expect(playInboundSaveFailed).toHaveBeenCalledTimes(1));
     expect(playInboundSaved).not.toHaveBeenCalled();
-    expect(screen.queryByText('입고를 저장했어요')).not.toBeInTheDocument();
+    expect(screen.queryByText('입고 완료')).not.toBeInTheDocument();
   });
 
   it('미발송 주문 칸을 그 화면의 입고 줄로 보인다', async () => {

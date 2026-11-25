@@ -1788,7 +1788,7 @@ it('입고내역의 실제 취소 실행 후 이전 PO 초안을 재개하면 �
     expect(screen.getByRole('button', { name: '전량 취소' })).toBeEnabled()
   );
   await userEvent.click(screen.getByRole('button', { name: '전량 취소' }));
-  await screen.findByText(/입고를 취소했어요\.$/);
+  await screen.findByText((_, el) => el?.getAttribute('role') === 'status' && el.textContent === '입고 취소아몬드 셔츠 3개');
   history.unmount();
   f.reopen();
   expect(await screen.findByText('취소됨')).toBeInTheDocument();

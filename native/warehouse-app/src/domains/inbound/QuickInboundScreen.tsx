@@ -37,7 +37,7 @@ import {
   playInboundSaveFailed,
   primeInboundSaveSound,
 } from './saveFeedback';
-import { SaveToast, useSaveToast } from './SaveToast';
+import { inboundToastDetail, SaveToast, useSaveToast } from './SaveToast';
 import { PutawaySheet, type LocationRef } from './PutawaySheet';
 import { useWaitingOrders } from './waitingOrders';
 import {
@@ -65,7 +65,7 @@ interface CartRow {
   quantity: number;
 }
 
-function QuickInboundScreenContent({ station }: { station: boolean }) {
+function QuickInboundScreenContent() {
   const { warehouseId, isSet } = useWarehouse();
   const lookup = useSkuByBarcode();
   const api = useApiClient();
@@ -436,7 +436,7 @@ function QuickInboundScreenContent({ station }: { station: boolean }) {
 
   return (
     <div className="space-y-4" aria-busy={!draft.ready || !reconciled}>
-      <SaveToast message={toast.message} station={station} />
+      <SaveToast toast={toast.toast} />
       <ScreenHeader title="간편입고" backTo="/inbound" />
 
       {!stagedMode && !prepFailure && (!draft.ready || !reconciled) ? (
@@ -824,7 +824,12 @@ function QuickInboundScreenContent({ station }: { station: boolean }) {
                   onError: () => playInboundSaveFailed(),
                   onSuccess: async (result) => {
                     playInboundSaved();
-                    toast.show('입고를 저장했어요');
+                    toast.show({
+                      kind: 'saved',
+                      detail: inboundToastDetail(
+                        cart.map((r) => ({ name: r.skuName, quantity: r.quantity }))
+                      ),
+                    });
 
                     // 응답 lines[] 를 카트 행과 skuId 로 맞춰 이름을 되살린다.
                     await draft.update((prev) => ({
@@ -857,9 +862,10 @@ function QuickInboundScreenContent({ station }: { station: boolean }) {
           target={cancelFor}
           warehouseId={warehouseId}
           onClose={() => setCancelFor(null)}
-          onFinished={(message) => {
+          onFinished={(outcome) => {
             setCancelFor(null);
-            setNotice(message);
+            if (outcome.ok) toast.show({ kind: 'cancelled', detail: outcome.detail });
+            else setNotice(outcome.notice);
             void reconcileRef.current?.().catch(() => {});
           }}
         />
@@ -883,10 +889,10 @@ function QuickInboundScreenContent({ station }: { station: boolean }) {
   );
 }
 
-export function QuickInboundScreen({ station = false }: { station?: boolean }) {
+export function QuickInboundScreen() {
   return (
     <WorkArea kind="inbound">
-      <QuickInboundScreenContent station={station} />
+      <QuickInboundScreenContent />
     </WorkArea>
   );
 }

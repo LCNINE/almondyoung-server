@@ -60,13 +60,7 @@ function createReadinessGate() {
   return { promise, release, open: false };
 }
 
-function PurchaseOrderReceiveScreenContent({
-  poId,
-  station = false,
-}: {
-  poId: string;
-  station?: boolean;
-}) {
+function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
   const { warehouseId, isSet } = useWarehouse();
   const arrivals = useExpectedArrivals(warehouseId);
   const lookup = useSkuByBarcode();
@@ -295,7 +289,10 @@ function PurchaseOrderReceiveScreenContent({
       received = true;
 
       playInboundSaved();
-      toast.show('입고를 저장했어요');
+      toast.show({
+        kind: 'saved',
+        detail: `${submission.target.skuName} ${submission.quantity}개`,
+      });
 
       // The runtime reconciles the original key. The runtime-free embedding uses the mutation result.
       if (!runtime) {
@@ -553,7 +550,7 @@ function PurchaseOrderReceiveScreenContent({
 
   return (
     <div className="space-y-4" aria-busy={!draft.ready || !reconciled}>
-      <SaveToast message={toast.message} station={station} />
+      <SaveToast toast={toast.toast} />
       <ScreenHeader
         title={purchaseOrder?.supplier?.name ?? '발주 입고'}
         backTo="/inbound"
@@ -863,6 +860,10 @@ function PurchaseOrderReceiveScreenContent({
             await cancel.mutateAsync({
               receiptLineId: latest.lineId,
               idempotencyKey: cancelKeyFor(latest.lineId),
+            });
+            toast.show({
+              kind: 'cancelled',
+              detail: `${fresh.skuName} ${latest.quantity}개`,
             });
             await receipt.refresh();
           } catch (error) {
