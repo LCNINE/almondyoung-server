@@ -204,6 +204,7 @@ export class BusinessLicensesService {
     id: string,
   ): Promise<(BusinessLicenseWithUserName & { duplicateOf: DuplicateLicenseOwner | null }) | null> {
     const license = await this.getBusinessLicenseByBusinessLicenseId(id);
+
     if (!license) return license;
 
     return { ...license, duplicateOf: await this.findDuplicateOwner(license) };
@@ -212,6 +213,7 @@ export class BusinessLicensesService {
   private async findDuplicateOwner(license: schema.BusinessLicense): Promise<DuplicateLicenseOwner | null> {
     const autoReview = (license.metadata as BusinessMetadata | null)?.autoReview;
     const businessNumber = autoReview?.reading?.businessNumber;
+
     if (autoReview?.reason !== 'duplicate_number' || !businessNumber) return null;
 
     const [owner] = await this.dbService.db
@@ -249,7 +251,7 @@ export class BusinessLicensesService {
         })
         .from(schema.businessLicenses)
         .leftJoin(schema.users, eq(schema.businessLicenses.userId, schema.users.id))
-        .where(eq(schema.businessLicenses.id, id));
+        .where(and(eq(schema.businessLicenses.id, id), eq(schema.businessLicenses.tenantId, this.servedTenantId)));
 
       return query;
     } catch (error) {

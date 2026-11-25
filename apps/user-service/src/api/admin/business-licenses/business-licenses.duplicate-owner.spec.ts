@@ -1,13 +1,15 @@
+import { SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import { BusinessLicensesService } from './business-licenses.service';
 
 const verifiedAt = new Date('2026-11-01T00:00:00Z');
 
-function licenseRow(metadata: unknown) {
+function licenseRow(metadata: unknown, tenantId = 'tenant-a') {
   return {
     id: 'license-1',
     userId: 'user-1',
     userName: '신청자',
-    tenantId: 'tenant-a',
+    tenantId,
     businessNumber: null,
     status: 'under_review',
     metadata,
@@ -34,10 +36,21 @@ function duplicateMetadata(reason: string, businessNumber: string | null = '3822
   };
 }
 
-function makeService(row: unknown, owners: unknown[] = []) {
+function rendered(condition: SQL): { sql: string; params: unknown[] } {
+  return new PgDialect().sqlToQuery(condition);
+}
+
+function makeService(row: { id: string; tenantId: string } | undefined, owners: unknown[] = []) {
   const limit = jest.fn().mockResolvedValue(owners);
   const orderBy = jest.fn().mockReturnValue({ limit });
-  const where = jest.fn().mockReturnValueOnce(Promise.resolve([row])).mockReturnValue({ orderBy });
+  const baseWhere = jest.fn((condition: SQL) => {
+    const { sql: text, params } = rendered(condition);
+    const tenantMatches = !text.includes('"tenant_id"') || params.includes(row?.tenantId);
+    const visible = row && params.includes(row.id) && tenantMatches;
+
+    return Promise.resolve(visible ? [row] : []);
+  });
+  const where = jest.fn().mockImplementationOnce(baseWhere).mockReturnValue({ orderBy });
   const select = jest.fn().mockReturnValue({ from: () => ({ leftJoin: () => ({ where }) }) });
 
   const service = new BusinessLicensesService(
@@ -47,7 +60,7 @@ function makeService(row: unknown, owners: unknown[] = []) {
     'tenant-a',
   );
 
-  return { service, select, limit };
+  return { service, select, limit, baseWhere };
 }
 
 describe('사업자 인증 상세의 같은 번호 계정', () => {
@@ -102,6 +115,26 @@ describe('사업자 인증 상세의 같은 번호 계정', () => {
     const { service, select } = makeService(undefined);
 
     const result = await service.getBusinessLicenseDetail('missing');
+
+    expect(result).toBeUndefined();
+    expect(select).toHaveBeenCalledTimes(1);
+  });
+
+  it('상세는 섬기는 테넌트의 행만 찾는다', async () => {
+    const { service, baseWhere } = makeService(licenseRow(duplicateMetadata('duplicate_number')));
+
+    await service.getBusinessLicenseDetail('license-1');
+
+    const { sql: text, params } = rendered(baseWhere.mock.calls[0][0]);
+
+    expect(text).toContain('"tenant_id" = $');
+    expect(params).toEqual(expect.arrayContaining(['license-1', 'tenant-a']));
+  });
+
+  it('다른 테넌트의 행은 돌려주지 않고 같은 번호 계정도 찾지 않는다', async () => {
+    const { service, select } = makeService(licenseRow(duplicateMetadata('duplicate_number'), 'tenant-b'));
+
+    const result = await service.getBusinessLicenseDetail('license-1');
 
     expect(result).toBeUndefined();
     expect(select).toHaveBeenCalledTimes(1);
