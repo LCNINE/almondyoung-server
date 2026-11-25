@@ -27,9 +27,9 @@ const EXPECTED_OPEN: string[] = [
 const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predicate: string; note?: string }> = {
   'analytics GET /best-product': {
     verdict: 'N/A',
-    evidence: 'apps/analytics/src/features/analytics-api/analytics.controller.ts:48',
-    predicate: '',
-    note: "무인증(컨트롤러에 @UseGuards 없음). ProductRankingQuery.getProductRanking(product-ranking.query.ts:21-58)은 최근 90일 전체 주문을 masterId 로 group by 해 주문수/판매수량을 합산한 플랫폼 전역 집계 — 특정 고객 식별자로 필터하지 않으므로 '남의 데이터'를 특정 식별자로 찾아가는 IDOR 은 성립하지 않는다. 같은 컨트롤러의 /frequently-purchased(개인 구매내역)에는 JwtAuthGuard 를 명시적으로 붙였는데(controller.ts:74) /best-product 에는 안 붙어있어, '베스트상품' 랭킹은 공개 노출을 의도하고 개인 구매내역만 보호한 것으로 보인다(스토어의 '인기상품' 위젯류와 유사). 다만 주문수·판매수량 자체는 매출과 직결된 지표라 단순 상품명/가격 카탈로그보다 민감도가 높음 — IDOR 은 아니지만 무인증 노출이 의도인지 재확인이 필요한 정보노출 소지로 observations 에 별도 기록.",
+    evidence: 'apps/analytics/src/features/analytics-api/analytics.controller.ts:55',
+    predicate: '@UseGuards(JwtAuthGuard, PermissionGuard)',
+    note: "플랫폼 전역 집계 — ProductRankingQuery.getProductRanking 은 최근 90일 전체 주문을 masterId 로 group by 해 주문수/판매수량을 합산하고 특정 고객 식별자로 필터하지 않으므로 IDOR 대상 아님. 원래 무인증이었으나 매출과 직결된 지표라 #721 에서 @RequirePermission('analytics.report.read') + JwtAuthGuard 로 닫았다(같은 컨트롤러의 /summary 와 같은 권한). 부르는 화면이 없었다.",
   },
   'analytics GET /frequently-purchased': {
     verdict: 'SAFE',
