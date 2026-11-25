@@ -17,7 +17,13 @@ export class BusinessLicensesController {
   constructor(private readonly businessLicensesService: BusinessLicensesService) {}
 
   @PiiResponse({
-    fields: { representativeName: 'name', fileUrl: 'redact', 'metadata.ntsValidate.requested': 'redact' },
+    fields: {
+      representativeName: 'name',
+      fileUrl: 'redact',
+      'metadata.ntsValidate.requested': 'redact',
+      'metadata.autoReview.reading.representativeName': 'name',
+      'metadata.autoReview.reading.startDate': 'redact',
+    },
     subjects: [{ param: 'userId', type: 'user' }],
     reveal: true,
   })
@@ -71,6 +77,8 @@ export class BusinessLicensesController {
       'data[].representativeName': 'name',
       'data[].fileUrl': 'redact',
       'data[].metadata.ntsValidate.requested': 'redact',
+      'data[].metadata.autoReview.reading.representativeName': 'name',
+      'data[].metadata.autoReview.reading.startDate': 'redact',
     },
     subjects: [{ path: 'data[].userId', type: 'user' }],
   })
@@ -89,8 +97,20 @@ export class BusinessLicensesController {
 
   // 사업자 등록 정보 상세 조회 기능
   @PiiResponse({
-    fields: { userName: 'name', representativeName: 'name', fileUrl: 'redact', 'metadata.ntsValidate.requested': 'redact' },
-    subjects: [{ path: 'userId', type: 'user' }],
+    fields: {
+      userName: 'name',
+      representativeName: 'name',
+      fileUrl: 'redact',
+      'metadata.ntsValidate.requested': 'redact',
+      'metadata.autoReview.reading.representativeName': 'name',
+      'metadata.autoReview.reading.startDate': 'redact',
+      'duplicateOf.userName': 'name',
+      'duplicateOf.email': 'email',
+    },
+    subjects: [
+      { path: 'userId', type: 'user' },
+      { path: 'duplicateOf.userId', type: 'user' },
+    ],
     reveal: true,
   })
   @RequirePermission('customer.profile.read')
@@ -102,7 +122,7 @@ export class BusinessLicensesController {
   @ApiParam({ name: 'id', description: '사업자 등록 ID' })
   @ApiResponse({ status: 200, description: '사업자 등록 상세 조회 성공' })
   async getBusinessLicenseById(@Param('id') id: string) {
-    return this.businessLicensesService.getBusinessLicenseByBusinessLicenseId(id);
+    return this.businessLicensesService.getBusinessLicenseDetail(id);
   }
 
   @RequirePermission('customer.business_verification.review')
