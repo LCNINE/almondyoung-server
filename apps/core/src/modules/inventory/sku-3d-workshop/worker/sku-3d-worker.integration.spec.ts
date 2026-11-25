@@ -115,6 +115,50 @@ describeWithPostgres('SKU 3D worker API (PostgreSQL)', () => {
     expect(await manager.claim(worker)).toBeNull();
   });
 
+  it('concurrent claims by one worker stay within max concurrency', async () => {
+    await queuedJob();
+    await queuedJob();
+    await queuedJob();
+
+    const claims = await Promise.all([1, 2, 3].map(() => manager.claim(worker)));
+
+    expect(claims.filter((c) => c !== null)).toHaveLength(1);
+  });
+
+  it('inputs snapshot does not follow later dimension changes', async () => {
+    const { job, me, workshop } = await queuedJob();
+    const claimed = await manager.claim(worker);
+    const first = await manager.inputs(worker, job.id, claimed!.leaseToken);
+
+    await workshops.confirmDimensions(workshop.id, me, 'body');
+
+    const again = await manager.inputs(worker, job.id, claimed!.leaseToken);
+    const glb = await uploadGlb(job.id, claimed!.leaseToken);
+    const { revisionId } = await manager.complete(worker, job.id, claimed!.leaseToken, {
+      glbFileId: glb.fileId,
+      renderFileIds: [],
+      review,
+      provenance: {},
+    });
+    const [revision] = await t.db
+      .select()
+      .from(sku3dWorkshopRevisions)
+      .where(eq(sku3dWorkshopRevisions.id, revisionId));
+
+    expect(first.sku.dimensionBasis).toBe('package');
+    expect(again.sku.dimensionBasis).toBe('package');
+    expect(revision.provenance).toMatchObject({ inputs: { sku: { dimensionBasis: 'package' } } });
+  });
+
+  it('download is limited to the job photos and base revision files', async () => {
+    const { job } = await queuedJob();
+    const claimed = await manager.claim(worker);
+
+    await expect(manager.file(worker, job.id, claimed!.leaseToken, randomUUID())).rejects.toThrow(
+      '이 작업의 파일이 아니에요',
+    );
+  });
+
   it('reclaims expired lease and fences old token', async () => {
     const { job } = await queuedJob();
     const first = await manager.claim(worker);
@@ -241,7 +285,7 @@ describeWithPostgres('SKU 3D worker API (PostgreSQL)', () => {
     expect(revision).toMatchObject({ number: 1, glbSha256: glb.sha256, glbBytes: 1000 });
     expect(revision.provenance).toMatchObject({
       blender: '5.2.5',
-      dimensions: { packageWidthMm: 120, basis: 'package' },
+      inputs: { sku: { packageWidthMm: 120, dimensionBasis: 'package' } },
     });
     expect(jobRow.status).toBe('succeeded');
     expect(events.find((e) => e.type === 'assistant_message')?.body).toContain('더 둥글게 다듬을까요?');

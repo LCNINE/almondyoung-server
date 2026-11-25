@@ -29,7 +29,7 @@ export type AuthenticatedWorker = { id: string; maxConcurrency: number };
 
 export type ClaimedJob = Pick<WorkshopJob, 'id' | 'kind' | 'workshopId' | 'attempts'> & { leaseToken: string };
 
-export type JobInputs = {
+export type JobInputSnapshot = {
   sku: {
     code: string;
     name: string;
@@ -41,9 +41,10 @@ export type JobInputs = {
   };
   photos: { fileId: string; sortOrder: number }[];
   request: string;
-  sessionId: string | null;
-  iteration: number;
+  base: { revisionId: string; number: number; files: Record<string, string> } | null;
 };
+
+export type JobInputs = JobInputSnapshot & { sessionId: string | null; iteration: number };
 
 export type CompleteJobInput = {
   glbFileId: string;
@@ -85,6 +86,8 @@ export class Sku3dWorkerManager {
   async claim(worker: AuthenticatedWorker, tx?: DbTx): Promise<ClaimedJob | null> {
     return this.db.run(async (trx) => {
       await this.closeExhausted(trx);
+      // 같은 워커의 claim 을 줄 세운다 — 둘이 동시에 busy=0 을 읽고 한도를 넘지 않게
+      await trx.select({ id: sku3dWorkers.id }).from(sku3dWorkers).where(eq(sku3dWorkers.id, worker.id)).for('update');
 
       const [busy] = await trx
         .select({ n: count() })
@@ -200,53 +203,27 @@ export class Sku3dWorkerManager {
   async inputs(worker: AuthenticatedWorker, jobId: string, leaseToken: string, tx?: DbTx): Promise<JobInputs> {
     return this.db.run(async (trx) => {
       const job = await this.leased(trx, worker, jobId, leaseToken);
-      const [row] = await trx
-        .select({
-          code: skus.code,
-          name: skus.name,
-          packageWidthMm: skus.packageWidthMm,
-          packageLengthMm: skus.packageLengthMm,
-          packageHeightMm: skus.packageHeightMm,
-          packageWeightG: skus.packageWeightG,
-          dimensionBasis: sku3dWorkshops.dimensionBasis,
-          sessionId: sku3dWorkshops.codexSessionId,
-          skuId: skus.id,
-        })
-        .from(sku3dWorkshops)
-        .innerJoin(skus, eq(skus.id, sku3dWorkshops.skuId))
-        .where(eq(sku3dWorkshops.id, job.workshopId));
-      const photos = await this.photosOf(trx, row.skuId);
+      const [workshop] = await trx.select().from(sku3dWorkshops).where(eq(sku3dWorkshops.id, job.workshopId));
+      const snapshot = isSnapshot(job.inputSnapshot) ? job.inputSnapshot : await this.snapshot(trx, job, workshop);
       const [latest] = await trx
         .select({ n: max(sku3dWorkshopRevisions.number) })
         .from(sku3dWorkshopRevisions)
         .where(eq(sku3dWorkshopRevisions.workshopId, job.workshopId));
-      return {
-        sku: {
-          code: row.code,
-          name: row.name,
-          packageWidthMm: row.packageWidthMm,
-          packageLengthMm: row.packageLengthMm,
-          packageHeightMm: row.packageHeightMm,
-          packageWeightG: row.packageWeightG,
-          dimensionBasis: row.dimensionBasis,
-        },
-        photos,
-        request: job.request,
-        sessionId: row.sessionId,
-        iteration: (latest?.n ?? 0) + 1,
-      };
+
+      return { ...snapshot, sessionId: workshop.codexSessionId, iteration: (latest?.n ?? 0) + 1 };
     }, tx);
   }
 
-  // 워커는 그 작업 상품의 사진만 받는다
-  async photo(worker: AuthenticatedWorker, jobId: string, leaseToken: string, fileId: string) {
+  // 워커는 그 작업의 원본 사진과 기준 버전 파일만 받는다
+  async file(worker: AuthenticatedWorker, jobId: string, leaseToken: string, fileId: string) {
     const ownerId = await this.db.run(async (trx) => {
       const job = await this.leased(trx, worker, jobId, leaseToken);
       const [workshop] = await trx.select().from(sku3dWorkshops).where(eq(sku3dWorkshops.id, job.workshopId));
-      const photos = await this.photosOf(trx, workshop.skuId);
+      const snapshot = isSnapshot(job.inputSnapshot) ? job.inputSnapshot : await this.snapshot(trx, job, workshop);
+      const allowed = [...snapshot.photos.map((p) => p.fileId), ...Object.values(snapshot.base?.files ?? {})];
 
-      if (!photos.some((p) => p.fileId === fileId)) {
-        throw new NotFoundError('이 작업의 사진이 아니에요');
+      if (!allowed.includes(fileId)) {
+        throw new NotFoundError('이 작업의 파일이 아니에요');
       }
 
       return workshop.ownerId;
@@ -336,8 +313,7 @@ export class Sku3dWorkerManager {
         .from(sku3dWorkshops)
         .where(eq(sku3dWorkshops.id, job.workshopId))
         .for('update');
-      const [skuRow] = await trx.select().from(skus).where(eq(skus.id, workshop.skuId));
-      const photos = await this.photosOf(trx, workshop.skuId);
+      const snapshot = isSnapshot(job.inputSnapshot) ? job.inputSnapshot : await this.snapshot(trx, job, workshop);
       const [latest] = await trx
         .select({ n: max(sku3dWorkshopRevisions.number) })
         .from(sku3dWorkshopRevisions)
@@ -360,14 +336,7 @@ export class Sku3dWorkerManager {
           review: input.review,
           provenance: {
             ...input.provenance,
-            photoFileIds: photos.map((p) => p.fileId),
-            dimensions: {
-              packageWidthMm: skuRow.packageWidthMm,
-              packageLengthMm: skuRow.packageLengthMm,
-              packageHeightMm: skuRow.packageHeightMm,
-              packageWeightG: skuRow.packageWeightG,
-              basis: workshop.dimensionBasis,
-            },
+            inputs: snapshot,
             codexSessionId: workshop.codexSessionId,
             uploads: job.uploads,
           },
@@ -479,6 +448,35 @@ export class Sku3dWorkerManager {
     );
   }
 
+  private async snapshot(
+    trx: DbTx,
+    job: WorkshopJob,
+    workshop: typeof sku3dWorkshops.$inferSelect,
+  ): Promise<JobInputSnapshot> {
+    const [sku] = await trx.select().from(skus).where(eq(skus.id, workshop.skuId));
+    const [base] = job.baseRevisionId
+      ? await trx.select().from(sku3dWorkshopRevisions).where(eq(sku3dWorkshopRevisions.id, job.baseRevisionId))
+      : [];
+    const snapshot: JobInputSnapshot = {
+      sku: {
+        code: sku.code,
+        name: sku.name,
+        packageWidthMm: sku.packageWidthMm,
+        packageLengthMm: sku.packageLengthMm,
+        packageHeightMm: sku.packageHeightMm,
+        packageWeightG: sku.packageWeightG,
+        dimensionBasis: workshop.dimensionBasis,
+      },
+      photos: await this.photosOf(trx, workshop.skuId),
+      request: job.request,
+      base: base ? { revisionId: base.id, number: base.number, files: baseFilesOf(base) } : null,
+    };
+
+    await trx.update(sku3dWorkshopJobs).set({ inputSnapshot: snapshot }).where(eq(sku3dWorkshopJobs.id, job.id));
+
+    return snapshot;
+  }
+
   private async photosOf(trx: DbTx, skuId: string) {
     return trx
       .select({ fileId: skuReferencePhotos.fileId, sortOrder: skuReferencePhotos.sortOrder })
@@ -495,6 +493,30 @@ export async function lockWorkshop(trx: DbTx, workshopId: string): Promise<void>
     .from(sku3dWorkshops)
     .where(eq(sku3dWorkshops.id, workshopId))
     .for('update');
+}
+
+function isSnapshot(value: unknown): value is JobInputSnapshot {
+  return typeof value === 'object' && value !== null && 'sku' in value && 'photos' in value;
+}
+
+function baseFilesOf(revision: typeof sku3dWorkshopRevisions.$inferSelect): Record<string, string> {
+  const files: Record<string, string> = { 'model.glb': revision.glbFileId };
+
+  revision.files.renders.forEach((id, i) => {
+    files[`renders/${i}.png`] = id;
+  });
+
+  for (const [name, id] of [
+    ['build.py', revision.files.python],
+    ['model.blend', revision.files.blend],
+    ['plan.md', revision.files.plan],
+  ] as const) {
+    if (id) {
+      files[name] = id;
+    }
+  }
+
+  return files;
 }
 
 function assistantMessageOf(review: Sku3dRevisionReview): string {

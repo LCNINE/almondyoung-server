@@ -1,5 +1,5 @@
 {
-  "id": "c1a2545d-4870-428c-b5e0-d253b8a4ac8f",
+  "id": "8e576786-cdb9-4318-87d5-b3a3b9735f6b",
   "prevId": "a6bacd5c-5235-4ac6-b675-59abc228aaa4",
   "version": "7",
   "dialect": "postgresql",
@@ -19446,6 +19446,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'[]'::jsonb"
+        },
+        "input_snapshot": {
+          "name": "input_snapshot",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
         },
         "error": {
           "name": "error",

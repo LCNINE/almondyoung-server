@@ -10,14 +10,13 @@ import {
   Post,
   Query,
   StreamableFile,
+  Req,
   UnauthorizedException,
-  UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import type { FastifyRequest } from 'fastify';
 import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Public, ServiceKeyRoute } from '@app/authorization';
-import { BadRequestError } from '@app/shared';
 import {
   AddWorkerEventsDto,
   CompleteWorkerJobDto,
@@ -27,8 +26,7 @@ import {
 } from './sku-3d-worker.dto';
 import { Sku3dWorkerKeyInterceptor, type WorkerRequest } from './sku-3d-worker-key.interceptor';
 import { AuthenticatedWorker, Sku3dWorkerManager } from './sku-3d-worker.manager';
-
-const UPLOAD_MAX_BYTES = 50 * 1024 * 1024;
+import { readWorkerUpload } from './worker-upload.multipart';
 
 const Worker = createParamDecorator((_data: unknown, context: ExecutionContext): AuthenticatedWorker => {
   const worker = context.switchToHttp().getRequest<WorkerRequest>().sku3dWorker;
@@ -100,39 +98,31 @@ export class Sku3dWorkerController {
     return this.manager.inputs(worker, id, leaseToken);
   }
 
-  @Get('jobs/:id/photos/:fileId')
-  @ApiOperation({ summary: '그 작업 상품의 원본 사진 바이트' })
-  async photo(
+  @Get('jobs/:id/files/:fileId')
+  @ApiOperation({ summary: '그 작업의 원본 사진·기준 버전 파일 바이트' })
+  async download(
     @Worker() worker: AuthenticatedWorker,
     @Param('id', ParseUUIDPipe) id: string,
     @Param('fileId', ParseUUIDPipe) fileId: string,
     @Query('leaseToken', ParseUUIDPipe) leaseToken: string,
   ): Promise<StreamableFile> {
-    const photo = await this.manager.photo(worker, id, leaseToken, fileId);
+    const file = await this.manager.file(worker, id, leaseToken, fileId);
 
-    return new StreamableFile(photo.bytes, { type: photo.contentType });
+    return new StreamableFile(file.bytes, { type: file.contentType });
   }
 
   @Post('jobs/:id/files')
   @HttpCode(200)
   @ApiConsumes('multipart/form-data')
-  @ApiOperation({ summary: '산출물 업로드 — 작업실 주인 이름으로 비공개 저장소에 올린다' })
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: UPLOAD_MAX_BYTES } }))
-  upload(
+  @ApiOperation({ summary: '산출물 업로드(leaseToken 칸 + file) — 작업실 주인 이름으로 비공개 저장소에 올린다' })
+  async upload(
     @Worker() worker: AuthenticatedWorker,
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() body: LeaseDto,
-    @UploadedFile() file: Express.Multer.File | undefined,
+    @Req() request: FastifyRequest,
   ) {
-    if (!file) {
-      throw new BadRequestError('file 이 필요해요');
-    }
+    const { leaseToken, ...file } = await readWorkerUpload(request);
 
-    return this.manager.upload(worker, id, body.leaseToken, {
-      bytes: file.buffer,
-      name: file.originalname,
-      mimeType: file.mimetype,
-    });
+    return this.manager.upload(worker, id, leaseToken, file);
   }
 
   @Post('jobs/:id/complete')

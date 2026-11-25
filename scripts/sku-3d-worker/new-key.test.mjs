@@ -1,6 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { hashWorkerKey, insertSql, newWorkerKey, withKey } from './new-key.mjs';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { hashWorkerKey, insertSql, newWorkerKey } from './new-key.mjs';
 
 test('key is long and random', () => {
   const a = newWorkerKey();
@@ -9,10 +13,19 @@ test('key is long and random', () => {
   assert.notEqual(a, newWorkerKey());
 });
 
-test('withKey replaces an existing key line and keeps other settings', () => {
-  const out = withKey('SKU3D_SERVER_URL=https://x\nSKU3D_WORKER_KEY=old\n', 'new');
+test('cli writes the key only to a fresh owner-only file and prints only the hash', () => {
+  const keyFile = join(mkdtempSync(join(tmpdir(), 'sku3d-key-')), 'worker-key.env');
+  const out = execFileSync(process.execPath, [join(import.meta.dirname, 'new-key.mjs'), '--name', 'host-1', '--key-file', keyFile], {
+    encoding: 'utf8',
+  });
+  const key = readFileSync(keyFile, 'utf8').trim().replace('SKU3D_WORKER_KEY=', '');
 
-  assert.equal(out, 'SKU3D_SERVER_URL=https://x\nSKU3D_WORKER_KEY=new\n');
+  assert.ok(!out.includes(key));
+  assert.ok(out.includes(hashWorkerKey(key)));
+
+  if (process.platform !== 'win32') {
+    assert.equal(statSync(keyFile).mode & 0o777, 0o600);
+  }
 });
 
 test('insert sql carries only the hash', () => {

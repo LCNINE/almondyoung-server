@@ -1011,6 +1011,8 @@ export const sku3dWorkshopJobs = pgTable(
     workerId: uuid('worker_id'),
     // 이 작업으로 올라온 비공개 파일 — complete 는 여기 있는 id 만 받는다
     uploads: jsonb('uploads').$type<Sku3dJobUpload[]>().notNull().default([]),
+    // 워커가 처음 받은 입력 — 기록(provenance)은 완료 시점이 아니라 이 값으로 남긴다
+    inputSnapshot: jsonb('input_snapshot').$type<Record<string, unknown>>(),
     error: text('error'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     startedAt: timestamp('started_at', { withTimezone: true }),

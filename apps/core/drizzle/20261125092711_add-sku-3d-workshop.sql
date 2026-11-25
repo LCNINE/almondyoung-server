@@ -33,6 +33,7 @@ CREATE TABLE "sku_3d_workshop_jobs" (
 	"lease_until" timestamp with time zone,
 	"worker_id" uuid,
 	"uploads" jsonb DEFAULT '[]'::jsonb NOT NULL,
+	"input_snapshot" jsonb,
 	"error" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"started_at" timestamp with time zone,
