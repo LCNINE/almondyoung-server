@@ -52,8 +52,9 @@ export default function CallbackPage() {
     const handleCallback = async () => {
       const paymentIntentId = searchParams.get("payment_intent_id")
       const status = searchParams.get("status")
-      // URL에 mode가 없으면 sessionStorage fallback (returnUrl에 쿼리가 있을 때 wallet이 URL을 깨뜨리는 문제 대응)
-      const pendingMode = getPendingPaymentMode()
+      // URL에 mode가 없으면 sessionStorage fallback (returnUrl에 쿼리가 있을 때 wallet이 URL을 깨뜨리는 문제 대응).
+      // 같은 intent 로 저장한 값만 쓴다 — 이탈한 다른 결제의 잔재를 주우면 경로가 샌다(#827).
+      const pendingMode = getPendingPaymentMode(paymentIntentId)
       const mode = searchParams.get("mode") ?? pendingMode?.mode ?? null
 
       // 하위 호환: 기존 흐름의 cartId 쿼리가 있으면 우선 사용
