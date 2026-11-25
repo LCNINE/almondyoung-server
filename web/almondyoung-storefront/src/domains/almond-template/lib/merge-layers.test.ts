@@ -13,6 +13,8 @@ import { rememberPreview } from "./image-previews"
 import {
   mergeBounds,
   mergeDownReason,
+  groupMergedLayers,
+  isVectorMerge,
   mergeMaxPx,
   rasterMergedLayer,
   replaceMergedLayers,
@@ -250,4 +252,42 @@ it("저장 용량을 넘는 결과는 원본을 대체하지 않는다", async (
     rasterMergedLayer(newDesign("card"), layer("a"), layer("b"))
   ).rejects.toThrow("4MB")
   expect(rememberPreview).not.toHaveBeenCalled()
+})
+
+describe("도형끼리 병합", () => {
+  it("사진이 섞이지 않았을 때만 그룹으로 묶는다", () => {
+    expect(isVectorMerge(layer("a"), layer("b", { type: "path" }))).toBe(true)
+    expect(isVectorMerge(layer("a"), layer("b", { type: "image" }))).toBe(false)
+    expect(isVectorMerge(layer("a", { image: "data:x" }), layer("b"))).toBe(
+      false
+    )
+  })
+
+  it("아래 레이어의 그룹을 이어 쓰고 레이어는 그대로 둔다", () => {
+    const layers = [
+      layer("a", { groupId: "g", groupName: "패턴" }),
+      layer("b", { groupId: "g", groupName: "패턴" }),
+      layer("c", { groupId: "other", groupName: "다른" }),
+      layer("d"),
+    ]
+    const result = groupMergedLayers(layers, "c")
+
+    expect(
+      result.map((item) => [item.id, item.groupId, item.groupName])
+    ).toEqual([
+      ["a", "g", "패턴"],
+      ["b", "g", "패턴"],
+      ["c", "g", "패턴"],
+      ["d", undefined, undefined],
+    ])
+  })
+
+  it("둘 다 그룹이 없으면 새 그룹을 만든다", () => {
+    const [a, b] = groupMergedLayers([layer("a"), layer("b")], "b")
+
+    expect(a.groupId).toBeTruthy()
+    expect(b.groupId).toBe(a.groupId)
+    expect(a.groupName).toBe("그룹 1")
+    expect(() => groupMergedLayers([layer("a")], "a")).toThrow()
+  })
 })

@@ -167,6 +167,33 @@ export function replaceMergedLayers(
   return [...layers.slice(0, index - 1), merged, ...layers.slice(index + 1)]
 }
 
+// 사진이 없는 두 레이어는 그림으로 굽지 않고 그룹으로 묶는다. 화질과 편집이 그대로 남는다
+export function isVectorMerge(lower: Layer, upper: Layer) {
+  return [lower, upper].every((layer) => layer.type !== "image" && !layer.image)
+}
+
+export function groupMergedLayers(layers: Layer[], upperId: string) {
+  const index = layers.findIndex((layer) => layer.id === upperId)
+  const upper = layers[index]
+  const lower = layers[index - 1]
+
+  if (!upper || !lower) {
+    throw new Error("아래 레이어가 없습니다")
+  }
+
+  const owner = lower.groupId ? lower : upper.groupId ? upper : undefined
+  const groupId = owner?.groupId ?? crypto.randomUUID()
+  const groupName =
+    owner?.groupName ??
+    `그룹 ${new Set(layers.map((layer) => layer.groupId).filter(Boolean)).size + 1}`
+
+  return layers.map((layer) =>
+    layer === lower || layer === upper
+      ? { ...layer, groupId, groupName }
+      : layer
+  )
+}
+
 export async function rasterMergedLayer(
   design: Design,
   lower: Layer,
