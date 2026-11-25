@@ -12,6 +12,7 @@ import {
   AUTO_REVIEW_ROW_ORDER,
   type AutoReviewRowKey,
   type AutoReviewRowResult,
+  businessTypeTarget,
   deriveAutoReviewRows,
   formatBusinessNumber,
 } from './ai-review-rows';
@@ -112,12 +113,20 @@ function formatDate(value: string | null): string {
   return value;
 }
 
-function ResultCell({ result }: { result: AutoReviewRowResult }) {
+function ResultCell({
+  result,
+  passLabel,
+}: {
+  result: AutoReviewRowResult;
+  passLabel: string;
+}) {
   if (result.kind === 'fail') {
     return <span className="font-semibold text-red-700">{result.label}</span>;
   }
 
-  if (result.kind === 'pass') return <span className="text-green-700">맞음</span>;
+  if (result.kind === 'pass') {
+    return <span className="text-green-700">{passLabel}</span>;
+  }
 
   return <span className="text-gray-400">-</span>;
 }
@@ -129,9 +138,9 @@ function DuplicateOwnerTarget({
 }) {
   if (!duplicateOf) return <>이미 등록된 계정을 찾지 못했습니다</>;
 
-  const verifiedAt = duplicateOf.verifiedAt
-    ? new Date(duplicateOf.verifiedAt).toLocaleDateString('sv-SE')
-    : '-';
+  const approval = duplicateOf.verifiedAt
+    ? `${new Date(duplicateOf.verifiedAt).toLocaleDateString('sv-SE')} 승인`
+    : '승인 기록 없음';
 
   return (
     <div className="space-y-0.5">
@@ -143,7 +152,7 @@ function DuplicateOwnerTarget({
         <ChevronRight className="w-4 h-4" />
       </Link>
       <p className="text-xs text-gray-500">
-        {verifiedAt} 승인 · 누르면 회원 상세로 이동
+        {approval} · 누르면 회원 상세로 이동
       </p>
     </div>
   );
@@ -199,7 +208,7 @@ export function AiReviewSection({
           target: isDuplicate ? (
             <DuplicateOwnerTarget duplicateOf={duplicateOf} />
           ) : (
-            '다른 계정의 등록번호'
+            '다른 계정과 중복 여부'
           ),
         },
         startDate: {
@@ -208,7 +217,7 @@ export function AiReviewSection({
         },
         businessType: {
           read: reading.isCorporation ? '법인' : '개인',
-          target: '개인',
+          target: businessTypeTarget(autoReview),
         },
         nts: {
           read: ntsReadValue(ntsValidate),
@@ -268,7 +277,12 @@ export function AiReviewSection({
                   <td className="px-3 py-2">{cells[key].read}</td>
                   <td className="px-3 py-2">{cells[key].target}</td>
                   <td className="px-3 py-2 whitespace-nowrap">
-                    <ResultCell result={results[key]} />
+                    <ResultCell
+                      result={results[key]}
+                      passLabel={
+                        key === 'businessNumber' ? '중복 없음' : '맞음'
+                      }
+                    />
                   </td>
                 </tr>
               ))}

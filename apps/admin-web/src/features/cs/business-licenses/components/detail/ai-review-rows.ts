@@ -116,6 +116,17 @@ export function deriveAutoReviewRows(
   return results;
 }
 
+export function businessTypeTarget(
+  autoReview: Pick<BusinessLicenseAutoReview, 'decision' | 'reason' | 'reading'>
+): string {
+  const corporateByNumberOnly =
+    autoReview.decision === 'manual' &&
+    autoReview.reason === 'corporation' &&
+    autoReview.reading?.isCorporation === false;
+
+  return corporateByNumberOnly ? '번호 기준 법인' : '개인';
+}
+
 export function formatBusinessNumber(value: string | null): string {
   if (!value) return '-';
 

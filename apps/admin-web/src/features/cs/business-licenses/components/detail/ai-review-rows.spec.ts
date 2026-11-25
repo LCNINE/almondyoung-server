@@ -1,4 +1,8 @@
-import { deriveAutoReviewRows, formatBusinessNumber } from './ai-review-rows';
+import {
+  businessTypeTarget,
+  deriveAutoReviewRows,
+  formatBusinessNumber,
+} from './ai-review-rows';
 
 const pass = { kind: 'pass' };
 const skip = { kind: 'skip' };
@@ -148,5 +152,44 @@ describe('formatBusinessNumber', () => {
   it('비었거나 자릿수가 다르면 받은 그대로 보여 준다', () => {
     expect(formatBusinessNumber(null)).toBe('-');
     expect(formatBusinessNumber('12345')).toBe('12345');
+  });
+});
+
+describe('businessTypeTarget', () => {
+  const reading = {
+    isBusinessRegistration: true,
+    businessNumber: '1238100000',
+    representativeName: '홍길동',
+    startDate: '20200101',
+    readable: true,
+  };
+
+  it('등록증엔 개인으로 읽혔는데 법인으로 멈췄으면 번호로 판단한 것이다', () => {
+    expect(
+      businessTypeTarget({
+        decision: 'manual',
+        reason: 'corporation',
+        reading: { ...reading, isCorporation: false },
+      })
+    ).toBe('번호 기준 법인');
+  });
+
+  it('등록증에서 법인으로 읽었으면 대조 대상은 개인이다', () => {
+    expect(
+      businessTypeTarget({
+        decision: 'manual',
+        reason: 'corporation',
+        reading: { ...reading, isCorporation: true },
+      })
+    ).toBe('개인');
+  });
+
+  it('법인 사유가 아니면 대조 대상은 개인이다', () => {
+    expect(
+      businessTypeTarget({
+        decision: 'approve',
+        reading: { ...reading, isCorporation: false },
+      })
+    ).toBe('개인');
   });
 });
