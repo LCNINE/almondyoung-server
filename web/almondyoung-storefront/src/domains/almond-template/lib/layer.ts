@@ -138,3 +138,12 @@ export function toggleLayerSelection(selection: string[], id: string) {
     ? selection.filter((item) => item !== id)
     : [...selection, id]
 }
+
+export function nextGroupName(layers: Layer[]) {
+  const used = new Set(layers.map((layer) => layer.groupName))
+  let n = 1
+
+  while (used.has(`그룹 ${n}`)) n++
+
+  return `그룹 ${n}`
+}

@@ -12,7 +12,7 @@ import {
 } from "./document"
 import { rasterize } from "./design-images"
 import { rememberPreview } from "./image-previews"
-import { makeLayer } from "./layer"
+import { makeLayer, nextGroupName } from "./layer"
 import { lineWidth } from "./line-shape"
 import type { PathPoint } from "./path-shape"
 
@@ -183,9 +183,7 @@ export function groupMergedLayers(layers: Layer[], upperId: string) {
 
   const owner = lower.groupId ? lower : upper.groupId ? upper : undefined
   const groupId = owner?.groupId ?? crypto.randomUUID()
-  const groupName =
-    owner?.groupName ??
-    `그룹 ${new Set(layers.map((layer) => layer.groupId).filter(Boolean)).size + 1}`
+  const groupName = owner?.groupName ?? nextGroupName(layers)
 
   return layers.map((layer) =>
     layer === lower || layer === upper

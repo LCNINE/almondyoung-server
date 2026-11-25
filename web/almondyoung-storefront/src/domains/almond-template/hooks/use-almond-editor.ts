@@ -14,7 +14,7 @@ import {
   type Design,
   type Layer,
 } from "../lib/document"
-import { mm } from "../lib/layer"
+import { mm, nextGroupName } from "../lib/layer"
 import { useCanvasInteraction } from "./use-canvas-interaction"
 import { useDesignHistory } from "./use-design-history"
 import { useEditorShortcuts } from "./use-editor-shortcuts"
@@ -265,7 +265,7 @@ export function useAlmondEditor({
   const mergeGroup = () => {
     if (group.length < 2) return
     const groupId = crypto.randomUUID()
-    const groupName = `그룹 ${new Set(layers.map((layer) => layer.groupId).filter(Boolean)).size + 1}`
+    const groupName = nextGroupName(layers)
     const top = Math.max(...group.map((layer) => layers.indexOf(layer)))
     const rest = layers.filter((layer) => !groupIds.includes(layer.id))
     const at = rest.filter((layer) => layers.indexOf(layer) < top).length

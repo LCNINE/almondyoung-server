@@ -3,6 +3,7 @@ import {
   imageBox,
   isAutoTextName,
   makeLayer,
+  nextGroupName,
   replaceEverywhere,
   swapColor,
   textLayerName,
@@ -136,5 +137,18 @@ describe("레이어 선택 토글", () => {
     expect(selected).toEqual(["top", "bottom"])
     expect(toggleLayerSelection(["top"], "top")).toEqual([])
     expect(toggleLayerSelection([], "bottom")).toEqual(["bottom"])
+  })
+})
+
+describe("새 그룹 이름", () => {
+  it("이미 쓰는 이름을 건너뛴다", () => {
+    const named = (groupName?: string) => ({
+      ...makeLayer("rect", newDesign("card")),
+      groupName,
+    })
+
+    expect(nextGroupName([])).toBe("그룹 1")
+    expect(nextGroupName([named("그룹 2"), named()])).toBe("그룹 1")
+    expect(nextGroupName([named("그룹 1"), named("그룹 2")])).toBe("그룹 3")
   })
 })
