@@ -251,7 +251,7 @@ it('keeps registration blocked after a scan cannot be saved, then recovers that 
   );
   await user.click(screen.getByRole('button', { name: '스캔:8801' }));
   await waitFor(() =>
-    expect(screen.getByRole('button', { name: '등록' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: /입고 등록$/ })).toBeEnabled()
   );
   diskFull = true;
   await user.click(screen.getByRole('button', { name: '스캔:8801' }));
@@ -259,7 +259,7 @@ it('keeps registration blocked after a scan cannot be saved, then recovers that 
   expect(screen.getByRole('alert')).toHaveTextContent(
     /화면을 유지.*저장 공간.*다시 찍지 마세요/
   );
-  expect(screen.getByRole('button', { name: '등록' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: /입고 등록$/ })).toBeDisabled();
   expect(screen.getByLabelText('코튼셔츠 수량')).toHaveTextContent('1');
   expect(calls.filter((c) => c.path === '/inbound/simple')).toHaveLength(0);
 
@@ -269,9 +269,9 @@ it('keeps registration blocked after a scan cannot be saved, then recovers that 
     expect(screen.getByLabelText('코튼셔츠 수량')).toHaveTextContent('2')
   );
   await waitFor(() =>
-    expect(screen.getByRole('button', { name: '등록' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: /입고 등록$/ })).toBeEnabled()
   );
-  await user.click(screen.getByRole('button', { name: '등록' }));
+  await user.click(screen.getByRole('button', { name: /입고 등록$/ }));
   await waitFor(() =>
     expect(calls.find((c) => c.path === '/inbound/simple')?.body).toMatchObject(
       {
@@ -339,14 +339,14 @@ it('does not register a restored partial cart while saved scans cannot be read',
       'false'
     )
   );
-  expect(screen.getByRole('button', { name: '등록' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: /입고 등록$/ })).toBeDisabled();
   unavailable = false;
   await user.click(screen.getByRole('button', { name: '다시 확인' }));
   await waitFor(() =>
     expect(screen.getByLabelText('코튼셔츠 수량')).toHaveTextContent('2')
   );
   await waitFor(() =>
-    expect(screen.getByRole('button', { name: '등록' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: /입고 등록$/ })).toBeEnabled()
   );
 });
 

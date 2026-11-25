@@ -359,7 +359,7 @@ describe('QuickInboundScreen', () => {
 
     await user.click(screen.getByRole('button', { name: '스캔:8802' }));
     await screen.findByText('코튼셔츠');
-    await user.click(screen.getByRole('button', { name: '등록' }));
+    await user.click(screen.getByRole('button', { name: /입고 등록$/ }));
 
     expect(await screen.findByText('입고 완료')).toBeInTheDocument();
     expect(playInboundSaved).toHaveBeenCalledTimes(1);
@@ -373,7 +373,7 @@ describe('QuickInboundScreen', () => {
 
     await user.click(screen.getByRole('button', { name: '스캔:8802' }));
     await screen.findByText('코튼셔츠');
-    await user.click(screen.getByRole('button', { name: '등록' }));
+    await user.click(screen.getByRole('button', { name: /입고 등록$/ }));
 
     await waitFor(() => expect(playInboundSaveFailed).toHaveBeenCalledTimes(1));
     expect(playInboundSaved).not.toHaveBeenCalled();
@@ -446,7 +446,7 @@ describe('QuickInboundScreen', () => {
 
     await user.click(screen.getByRole('button', { name: '스캔:8802' }));
     await screen.findByText('코튼셔츠');
-    await user.click(screen.getByRole('button', { name: '등록' }));
+    await user.click(screen.getByRole('button', { name: /입고 등록$/ }));
 
     await waitFor(() => {
       const simple = calls.find((c) => c.path === '/inbound/simple');
@@ -467,7 +467,7 @@ describe('QuickInboundScreen', () => {
 
     await user.click(screen.getByRole('button', { name: '스캔:8802' }));
     await screen.findByText('코튼셔츠');
-    await user.click(screen.getByRole('button', { name: '등록' }));
+    await user.click(screen.getByRole('button', { name: /입고 등록$/ }));
 
     await waitFor(() => {
       const simple = calls.find((c) => c.path === '/inbound/simple');
@@ -522,7 +522,7 @@ describe('QuickInboundScreen', () => {
 
     await user.click(screen.getByRole('button', { name: '스캔:8802' }));
     await screen.findByText('코튼셔츠');
-    await user.click(screen.getByRole('button', { name: '등록' }));
+    await user.click(screen.getByRole('button', { name: /입고 등록$/ }));
     await screen.findByText('적치 대기');
 
     // 1차 부분 적치: 20개 중 12개.
@@ -802,7 +802,9 @@ describe('QuickInboundScreen', () => {
 
   it('빈 카트로는 등록할 수 없다', async () => {
     await renderScreen([]);
-    expect(await screen.findByRole('button', { name: '등록' })).toBeDisabled();
+    expect(
+      await screen.findByRole('button', { name: /입고 등록$/ })
+    ).toBeDisabled();
   });
 });
 
@@ -827,7 +829,7 @@ it('상품 검색과 키보드 수량 입력만으로 간편입고하고 재선�
   await userEvent.click(screen.getByRole('button', { name: '코튼셔츠 선택' }));
   expect(await screen.findByLabelText(/입고 수량 직접 입력/)).toHaveValue('10');
   await userEvent.click(screen.getByRole('button', { name: '10개 담기' }));
-  await userEvent.click(screen.getByRole('button', { name: '등록' }));
+  await userEvent.click(screen.getByRole('button', { name: /입고 등록$/ }));
   await waitFor(() =>
     expect(calls.find((c) => c.path === '/inbound/simple')?.body).toMatchObject(
       { items: [{ skuId: 's1', quantity: 10 }] }
@@ -1022,7 +1024,7 @@ it('담은 목록과 적치 대기에 기다리는 주문을 보이고, 다 적�
   expect(
     await screen.findByText('기다리는 주문 2건 · 5개')
   ).toBeInTheDocument();
-  await user.click(screen.getByRole('button', { name: '등록' }));
+  await user.click(screen.getByRole('button', { name: /입고 등록$/ }));
   await screen.findByText('적치 대기');
   expect(screen.getByText('기다리는 주문 2건 · 5개')).toBeInTheDocument();
 
@@ -1062,4 +1064,25 @@ it('일부만 적치하면 남은 기다리는 주문을 다시 읽어 보인다
   expect(
     await screen.findByText('기다리는 주문 1건 · 3개')
   ).toBeInTheDocument();
+});
+
+it('담은 상품은 방금 담은 것이 맨 위에 오고, 등록 버튼에 종류와 개수가 보인다', async () => {
+  await renderScreen([]);
+  await screen.findByText('간편입고');
+  await userEvent.click(screen.getByRole('button', { name: '스캔:8801' }));
+  await screen.findByText('코튼셔츠');
+  await userEvent.click(screen.getByRole('button', { name: '스캔:7701' }));
+  await userEvent.click(screen.getByRole('button', { name: '스캔:7701' }));
+  await waitFor(() =>
+    expect(screen.getByLabelText('면바지 수량')).toHaveTextContent('2')
+  );
+
+  const cart = screen.getByRole('complementary', { name: '담은 상품' });
+  const rows = within(cart).getAllByRole('listitem');
+  expect(rows[0]).toHaveTextContent('면바지');
+  expect(rows[1]).toHaveTextContent('코튼셔츠');
+  expect(
+    screen.getByRole('button', { name: '2종 3개 입고 등록' })
+  ).toBeEnabled();
+  expect(screen.getByText('담은 상품 2종 · 3개')).toBeInTheDocument();
 });
