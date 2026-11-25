@@ -29,7 +29,8 @@ describe('buildLabelBatch', () => {
       rasterizer,
     );
 
-    expect(batch.data).toContain('^XA\n^MMT\n^PW360');
+    expect(batch.data).toContain('^XA\n^PW360');
+    expect(batch.data).not.toContain('^MM');
     expect(batch.data).toContain('^LL120');
     // 112 모듈 × 2 dot = 224dot, 좌우 (360 − 224) / 2 = 68dot ≥ 모듈 × 10
     expect(batch.data).toContain('^FO68,7^BY2^BCN,60,');

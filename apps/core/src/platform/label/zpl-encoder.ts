@@ -32,8 +32,11 @@ export interface ZplOptions {
   copies?: number;
   /** 프린터 해상도(dot/mm). 기본 8(203dpi). 템플릿의 mm·moduleDots 는 8 dot/mm 기준이라 여기서 옮긴다. */
   dotsPerMm?: number;
-  /** `^MMT` — 장마다 자르지 않고 이어 붙여 낸다. 커터 설정인 라벨 프린터가 `^PQ` 장수를 한 장씩 잘라 냈다(2026-11-24). */
-  tearOff?: boolean;
+  /**
+   * `^PQn,n,0,Y` — 커터 프린터가 n장을 이어 내고 마지막 장 뒤에서 한 번만 자른다. 프린터의 커팅 설정은
+   * 덮어쓰지 않는다. `^MMT` 로 막았더니 한 장도, 마지막 장도 안 잘렸다(2026-11-25).
+   */
+  cutAfterCopies?: boolean;
 }
 
 export function rotateClockwise(src: MonoBitmap): MonoBitmap {
@@ -145,6 +148,10 @@ function barcodeField(
   return `${fo}^BY${b.moduleDots}^BC${orientation},${h},N,N,N^FD${b.data}^FS`;
 }
 
+function pq(copies: number, cutAfterCopies: boolean): string {
+  return cutAfterCopies ? `^PQ${copies},${copies},0,Y` : `^PQ${copies}`;
+}
+
 export function encodeZpl(drawn: MonoBitmap, barcodes: readonly BarcodePlacement[], opts: ZplOptions): string {
   const dotsPerMm = opts.dotsPerMm ?? DOTS_PER_MM;
   const printed = opts.rotation === 0 ? drawn : rotateClockwise(drawn);
@@ -159,14 +166,13 @@ export function encodeZpl(drawn: MonoBitmap, barcodes: readonly BarcodePlacement
   const gfData = opts.compress ? compressAcs(rows) : rows.join('');
   const lines = [
     '^XA',
-    ...(opts.tearOff ? ['^MMT'] : []),
     ...(opts.rotation === 270 ? ['^POI'] : []),
     `^PW${printed.widthDots}`,
     `^LL${printed.heightDots}`,
     '^LH0,0',
     `^FO0,0^GFA,${total},${total},${printed.bytesPerRow},${gfData}^FS`,
     ...barcodes.map((b) => barcodeField(b, drawn.widthDots, drawn.heightDots, opts.rotation, dotsPerMm)),
-    `^PQ${opts.copies ?? 1}`,
+    pq(opts.copies ?? 1, opts.cutAfterCopies ?? false),
     '^XZ',
   ];
   return lines.join('\n');
