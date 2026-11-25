@@ -961,6 +961,158 @@ export const sku3dModels = pgTable(
   }),
 );
 
+export type Sku3dDimensionBasis = 'body' | 'package' | 'unknown';
+
+export const sku3dWorkshops = pgTable(
+  'sku_3d_workshops',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: varchar('tenant_id', { length: 64 }).notNull(),
+    skuId: uuid('sku_id')
+      .notNull()
+      .references(() => skus.id, { onDelete: 'cascade' }),
+    ownerId: uuid('owner_id').notNull(),
+    ownerLabel: varchar('owner_label', { length: 255 }).notNull(),
+    codexSessionId: varchar('codex_session_id', { length: 128 }),
+    dimensionBasis: varchar('dimension_basis', { length: 16 }).$type<Sku3dDimensionBasis>().notNull().default('unknown'),
+    dimensionConfirmedAt: timestamp('dimension_confirmed_at', { withTimezone: true }),
+    dimensionConfirmedById: uuid('dimension_confirmed_by_id'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uqSkuOwner: uniqueIndex('uq_sku_3d_workshops_sku_owner').on(t.skuId, t.ownerId),
+    idxOwner: index('idx_sku_3d_workshops_owner').on(t.ownerId, t.updatedAt),
+    ckBasis: check('ck_sku_3d_workshops_basis', sql`${t.dimensionBasis} IN ('body','package','unknown')`),
+  }),
+);
+
+export type Sku3dJobKind = 'create' | 'revise';
+export type Sku3dJobUpload = { fileId: string; name: string; sha256: string; bytes: number };
+export type Sku3dJobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
+
+export const sku3dWorkshopJobs = pgTable(
+  'sku_3d_workshop_jobs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workshopId: uuid('workshop_id')
+      .notNull()
+      .references(() => sku3dWorkshops.id, { onDelete: 'cascade' }),
+    kind: varchar('kind', { length: 16 }).$type<Sku3dJobKind>().notNull(),
+    request: text('request').notNull().default(''),
+    baseRevisionId: uuid('base_revision_id'),
+    status: varchar('status', { length: 16 }).$type<Sku3dJobStatus>().notNull().default('queued'),
+    attempts: integer('attempts').notNull().default(0),
+    leaseToken: uuid('lease_token'),
+    leaseUntil: timestamp('lease_until', { withTimezone: true }),
+    workerId: uuid('worker_id'),
+    // 이 작업으로 올라온 비공개 파일 — complete 는 여기 있는 id 만 받는다
+    uploads: jsonb('uploads').$type<Sku3dJobUpload[]>().notNull().default([]),
+    error: text('error'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    finishedAt: timestamp('finished_at', { withTimezone: true }),
+  },
+  (t) => ({
+    // 작업실마다 진행 중 작업은 하나 — 버튼 연타·새로고침·같은 세션 동시 수정을 여기서 막는다
+    uqActive: uniqueIndex('uq_sku_3d_workshop_jobs_active')
+      .on(t.workshopId)
+      .where(sql`${t.status} IN ('queued','running')`),
+    idxClaim: index('idx_sku_3d_workshop_jobs_claim').on(t.status, t.leaseUntil, t.createdAt),
+    ckKind: check('ck_sku_3d_workshop_jobs_kind', sql`${t.kind} IN ('create','revise')`),
+    ckStatus: check(
+      'ck_sku_3d_workshop_jobs_status',
+      sql`${t.status} IN ('queued','running','succeeded','failed','cancelled')`,
+    ),
+  }),
+);
+
+export type Sku3dEventType = 'user_message' | 'assistant_message' | 'progress' | 'status';
+
+export const sku3dWorkshopEvents = pgTable(
+  'sku_3d_workshop_events',
+  {
+    seq: bigserial('seq', { mode: 'number' }).primaryKey(),
+    workshopId: uuid('workshop_id')
+      .notNull()
+      .references(() => sku3dWorkshops.id, { onDelete: 'cascade' }),
+    jobId: uuid('job_id'),
+    revisionId: uuid('revision_id'),
+    type: varchar('type', { length: 32 }).$type<Sku3dEventType>().notNull(),
+    authorLabel: varchar('author_label', { length: 255 }),
+    body: text('body').notNull().default(''),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    idxWorkshopSeq: index('idx_sku_3d_workshop_events_workshop_seq').on(t.workshopId, t.seq),
+    ckType: check(
+      'ck_sku_3d_workshop_events_type',
+      sql`${t.type} IN ('user_message','assistant_message','progress','status')`,
+    ),
+  }),
+);
+
+export type Sku3dRevisionReview = {
+  summary: string;
+  issues: { where: string; observed: string; expected: string; severity: 'error' | 'minor' }[];
+  proposals: string[];
+  autoFixes: string[];
+  unseenFaces: string[];
+  assumptions: string[];
+  needsPhotos: string[];
+  dimensionsUsed: { widthMm: number; lengthMm: number; heightMm: number; basis: string };
+};
+
+export type Sku3dRevisionFiles = {
+  renders: string[];
+  python: string | null;
+  blend: string | null;
+  plan: string | null;
+};
+
+export const sku3dWorkshopRevisions = pgTable(
+  'sku_3d_workshop_revisions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workshopId: uuid('workshop_id')
+      .notNull()
+      .references(() => sku3dWorkshops.id, { onDelete: 'cascade' }),
+    jobId: uuid('job_id')
+      .notNull()
+      .references(() => sku3dWorkshopJobs.id, { onDelete: 'cascade' }),
+    number: integer('number').notNull(),
+    glbFileId: uuid('glb_file_id').notNull(),
+    glbSha256: char('glb_sha256', { length: 64 }).notNull(),
+    glbBytes: integer('glb_bytes').notNull(),
+    files: jsonb('files').$type<Sku3dRevisionFiles>().notNull(),
+    review: jsonb('review').$type<Sku3dRevisionReview>().notNull(),
+    // 원본 사진 id·치수·validator 결과·도구 버전 — 이 버전을 만든 입력 그대로
+    provenance: jsonb('provenance').$type<Record<string, unknown>>().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    // 승인·공개는 이 행에 단계별로 찍는다 — 재시도하면 찍힌 단계는 건너뛴다
+    approvedById: uuid('approved_by_id'),
+    approvedAt: timestamp('approved_at', { withTimezone: true }),
+    publicGlbFileId: uuid('public_glb_file_id'),
+    sku3dModelId: uuid('sku_3d_model_id').references(() => sku3dModels.id, { onDelete: 'set null' }),
+    publishedAt: timestamp('published_at', { withTimezone: true }),
+  },
+  (t) => ({
+    uqJob: uniqueIndex('uq_sku_3d_workshop_revisions_job').on(t.jobId),
+    uqNumber: uniqueIndex('uq_sku_3d_workshop_revisions_number').on(t.workshopId, t.number),
+  }),
+);
+
+export const sku3dWorkers = pgTable('sku_3d_workers', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: varchar('name', { length: 100 }).notNull(),
+  // 키 원문은 발급 때 한 번만 보여 주고 sha256 만 둔다
+  keyHash: char('key_hash', { length: 64 }).notNull().unique(),
+  maxConcurrency: integer('max_concurrency').notNull().default(1),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const skuFieldCaptures = pgTable(
   'sku_field_captures',
   {
@@ -4408,6 +4560,11 @@ export const wmsTables = {
   sellmateHandedOverOrders,
   skuReferencePhotos,
   sku3dModels,
+  sku3dWorkshops,
+  sku3dWorkshopJobs,
+  sku3dWorkshopEvents,
+  sku3dWorkshopRevisions,
+  sku3dWorkers,
   skuFieldCaptures,
   skuFieldCaptureEvents,
   skuImages,
