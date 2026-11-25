@@ -39,7 +39,7 @@ export class Sku3dModelsManager {
     return this.db.db.select().from(sku3dModels).where(eq(sku3dModels.skuId, skuId)).orderBy(desc(sku3dModels.version));
   }
 
-  async register(skuId: string, input: RegisterModelInput, actorId: string, actorLabel?: string) {
+  async register(skuId: string, input: RegisterModelInput, actorId: string, actorLabel?: string, outer?: DbTx) {
     return this.db.run(async (tx) => {
       // 같은 SKU의 재생성·검수를 줄 세워 MAX(version) + 1이 중복되지 않게 한다.
       await this.modelProjection.lockSkus(this.catalogTx(tx), [skuId]);
@@ -69,10 +69,10 @@ export class Sku3dModelsManager {
       await this.modelProjection.refresh(this.catalogTx(tx), targets, before);
 
       return model;
-    });
+    }, outer);
   }
 
-  async publish(id: string, actorId: string) {
+  async publish(id: string, actorId: string, outer?: DbTx) {
     return this.db.run(async (tx) => {
       const [model] = await tx.select().from(sku3dModels).where(eq(sku3dModels.id, id));
 
@@ -97,7 +97,7 @@ export class Sku3dModelsManager {
 
         return published;
       });
-    });
+    }, outer);
   }
 
   async unpublish(skuId: string) {

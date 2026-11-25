@@ -10,5 +10,6 @@ import { Sku3dModelsReader } from './sku-3d-models.reader';
   imports: [ProductsModule, EventsModule],
   controllers: [Sku3dModelsController],
   providers: [Sku3dModelsManager, Sku3dModelsReader, FileServiceClient],
+  exports: [Sku3dModelsManager],
 })
 export class Sku3dModelsModule {}

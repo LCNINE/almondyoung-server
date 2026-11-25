@@ -1,7 +1,19 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Put, Query, StreamableFile } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Put,
+  Query,
+  StreamableFile,
+} from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { PermissionCheckpoints, RequirePermission, User } from '@app/authorization';
 import {
+  ApproveWorkshopRevisionDto,
   ConfirmWorkshopDimensionsDto,
   PostWorkshopMessageDto,
   WorkshopEventsQueryDto,
@@ -73,5 +85,21 @@ export class Sku3dWorkshopController {
     @User() user: WorkshopUser,
   ) {
     return this.service.postMessage(id, workshopActorOf(user, this.checkpoints), body.body);
+  }
+
+  @RequirePermission('inventory.model_workshop.write')
+  @Post(':id/revisions/:revisionId/approve')
+  @HttpCode(200)
+  @ApiOperation({
+    summary:
+      '보고 있는 버전(revisionId + GLB 해시)을 승인해 공개 — 기존 업로드·draft 등록·publish 순서, 재시도해도 한 번',
+  })
+  approve(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('revisionId', ParseUUIDPipe) revisionId: string,
+    @Body() body: ApproveWorkshopRevisionDto,
+    @User() user: WorkshopUser,
+  ) {
+    return this.service.approve(id, revisionId, body.glbSha256, workshopActorOf(user, this.checkpoints));
   }
 }

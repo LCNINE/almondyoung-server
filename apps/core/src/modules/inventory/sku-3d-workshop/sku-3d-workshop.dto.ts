@@ -35,3 +35,9 @@ export class WorkshopFileParamDto {
   @Matches(/^(glb|render-\d{1,2})$/)
   kind!: string;
 }
+
+export class ApproveWorkshopRevisionDto {
+  @ApiProperty({ description: '화면에 떠 있는 버전의 GLB sha256' })
+  @Matches(/^[0-9a-f]{64}$/)
+  glbSha256!: string;
+}

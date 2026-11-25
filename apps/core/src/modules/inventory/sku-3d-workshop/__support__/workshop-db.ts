@@ -3,10 +3,10 @@ import { join } from 'node:path';
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import * as postgres from 'postgres';
 import { DbService } from '@app/db';
-import { DbTx, wmsSchema } from '../../schema/inventory.schema';
+import { DbTx, sku3dWorkshopJobs, sku3dWorkshopRevisions, wmsSchema } from '../../schema/inventory.schema';
 import type { WorkshopActor } from '../workshop-access';
 
 export type WorkshopTestDb = {
@@ -53,4 +53,42 @@ export async function seedSku(db: PostgresJsDatabase<typeof wmsSchema>): Promise
 
 export function actor(overrides: Partial<WorkshopActor> = {}): WorkshopActor {
   return { userId: randomUUID(), label: '작업자', canManage: false, canPublish: false, ...overrides };
+}
+
+// 워커 없이 완성 버전 하나를 만든다 — 작업실의 첫 작업을 끝난 것으로 돌린다
+export async function finishedRevision(
+  db: PostgresJsDatabase<typeof wmsSchema>,
+  workshopId: string,
+  glbSha256 = 'a'.repeat(64),
+): Promise<string> {
+  const [job] = await db.select().from(sku3dWorkshopJobs).where(eq(sku3dWorkshopJobs.workshopId, workshopId));
+
+  await db.update(sku3dWorkshopJobs).set({ status: 'succeeded' }).where(eq(sku3dWorkshopJobs.id, job.id));
+
+  const [revision] = await db
+    .insert(sku3dWorkshopRevisions)
+    .values({
+      workshopId,
+      jobId: job.id,
+      number: 1,
+      glbFileId: randomUUID(),
+      glbSha256,
+      glbBytes: 100,
+      files: { renders: [], python: null, blend: null, plan: null },
+      review: {
+        summary: 's',
+        verdict: 'ready_for_review',
+        issues: [],
+        proposals: [],
+        autoFixes: [],
+        unseenFaces: [],
+        assumptions: [],
+        needsPhotos: [],
+        dimensionsUsed: { widthMm: 1, lengthMm: 1, heightMm: 1, basis: 'package' },
+      },
+      provenance: {},
+    })
+    .returning();
+
+  return revision.id;
 }

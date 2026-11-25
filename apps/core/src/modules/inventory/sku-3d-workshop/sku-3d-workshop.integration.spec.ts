@@ -1,12 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { ConflictError, ForbiddenError, NotFoundError } from '@app/shared';
-import {
-  sku3dWorkshopEvents,
-  sku3dWorkshopJobs,
-  sku3dWorkshopRevisions,
-  sku3dWorkshops,
-} from '../schema/inventory.schema';
-import { actor, seedSku, startWorkshopDb, WorkshopTestDb } from './__support__/workshop-db';
+import { sku3dWorkshopEvents, sku3dWorkshopJobs, sku3dWorkshops } from '../schema/inventory.schema';
+import { actor, finishedRevision, seedSku, startWorkshopDb, WorkshopTestDb } from './__support__/workshop-db';
 import { Sku3dWorkshopManager } from './sku-3d-workshop.manager';
 import { Sku3dWorkshopReader } from './sku-3d-workshop.reader';
 import { FileServiceClient } from '../../library/clients/file-service.client';
@@ -32,39 +27,6 @@ describeWithPostgres('SKU 3D workshop (PostgreSQL)', () => {
     await t.client.end();
     await t.container.stop();
   });
-
-  async function finishedRevision(workshopId: string): Promise<string> {
-    const [job] = await t.db.select().from(sku3dWorkshopJobs).where(eq(sku3dWorkshopJobs.workshopId, workshopId));
-
-    await t.db.update(sku3dWorkshopJobs).set({ status: 'succeeded' }).where(eq(sku3dWorkshopJobs.id, job.id));
-
-    const [revision] = await t.db
-      .insert(sku3dWorkshopRevisions)
-      .values({
-        workshopId,
-        jobId: job.id,
-        number: 1,
-        glbFileId: job.id,
-        glbSha256: 'a'.repeat(64),
-        glbBytes: 100,
-        files: { renders: [], python: null, blend: null, plan: null },
-        review: {
-          summary: 's',
-          verdict: 'ready_for_review',
-          issues: [],
-          proposals: [],
-          autoFixes: [],
-          unseenFaces: [],
-          assumptions: [],
-          needsPhotos: [],
-          dimensionsUsed: { widthMm: 1, lengthMm: 1, heightMm: 1, basis: 'package' },
-        },
-        provenance: {},
-      })
-      .returning();
-
-    return revision.id;
-  }
 
   it('open is idempotent', async () => {
     const skuId = await seedSku(t.db);
@@ -110,7 +72,7 @@ describeWithPostgres('SKU 3D workshop (PostgreSQL)', () => {
     const workshop = await manager.open(skuId, me);
 
     await manager.confirmDimensions(workshop.id, me, 'package');
-    await finishedRevision(workshop.id);
+    await finishedRevision(t.db, workshop.id);
 
     const job = await manager.confirmDimensions(workshop.id, me, 'body');
     const [row] = await t.db.select().from(sku3dWorkshops).where(eq(sku3dWorkshops.id, workshop.id));
@@ -142,7 +104,7 @@ describeWithPostgres('SKU 3D workshop (PostgreSQL)', () => {
 
     await manager.confirmDimensions(workshop.id, me, 'package');
 
-    const revisionId = await finishedRevision(workshop.id);
+    const revisionId = await finishedRevision(t.db, workshop.id);
     const results = await Promise.allSettled([
       manager.postMessage(workshop.id, me, '좀 별론데 더 다듬어줘'),
       manager.postMessage(workshop.id, me, '뚜껑을 둥글게 해줘'),
@@ -176,7 +138,7 @@ describeWithPostgres('SKU 3D workshop (PostgreSQL)', () => {
 
     await manager.confirmDimensions(workshop.id, owner, 'package');
 
-    const revisionId = await finishedRevision(workshop.id);
+    const revisionId = await finishedRevision(t.db, workshop.id);
     fetchFile.mockReset();
     fetchFile.mockResolvedValue({
       stream: new Response(new Uint8Array([1, 2, 3])).body!,
