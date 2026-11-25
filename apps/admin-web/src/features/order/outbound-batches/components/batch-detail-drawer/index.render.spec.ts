@@ -54,6 +54,7 @@ jest.mock('@/lib/services/orders', () => ({
   useAddShipmentToBatch: () => ({ mutateAsync: mockAddShipment }),
   useOutboundBatchEligibleShipments: (id: string) => mockEligibleQuery(id),
   useOutboundBatchV2: (id: string) => mockBatchQuery(id),
+  useFollowBatchScanRejections: () => undefined,
   useExcludeShipmentFromBatch: () => ({ mutateAsync: mockExcludeShipment }),
   useClaimBatchPacker: () => ({ mutateAsync: jest.fn() }),
   useClaimBatchPicker: () => ({ mutateAsync: mockClaimPicker }),
