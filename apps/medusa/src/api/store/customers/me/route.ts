@@ -5,6 +5,7 @@ import { updateCustomersWorkflow } from '@medusajs/core-flows';
 import { HttpTypes } from '@medusajs/framework/types';
 import { ContainerRegistrationKeys, MedusaError } from '@medusajs/framework/utils';
 import { refetchCustomer } from '../helpers';
+import { updateMetadataPatch } from '../identity-metadata';
 
 export const GET = async (req: AuthenticatedMedusaRequest, res: MedusaResponse) => {
   const id = req.auth_context.actor_id;
@@ -33,10 +34,14 @@ export const POST = async (
   res: MedusaResponse<HttpTypes.StoreCustomerResponse>,
 ) => {
   const customerId = req.auth_context.actor_id;
+  const { metadata, ...rest } = req.validatedBody;
+  const metadataPatch = updateMetadataPatch(metadata);
+  const update = metadataPatch ? { ...rest, metadata: metadataPatch } : rest;
+
   await updateCustomersWorkflow(req.scope).run({
     input: {
       selector: { id: customerId },
-      update: req.validatedBody,
+      update,
     },
   });
 

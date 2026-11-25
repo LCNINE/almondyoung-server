@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
+import { createTranslator } from "next-intl"
 
+import accountEn from "@/i18n/messages/en/account.json"
+import accountJa from "@/i18n/messages/ja/account.json"
+import accountKo from "@/i18n/messages/ko/account.json"
 import { oidcCallback } from "@/lib/api/medusa/sso"
+import { countryCodeToLocale } from "@/lib/utils/locale-path"
 
 // OIDC 콜백 처리. Route Handler 로 두는 이유:
 // page.tsx (Server Component) 에서 oidcCallback 을 직접 await 하면 Next.js 가 server-action 컨텍스트를
@@ -18,16 +23,25 @@ export async function GET(
   const errorDescription = sp.get("error_description") ?? undefined
   const redirectTo = sp.get("redirect_to") ?? undefined
 
-  const renderError = (message: string) =>
-    new NextResponse(
-      `<!doctype html><meta charset="utf-8"><title>로그인 실패</title>` +
-        `<div style="max-width:480px;margin:48px auto;padding:24px;font-family:sans-serif;text-align:center">` +
-        `<h1 style="font-size:18px;font-weight:600">로그인에 실패했습니다</h1>` +
-        `<p style="margin-top:8px;font-size:14px;color:#666;word-break:break-all">${escapeHtml(message)}</p>` +
-        `<p style="margin-top:16px"><a href="/${countryCode}/account/login" style="text-decoration:underline">다시 시도하기</a></p>` +
+  const renderError = (reason: string) => {
+    console.error("[oidc callback] login failed:", reason)
+
+    const locale = countryCodeToLocale(countryCode)
+    const account = { ko: accountKo, en: accountEn, ja: accountJa }[locale]
+    const t = createTranslator({ locale, messages: { account }, namespace: "account.loginFailed" })
+
+    return new NextResponse(
+      `<!doctype html><html lang="${locale}"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${t("title")}</title>` +
+        `<div style="max-width:420px;min-height:100vh;margin:0 auto;padding:0 24px 40px;box-sizing:border-box;display:flex;flex-direction:column;font-family:sans-serif;color:#111">` +
+        `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center">` +
+        `<h1 style="margin:0;font-size:20px;font-weight:700">${t("title")}</h1>` +
+        `<p style="margin:8px 0 0;font-size:15px;color:#4b5563">${t("body")}</p>` +
+        `</div>` +
+        `<a href="/${encodeURIComponent(countryCode)}/account/login" style="display:flex;align-items:center;justify-content:center;height:52px;border-radius:10px;background:#ffa500;color:#fff;font-size:16px;font-weight:700;text-decoration:none">${t("retry")}</a>` +
         `</div>`,
       { status: 200, headers: { "content-type": "text/html; charset=utf-8" } },
     )
+  }
 
   if (errorParam) {
     return renderError(errorDescription ?? errorParam)
@@ -51,13 +65,4 @@ export async function GET(
     `<!doctype html><meta charset="utf-8"><script>location.replace(${JSON.stringify(target).replace(/</g, "\\u003c")})</script>`,
     { status: 200, headers: { "content-type": "text/html; charset=utf-8" } },
   )
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;")
 }

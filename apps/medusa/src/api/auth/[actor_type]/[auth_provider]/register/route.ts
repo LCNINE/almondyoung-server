@@ -5,8 +5,6 @@ import { registerCustomerWorkflow } from '../../../../../workflows/auth/workflow
 import { registerUserWorkflow } from '../../../../../workflows/auth/workflows/register-user-workflow';
 
 type RegisterCustomerInput = {
-  almond_user_id: string;
-  almond_login_id: string;
   email: string;
   first_name?: string;
   last_name?: string;
@@ -39,10 +37,8 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
             email: body.email,
             first_name: body.first_name || '',
             last_name: body.last_name || '',
-            metadata: {
-              almond_user_id: body.almond_user_id,
-              almond_login_id: body.almond_login_id,
-            },
+            // 신원 키(almond_user_id 등)는 본문을 믿지 않는다. 고객 신원은 SSO 가입(POST /store/customers)에서만 붙는다
+            metadata: {},
           },
         },
       });
