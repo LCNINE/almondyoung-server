@@ -10,8 +10,8 @@ describe('creationMetadata', () => {
     expect(metadata).toEqual({ almond_user_id: 'me', almond_login_id: 'my-login', marketing: true });
   });
 
-  it('leaves the identity out when the login has none', () => {
-    expect(creationMetadata({ almond_user_id: 'someone-else' }, {})).toEqual({});
+  it('rejects when the login has no user id', () => {
+    expect(() => creationMetadata({ almond_user_id: 'someone-else' }, {})).toThrow('Login identity has no user id');
   });
 });
 

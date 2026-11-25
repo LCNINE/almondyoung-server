@@ -1,5 +1,5 @@
 import type { MedusaNextFunction, MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
-import { Modules } from '@medusajs/framework/utils';
+import { MedusaError, Modules } from '@medusajs/framework/utils';
 
 type Metadata = Record<string, unknown>;
 
@@ -19,8 +19,13 @@ const pick = (source: Metadata, keys: Record<string, string>): Metadata =>
       .filter(([, value]) => value !== undefined && value !== null && value !== ''),
   );
 
-// 가입: 신원 키는 본문이 아니라 로그인 신원(SSO 공급자가 검증해 넣은 user_metadata)에서만 채운다
+// 가입: 신원 키는 본문이 아니라 로그인 신원(SSO 공급자가 검증해 넣은 user_metadata)에서만 채운다.
+// 신원이 없으면 주인 없는 고객이 조용히 생기므로 거절한다
 export function creationMetadata(incoming: Metadata | null | undefined, trustedUserMetadata: Metadata): Metadata {
+  if (!trustedUserMetadata.user_id) {
+    throw new MedusaError(MedusaError.Types.UNAUTHORIZED, 'Login identity has no user id');
+  }
+
   return {
     ...withoutIdentity(incoming ?? {}),
     ...pick(trustedUserMetadata, { almond_user_id: 'user_id', almond_login_id: 'login_id' }),
