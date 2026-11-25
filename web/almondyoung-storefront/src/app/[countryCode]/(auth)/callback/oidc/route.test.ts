@@ -34,3 +34,27 @@ it("escapes script terminators in the redirect path", async () => {
   expect(html.match(/<\/script>/g)).toHaveLength(1)
   expect(html).toContain('location.replace("/kr/\\u003c/script>')
 })
+
+it("shows a fixed message instead of the server error", async () => {
+  vi.mocked(oidcCallback).mockResolvedValueOnce({
+    success: false,
+    error: 'customer create failed: 401 {"message":"Login identity has no user id"}',
+  })
+  const request = new NextRequest("http://localhost:8000/kr/callback/oidc?code=c&state=s")
+  const response = await GET(request, { params: Promise.resolve({ countryCode: "kr" }) })
+  const html = await response.text()
+
+  expect(html).toContain("로그인하지 못했어요")
+  expect(html).toContain('href="/kr/account/login"')
+  expect(html).not.toContain("customer create failed")
+})
+
+it("shows the failure screen in the country's language", async () => {
+  vi.mocked(oidcCallback).mockResolvedValueOnce({ success: false, error: "x" })
+  const request = new NextRequest("http://localhost:8000/jp/callback/oidc?code=c&state=s")
+  const response = await GET(request, { params: Promise.resolve({ countryCode: "jp" }) })
+  const html = await response.text()
+
+  expect(html).toContain("ログインできませんでした")
+  expect(html).toContain('href="/jp/account/login"')
+})

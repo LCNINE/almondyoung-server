@@ -3,5 +3,10 @@
   "cart": "Cart",
   "myPage": "My",
   "login": "Log in",
-  "loginDone": "You are signed in. This window will close automatically."
+  "loginDone": "You are signed in. This window will close automatically.",
+  "loginFailed": {
+    "title": "We couldn't log you in",
+    "body": "Please try logging in again in a moment.",
+    "retry": "Log in again"
+  }
 }
