@@ -26,13 +26,14 @@ import {
 import { ApiError, type ApiClient } from '../../core/data/httpClient';
 import type { Session } from '../../core/auth/session';
 import { QuickInboundScreen } from './QuickInboundScreen';
+import { scanHid } from '../../core/hardware/scan/__fixtures__/hid';
 import { playInboundSaved, playInboundSaveFailed } from './saveFeedback';
 
 vi.mock('./saveFeedback', () => ({
   playInboundSaved: vi.fn(),
   playInboundSaveFailed: vi.fn(),
+  primeInboundSaveSound: vi.fn(),
 }));
-import { scanHid } from '../../core/hardware/scan/__fixtures__/hid';
 
 it('간편입고 재개에서 숫자패드 → HID 위치 스캔 → 명시적 적치로 이어진다', async () => {
   const calls: Call[] = [];

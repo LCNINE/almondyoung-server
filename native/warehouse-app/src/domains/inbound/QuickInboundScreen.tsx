@@ -32,7 +32,11 @@ import { useSkuByBarcode } from '../inventory/useSkuByBarcode';
 import { scanIncrement } from './packingUnit';
 import { useSimpleInbound } from './mutations';
 import { usualShelfNotice } from './RememberUsualToggle';
-import { playInboundSaved, playInboundSaveFailed } from './saveFeedback';
+import {
+  playInboundSaved,
+  playInboundSaveFailed,
+  primeInboundSaveSound,
+} from './saveFeedback';
 import { SaveToast, useSaveToast } from './SaveToast';
 import { PutawaySheet, type LocationRef } from './PutawaySheet';
 import { useWaitingOrders } from './waitingOrders';
@@ -806,6 +810,7 @@ function QuickInboundScreenContent() {
             }
             onClick={() => {
               if (!warehouseId) return;
+              primeInboundSaveSound();
               submit.mutate(
                 {
                   warehouseId,

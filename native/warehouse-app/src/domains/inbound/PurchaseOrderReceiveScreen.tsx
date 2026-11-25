@@ -23,7 +23,11 @@ import {
   useReceivePurchaseOrder,
 } from './mutations';
 import { usualShelfNotice } from './RememberUsualToggle';
-import { playInboundSaved, playInboundSaveFailed } from './saveFeedback';
+import {
+  playInboundSaved,
+  playInboundSaveFailed,
+  primeInboundSaveSound,
+} from './saveFeedback';
 import { SaveToast, useSaveToast } from './SaveToast';
 import { PutawaySheet, type LocationRef } from './PutawaySheet';
 import { useWaitingOrders } from './waitingOrders';
@@ -245,6 +249,10 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
       scanQueue.blocked()
     )
       return;
+
+    // 안드로이드 WebView 는 사용자 제스처 안에서 소리를 열어 둬야 한다.
+    primeInboundSaveSound();
+
     submitLock.current = true;
     setSubmitting(true);
     let requestSaved = false;
