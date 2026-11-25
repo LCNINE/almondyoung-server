@@ -195,7 +195,7 @@ describe('적치 대기에서 입고 취소', () => {
     expect(dialog).not.toHaveTextContent('오늘 입고한 건이 아니에요');
     await userEvent.click(submit);
     expect(
-      await screen.findByText('시험 상품 5개의 입고를 취소했어요.')
+      await screen.findByText((_, el) => el?.getAttribute('role') === 'status' && el.textContent === '입고 취소시험 상품 5개')
     ).toBeInTheDocument();
     expect(sent).toHaveLength(1);
     expect(sent[0]).toMatchObject({
@@ -348,7 +348,7 @@ describe('적치 대기에서 입고 취소', () => {
     const { submit, sent } = await open();
     await waitFor(() => expect(submit).toBeEnabled());
     await userEvent.dblClick(submit);
-    await screen.findByText('시험 상품 5개의 입고를 취소했어요.');
+    await screen.findByText((_, el) => el?.getAttribute('role') === 'status' && el.textContent === '입고 취소시험 상품 5개');
     expect(sent).toHaveLength(1);
   });
 

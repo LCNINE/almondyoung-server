@@ -19,6 +19,7 @@ import {
   type CancelReceiptTarget,
 } from './CancelReceiptDialog';
 import { useReturnGoods } from './returnGoods';
+import { SaveToast, useSaveToast } from './SaveToast';
 import { useWaitingOrders } from './waitingOrders';
 import { ReadyShipmentsSection } from './ReadyShipmentsSection';
 import { WaitingOrdersFailed, WaitingOrdersNote } from './WaitingOrdersNote';
@@ -72,6 +73,7 @@ export function PutawayQueueScreen({
   );
   const scanId = useRef(0);
   const [notice, setNotice] = useState<string | null>(null);
+  const toast = useSaveToast();
   const [lastDest, setLastDest] = useState<LocationRef | null>(null);
   const [returnTarget, setReturnTarget] = useState<ReturnPutawayTarget | null>(
     null
@@ -205,6 +207,7 @@ export function PutawayQueueScreen({
         상품 바코드를 스캔하거나 목록에서 고르세요.
       </p>
 
+      <SaveToast toast={toast.toast} />
       {notice ? (
         <p role="status" className="text-sm text-amber-700">
           {notice}
@@ -423,10 +426,11 @@ export function PutawayQueueScreen({
           target={cancelTarget}
           warehouseId={warehouseId}
           onClose={() => setCancelTarget(null)}
-          onFinished={(message) => {
+          onFinished={(outcome) => {
             clearScanFeedback();
             setCancelTarget(null);
-            setNotice(message);
+            if (outcome.ok) toast.show({ kind: 'cancelled', detail: outcome.detail });
+            else setNotice(outcome.notice);
             // 실패해도 다른 기기가 먼저 처리했을 수 있다
             void queue.refetch();
           }}

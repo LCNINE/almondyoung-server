@@ -14,6 +14,7 @@ import { errorMessage } from '../../core/data/errorMessage';
 import { Button } from '../../core/design/Button';
 import { ScreenHeader } from '../../core/design/ScreenHeader';
 import { WarehousePicker } from '../warehouse/WarehousePicker';
+import { SaveToast, useSaveToast } from './SaveToast';
 import { SkuPicker, type SelectedSku } from '../inventory/SkuPicker';
 import {
   ReceiptHistoryError,
@@ -86,6 +87,7 @@ function HistoryContent({
     !query.isPlaceholderData;
   const [selection, setSelection] = useState<CancelReceiptTarget | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const toast = useSaveToast();
   useUnsavedWork(!!selection);
   return (
     <div className="space-y-4">
@@ -168,6 +170,7 @@ function HistoryContent({
           </p>
         )}
       </fieldset>
+      <SaveToast toast={toast.toast} />
       {notice && <p role="status">{notice}</p>}
       {query.isFetching && <p role="status">입고내역을 확인하고 있어요.</p>}
       {query.isError && (
@@ -312,8 +315,9 @@ function HistoryContent({
           target={selection}
           warehouseId={warehouseId}
           onClose={() => setSelection(null)}
-          onFinished={(message) => {
-            setNotice(message);
+          onFinished={(outcome) => {
+            if (outcome.ok) toast.show({ kind: 'cancelled', detail: outcome.detail });
+            else setNotice(outcome.notice);
             setSelection(null);
             void query.refetch();
           }}

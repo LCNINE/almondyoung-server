@@ -16,6 +16,9 @@ import { cancelBlockMessage } from './cancelReceipt';
 import type { ReceiptSource } from './types';
 import { useReceiptReconciliation } from './useReceiptReconciliation';
 
+/** 취소됐으면 토스트에 띄울 「이름 N개」, 못 했으면 화면에 남길 안내 */
+export type CancelReceiptOutcome = { ok: true; detail: string } | { ok: false; notice: string };
+
 export interface CancelReceiptTarget {
   lineId: string;
   source: ReceiptSource;
@@ -83,7 +86,7 @@ function CancelReceiptContent({
   warehouseId: string;
   onClose: () => void;
   /** 취소됐거나 실패했다 — 화면은 목록을 다시 읽는다. */
-  onFinished: (notice: string) => void;
+  onFinished: (outcome: CancelReceiptOutcome) => void;
 }) {
   const direct = useCancelInbound();
   const po = useCancelPurchaseOrderReceipt();
@@ -143,13 +146,15 @@ function CancelReceiptContent({
           quantity: latest.quantity,
           idempotencyKey,
         });
-      onFinished(`${target.skuName} ${latest.quantity}개의 입고를 취소했어요.`);
+      onFinished({ ok: true, detail: `${target.skuName} ${latest.quantity}개` });
     } catch (error) {
-      onFinished(
-        error instanceof ReceiptStateError
-          ? error.message
-          : errorMessage(error, 'inbound-cancel')
-      );
+      onFinished({
+        ok: false,
+        notice:
+          error instanceof ReceiptStateError
+            ? error.message
+            : errorMessage(error, 'inbound-cancel'),
+      });
     } finally {
       busyRef.current = false;
       setBusy(false);
