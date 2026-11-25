@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
-import { IsIn, IsInt, IsOptional, IsString, Matches, MaxLength, Min, MinLength } from 'class-validator';
+import { IsIn, IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
 import type { Sku3dDimensionBasis } from '../schema/inventory.schema';
 
 const BASES: Sku3dDimensionBasis[] = ['body', 'package', 'unknown'];
@@ -26,6 +26,7 @@ export class WorkshopEventsQueryDto {
   @Type(() => Number)
   @IsInt()
   @Min(0)
+  @Max(Number.MAX_SAFE_INTEGER)
   afterSeq?: number;
 }
 

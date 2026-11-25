@@ -107,6 +107,41 @@ export class FileServiceClient {
     return meta.signedUrl;
   }
 
+  // core 가 권한 검사를 마친 사람 대신 올린다 — uploadedBy 는 onBehalfOf 가 된다
+  async upload(input: {
+    bytes: Uint8Array;
+    fileName: string;
+    mimeType: string;
+    contextId: string;
+    isPublic: boolean;
+    onBehalfOf: string;
+  }): Promise<{ fileId: string }> {
+    const form = new FormData();
+
+    form.append('file', new Blob([new Uint8Array(input.bytes)], { type: input.mimeType }), input.fileName);
+    form.append('contextId', input.contextId);
+    form.append('isPublic', String(input.isPublic));
+
+    const res = await fetch(`${this.baseUrl()}/files/upload`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${this.delegationToken(input.onBehalfOf)}` },
+      body: form,
+    });
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`file-service upload failed: ${res.status} ${res.statusText} — ${body}`);
+    }
+
+    const json: unknown = await res.json();
+
+    if (typeof json !== 'object' || json === null || !('id' in json) || typeof json.id !== 'string') {
+      throw new Error('file-service upload response has no id');
+    }
+
+    return { fileId: json.id };
+  }
+
   /**
    * file-service 의 metadata 를 가져온다 (다운로드 파일명 결정용).
    */
