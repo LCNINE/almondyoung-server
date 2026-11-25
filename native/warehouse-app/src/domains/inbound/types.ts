@@ -87,6 +87,8 @@ export interface PutawayInput {
   lineId: string;
   toLocationId: string;
   quantity: number;
+  /** 평소 선반이 비어 있으면 이 목적지로 정한다(서버가 비어 있을 때만 채운다). */
+  rememberAsUsual?: boolean;
   idempotencyKey: string;
 }
 
@@ -143,6 +145,7 @@ export interface PutawayPendingResult {
 /** Actionable sheet snapshot; the detail read revalidates it before submission. */
 export interface PutawayTarget {
   lineId: string;
+  skuId: string;
   source: ReceiptSource;
   skuName: string;
   skuCode: string;

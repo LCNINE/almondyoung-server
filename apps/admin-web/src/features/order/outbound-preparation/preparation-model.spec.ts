@@ -1,11 +1,17 @@
 import type { PreparationShipmentDto } from '@/lib/types/dto/fulfillment';
 import {
   batchReturnNextStep,
+  isShortLine,
+  isSplittableUnreserved,
+  lineSplitText,
+  splitOptionName,
   locatePreparationTarget,
+  orderAgeOf,
   plannedOrderText,
   preparationAddress,
   preparationTargetNotice,
   showsShipmentDetailLink,
+  waitingProducts,
 } from './preparation-model';
 
 const rows = [
@@ -17,6 +23,76 @@ describe('plannedOrderText', () => {
   it('주문번호가 없으면 상자 번호 앞 여덟 자를 쓴다', () => {
     expect(plannedOrderText(rows[1])).toBe('상자 d4444444');
     expect(plannedOrderText(rows[0])).toBe('#6321');
+  });
+});
+
+describe('waitingProducts', () => {
+  const stock = (skuId: string, inTransit: number) => ({
+    skuId,
+    onHand: 0,
+    reservedByOthers: 0,
+    available: 0,
+    incoming: {
+      inTransit,
+      inTransitEta: inTransit > 0 ? '2026-01-05' : null,
+      ordered: 0,
+      inboundShipment: 0,
+      inboundShipmentEta: null,
+    },
+    elsewhere: { onHand: 0, ordered: 0, orderedEta: null },
+  });
+
+  it('상자마다 모자란 수량을 상품별로 모으고 먼저 들어올 상품을 앞에 둔다', () => {
+    expect(
+      waitingProducts(
+        [
+          {
+            shipmentId: 'b1',
+            lines: [
+              { name: '상품 A', qty: 3, reservedQty: 1, stock: stock('a', 0) },
+              { name: '상품 A', qty: 1, reservedQty: 0, stock: stock('a', 0) },
+              { name: '상품 C', qty: 2, reservedQty: 2 },
+            ],
+          },
+          {
+            shipmentId: 'b2',
+            lines: [
+              { name: '상품 A', qty: 2, reservedQty: 1, stock: stock('a', 0) },
+              { name: '상품 B', qty: 1, reservedQty: 0, stock: stock('b', 4) },
+            ],
+          },
+        ],
+        '2026-01-01'
+      ).map(({ skuId, qty, shipmentIds }) => ({ skuId, qty, shipmentIds }))
+    ).toEqual([
+      { skuId: 'b', qty: 1, shipmentIds: ['b2'] },
+      { skuId: 'a', qty: 4, shipmentIds: ['b1', 'b2'] },
+    ]);
+  });
+
+  it('상품 id 를 싣지 않는 옛 응답이면 비운다', () => {
+    expect(
+      waitingProducts(
+        [
+          {
+            shipmentId: 'b1',
+            lines: [{ name: '상품 A', qty: 3, reservedQty: 1 }],
+          },
+        ],
+        '2026-01-01'
+      )
+    ).toEqual([]);
+  });
+
+  it('주문이 여럿 든 상자는 여기서 나누지 못한다', () => {
+    expect(isSplittableUnreserved({ orderNos: ['1'] })).toBe(true);
+    expect(isSplittableUnreserved({ orderNos: [] })).toBe(true);
+    expect(isSplittableUnreserved({ orderNos: ['1', '2'] })).toBe(false);
+    // 번호가 같거나 없어도 실제 주문 수로 가른다
+    expect(isSplittableUnreserved({ orderNos: ['1'], orderCount: 2 })).toBe(
+      false
+    );
+    expect(isSplittableUnreserved({ orderNos: [], orderCount: 1 })).toBe(true);
   });
 });
 
@@ -193,4 +269,56 @@ describe('showsShipmentDetailLink', () => {
       ).toBe(expected);
     }
   );
+});
+
+describe('orderAgeOf', () => {
+  const now = new Date('2026-01-10T12:00:00Z');
+
+  it('하루를 넘긴 주문만 오래 기다림으로 보고, 1분이 안 된 주문은 방금이라고 쓴다', () => {
+    expect(orderAgeOf('2026-01-09T12:00:00Z', now)).toMatchObject({
+      dateText: '1월 9일 21:00',
+      waitText: '1일 지남',
+      long: false,
+    });
+    expect(orderAgeOf('2026-01-09T11:59:00Z', now)).toMatchObject({
+      long: true,
+    });
+    expect(orderAgeOf('2026-01-10T11:59:30Z', now)?.waitText).toBe('방금');
+  });
+
+  it('주문일이 없거나 읽을 수 없으면 null', () => {
+    expect(orderAgeOf(null, now)).toBeNull();
+    expect(orderAgeOf(undefined, now)).toBeNull();
+    expect(orderAgeOf('not-a-date', now)).toBeNull();
+  });
+});
+
+describe('isShortLine', () => {
+  it('주문보다 잡은 재고가 적을 때만 모자란 줄이다', () => {
+    expect(isShortLine({ qty: 3, reservedQty: 2 })).toBe(true);
+    expect(isShortLine({ qty: 3, reservedQty: 3 })).toBe(false);
+    expect(isShortLine({ qty: 3, reservedQty: 5 })).toBe(false);
+  });
+});
+
+it('lineSplitText 는 있는 수와 모자란 수를, 하나도 없으면 모자란 수만 보인다', () => {
+  expect(lineSplitText({ qty: 5, reservedQty: 2 })).toBe(
+    '5개 중 2개 있음 · 3개 모자람'
+  );
+  expect(lineSplitText({ qty: 1, reservedQty: 0 })).toBe('1개 모자람');
+});
+
+it('splitOptionName 은 끝의 옵션 [...] 만 떼어 낸다', () => {
+  expect(splitOptionName('미곤 색소 [이클립스 블랙 (남자 눈썹)]')).toEqual({
+    base: '미곤 색소',
+    option: '[이클립스 블랙 (남자 눈썹)]',
+  });
+  expect(splitOptionName('클리닉 패드 150ml')).toEqual({
+    base: '클리닉 패드 150ml',
+    option: null,
+  });
+  expect(splitOptionName('[세트] 브러쉬')).toEqual({
+    base: '[세트] 브러쉬',
+    option: null,
+  });
 });

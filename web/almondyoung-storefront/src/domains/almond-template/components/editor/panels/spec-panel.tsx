@@ -1,9 +1,11 @@
 import {
   PRINT_PRODUCTS,
   PRINT_SPECS,
+  workKind,
   type PrintKind,
 } from "../../../lib/catalog"
 import { newDesign, resizeDesign, withProduct } from "../../../lib/document"
+import { PURPOSES } from "../../../lib/gallery-filter"
 import type { AlmondEditor } from "../../../hooks/use-almond-editor"
 
 export function SpecPanel({ editor }: { editor: AlmondEditor }) {
@@ -70,13 +72,7 @@ export function SpecPanel({ editor }: { editor: AlmondEditor }) {
               }
               className="mt-1 w-full rounded border p-2"
             >
-              {[
-                "이벤트·홍보",
-                "가격·메뉴",
-                "안내·주의사항",
-                "수료·증서",
-                "기타",
-              ].map((value) => (
+              {PURPOSES.map((value) => (
                 <option key={value}>{value}</option>
               ))}
             </select>
@@ -91,7 +87,14 @@ export function SpecPanel({ editor }: { editor: AlmondEditor }) {
           disabled={!!productId}
           onChange={(event) => {
             const id = event.target.value
-            change(withProduct(design, id, PRINT_PRODUCTS[id]?.kind))
+            const kind = PRINT_PRODUCTS[id]?.kind
+            change(
+              withProduct(
+                design,
+                id,
+                kind === workKind(design.kind) ? design.kind : kind
+              )
+            )
             setSelectedId(null)
           }}
         >

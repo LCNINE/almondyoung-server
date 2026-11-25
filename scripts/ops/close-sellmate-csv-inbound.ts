@@ -22,8 +22,8 @@
  * live 의 DATABASE_URL 은 `bash scripts/sellmate/run.sh <stage> …` 가 쓰는 탐색과 같은 방법으로 얻는다(터널 필요).
  *
  * 생성 방식: shortCloseLine 이 쓰는 의존성(헤더 파생기·리더·sellable 서비스)만 손으로 만든다
- * (`scripts/sellmate/recalc-sellable.ts` 선례). 입고 커널·멱등 서비스는 이 메서드가 안 쓰므로 넘기지 않는다 —
- * 메서드가 그 둘을 쓰기 시작하면 아래 `unusedByShortCloseLine` 이 던진다.
+ * (`scripts/sellmate/recalc-sellable.ts` 선례). 입고 커널·멱등 서비스·입고 뒤 예약 재시도는 이 메서드가 안 쓰므로
+ * 넘기지 않는다 — 메서드가 그것들을 쓰기 시작하면 아래 `unusedByShortCloseLine` 이 던진다.
  */
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
@@ -106,6 +106,7 @@ async function main() {
       new PurchaseOrderHeaderDeriver(),
       new PurchaseOrderReader(wmsDb),
       sellable,
+      unusedByShortCloseLine('InboundArrivalFollowUp'),
     );
 
     let closed = 0;

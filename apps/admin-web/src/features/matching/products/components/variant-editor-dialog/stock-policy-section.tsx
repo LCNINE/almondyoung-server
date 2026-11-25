@@ -5,6 +5,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toLocalDateString } from '@/lib/utils/date';
+import { SellPolicyInfo } from '../sell-policy-info';
 import {
   COMING_SOON_MANUAL_CLEAR_HINT,
   willComingSoonClearOnStock,
@@ -84,7 +85,10 @@ export function StockPolicySection({
 
   return (
     <div className="space-y-2">
-      <p className="text-xs font-medium text-muted-foreground">재고 정책</p>
+      <p className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
+        재고 정책
+        <SellPolicyInfo />
+      </p>
       <div className="p-3 space-y-2 border rounded-md">
         {!isComingSoon && sellFlags}
         <div className="flex items-center gap-2">
@@ -95,6 +99,16 @@ export function StockPolicySection({
           />
           <Label htmlFor="manualOutOfStock" className="text-sm cursor-pointer">
             수동 품절 (노출 유지, 판매 재고 0)
+          </Label>
+        </div>
+        <div className="flex items-center gap-2">
+          <Checkbox
+            id="discontinuing"
+            checked={!!value.discontinuing}
+            onCheckedChange={(c) => onChange({ ...value, discontinuing: !!c })}
+          />
+          <Label htmlFor="discontinuing" className="text-sm cursor-pointer">
+            단종 예정 (고객 화면에 라벨만 표시, 판매는 그대로)
           </Label>
         </div>
         <div className="flex items-center gap-2">

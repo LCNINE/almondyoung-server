@@ -6,6 +6,12 @@ import type { LabelSkipReason, Rendered } from './label-templates';
 
 /** 라벨 ZPL 의 `^GF` 압축은 끈다 — 송장과 같은 이유(TX400 실물 확인 전). */
 export const LABEL_ZPL_COMPRESS = false;
+/**
+ * 재고 라벨 프린터 해상도(dot/mm). 창고 라벨 칸 프린터는 300dpi 라 203dpi(8)로 보내면 0.68배로 줄어 찍혔다
+ * (2026-11-24 실물: 1×3 바코드 27mm → 19mm). 송장 프린터(203dpi)는 이 값을 쓰지 않는다.
+ * ponytail: 라벨 프린터가 한 종류일 때의 상수다. 해상도가 다른 라벨 프린터가 생기면 앱 설정에서 받는다.
+ */
+export const LABEL_DOTS_PER_MM = 12;
 /** 한 요청이 찍을 수 있는 라벨 장수(장수 포함) 상한. */
 export const LABEL_MAX_TOTAL = 500;
 /** 항목 하나의 장수 상한. */
@@ -67,5 +73,5 @@ export function buildLabelBatch(
       skipped.push({ ref: c.ref, code: c.code, reason: rendered.reason });
     }
   }
-  return { format: 'zpl', data: encodeLabelRuns(runs, rasterizer, compress), labels, skipped };
+  return { format: 'zpl', data: encodeLabelRuns(runs, rasterizer, compress, LABEL_DOTS_PER_MM, true), labels, skipped };
 }

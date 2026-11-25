@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { OrderCsBriefDto } from './order-cs.dto';
 import { ORDER_PROGRESS_STAGES } from '../order-progress.thresholds';
 
 export class OrderProgressStateSummaryDto {
@@ -102,6 +103,8 @@ export class OrderProgressItemDto {
     description: '예약 단계의 부족 품목·입고 예정. 그 밖 단계이거나 덜 예약된 상자가 없으면 null',
   })
   shortage!: ReserveShortageDto | null;
+  @ApiProperty({ nullable: true, type: OrderCsBriefDto, description: '고객에게 연락할 때 보는 값' })
+  cs!: OrderCsBriefDto | null;
 }
 
 export class OrderProgressPageDto {

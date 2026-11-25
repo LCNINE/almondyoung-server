@@ -14,7 +14,6 @@ export interface ReceiptPolicyFacts {
   onHandQty: number;
   bucketPendingQty: number;
   custodyQty: number;
-  isToday: boolean;
 }
 
 /** Shared eligibility semantics; commands must supply current facts under their existing locks. */
@@ -41,12 +40,10 @@ export function receiptActionPolicy(f: ReceiptPolicyFacts) {
       ? 'ALREADY_PUTAWAY'
       : f.returnedQty > 0
         ? 'RETURN_EXISTS'
-        : !f.isToday
-          ? 'NOT_TODAY'
-          : // A shelf receipt has no protected claim to release. Never consume other claims/custody.
-            f.quantity > f.onHandQty - f.bucketPendingQty - f.custodyQty + (f.isStagingOrigin ? pendingQty : 0)
-            ? 'ORIGIN_STOCK_INCONSISTENT'
-            : null);
+        : // A shelf receipt has no protected claim to release. Never consume other claims/custody.
+          f.quantity > f.onHandQty - f.bucketPendingQty - f.custodyQty + (f.isStagingOrigin ? pendingQty : 0)
+          ? 'ORIGIN_STOCK_INCONSISTENT'
+          : null);
   return {
     canPutaway: putawayBlockReason === null,
     putawayBlockReason,

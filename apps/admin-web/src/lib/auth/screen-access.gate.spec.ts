@@ -106,3 +106,18 @@ describe('admin·master 화면 결과 불변(승인된 변화 제외)', () => {
     expect(changed).toEqual([]);
   });
 });
+
+it('환불 요청 화면은 상품 또는 멤버십 환불 조회 권한으로 열린다', () => {
+  const access = resolveScreenAccess('/payments/refund-requests');
+
+  expect(access).toBeDefined();
+
+  if (!access) {
+    throw new Error('환불 요청 화면 권한이 없어요.');
+  }
+
+  expect(canAccess(access, new Set(['payment.refund.read']))).toBe(true);
+  expect(canAccess(access, new Set(['membership.billing.read']))).toBe(true);
+  expect(canAccess(access, new Set(['membership.member.read']))).toBe(false);
+  expect(canAccess(access, new Set())).toBe(false);
+});

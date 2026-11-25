@@ -9,7 +9,7 @@ import { GetStockSummaryListQueryDto, StockSummaryListItemDto } from '../dto/sto
 import { CurrentStockDto } from '../dto/current-stock.dto';
 import { SkuStockSummaryDto } from '../dto/sku-stock-summary.dto';
 import { PaginatedResponseDto } from '../../shared/dto';
-import { LocationContentsDto } from '../dto/location-contents.dto';
+import { LocationContentsDto, ReturnZoneGoodsDto } from '../dto/location-contents.dto';
 import { readLocationStockAvailability } from '../../shared/availability/location-stock-availability';
 import { physicalQuantity } from './physical-quantity';
 import { GetStockSummaryByGroupQueryDto, StockSummaryByGroupResponseDto } from '../dto/stock-summary-by-group.dto';
@@ -23,6 +23,7 @@ import {
 import { remainingUnshippedQuantity, unshippedDemandPredicate } from './unshipped-demand';
 import { unshippedOrders } from './unshipped-orders';
 import { UnshippedOrdersResponseDto } from '../dto/unshipped-orders.dto';
+import { readUsualShelves } from '../../core/services/usual-shelf';
 
 @Injectable()
 export class StockProjectionReader {
@@ -526,6 +527,47 @@ export class StockProjectionReader {
         locationCode: location.code,
         warehouseId: location.warehouseId,
         items,
+      };
+    }, tx);
+  }
+
+  /**
+   * 반품 검수에서 양품으로 판정돼 반품 기본존에 남은 판매 가능 재고. 선반으로 옮기는 일은 일반 이동이다.
+   * 평소 선반은 상품에 하나뿐이라 다른 창고·사용 중지·시스템 로케이션이면 비워 둔다.
+   */
+  async getReturnZoneGoods(warehouseId: string, tx?: DbTx): Promise<ReturnZoneGoodsDto> {
+    return this.dbService.run(async (trx) => {
+      const [zone] = await trx
+        .select({ id: wmsTables.locations.id, code: wmsTables.locations.code })
+        .from(wmsTables.locations)
+        .where(
+          and(eq(wmsTables.locations.warehouseId, warehouseId), eq(wmsTables.locations.systemRole, 'return_default')),
+        )
+        .limit(1);
+      if (!zone) throw new NotFoundError(`Return location not found in warehouse ${warehouseId}`);
+
+      const goods = (await readLocationStockAvailability(trx, zone.id, warehouseId)).filter(
+        (item) => item.stockState === 'ON_HAND' && item.generallyMovableQty > 0,
+      );
+      const usual = await readUsualShelves(
+        trx,
+        goods.map((item) => item.skuId),
+        warehouseId,
+      );
+
+      return {
+        locationId: zone.id,
+        locationCode: zone.code,
+        warehouseId,
+        items: goods.map((item) => ({
+          skuId: item.skuId,
+          skuCode: item.skuCode,
+          skuName: item.skuName,
+          quantity: item.generallyMovableQty,
+          usualLocationId: usual.get(item.skuId)?.usualLocationId ?? null,
+          usualLocationCode: usual.get(item.skuId)?.usualLocationCode ?? null,
+          canRememberUsual: usual.get(item.skuId)?.canRememberUsual ?? false,
+        })),
       };
     }, tx);
   }

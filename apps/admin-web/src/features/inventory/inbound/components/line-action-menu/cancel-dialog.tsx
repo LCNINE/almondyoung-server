@@ -69,8 +69,8 @@ export function CancelDialog({ line, source, open, onOpenChange }: Props) {
             <p className="rounded-md bg-muted px-3 py-2 text-sm">{INBOUND_SHIPMENT_CANCEL_NOTICE}</p>
           )}
           <p className="text-sm text-muted-foreground">
-            취소는 <strong>당일</strong> 내, <strong>전체 수량({line.quantity}개)</strong>만 가능합니다.
-            적치·회송 이력이 없어야 합니다.
+            취소는 <strong>전체 수량({line.quantity}개)</strong>만 가능하고, 적치·회송 이력이 없어야 합니다.
+            이 재고를 잡은 주문이 있으면 그 주문은 다시 재고를 기다립니다.
           </p>
         </div>
         <DialogFooter>

@@ -3,9 +3,41 @@ import type {
   PlannedShipment,
   PreparationBatchReturn,
   PreparationBucket,
+  PreparationLineStock,
   PreparationShipmentDto,
   PreparationShortPickLine,
 } from '@/lib/types/dto/fulfillment';
+import { formatDwell } from '@/lib/utils/format-dwell';
+import { arrivalSortKey } from './blocked-copy';
+
+// 이보다 오래 기다린 주문은 눈에 띄게 그린다 — 정체 보드의 계획 대기 기준(1일)과 같은 길이
+export const LONG_WAIT_MS = 24 * 60 * 60 * 1000;
+
+export interface OrderAge {
+  dateText: string;
+  waitText: string;
+  long: boolean;
+}
+
+// 주문일이 없으면(판매 주문이 없는 상자·옛 응답) null
+export function orderAgeOf(
+  orderedAt: string | null | undefined,
+  now: Date
+): OrderAge | null {
+  if (!orderedAt) return null;
+
+  const at = new Date(orderedAt);
+
+  if (Number.isNaN(at.getTime())) return null;
+
+  const waited = Math.max(0, now.getTime() - at.getTime());
+
+  return {
+    dateText: kstMinuteText(orderedAt),
+    waitText: waited < 60_000 ? '방금' : `${formatDwell(waited)} 지남`,
+    long: waited > LONG_WAIT_MS,
+  };
+}
 
 // 한 번에 출고 준비하는 상자 수 상한. 서버 BulkShipmentIdsDto 의 ArrayMaxSize(100) 과 같아야 한다.
 export const PREPARATION_BATCH_LIMIT = 100;
@@ -143,10 +175,84 @@ export function splitQuantities(lines: LineQuantity[]): {
   );
 }
 
+// 주문보다 잡은 재고가 적은 줄. 옛 응답엔 stock 이 없을 수 있어 수량으로만 가린다
+export function isShortLine(line: LineQuantity): boolean {
+  return line.qty > line.reservedQty;
+}
+
+// 모자란 줄(isShortLine)에만 부른다
 export function lineSplitText(line: LineQuantity): string {
   const { now, wait } = splitQuantities([line]);
 
-  return `주문 ${line.qty} · 지금 보낼 ${now} · 기다릴 ${wait}`;
+  return now > 0
+    ? `${line.qty}개 중 ${now}개 있음 · ${wait}개 모자람`
+    : `${wait}개 모자람`;
+}
+
+// 상품명 끝의 옵션 [...] 을 떼어 화면에서 통째로 줄을 넘기게 한다
+export function splitOptionName(name: string): {
+  base: string;
+  option: string | null;
+} {
+  const match = /^(.*\S)\s*(\[[^\]]*\])$/.exec(name);
+
+  return match
+    ? { base: match[1], option: match[2] }
+    : { base: name, option: null };
+}
+
+// 합포장한 상자(주문이 여럿)는 서버가 «있는 것만 먼저 보내기»를 거절한다
+export function isSplittableUnreserved(
+  shipment: Pick<PreparationShipmentDto, 'orderNos' | 'orderCount'>
+): boolean {
+  return (shipment.orderCount ?? shipment.orderNos.length) <= 1;
+}
+
+export interface WaitingProduct {
+  skuId: string;
+  name: string;
+  qty: number;
+  shipmentIds: string[];
+  stock: PreparationLineStock;
+}
+
+/** 나누면 기다리게 되는 상품을 상품마다 모은다. 먼저 들어올 상품이 앞이다. 상품 id 를 싣지 않는 옛 응답이면 비운다. */
+export function waitingProducts(
+  shipments: Pick<PreparationShipmentDto, 'shipmentId' | 'lines'>[],
+  today: string
+): WaitingProduct[] {
+  const products = new Map<string, WaitingProduct>();
+
+  for (const { shipmentId, lines } of shipments) {
+    for (const line of lines ?? []) {
+      const { wait } = splitQuantities([line]);
+      const skuId = line.stock?.skuId;
+
+      if (wait === 0 || !line.stock || !skuId) {
+        continue;
+      }
+
+      const product = products.get(skuId) ?? {
+        skuId,
+        name: line.name,
+        qty: 0,
+        shipmentIds: [],
+        stock: line.stock,
+      };
+
+      product.qty += wait;
+
+      if (!product.shipmentIds.includes(shipmentId)) {
+        product.shipmentIds.push(shipmentId);
+      }
+
+      products.set(skuId, product);
+    }
+  }
+
+  return [...products.values()].sort((a, b) =>
+    arrivalSortKey(a.stock, today).localeCompare(arrivalSortKey(b.stock, today))
+  );
 }
 
 export type PreparationTarget =

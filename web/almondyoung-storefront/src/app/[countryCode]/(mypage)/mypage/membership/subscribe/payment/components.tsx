@@ -318,7 +318,7 @@ export function MembershipForm({
               "one_time",
               agreementId
             )
-            setPendingPaymentMode("membership", {
+            setPendingPaymentMode("membership", intentId, {
               planId: selectedPlanId,
               billingMode: "one_time",
             })

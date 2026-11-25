@@ -10,9 +10,11 @@ import {
   Query,
   UnauthorizedException,
 } from '@nestjs/common';
-import { RequirePermission, User } from '@app/authorization';
+import { OPEN_WITH_RECIPIENT, PiiResponse, RequirePermission, User } from '@app/authorization';
 import {
   BulkShipmentIdsDto,
+  OutboundPreparationCountsDto,
+  OutboundPreparationCountsQueryDto,
   OutboundPreparationQueryDto,
   OutboundPreparationSummaryDto,
 } from '../dto/outbound-preparation.dto';
@@ -26,6 +28,11 @@ type AuthenticatedUser = { id?: string; userId?: string; sub?: string; roles?: s
 export class OutboundPreparationController {
   constructor(private readonly service: OutboundPreparationService) {}
 
+  @PiiResponse({
+    fields: { 'buckets[].shipments[].recipient.name': 'name' },
+    subjects: [{ path: 'buckets[].shipments[].recipient.shipmentId', type: 'shipment' }],
+    rawWithByField: { 'buckets[].shipments[].recipient.name': OPEN_WITH_RECIPIENT },
+  })
   @RequirePermission('fulfillment.shipment.read')
   @Get('outbound-preparation')
   summarize(@Query() query: OutboundPreparationQueryDto): Promise<OutboundPreparationSummaryDto> {
@@ -34,6 +41,13 @@ export class OutboundPreparationController {
       offset: query.offset,
       holders: query.holders,
     });
+  }
+
+  // 수령인을 담지 않으므로 PII 선언이 없다
+  @RequirePermission('fulfillment.shipment.read')
+  @Get('outbound-preparation/counts')
+  countBuckets(@Query() query: OutboundPreparationCountsQueryDto): Promise<OutboundPreparationCountsDto> {
+    return this.service.countBuckets(query.warehouseId);
   }
 
   @RequirePermission('fulfillment.warehouse.operate')

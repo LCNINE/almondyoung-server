@@ -22,7 +22,17 @@ import {
   useCancelPurchaseOrderReceipt,
   useReceivePurchaseOrder,
 } from './mutations';
+import { usualShelfNotice } from './RememberUsualToggle';
+import {
+  playInboundSaved,
+  playInboundSaveFailed,
+  primeInboundSaveSound,
+} from './saveFeedback';
+import { SaveToast, useSaveToast } from './SaveToast';
 import { PutawaySheet, type LocationRef } from './PutawaySheet';
+import { useWaitingOrders } from './waitingOrders';
+import { ReadyShipmentsSection } from './ReadyShipmentsSection';
+import { WaitingOrdersFailed, WaitingOrdersNote } from './WaitingOrdersNote';
 import { ReceiveSheet } from './ReceiveSheet';
 import { parseQuantity } from '../../core/design/QuantityInput';
 import {
@@ -50,11 +60,18 @@ function createReadinessGate() {
   return { promise, release, open: false };
 }
 
-function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
+function PurchaseOrderReceiveScreenContent({
+  poId,
+  station = false,
+}: {
+  poId: string;
+  station?: boolean;
+}) {
   const { warehouseId, isSet } = useWarehouse();
   const arrivals = useExpectedArrivals(warehouseId);
   const lookup = useSkuByBarcode();
   const receive = useReceivePurchaseOrder();
+  const toast = useSaveToast();
   const cancel = useCancelPurchaseOrderReceipt();
 
   const initial = useRef<PoReceiveDraft>({
@@ -154,6 +171,10 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
       arrival.source === 'purchase_order' && arrival.documentId === poId
   );
   const lines = purchaseOrder?.lines ?? [];
+  const waiting = useWaitingOrders(
+    warehouseId,
+    lines.map((line) => line.skuId)
+  );
 
   // 시트는 열릴 때 스냅샷(active)을 잡지만, 표시는 매 렌더 lines 에서 같은
   // skuId 를 다시 찾아 쓴다 — onSettled 무효화로 잔여/입고 수량이 바뀌어도
@@ -234,9 +255,14 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
       scanQueue.blocked()
     )
       return;
+
+    // 안드로이드 WebView 는 사용자 제스처 안에서 소리를 열어 둬야 한다.
+    primeInboundSaveSound();
+
     submitLock.current = true;
     setSubmitting(true);
     let requestSaved = false;
+    let received = false;
     try {
       const current = normalizePoReceiveDraft(await draft.read());
       if (quantity.isPending() || scanQueue.blocked()) return;
@@ -266,6 +292,11 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
         ],
         idempotencyKey: submission.key,
       });
+      received = true;
+
+      playInboundSaved();
+      toast.show('입고를 저장했어요');
+
       // The runtime reconciles the original key. The runtime-free embedding uses the mutation result.
       if (!runtime) {
         await draft.update((prev) => ({
@@ -285,6 +316,11 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
         }));
       }
     } catch {
+      // 요청이 성공한 뒤 초안 정리가 실패한 경우는 저장 실패가 아니다.
+      if (!received) {
+        playInboundSaveFailed();
+      }
+
       if (!requestSaved) setSubmissionSaveFailed(true);
       // The mutation and draft hooks expose recoverable failures in the open sheet.
     } finally {
@@ -517,6 +553,7 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
 
   return (
     <div className="space-y-4" aria-busy={!draft.ready || !reconciled}>
+      <SaveToast message={toast.message} station={station} />
       <ScreenHeader
         title={purchaseOrder?.supplier?.name ?? '발주 입고'}
         backTo="/inbound"
@@ -562,6 +599,10 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
               ' · 입고 상태 확인 필요'
             )}
           </p>
+          <ReadyShipmentsSection
+            warehouseId={warehouseId}
+            receiptLineIds={[fresh.lineId]}
+          />
           <div className="flex gap-2">
             {receipt.ready &&
             receipt.state?.canPutaway &&
@@ -574,6 +615,7 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
                   if (receipt.state?.originLocationId)
                     setPutawayTarget({
                       lineId: fresh.lineId,
+                      skuId: fresh.skuId,
                       skuName: fresh.skuName,
                       skuCode: fresh.skuCode,
                       source: 'purchase_order',
@@ -631,6 +673,7 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
 
       <section className="space-y-2">
         <h2 className="text-sm font-semibold text-gray-700">발주 품목</h2>
+        <WaitingOrdersFailed failed={waiting.failed} />
         {!activeItem && !arrivalsReady ? (
           sheetStatus
         ) : arrivals.isError ? (
@@ -659,6 +702,7 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
                     발주 {item.orderedQty} · 입고 {item.receivedQty} · 남은{' '}
                     {item.outstandingQty}
                   </span>
+                  <WaitingOrdersNote waiting={waiting.of(item.skuId)} />
                 </span>
                 {/* 시트가 열려 있는 동안은 숨긴다 — 시트의 [입고] 버튼과 접근성 이름이
                     겹쳐서 role 쿼리가 모호해지고, 어차피 한 번에 한 항목만 다룬다. */}
@@ -699,6 +743,7 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
       {activeItem ? (
         <ReceiveSheet
           item={activeItem}
+          waiting={<WaitingOrdersNote waiting={waiting.of(activeItem.skuId)} />}
           quantityText={
             draft.value.submitted
               ? String(draft.value.submitted.quantity)
@@ -834,9 +879,10 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
           warehouseId={warehouseId}
           lastDest={lastDest}
           onCancel={() => setPutawayTarget(null)}
-          onDone={async (dest) => {
+          onDone={async (dest, _quantity, usualShelfSet) => {
             setLastDest(dest);
             setPutawayTarget(null);
+            if (usualShelfSet) setNotice(usualShelfNotice(dest.code));
             await receipt.refresh().catch(() => {});
           }}
         />

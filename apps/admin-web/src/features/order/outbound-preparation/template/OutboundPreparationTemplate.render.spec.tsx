@@ -115,6 +115,7 @@ jest.mock('@/hooks/use-permission', () => ({
         mockConsolidationAllowed),
   }),
   usePermissionCheck: () => ({ canRun: () => mockAllowed }),
+  useCanOpen: () => ({ status: 'ready', allowed: true }),
 }));
 
 jest.mock('@/features/order/fulfillments/detail/consolidation-sheet', () => ({
@@ -726,7 +727,7 @@ describe('OutboundPreparationTemplate', () => {
     );
 
     expect(row('#AY-partial-1').getByRole('listitem').textContent).toBe(
-      '상품주문 3 · 지금 보낼 2 · 기다릴 1'
+      '상품3개 중 2개 있음 · 1개 모자람'
     );
 
     await userEvent.click(
@@ -738,6 +739,205 @@ describe('OutboundPreparationTemplate', () => {
     expect(
       within(dialog).getByText('지금 보낼 상품 66개, 기다릴 상품 33개')
     ).toBeTruthy();
+    expect(
+      within(dialog).getByText(
+        '지금 재고로는 상자 33개가 66개로 나뉘어 송장도 66장 필요해요.'
+      )
+    ).toBeTruthy();
+  });
+
+  const waitStock = (skuId: string, inTransit: number) => ({
+    skuId,
+    onHand: 0,
+    reservedByOthers: 0,
+    available: 0,
+    incoming: {
+      inTransit,
+      inTransitEta: inTransit > 0 ? '2099-01-05' : null,
+      ordered: 0,
+      inboundShipment: 0,
+      inboundShipmentEta: null,
+    },
+    elsewhere: { onHand: 0, ordered: 0, orderedEta: null },
+  });
+
+  function partialBoxes() {
+    const box = (
+      id: string,
+      orderNos: string[],
+      skus: [string, number][]
+    ): PreparationShipmentDto => ({
+      shipmentId: id,
+      orderNos,
+      itemSummary: '상품',
+      totalQty: 2,
+      single: false,
+      reason: null,
+      lines: skus.map(([sku, inTransit]) => ({
+        name: `상품 ${sku}`,
+        qty: 2,
+        reservedQty: 1,
+        stock: waitStock(sku, inTransit),
+      })),
+    });
+    const bucket = mockSummary.buckets.find(
+      (entry) => entry.bucket === 'partial'
+    );
+
+    if (!bucket) throw new Error('Missing partial bucket');
+
+    bucket.shipments = [
+      box('p1', ['1'], [['A', 0]]),
+      box(
+        'p2',
+        ['2'],
+        [
+          ['A', 0],
+          ['B', 4],
+        ]
+      ),
+      box('p3', ['3', '4'], [['A', 0]]),
+    ];
+    bucket.count = 3;
+  }
+
+  const openSplitConfirm = async () => {
+    await userEvent.click(
+      screen.getByRole('button', { name: '있는 것만 먼저 보내기' })
+    );
+
+    return screen.getByRole('alertdialog');
+  };
+
+  it('나누기 확인 창은 예정이 지난 발주를 앞날의 발주보다 뒤에 두고, 모자란 수량을 함께 보인다', async () => {
+    partialBoxes();
+    const bucket = mockSummary.buckets.find(
+      (entry) => entry.bucket === 'partial'
+    );
+    const [first] = bucket?.shipments ?? [];
+
+    if (!bucket || !first) throw new Error('Missing partial bucket');
+
+    const line = (sku: string, orderedEta: string) => ({
+      name: `상품 ${sku}`,
+      qty: 2,
+      reservedQty: 1,
+      stock: {
+        ...waitStock(sku, 0),
+        waiting: 9,
+        incoming: { ...waitStock(sku, 0).incoming, ordered: 6, orderedEta },
+      },
+    });
+
+    bucket.shipments = [
+      { ...first, lines: [line('A', '2020-01-05'), line('B', '2099-01-05')] },
+    ];
+    bucket.count = 1;
+    render(<OutboundPreparationTemplate />);
+
+    const dialog = await openSplitConfirm();
+
+    expect(
+      within(within(dialog).getByRole('list', { name: '기다릴 상품' }))
+        .getAllByRole('listitem')
+        .map((item) => item.textContent)
+    ).toEqual([
+      '상품 B상자 1개에서 1개 기다림이 창고로 올 것: 발주 6개(1월 5일 입고 예정) · 모두 9개 기다려 3개 모자라요1건 빼기',
+      '상품 A상자 1개에서 1개 기다림이 창고로 올 것: 발주 6개(1월 5일 예정이 지났어요) · 모두 9개 기다려 3개 모자라요1건 빼기',
+    ]);
+  });
+
+  it('나누기 확인 창에서 먼저 들어올 상품의 상자를 빼면 남은 상자만 나누고, 합포장한 상자는 보내지 않는다', async () => {
+    partialBoxes();
+    mockSplit.mockResolvedValueOnce({ succeeded: ['p1'], failed: [] });
+    render(<OutboundPreparationTemplate />);
+
+    const dialog = await openSplitConfirm();
+    const waiting = within(dialog).getByRole('list', { name: '기다릴 상품' });
+
+    // 들어올 예정이 있는 상품이 먼저, 합포장한 상자의 몫은 세지 않는다
+    expect(
+      within(waiting)
+        .getAllByRole('listitem')
+        .map((item) => item.textContent)
+    ).toEqual([
+      '상품 B상자 1개에서 1개 기다림이 창고로 올 것: 이동 중 4개(1월 5일 도착 예정)1건 빼기',
+      '상품 A상자 2개에서 2개 기다림들어올 예정이 없어요 — 발주하거나 다른 창고에서 옮겨 와야 해요2건 빼기',
+    ]);
+    expect(
+      within(dialog).getByRole('link', { name: '#3, #4' }).getAttribute('href')
+    ).toBe('/order/fulfillments?shipmentId=p3');
+
+    await userEvent.click(
+      within(dialog).getByRole('button', { name: '상품 B 기다리는 1건 빼기' })
+    );
+
+    expect(within(dialog).getByText('부분출고 1건을 나눌까요?')).toBeTruthy();
+    expect(
+      within(dialog).getByText(
+        '지금 재고로는 상자 1개가 2개로 나뉘어 송장도 2장 필요해요.'
+      )
+    ).toBeTruthy();
+    expect(
+      within(dialog).getByText('1건은 나누지 않고 부분출고에 그대로 둬요.')
+    ).toBeTruthy();
+
+    await userEvent.click(
+      within(dialog).getByRole('button', { name: '나누기' })
+    );
+    await waitFor(() => expect(mockSplit).toHaveBeenCalledTimes(1));
+    expect(mockSplit.mock.calls[0][0].data.shipmentIds).toEqual(['p1']);
+  });
+
+  it('뺀 상자는 되돌릴 수 있고, 다 빼면 나누기를 누를 수 없다', async () => {
+    partialBoxes();
+    render(<OutboundPreparationTemplate />);
+
+    const dialog = await openSplitConfirm();
+
+    await userEvent.click(
+      within(dialog).getByRole('button', { name: '상품 A 기다리는 2건 빼기' })
+    );
+    expect(
+      within(dialog)
+        .getByRole('button', { name: '나누기' })
+        .hasAttribute('disabled')
+    ).toBe(true);
+    expect(within(dialog).queryByText(/송장도/)).toBeNull();
+
+    await userEvent.click(
+      within(dialog).getByRole('button', { name: '뺀 상자 되돌리기' })
+    );
+    expect(within(dialog).getByText('부분출고 2건을 나눌까요?')).toBeTruthy();
+  });
+
+  it('창을 열어 둔 사이 새로 들어온 상자는 나누지 않고, 실패해 다시 열어도 뺀 상자는 빠져 있다', async () => {
+    partialBoxes();
+    mockSplit.mockRejectedValueOnce({ response: { status: 409 } });
+    const { rerender } = render(<OutboundPreparationTemplate />);
+
+    const dialog = await openSplitConfirm();
+
+    await userEvent.click(
+      within(dialog).getByRole('button', { name: '상품 B 기다리는 1건 빼기' })
+    );
+
+    const bucket = mockSummary.buckets.find(
+      (entry) => entry.bucket === 'partial'
+    );
+    bucket?.shipments.push({ ...bucket.shipments[0], shipmentId: 'p4' });
+    rerender(<OutboundPreparationTemplate />);
+    await userEvent.click(
+      within(dialog).getByRole('button', { name: '나누기' })
+    );
+    await waitFor(() => expect(mockSplit).toHaveBeenCalledTimes(1));
+    expect(mockSplit.mock.calls[0][0].data.shipmentIds).toEqual(['p1']);
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+
+    const again = await openSplitConfirm();
+
+    expect(within(again).getByText('부분출고 1건을 나눌까요?')).toBeTruthy();
+    expect(within(again).queryByText('상품 B')).toBeNull();
   });
 
   it('나눈 뒤 결과 창에서 나눈 상자만 골라 출고 준비를 이어 간다', async () => {

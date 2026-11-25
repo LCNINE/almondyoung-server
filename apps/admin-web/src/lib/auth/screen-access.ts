@@ -72,7 +72,6 @@ export const SCREEN_ACCESS: Readonly<Record<string, ScreenAccess>> = {
   '/order/stall-board': any('fulfillment.order.read'),
   '/order/fulfillments': any('fulfillment.order.read'),
   '/order/regional-invoice': any('order.order.read'),
-  '/order/shipment-round': any('fulfillment.order.read'),
   '/order/picking-list': any('fulfillment.shipment.read'),
   '/order/waybill-issue': any('fulfillment.order.read'),
   '/order/inspection': any('fulfillment.shipment.read'),
@@ -164,7 +163,7 @@ export const SCREEN_ACCESS: Readonly<Record<string, ScreenAccess>> = {
   // 결제
   '/payments': any('payment.payment.read'),
   '/payments/refunds': any('payment.refund.read'),
-  '/payments/refund-requests': any('payment.refund.read'),
+  '/payments/refund-requests': any('payment.refund.read', 'membership.billing.read'),
 
   // 멤버십
   '/membership': any('membership.member.read'),

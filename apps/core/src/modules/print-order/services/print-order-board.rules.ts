@@ -14,9 +14,10 @@ export function isActivePrint(row: Pick<PrintOrderRow, 'status' | 'orderAttempte
   return true;
 }
 
-// 취소되지 않은 인쇄 행. 아직 안 보낸 실패·미지원 행도 재전송되면 제작되므로 살아 있는 것으로 본다
-export function isLivePrint(row: Pick<PrintOrderRow, 'status'>): boolean {
-  return row.status !== 'cancelled';
+// 취소되지 않은 인쇄 행. 아직 안 보낸 실패·미지원 행도 재전송되면 제작되므로 살아 있는 것으로 본다.
+// 시안도 고객 파일도 없는 행은 재전송해도 발주되지 않고 그 줄은 창고로 나가므로 인쇄로 보지 않는다
+export function isLivePrint(row: Pick<PrintOrderRow, 'status' | 'almondDesignId' | 'printFileId'>): boolean {
+  return row.status !== 'cancelled' && (row.almondDesignId !== null || row.printFileId !== null);
 }
 
 export function retryBlocked(row: PrintOrderRow): boolean {

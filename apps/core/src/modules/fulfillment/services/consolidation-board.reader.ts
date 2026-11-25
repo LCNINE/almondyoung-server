@@ -4,6 +4,7 @@ import { DbService, InjectTypedDb } from '@app/db';
 import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import {
+  ConsolidationBoardCountDto,
   ConsolidationBoardGroupDto,
   ConsolidationBoardResponseDto,
   ConsolidationBoardShipmentDto,
@@ -18,6 +19,8 @@ import {
 import {
   asRecipient,
   loadInHouseProfileIds,
+  loadKeptApartSplits,
+  loadSplitGraph,
   loadShipmentLines,
   loadShipmentProgress,
   OPTION_STATUSES,
@@ -28,6 +31,7 @@ import {
   uniqueInOrder,
 } from './consolidation-shipment-reads';
 import { loadSellmateShipmentIds } from './sellmate-handed-over-shipments';
+import { isKeptApart, KeptApartSplits } from './split-families';
 
 export interface BoardRow {
   customerKey: string | null;
@@ -38,11 +42,48 @@ export interface BoardRow {
 
 export type BoardGroup = ConsolidationBoardGroupDto;
 
+function splitApartSides(
+  buckets: ReadonlyMap<string, BoardRow[]>,
+  keptApart: KeptApartSplits,
+): Array<[string, BoardRow[]]> {
+  const result: Array<[string, BoardRow[]]> = [];
+
+  for (const [key, bucket] of buckets) {
+    const ids = bucket.map((member) => member.shipment.shipmentId);
+    const hasApart = ids.some((id, index) => ids.slice(index + 1).some((other) => isKeptApart(keptApart, id, other)));
+
+    if (!hasApart) {
+      result.push([key, bucket]);
+      continue;
+    }
+
+    const sides = new Map<string, BoardRow[]>();
+
+    for (const member of bucket) {
+      const split = keptApart.get(member.shipment.shipmentId);
+      const side = split ? `${split.family}|${split.side}` : '';
+
+      sides.set(side, [...(sides.get(side) ?? []), member]);
+    }
+
+    for (const [side, members] of sides) {
+      result.push([`${key}|${side}`, members]);
+    }
+  }
+
+  return result;
+}
+
 function opaqueKey(groupingKey: string): string {
   return createHash('sha256').update(groupingKey).digest('hex');
 }
 
-export function groupConsolidationBoard(rows: readonly BoardRow[]): BoardGroup[] {
+// keptApart: 크기 때문에 나눈 두 쪽. 한 받는 분 묶음에 그 두 쪽이 함께 있으면 묶음을 쪽마다 따로 나누고,
+// 나눈 적 없는 상자는 그 쪽들에 섞지 않는다 — 묶음 전체를 한 번에 합치면 크기로 나눈 상자가 다시 한 상자가 된다.
+export function groupConsolidationBoard(
+  rows: readonly BoardRow[],
+  keptApart: KeptApartSplits = new Map(),
+): BoardGroup[] {
   const buckets = new Map<string, BoardRow[]>();
 
   for (const row of rows) {
@@ -59,7 +100,7 @@ export function groupConsolidationBoard(rows: readonly BoardRow[]): BoardGroup[]
 
   const groups: BoardGroup[] = [];
 
-  for (const [key, members] of buckets) {
+  for (const [key, members] of splitApartSides(buckets, keptApart)) {
     if (members.length < 2) continue;
 
     const shipments = members.map((member) => member.shipment);
@@ -92,6 +133,7 @@ export function assembleConsolidationBoard(
   lines: readonly OptionLine[],
   progress: ShipmentProgress,
   inHouseProfileIds: ReadonlySet<string>,
+  keptApart?: KeptApartSplits,
 ): BoardGroup[] {
   const linesByShipment = new Map<string, OptionLine[]>();
 
@@ -122,7 +164,7 @@ export function assembleConsolidationBoard(
     });
   }
 
-  return groupConsolidationBoard(rows);
+  return groupConsolidationBoard(rows, keptApart);
 }
 
 @Injectable()
@@ -153,11 +195,20 @@ export class ConsolidationBoardReader {
       const shipments = candidates.filter((shipment) => !sellmate.has(shipment.id));
       const ids = shipments.map((shipment) => shipment.id);
       const lines = await loadShipmentLines(trx, ids);
-      const progress = await loadShipmentProgress(trx, ids);
+      const splitGraph = await loadSplitGraph(trx, ids);
+      const progress = await loadShipmentProgress(trx, ids, splitGraph);
       const profileIds = uniqueInOrder(shipments.flatMap((shipment) => shipment.shippingProfileId ?? []));
       const inHouseProfileIds = await loadInHouseProfileIds(trx, profileIds);
+      const keptApart = await loadKeptApartSplits(trx, ids, splitGraph);
 
-      return { groups: assembleConsolidationBoard(shipments, lines, progress, inHouseProfileIds) };
+      return { groups: assembleConsolidationBoard(shipments, lines, progress, inHouseProfileIds, keptApart) };
     }, tx);
+  }
+
+  // 묶음은 보드와 같은 판정으로 세고, 받는 분은 싣지 않는다
+  async countGroups(warehouseId: string, tx?: DbTx): Promise<ConsolidationBoardCountDto> {
+    const board = await this.findBoard(warehouseId, tx);
+
+    return { groupCount: board.groups.length };
   }
 }

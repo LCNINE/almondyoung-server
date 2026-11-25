@@ -15,12 +15,17 @@ export interface Beep {
 export interface ToneSink {
   now(): number;
   beep(beep: Beep): void;
+  /** 사용자 제스처 안에서 불러 컨텍스트를 만들고 깨운다. */
+  prime?(): void;
 }
 
 /** 음량 100 일 때의 이득. 사각파(오류음)는 같은 이득에서 훨씬 크게 들리고, 1 에 가까우면 찢어진다. */
 const MAX_GAIN = 0.3;
 
-export function createSoundPlayer(deps: { sink: ToneSink | null; readPrefs: () => SoundPrefs }) {
+export function createSoundPlayer(deps: {
+  sink: ToneSink | null;
+  readPrefs: () => SoundPrefs;
+}) {
   return {
     play(kind: FeedbackKind): void {
       const sink = deps.sink;
@@ -42,12 +47,23 @@ export function createSoundPlayer(deps: { sink: ToneSink | null; readPrefs: () =
 
 /** WebView2(Chromium) 의 Web Audio. AudioContext 가 없으면(jsdom) null — 소리 없이 동작한다. */
 export function createWebAudioSink(): ToneSink | null {
-  if (typeof window === 'undefined' || typeof window.AudioContext !== 'function') return null;
+  if (
+    typeof window === 'undefined' ||
+    typeof window.AudioContext !== 'function'
+  )
+    return null;
   const Ctor = window.AudioContext;
   let context: AudioContext | null = null;
   const get = () => (context ??= new Ctor());
   return {
     now: () => get().currentTime,
+    prime() {
+      const ctx = get();
+
+      if (ctx.state === 'suspended') {
+        void ctx.resume().catch(() => undefined);
+      }
+    },
     beep({ frequency, wave, at, duration, gain }) {
       const ctx = get();
       // 자동재생 정책: 첫 사용자 입력 전에는 suspended 다. 스캐너 키 입력도 사용자 입력이다(실기 확인 §10.3-3).

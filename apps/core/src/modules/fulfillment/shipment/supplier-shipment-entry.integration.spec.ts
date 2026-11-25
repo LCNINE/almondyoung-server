@@ -20,7 +20,6 @@ import {
   seedOrder,
   World,
 } from '../order-progress/__support__/order-progress.fixtures';
-import { CarrierGatewayRegistry } from '../waybill/carrier/carrier-gateway.registry';
 import { CarrierTrackingPoller } from '../services/carrier-tracking.poller';
 import { SupplierShipmentInWarehouseFlowError } from './shipment-owner';
 
@@ -173,12 +172,7 @@ describeIfDb('창고 흐름은 입점사 상자를 받지 않는다 (DB integrat
       };
       const warehouseAttempt = await shipBox(f.warehouseBox.shipmentId, 'warehouse', `W${randomUUID().slice(0, 12)}`);
       const supplierAttempt = await shipBox(f.supplierBox.shipmentId, 'supplier', `S${randomUUID().slice(0, 12)}`);
-      const poller = new CarrierTrackingPoller(
-        makeDbService(db),
-        new CarrierGatewayRegistry([]),
-        {} as never,
-        {} as never,
-      );
+      const poller = new CarrierTrackingPoller(makeDbService(db), {} as never, {} as never);
       const targets = await poller.findTargets(['HANJIN'], dispatchedAt, tx);
       const attemptIds = targets.map((target) => target.dispatchAttemptId);
       expect(attemptIds).toContain(warehouseAttempt);

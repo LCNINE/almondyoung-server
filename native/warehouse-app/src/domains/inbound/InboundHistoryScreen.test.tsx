@@ -178,8 +178,10 @@ it('직접/발주 입고 취소는 각 출처 API를 쓰고 취소 이력을 남
   await userEvent.click(
     await screen.findByRole('button', { name: '발주상품 입고 취소' })
   );
-  expect(screen.getByRole('dialog')).toHaveTextContent(
-    '발주 미입고 수량이 복원'
+  await waitFor(() =>
+    expect(screen.getByRole('dialog')).toHaveTextContent(
+      '발주 미입고 수량이 복원'
+    )
   );
   await waitFor(() =>
     expect(

@@ -12,6 +12,7 @@ vi.mock("next-intl", () => ({
 
 import {
   CustomOrderNotice,
+  cartHasCustomerPrintFile,
   isCustomOrderPaymentBlocked,
 } from "./custom-order-notice"
 
@@ -22,6 +23,26 @@ describe("custom order notice", () => {
     expect(isCustomOrderPaymentBlocked(items, true)).toBe(false)
     expect(isCustomOrderPaymentBlocked([{ metadata: {} }], false)).toBe(false)
     expect(isCustomOrderPaymentBlocked([], false)).toBe(false)
+  })
+
+  it("asks for the agreement when the cart carries a customer print file", () => {
+    const items = [{ metadata: { print_file_id: "f1" } }]
+    expect(isCustomOrderPaymentBlocked(items, false)).toBe(true)
+    expect(cartHasCustomerPrintFile(items)).toBe(true)
+    expect(
+      cartHasCustomerPrintFile([{ metadata: { almond_design_id: "d1" } }])
+    ).toBe(false)
+  })
+
+  it("adds the file-defect line and agreement only for customer files", () => {
+    const html = renderToStaticMarkup(
+      createElement(CustomOrderNotice, {
+        withAgreement: true,
+        withCustomerFile: true,
+      })
+    )
+    expect(html).toContain("checkout.customOrderNotice.fileStepTitle")
+    expect(html).toContain("checkout.customOrderNotice.agreeWithFile")
   })
 
   it("renders an unchecked agreement checkbox only with withAgreement", () => {

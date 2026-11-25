@@ -265,8 +265,10 @@ export class PrintOrderCancellationManager {
     for (const row of rows) {
       const ordered = quantities.get(row.salesOrderLineId);
       const asked = requested.get(row.salesOrderLineId) ?? 0;
-      // 인쇄가 이미 취소로 마무리된 줄은 와우프레스 주문을 쪼갤 일이 없어 남은 수량만 취소해도 된다
-      if (ordered !== undefined && asked < ordered && !isOperatorResolved(row)) partial.add(row.id);
+      // 인쇄가 이미 취소로 마무리된 줄은 와우프레스 주문을 쪼갤 일이 없어 남은 수량만 취소해도 된다.
+      // 시안도 고객 파일도 없는 줄은 발주될 일이 없어 마찬가지다
+      const sourceless = row.almondDesignId === null && row.printFileId === null;
+      if (ordered !== undefined && asked < ordered && !isOperatorResolved(row) && !sourceless) partial.add(row.id);
     }
     return partial;
   }

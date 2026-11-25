@@ -78,6 +78,8 @@ export interface AdminMemberListItem {
   refundCompleted: boolean;
   refundCompletedAt: string | null;
   eligibleRefundAmount: number | null;
+  refundResolutionSubmittedAt: string | null;
+  refundResolutionSubmittedBy: string | null;
   /** 환불 대상 결제가 있는지. 관리자 지급·이관 계약은 돌려줄 돈 자체가 없다. */
   hasPaymentIntent: boolean;
   /** 효성 CMS 인보이스 경로인지. 수금이 늦어 '선지급 후 출금' 상태가 존재한다. */
@@ -137,6 +139,7 @@ export interface AdminMemberDetail {
   eligibleRefundAmount: number | null;
   refundCompleted: boolean;
   refundCompletedAt: string | null;
+  refundResolutionSubmittedAt: string | null;
   /**
    * 해지 예약을 철회해 자동결제를 재개할 수 있는지. 1회 결제 계약은 되살릴 정기결제가 없어 false.
    * 화면이 `autoRenewal || recurringCancelledAt` 으로 추론하면 1회 결제 해지 건까지 철회 버튼이 열려
@@ -166,6 +169,11 @@ export interface AdminMemberDetail {
   firstContractCreatedAt: string;
   /** 실제로 멤버십 자격을 보유했던 일수의 합. 만료 뒤 흐른 시간은 포함하지 않는다. */
   membershipUsageDays: number;
+}
+
+// 인보이스 경로 계약은 이 칸에 wallet 결제 ID 가 아니라 인보이스 멱등 키를 기록한다.
+export function walletIntentIdOf(key: string | null, billingPath: string): string | null {
+  return billingPath === 'INVOICE' ? null : key;
 }
 
 export interface BillingEventItem {
@@ -463,6 +471,7 @@ export class AdminMembersReader {
     if (refundPending) {
       baseConditions.push(eq(schema.subscriptionContracts.refundRequested, true));
       baseConditions.push(eq(schema.subscriptionContracts.refundCompleted, false));
+      baseConditions.push(isNotNull(schema.subscriptionContracts.lastPaymentIntentId));
     }
 
     const whereClause = baseConditions.length > 0 ? and(...baseConditions) : undefined;
@@ -491,6 +500,8 @@ export class AdminMembersReader {
         refundCompleted: schema.subscriptionContracts.refundCompleted,
         refundCompletedAt: schema.subscriptionContracts.refundCompletedAt,
         eligibleRefundAmount: schema.subscriptionContracts.eligibleRefundAmount,
+        refundResolutionSubmittedAt: schema.subscriptionContracts.refundResolutionSubmittedAt,
+        refundResolutionSubmittedBy: schema.subscriptionContracts.refundResolutionSubmittedBy,
         lastPaymentIntentId: schema.subscriptionContracts.lastPaymentIntentId,
         billingPath: schema.subscriptionContracts.billingPath,
         planDurationDays: schema.plan.durationDays,
@@ -570,6 +581,8 @@ export class AdminMembersReader {
         refundCompleted: r.refundCompleted === true,
         refundCompletedAt: r.refundCompletedAt ? r.refundCompletedAt.toISOString() : null,
         eligibleRefundAmount: r.eligibleRefundAmount ?? null,
+        refundResolutionSubmittedAt: r.refundResolutionSubmittedAt ? r.refundResolutionSubmittedAt.toISOString() : null,
+        refundResolutionSubmittedBy: r.refundResolutionSubmittedBy ?? null,
         hasPaymentIntent: !!r.lastPaymentIntentId,
         billingPath: r.billingPath,
         cancellation: null as CancellationInfo | null,
@@ -660,7 +673,7 @@ export class AdminMembersReader {
     return { data, total, page, limit };
   }
 
-  async findDetailByUserId(userId: string): Promise<AdminMemberDetail | null> {
+  async findDetailByUserId(userId: string, contractId?: string): Promise<AdminMemberDetail | null> {
     const rows = await this.dbService.db
       .select({
         contractId: schema.subscriptionContracts.id,
@@ -675,6 +688,7 @@ export class AdminMembersReader {
         recurringCancellationReasonCode: schema.subscriptionContracts.recurringCancellationReasonCode,
         refundRequested: schema.subscriptionContracts.refundRequested,
         refundRequestedAt: schema.subscriptionContracts.refundRequestedAt,
+        refundResolutionSubmittedAt: schema.subscriptionContracts.refundResolutionSubmittedAt,
         eligibleRefundAmount: schema.subscriptionContracts.eligibleRefundAmount,
         refundCompleted: schema.subscriptionContracts.refundCompleted,
         refundCompletedAt: schema.subscriptionContracts.refundCompletedAt,
@@ -687,7 +701,12 @@ export class AdminMembersReader {
       .from(schema.subscriptionContracts)
       .innerJoin(schema.plan, eq(schema.subscriptionContracts.planId, schema.plan.id))
       .innerJoin(schema.tiers, eq(schema.plan.tierId, schema.tiers.id))
-      .where(eq(schema.subscriptionContracts.userId, userId))
+      .where(
+        and(
+          eq(schema.subscriptionContracts.userId, userId),
+          contractId ? eq(schema.subscriptionContracts.id, contractId) : undefined,
+        ),
+      )
       .orderBy(desc(schema.subscriptionContracts.createdAt))
       .limit(1);
 
@@ -796,6 +815,7 @@ export class AdminMembersReader {
       eligibleRefundAmount: r.eligibleRefundAmount ?? null,
       refundCompleted: r.refundCompleted ?? false,
       refundCompletedAt: r.refundCompletedAt ? r.refundCompletedAt.toISOString() : null,
+      refundResolutionSubmittedAt: r.refundResolutionSubmittedAt ? r.refundResolutionSubmittedAt.toISOString() : null,
       canUndoCancellation,
       hasPaymentIntent: !!r.lastPaymentIntentId,
       manualRefundAccount,
@@ -850,6 +870,7 @@ export class AdminMembersReader {
     const rows = await this.dbService.db
       .select(this.billingEventColumns())
       .from(schema.billingEvents)
+      .innerJoin(schema.subscriptionContracts, eq(schema.billingEvents.contractId, schema.subscriptionContracts.id))
       .where(eq(schema.billingEvents.contractId, contractId))
       .orderBy(desc(schema.billingEvents.createdAt));
     return rows.map((r) => this.toBillingEventItem(r));
@@ -872,6 +893,7 @@ export class AdminMembersReader {
       attemptNo: schema.billingEvents.attemptNo,
       amount: schema.billingEvents.amount,
       paymentIntentId: schema.billingEvents.paymentIntentId,
+      billingPath: schema.subscriptionContracts.billingPath,
       errorCode: schema.billingEvents.errorCode,
       errorMessage: schema.billingEvents.errorMessage,
       createdAt: schema.billingEvents.createdAt,
@@ -898,11 +920,18 @@ export class AdminMembersReader {
     attemptNo: number | null;
     amount: number | null;
     paymentIntentId: string | null;
+    billingPath: string;
     errorCode: string | null;
     errorMessage: string | null;
     createdAt: Date;
   }): BillingEventItem {
-    return { ...r, createdAt: r.createdAt.toISOString() };
+    const { billingPath, ...rest } = r;
+
+    return {
+      ...rest,
+      paymentIntentId: walletIntentIdOf(r.paymentIntentId, billingPath),
+      createdAt: r.createdAt.toISOString(),
+    };
   }
 
   private toContractEventItem(r: {
@@ -971,6 +1000,7 @@ export class AdminMembersReader {
           attemptNo: schema.billingEvents.attemptNo,
           amount: schema.billingEvents.amount,
           paymentIntentId: schema.billingEvents.paymentIntentId,
+          billingPath: schema.subscriptionContracts.billingPath,
           errorCode: schema.billingEvents.errorCode,
           errorMessage: schema.billingEvents.errorMessage,
           createdAt: schema.billingEvents.createdAt,
@@ -991,7 +1021,7 @@ export class AdminMembersReader {
         eventType: r.eventType,
         attemptNo: r.attemptNo,
         amount: r.amount,
-        paymentIntentId: r.paymentIntentId,
+        paymentIntentId: walletIntentIdOf(r.paymentIntentId, r.billingPath),
         errorCode: r.errorCode,
         errorMessage: r.errorMessage,
         createdAt: r.createdAt.toISOString(),

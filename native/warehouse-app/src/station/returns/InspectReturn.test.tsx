@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { flash, press, scan, typeHuman } from '../outbound/__fixtures__/renderStation';
 import { READY, listed, orderNos, setupReturns } from './__fixtures__/renderReturns';
 import type { FakeReturn, InspectionBody, ReturnsServer } from './__fixtures__/returnsServer';
+import { RETURN_GOODS_KEY } from '../../domains/inbound/returnGoods';
 
 const COMPLETE_HZ = 1568;
 const REFUND_PROMPT = '한 번 더 누르면 환불을 요청해요';
@@ -260,7 +261,8 @@ describe('검수 — Esc', () => {
 
 describe('검수 확정 F10 — 두 번', () => {
   it('보류 0 — 첫 누름 «한 번 더 누르면 환불을 요청해요», 두 번째에 모든 항목을 보내고 완료음 + 목록', async () => {
-    const { server, beeps } = setupReturns({ returns: [TWO, READY] });
+    const { server, beeps, queryClient } = setupReturns({ returns: [TWO, READY] });
+    queryClient.setQueryData([RETURN_GOODS_KEY, 'w-1'], { items: [] });
     await openByScan('8805001');
     await typeHuman(['1']);
     press('F10');
@@ -279,6 +281,30 @@ describe('검수 확정 F10 — 두 번', () => {
       ],
     });
     expect(server.view(TWO.id).status).toBe('inspected');
+    expect(
+      screen.getByText(`${TWO.orderNo} 검수를 확정했어요. 양품 4개는 F4 적치에서 선반에 넣어 주세요.`)
+    ).toBeInTheDocument();
+    expect(queryClient.getQueryState([RETURN_GOODS_KEY, 'w-1'])?.isInvalidated).toBe(true);
+  });
+
+  it('교환이면 «한 번 더 누르면 교환품 출고를 지시해요» — 환불이라고 하지 않는다', async () => {
+    const { server } = setupReturns({ returns: [{ ...TWO, kind: 'exchange' }] });
+    await openByScan('8805001');
+    press('F10');
+    expect(await screen.findByText('한 번 더 누르면 교환품 출고를 지시해요')).toBeInTheDocument();
+    expect(screen.queryByText(REFUND_PROMPT)).toBeNull();
+    press('F10');
+    await waitFor(() => expect(server.inspectionCalls).toHaveLength(1));
+    expect(server.view(TWO.id).exchangeReleasedAt).not.toBeNull();
+  });
+
+  it('교환품을 이미 보낸 교환이면 확정만 한다고 알린다', async () => {
+    setupReturns({ returns: [{ ...TWO, kind: 'exchange', exchangeReleasedAt: '2026-10-26T00:00:00.000Z' }] });
+    await openByScan('8805001');
+    press('F10');
+    expect(
+      await screen.findByText('한 번 더 누르면 검수를 확정해요 — 교환품은 이미 출고 지시됐어요')
+    ).toBeInTheDocument();
   });
 
   it('보류가 있으면 «한 번 더 누르면 CS 확인으로 넘겨요»', async () => {

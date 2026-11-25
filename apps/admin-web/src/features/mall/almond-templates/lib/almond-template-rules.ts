@@ -14,6 +14,7 @@ export const ALMOND_TEMPLATE_KIND_LABELS: Record<string, string> = {
   menu: '메뉴판·가격표',
   diploma: '디플로마·수료증',
   nail: '네일팁 종이',
+  invitation: '청첩장·초대장',
 };
 
 export const ALMOND_TEMPLATE_STATUS_LABELS: Record<

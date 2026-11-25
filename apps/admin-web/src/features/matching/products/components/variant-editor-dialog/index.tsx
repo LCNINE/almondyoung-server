@@ -54,6 +54,7 @@ interface VariantMatchingPanelProps {
   variantId: string;
   variantName: string | null;
   masterId: string;
+  productName?: string;
   onSaved?: () => void;
 }
 
@@ -68,6 +69,7 @@ export function VariantMatchingPanel({
   variantId,
   variantName,
   masterId,
+  productName,
   onSaved,
 }: VariantMatchingPanelProps) {
   const { data: current, isFetched: isMatchingFetched } =
@@ -218,7 +220,7 @@ export function VariantMatchingPanel({
       </div>
 
       <PermissionReadOnly run={[useUpsertVariantMatching, useUpdateVariantStockPolicy, useSetMatchingPriority, useChangeMatchingStrategy]}>
-      <SkuLookupSection links={links} onChange={setLinks} />
+      <SkuLookupSection links={links} onChange={setLinks} productName={productName} />
 
       <Separator />
 
@@ -310,6 +312,7 @@ export function VariantEditorDialog({
                   variantId={selectedVariant.id}
                   variantName={selectedVariant.name}
                   masterId={master.id}
+                  productName={master.name}
                   onSaved={() => {}}
                 />
               </ScrollArea>

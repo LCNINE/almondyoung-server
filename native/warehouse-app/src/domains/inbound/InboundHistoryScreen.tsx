@@ -1,9 +1,11 @@
-import { receiptFeedback } from './receiptFeedback';
-import { useReceiptReconciliation } from './useReceiptReconciliation';
+import {
+  CancelReceiptDialog,
+  type CancelReceiptTarget,
+} from './CancelReceiptDialog';
 import { useWorkCapabilities } from '../../core/operations/useWorkCapabilities';
 import { useWorkRuntime } from '../../core/operations/OperationContext';
 import { Link } from '@tanstack/react-router';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { isStationDevice } from '../../app/station';
 import { useWarehouse } from '../../app/warehouse-context';
 import { WorkArea } from '../../core/operations/WorkBoundary';
@@ -13,18 +15,15 @@ import { Button } from '../../core/design/Button';
 import { ScreenHeader } from '../../core/design/ScreenHeader';
 import { WarehousePicker } from '../warehouse/WarehousePicker';
 import { SkuPicker, type SelectedSku } from '../inventory/SkuPicker';
-import { useCancelInbound, useCancelPurchaseOrderReceipt } from './mutations';
 import {
   ReceiptHistoryError,
   recentReceiptDates,
   useReceiptHistory,
   type ReceiptHistoryResult,
-  type ReceiptHistoryLine,
   type ReceiptStatus,
 } from './receiptHistory';
 const reasons: Record<string, string> = {
   ALREADY_CANCELED: '취소됨',
-  NOT_TODAY: '당일 입고만 취소 가능',
   PUTAWAY_EXISTS: '이미 적치한 입고',
   RETURN_EXISTS: '이미 회송한 입고',
   INSUFFICIENT_ORIGIN_STOCK: '원위치 재고 부족',
@@ -85,61 +84,9 @@ function HistoryContent({
     !query.isFetching &&
     !query.isError &&
     !query.isPlaceholderData;
-  const direct = useCancelInbound(),
-    po = useCancelPurchaseOrderReceipt();
-  const [selection, setSelection] = useState<{
-    receiptId: string;
-    line: ReceiptHistoryLine;
-    key: string;
-  } | null>(null);
-  const receipt = useReceiptReconciliation({
-    lineId: selection?.line.id ?? null,
-    warehouseId,
-    expectedSource: selection?.line.source ?? 'direct',
-  });
-  const [busy, setBusy] = useState(false);
-  const busyRef = useRef(false);
+  const [selection, setSelection] = useState<CancelReceiptTarget | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  useUnsavedWork(!!selection || busy);
-  async function confirmCancel() {
-    if (!selection || busyRef.current) return;
-    busyRef.current = true;
-    setBusy(true);
-    setNotice(null);
-    try {
-      const line = await receipt.refresh();
-      if (!line.canCancel || line.quantity !== selection.line.quantity)
-        throw new ReceiptHistoryError(
-          '입고 상태가 바뀌었어요. 최신 내역을 확인해 주세요.'
-        );
-      if (line.source === 'purchase_order')
-        await po.mutateAsync({
-          receiptLineId: line.lineId,
-          idempotencyKey: selection.key,
-        });
-      else if (line.source === 'direct')
-        await direct.mutateAsync({
-          lineId: line.lineId,
-          quantity: line.quantity,
-          idempotencyKey: selection.key,
-        });
-      else
-        // 선적 입고(inbound_shipment) 는 상자 단위 확정 취소로만 — 줄 취소 경로(/inbound/cancel)로 보내지 않는다
-        throw new ReceiptHistoryError('선적 입고는 스테이션에서 상자째 취소해요.');
-      setNotice('입고를 취소했어요.');
-    } catch (error) {
-      setNotice(
-        error instanceof ReceiptHistoryError
-          ? error.message
-          : errorMessage(error, 'inbound')
-      );
-    } finally {
-      setSelection(null);
-      await query.refetch();
-      busyRef.current = false;
-      setBusy(false);
-    }
-  }
+  useUnsavedWork(!!selection);
   return (
     <div className="space-y-4">
       <ScreenHeader title="입고내역" backTo="/inbound" />
@@ -155,7 +102,7 @@ function HistoryContent({
             : '취소됨'}
       </p>
       <fieldset
-        disabled={busy || !!selection}
+        disabled={!!selection}
         className="space-y-3 rounded-lg border p-3"
       >
         <div className="flex flex-wrap gap-3">
@@ -312,12 +259,14 @@ function HistoryContent({
                         ) : line.canCancel && current ? (
                           <Button
                             aria-label={`${line.skuName} 입고 취소`}
-                            disabled={busy || !!selection || !supported}
+                            disabled={!!selection || !supported}
                             onClick={() =>
                               setSelection({
-                                receiptId: receipt.id,
-                                line,
-                                key: crypto.randomUUID(),
+                                lineId: line.id,
+                                source: line.source,
+                                skuName: line.skuName,
+                                originLocationCode: line.originLocationCode,
+                                receivedAt: receipt.occurredAt,
                               })
                             }
                           >
@@ -339,10 +288,7 @@ function HistoryContent({
           <div className="flex gap-2">
             <Button
               disabled={
-                busy ||
-                !!selection ||
-                query.isFetching ||
-                (shown?.offset ?? 0) === 0
+                !!selection || query.isFetching || (shown?.offset ?? 0) === 0
               }
               onClick={() => setOffset(Math.max(0, (shown?.offset ?? 0) - 20))}
             >
@@ -350,7 +296,6 @@ function HistoryContent({
             </Button>
             <Button
               disabled={
-                busy ||
                 !!selection ||
                 query.isFetching ||
                 (shown?.offset ?? 0) + 20 >= data.total
@@ -363,52 +308,16 @@ function HistoryContent({
         </>
       )}
       {selection && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <section
-            role="dialog"
-            aria-modal="true"
-            aria-label="입고 취소 확인"
-            className="w-full max-w-md space-y-3 rounded-xl bg-white p-5"
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') e.preventDefault();
-            }}
-          >
-            <h2 className="font-semibold">입고 취소 확인</h2>
-            {!receipt.ready && (
-              <div>
-                <p role="status">입고 상태를 다시 확인해 주세요.</p>
-                <Button onClick={() => void receipt.refresh().catch(() => {})}>
-                  다시 확인
-                </Button>
-              </div>
-            )}
-            {receipt.error && (
-              <p role="alert">{receiptFeedback(receipt.error, 'inbound')}</p>
-            )}
-            {receipt.ready && !receipt.state?.canCancel && (
-              <p role="alert">
-                입고 상태가 바뀌었어요. 최신 내역을 확인해 주세요.
-              </p>
-            )}
-            <p>
-              {warehouseName} / {selection.line.originLocationCode}의{' '}
-              {selection.line.skuName} {selection.line.quantity}개를 전량
-              취소합니다.
-            </p>
-            {selection.line.source === 'purchase_order' && (
-              <p>발주 미입고 수량이 복원됩니다.</p>
-            )}
-            <Button disabled={busy} onClick={() => setSelection(null)}>
-              돌아가기
-            </Button>
-            <Button
-              disabled={busy || !receipt.ready || !receipt.state?.canCancel}
-              onClick={() => void confirmCancel()}
-            >
-              전량 취소
-            </Button>
-          </section>
-        </div>
+        <CancelReceiptDialog
+          target={selection}
+          warehouseId={warehouseId}
+          onClose={() => setSelection(null)}
+          onFinished={(message) => {
+            setNotice(message);
+            setSelection(null);
+            void query.refetch();
+          }}
+        />
       )}
     </div>
   );

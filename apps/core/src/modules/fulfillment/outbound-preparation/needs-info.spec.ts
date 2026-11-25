@@ -70,6 +70,7 @@ describe('shortageStockOf', () => {
     onOrderQty: 20,
     onOrderEta: new Date('2026-01-20T00:00:00.000Z'),
     onOrderTotalQty: 26,
+    onOrderToSellableEta: '2026-01-03',
     awaitingTransferQty: 4,
     inTransitQty: 3,
     inTransitEta: new Date('2026-01-05T00:00:00.000Z'),
@@ -79,13 +80,18 @@ describe('shortageStockOf', () => {
   };
 
   it('판매 창고 축으로 이 창고로 올 것과 다른 창고에 있는 것을 나눈다', () => {
-    expect(shortageStockOf({ onHand: 2, reserved: 2 }, pipeline, 0, { incoming: true, elsewhere: true })).toEqual({
+    expect(
+      shortageStockOf({ onHand: 2, reserved: 2, waiting: 9 }, pipeline, 0, { incoming: true, elsewhere: true }),
+    ).toEqual({
       onHand: 2,
       reservedByOthers: 2,
+      available: 0,
+      waiting: 9,
       incoming: {
         inTransit: 3,
         inTransitEta: '2026-01-05',
         ordered: 6,
+        orderedEta: '2026-01-03',
         inboundShipment: 2,
         inboundShipmentEta: '2026-01-08',
       },
@@ -94,9 +100,13 @@ describe('shortageStockOf', () => {
   });
 
   it('판매 창고가 여럿이면 이 창고로 올 것만 모르고, 이 상자 몫은 다른 상자 몫에서 뺀다', () => {
-    expect(shortageStockOf({ onHand: 5, reserved: 3 }, pipeline, 1, { incoming: false, elsewhere: true })).toEqual({
+    expect(
+      shortageStockOf({ onHand: 5, reserved: 3, waiting: 4 }, pipeline, 1, { incoming: false, elsewhere: true }),
+    ).toEqual({
       onHand: 5,
       reservedByOthers: 2,
+      available: 2,
+      waiting: 4,
       incoming: null,
       elsewhere: { onHand: 4, ordered: 20, orderedEta: '2026-01-20' },
     });
@@ -110,7 +120,16 @@ describe('shortageStockOf', () => {
     expect(shortageStockOf(undefined, undefined, 0, { incoming: true, elsewhere: true })).toEqual({
       onHand: 0,
       reservedByOthers: 0,
-      incoming: { inTransit: 0, inTransitEta: null, ordered: 0, inboundShipment: 0, inboundShipmentEta: null },
+      available: 0,
+      waiting: 0,
+      incoming: {
+        inTransit: 0,
+        inTransitEta: null,
+        ordered: 0,
+        orderedEta: null,
+        inboundShipment: 0,
+        inboundShipmentEta: null,
+      },
       elsewhere: { onHand: 0, ordered: 0, orderedEta: null },
     });
   });

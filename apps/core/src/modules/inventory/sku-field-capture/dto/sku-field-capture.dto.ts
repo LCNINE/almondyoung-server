@@ -5,7 +5,8 @@ import {
   FieldCaptureBarcodeStatus,
   FieldCaptureListWho,
 } from '../sku-field-capture.rules';
-import { IsIn, IsOptional, IsString, IsUUID, Matches, MaxLength } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsIn, IsInt, IsOptional, IsString, IsUUID, Matches, MaxLength, Min } from 'class-validator';
 
 export class FieldCaptureCompletionDto {
   @ApiProperty({ enum: FIELD_CAPTURE_BARCODE_STATUSES })
@@ -124,10 +125,19 @@ export class FieldCaptureListQueryDto {
   @IsString()
   @MaxLength(100)
   q?: string;
+
+  @ApiPropertyOptional({ description: '더 보기 — 직전 응답의 nextOffset' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  offset?: number;
 }
 
 export class MyCaptureItemsDto {
   @ApiProperty({ type: () => [MyCaptureItemDto] }) items!: MyCaptureItemDto[];
+  @ApiProperty({ description: '조건에 맞는 전체 개수' }) total!: number;
+  @ApiProperty({ type: Number, nullable: true, description: '더 없으면 null' }) nextOffset!: number | null;
 }
 
 export class FieldCapturePhotoQueryDto {
@@ -171,4 +181,26 @@ export class FieldCapturePhotoDto {
 export class FieldCapturePhotosDto {
   @ApiProperty({ type: () => [FieldCapturePhotoDto] }) photos!: FieldCapturePhotoDto[];
   @ApiProperty({ type: String, nullable: true, description: '더 없으면 null' }) nextCursor!: string | null;
+}
+
+export class RemainingRowDto {
+  @ApiProperty({ description: '선반 줄 (A, AA …)' }) row!: string;
+  @ApiProperty() completed!: number;
+  @ApiProperty() remaining!: number;
+}
+
+export class RemainingItemDto {
+  @ApiProperty() skuId!: string;
+  @ApiProperty() code!: string;
+  @ApiProperty() name!: string;
+  @ApiProperty({ type: String, nullable: true }) positionCode!: string | null;
+  @ApiProperty({ type: String, nullable: true, description: '꼴이 다르거나 위치가 없으면 null' }) row!: string | null;
+  @ApiProperty({ type: String, nullable: true, description: '선반 (A-08)' }) shelf!: string | null;
+  @ApiProperty({ description: 'ON_HAND 합' }) qty!: number;
+}
+
+export class FieldCaptureRemainingDto {
+  @ApiProperty({ type: () => [RemainingRowDto] }) rows!: RemainingRowDto[];
+  @ApiProperty({ type: () => [RemainingItemDto] }) items!: RemainingItemDto[];
+  @ApiProperty({ type: [String], description: '목록에서 뺀 줄' }) excludedRows!: string[];
 }

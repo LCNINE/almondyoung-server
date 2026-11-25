@@ -25,6 +25,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { TOSS_BANKS } from '@/lib/constants/toss-banks';
+import { bankName, manualRefundState } from '@/lib/utils/manual-refund';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -81,11 +82,6 @@ function serverMessage(error: unknown): string | undefined {
   const e = error as { response?: { data?: { message?: string } }; message?: string };
   const msg = e?.response?.data?.message ?? e?.message;
   return typeof msg === 'string' && msg.trim() ? msg : undefined;
-}
-
-/** 은행코드를 사람이 읽는 이름으로. 모르는 코드는 코드 그대로 — 송금할 때 대조할 수 있어야 한다. */
-function bankName(code: string): string {
-  return TOSS_BANKS.find((b) => b.code === code)?.name ?? code;
 }
 
 /**
@@ -820,27 +816,22 @@ function PlanTab({
   const isRecurringContract = autoRenewal || canUndoCancellation;
   const isCancellationScheduled = isActive && !!detail?.recurringCancelledAt;
   const manualRefundAccount = detail?.manualRefundAccount ?? null;
-  // 계좌로 보내기 전에 결제관리(wallet) 쪽 사실을 먼저 본다 — 이미 나갔거나 확정만 남은 건에
-  // 또 송금하면 돈이 두 번 나간다. null 은 '알 수 없음'이라 아무것도 단정하지 않는다.
   const settlement = detail?.refundSettlement ?? null;
-  const requestedRefund = detail?.eligibleRefundAmount ?? 0;
-  const pgAlreadyRefunded =
-    !!settlement && requestedRefund > 0 && settlement.alreadyRefundedAmount >= requestedRefund;
-  const pgConfirmPending = !!settlement && settlement.pendingRefundAmount > 0;
-  // 결제한 적이 없는 계약(관리자 지급·이관)은 환불할 대상 자체가 없다. 옛 화면은 "미완료 — N원
-  // 처리 필요" 만 띄워서, 보낼 곳도 근거도 없는 건을 CS 가 찾아 헤매게 만들었다.
-  // `=== false` 로 좁힌다: 배포 과도기(admin-web 이 membership 보다 먼저 뜬 창)에는 이 필드가
-  // undefined 로 오는데, `!undefined` 로 판정하면 **정상 수동 송금 건까지** 전부 "환불 대상 결제 없음"
-  // 으로 뒤집혀 송금 완료 처리 버튼이 사라진다.
+  const {
+    pgAlreadyRefunded,
+    pgConfirmPending,
+    refundImpossible,
+    canComplete,
+    needsResolution,
+    label,
+    question,
+  } = manualRefundState(detail);
   // 결제관리에서 직접 환불한 건은 멤버십이 요청한 적이 없어 refundRequested=false 다.
   // 그래도 돈은 나갔으므로 화면이 '환불 없음' 으로 보이면 안 된다.
   const externalRefunded =
-    !detail?.refundRequested && !!settlement && settlement.alreadyRefundedAmount > 0;
-  const refundImpossible =
-    !!detail &&
-    detail.refundRequested &&
-    !detail.refundCompleted &&
-    detail.hasPaymentIntent === false;
+    !detail?.refundRequested &&
+    !!settlement &&
+    settlement.alreadyRefundedAmount > 0;
 
   const handleScheduleCancel = async () => {
     if (!scheduleReason.trim()) {
@@ -868,16 +859,10 @@ function PlanTab({
   };
 
   const handleCompleteManualRefund = async () => {
-    const account = detail?.manualRefundAccount;
-    const where = account
-      ? `${bankName(account.bank)} ${account.accountNumber} (${account.holderName})`
-      : '고객 계좌';
-    // PG 로 이미 나간 건은 '송금 확인'이 아니라 '기록 정리'다. 같은 문구로 물으면 관리자가
-    // 보내지 않아도 될 돈을 보내고 나서 누른다.
-    const question = pgAlreadyRefunded
-      ? `결제관리에서 이미 ${settlement!.alreadyRefundedAmount.toLocaleString()}원이 환불된 건입니다. 추가 송금 없이 완료로 정리할까요?`
-      : `${where}로 ${requestedRefund.toLocaleString()}원을 실제로 송금했나요? 완료로 확정합니다.`;
-    if (!window.confirm(question)) return;
+    if (!canComplete || needsResolution || !window.confirm(question)) {
+      return;
+    }
+
     try {
       await completeManualRefundMutation.mutateAsync({ contractId });
       toast.success('환불 완료로 기록했습니다.');
@@ -957,7 +942,8 @@ function PlanTab({
             >
               <span className="text-muted-foreground">환불</span>
               <span>
-                결제관리 환불 {settlement!.alreadyRefundedAmount.toLocaleString()}원
+                결제관리 환불{' '}
+                {settlement!.alreadyRefundedAmount.toLocaleString()}원
                 <span className="ml-1 text-xs text-muted-foreground">
                   (멤버십 해지 요청이 아닌 결제관리에서 직접 처리된 건)
                 </span>
@@ -983,24 +969,34 @@ function PlanTab({
                     결제관리가 닫아야 하는 건(확정 대기)은 여기서 누르면 이중 송금이라 버튼을 열지 않는다. */}
                 {allowForceCancel &&
                   canRun(useCompleteManualRefund) &&
-                  !detail?.refundCompleted &&
-                  !pgConfirmPending &&
-                  !refundImpossible && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-7 text-xs"
-                    data-testid="complete-manual-refund"
-                    disabled={completeManualRefundMutation.isPending}
-                    onClick={handleCompleteManualRefund}
-                  >
-                    {completeManualRefundMutation.isPending
-                      ? '처리 중...'
-                      : pgAlreadyRefunded
-                        ? '완료로 정리'
-                        : '송금 완료 처리'}
-                  </Button>
-                )}
+                  canComplete && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs"
+                      data-testid="complete-manual-refund"
+                      disabled={
+                        needsResolution ||
+                        completeManualRefundMutation.isPending
+                      }
+                      onClick={handleCompleteManualRefund}
+                    >
+                      {completeManualRefundMutation.isPending
+                        ? '처리 중...'
+                        : label}
+                    </Button>
+                  )}
+                {allowForceCancel &&
+                  canRun(useCompleteManualRefund) &&
+                  canComplete &&
+                  needsResolution && (
+                    <span
+                      className="text-xs text-muted-foreground"
+                      data-testid="refund-resolution-required"
+                    >
+                      결의서를 먼저 올려 주세요
+                    </span>
+                  )}
               </span>
             </div>
           )}
@@ -1010,26 +1006,31 @@ function PlanTab({
               className="rounded-md border p-2 text-xs text-muted-foreground"
               data-testid="refund-impossible-notice"
             >
-              결제 내역이 없는 계약(관리자 지급·이관)에 환불 요청이 기록된 건입니다. 받은 돈이 없어
-              송금할 대상이 없습니다 — 보상이 필요하면 결제관리에서 처리하세요.
+              결제 내역이 없는 계약(관리자 지급·이관)에 환불 요청이 기록된
+              건입니다. 받은 돈이 없어 송금할 대상이 없습니다 — 보상이 필요하면
+              결제관리에서 처리하세요.
             </p>
           )}
           {/* 송금하기 전에 결제관리 쪽 사실을 먼저 알려준다 — 이 안내가 없으면 이미 나간 돈을 또 보낸다. */}
-          {!detail?.refundCompleted && (pgAlreadyRefunded || pgConfirmPending) && (
-            <p
-              className="rounded-md border border-amber-300 bg-amber-50/60 p-2 text-xs text-amber-900"
-              data-testid="refund-settlement-notice"
-            >
-              {pgConfirmPending
-                ? `결제관리에 확정 대기 중인 환불 ${settlement!.pendingRefundAmount.toLocaleString()}원이 있습니다. 이 건은 결제관리에서 완료 처리하세요 — 여기서 송금하면 두 번 나갑니다.`
-                : `결제관리에서 이미 ${settlement!.alreadyRefundedAmount.toLocaleString()}원이 환불되었습니다. 추가 송금은 필요하지 않습니다.`}
-            </p>
-          )}
+          {!detail?.refundCompleted &&
+            (pgAlreadyRefunded || pgConfirmPending) && (
+              <p
+                className="rounded-md border border-amber-300 bg-amber-50/60 p-2 text-xs text-amber-900"
+                data-testid="refund-settlement-notice"
+              >
+                {pgConfirmPending
+                  ? `결제관리에 확정 대기 중인 환불 ${settlement!.pendingRefundAmount.toLocaleString()}원이 있습니다. 이 건은 결제관리에서 완료 처리하세요 — 여기서 송금하면 두 번 나갑니다.`
+                  : `결제관리에서 이미 ${settlement!.alreadyRefundedAmount.toLocaleString()}원이 환불되었습니다. 추가 송금은 필요하지 않습니다.`}
+              </p>
+            )}
           {/* 계좌 송금이 남은 건은 '어디로 보낼지'가 같은 화면에 있어야 실제로 끝낼 수 있다.
               (효성 CMS 는 wallet 에 환불 행 자체가 없어 결제관리 화면에도 나타나지 않는다) */}
           {/* 완료된 환불도 '어디로 갔는지' 가 필요하다 — "환불이 안 들어왔다" 문의에 답하려면. */}
           {detail?.refundCompleted && detail?.refundReceiveAccount && (
-            <div className="rounded-md border p-2 text-xs" data-testid="refunded-account">
+            <div
+              className="rounded-md border p-2 text-xs"
+              data-testid="refunded-account"
+            >
               <p className="font-medium">환불 입금 계좌</p>
               <p className="mt-0.5 text-muted-foreground">
                 {bankName(detail.refundReceiveAccount.bank)}{' '}
@@ -1061,7 +1062,9 @@ function PlanTab({
       {isCancellationScheduled && (
         <Card className="border-amber-300 bg-amber-50/60">
           <CardHeader>
-            <CardTitle className="text-sm text-amber-900">해지 예약됨</CardTitle>
+            <CardTitle className="text-sm text-amber-900">
+              해지 예약됨
+            </CardTitle>
             <CardDescription className="text-amber-900">
               {formatDateTime(detail?.recurringCancelledAt)} 해지 신청 ·{' '}
               {formatDate(detail?.endsAt)}까지 멤버십 혜택 유지 · 이후 자동

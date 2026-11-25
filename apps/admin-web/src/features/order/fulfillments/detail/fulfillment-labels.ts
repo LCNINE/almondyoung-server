@@ -79,10 +79,15 @@ const OPERATION_TYPE: Record<string, string> = {
   force_dispatch: '강제 출고',
   waybill_void: '송장 무효화',
   waybill_reissue: '송장 재발급',
+  stock_priority: '우선할당',
+  stock_priority_cancel: '우선할당 취소',
 };
 
-export const operationTypeLabel = (type: string) =>
-  labelOf(OPERATION_TYPE, type);
+/** 우선할당은 받은 상자와 내준 상자에 같은 기록이 남는다 — 내준 쪽은 따로 부른다 */
+export const operationTypeLabel = (type: string, role?: string) =>
+  type === 'stock_priority' && role === 'source'
+    ? '우선할당한 다른 주문에 재고를 내줌'
+    : labelOf(OPERATION_TYPE, type);
 
 const RESERVATION_STATUS: Record<string, string> = {
   pending: '확보 중',

@@ -48,6 +48,11 @@ vi.mock("@lib/api/library/library-api", () => ({
   exerciseOwnership: vi.fn(),
 }))
 vi.mock("@/lib/api/medusa/returns", () => ({ cancelReturn: vi.fn() }))
+vi.mock("@/lib/api/print/print-file-rejections", () => ({ reuploadPrintFile: vi.fn() }))
+vi.mock("@/lib/api/print/customer-print-file", () => ({
+  presignCustomerPrintFile: vi.fn(),
+  confirmCustomerPrintFile: vi.fn(),
+}))
 vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
 }))

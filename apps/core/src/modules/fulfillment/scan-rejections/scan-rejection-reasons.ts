@@ -31,6 +31,7 @@ export const WORKER_RESOLVABLE_REJECTIONS: ReadonlySet<string> = new Set([
   'WORK_ITEM_STALE_LEASE_VERSION',
   'SHIPMENT_WORK_ITEM_CHANGED',
   'SHIPMENT_SESSION_CHANGED',
+  'FULFILLMENT_INVARIANT_COMPONENT_CHANGED_RETRY',
   // 작업자가 할 다음 동작이 정해져 있다
   'WORKER_ACTIVE_CLAIM_EXISTS',
   'SHIPMENT_WITHDRAWN',
@@ -95,6 +96,16 @@ const REASONS: Record<string, ScanRejectionReason> = {
     action: 'review_box',
   },
 };
+
+/**
+ * 출고 저장이 송장을 받아 주는 검사(발송할 수 있는 송장 한 장 · 상자 구성·받는 분과 일치)에서 난 거절.
+ * 이 검사를 통과하는 새 송장이 나오면 풀린다. 라벨 할당·출력 쪽 거절은 송장을 새로 받아도 그대로다.
+ */
+export const REJECTIONS_RESOLVED_BY_NEW_WAYBILL: ReadonlySet<string> = new Set([
+  'SHIPMENT_INVOICE_NOT_READY',
+  'WAYBILL_NOT_DISPATCHABLE',
+  'WAYBILL_STALE',
+]);
 
 export function scanRejectionReason(code: string): ScanRejectionReason {
   return (

@@ -13,6 +13,7 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
+import { StockGivenDto } from './stock-given.dto';
 import { AddressDto } from './address.dto';
 
 export class ShipmentCommandReasonDto {
@@ -344,6 +345,9 @@ export class ShipmentOperationHistoryResponseDto {
 
   @ApiProperty({ nullable: true })
   completedAt: Date | null;
+
+  @ApiProperty({ enum: ['source', 'target'], description: '이 작업에서 이 상자의 역할' })
+  role: 'source' | 'target';
 }
 
 export class ShipmentSummaryResponseDto {
@@ -377,6 +381,16 @@ export class ShipmentSummaryResponseDto {
 
   @ApiProperty({ nullable: true })
   recoveryCode: string | null;
+
+  @ApiProperty({ description: '우선할당한 상자 — 합포장이면 담긴 주문이 모두 우선할당일 때만 true' })
+  stockPriority: boolean;
+
+  @ApiProperty({
+    type: StockGivenDto,
+    nullable: true,
+    description: '다른 주문을 우선할당하면서 재고를 내줬고 아직 모자란 준비 전 상자면 그 기록',
+  })
+  stockGiven: StockGivenDto | null;
 }
 
 export class PendingCancellationItemResponseDto {
@@ -400,6 +414,22 @@ export class PendingCancellationResponseDto {
 
   @ApiProperty({ type: [PendingCancellationItemResponseDto] })
   lines: PendingCancellationItemResponseDto[];
+}
+
+export class ScanRejectionHandoffResponseDto {
+  @ApiProperty()
+  at: Date;
+
+  @ApiProperty({ nullable: true, type: String, description: '넘겨받은 작업자' })
+  workerId: string | null;
+}
+
+export class ScanRejectionNewWaybillResponseDto {
+  @ApiProperty()
+  issuedAt: Date;
+
+  @ApiProperty({ description: '새 송장 번호' })
+  trackingNo: string;
 }
 
 /** 물류앱 출고 저장이 관리자 손이 필요한 사유로 거절돼 막힌 상자 */
@@ -433,6 +463,20 @@ export class ScanRejectionResponseDto {
 
   @ApiProperty()
   rejectedAt: Date;
+
+  @ApiProperty({
+    type: ScanRejectionHandoffResponseDto,
+    nullable: true,
+    description: '거절 뒤 담당을 넘겼으면 그 시각과 받은 작업자 — 작업자가 다시 찍기를 기다린다',
+  })
+  handedOff: ScanRejectionHandoffResponseDto | null;
+
+  @ApiProperty({
+    type: ScanRejectionNewWaybillResponseDto,
+    nullable: true,
+    description: '송장 때문에 막힌 뒤 출고할 수 있는 새 송장이 발급됐으면 — 작업자가 새 송장으로 다시 찍기를 기다린다',
+  })
+  newWaybill: ScanRejectionNewWaybillResponseDto | null;
 }
 
 export class ShipmentDetailResponseDto {

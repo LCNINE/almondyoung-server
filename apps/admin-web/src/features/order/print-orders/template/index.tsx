@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { describeLastError, VENDOR_CANCELLED } from './last-error';
-import { Copy } from 'lucide-react';
+import { Copy, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -43,6 +43,7 @@ import {
 import { formatDateTime } from '@/lib/utils/date';
 import { cn } from '@/lib/utils/ui';
 import { PrintDefectGuide } from './defect-guide';
+import { printOrdersClient } from '@/lib/api/domains/orders/print-orders.client';
 import { usePermissionCheck } from '@/hooks/use-permission';
 
 type Action =
@@ -280,6 +281,42 @@ export default function PrintOrdersTemplate() {
   );
 }
 
+// 내 파일로 주문한 줄은 고객이 올린 파일을 그대로 인쇄한다. CS 로 파일을 직접 볼 때 내려받는다
+function CustomerFileButton({ printOrderId }: { printOrderId: string }) {
+  const [loading, setLoading] = useState(false);
+
+  const download = async () => {
+    setLoading(true);
+    try {
+      const { url } = await printOrdersClient.customerFileLink(printOrderId);
+      // 접속기록을 남기지 못하면 링크가 가려져 온다
+      if (!/^https?:\/\//.test(url)) {
+        toast.error('고객 파일 링크를 받지 못했습니다. 잠시 후 다시 시도해 주세요.');
+        return;
+      }
+      // 내려받기 링크라 화면은 그대로 있다. 새 창은 기다린 뒤 열면 팝업 차단에 걸린다
+      window.location.assign(url);
+    } catch {
+      toast.error('고객 파일을 받지 못했습니다. 잠시 뒤 다시 시도해 주세요.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Button
+      size="sm"
+      variant="outline"
+      className="mt-1.5 h-7 gap-1 px-2 text-xs"
+      disabled={loading}
+      onClick={download}
+    >
+      <Download className="size-3.5" />
+      고객 파일 받기
+    </Button>
+  );
+}
+
 function PrintOrderRow({
   row,
   onAction,
@@ -319,6 +356,16 @@ function PrintOrderRow({
               입금대기
             </Badge>
           )}
+          {row.printFileId && (
+            <Badge variant="outline" className="mt-1">
+              고객 파일
+            </Badge>
+          )}
+          {row.fileRejectedAt && (
+            <Badge variant="outline" className="mt-1">
+              고객 재업로드 대기
+            </Badge>
+          )}
         </td>
         <td className="p-2">
           <div>{row.customerName ?? '-'}</div>
@@ -341,7 +388,10 @@ function PrintOrderRow({
             <span className="text-gray-400">-</span>
           )}
         </td>
-        <td className="p-2">{row.productName}</td>
+        <td className="p-2">
+          <div>{row.productName}</div>
+          {row.printFileId && <CustomerFileButton printOrderId={row.id} />}
+        </td>
         <td className="p-2">
           <div className="font-semibold text-gray-900">
             {PRINT_ORDER_STATUS_LABEL[row.status]}

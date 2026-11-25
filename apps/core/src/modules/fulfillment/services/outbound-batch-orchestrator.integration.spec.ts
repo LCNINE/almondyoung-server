@@ -789,6 +789,11 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
       services.batches.addShipment(batch.batchId, fixtureA.shipment.id, `status-add-a-${randomUUID()}`, master),
       services.batches.addShipment(batch.batchId, fixtureB.shipment.id, `status-add-b-${randomUUID()}`, master),
     ]);
+    const listedBoxes = async () =>
+      (await services.batches.listBatches({ warehouseId: warehouse.warehouseId })).find(
+        (row) => row.id === batch.batchId,
+      )?.totalBoxes;
+    expect(await listedBoxes()).toBe(2);
     await db
       .update(wmsTables.outboundBatchWorkItems)
       .set({ status: 'short_pick_recovery', recoveryReason: 'one unit missing' })
@@ -798,6 +803,7 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
       .set({ status: 'excluded', exclusionReason: 'remove unaffected shipment' })
       .where(eq(wmsTables.outboundBatchWorkItems.id, addedB.workItem.id));
     expect(await services.batches.getBatch(batch.batchId)).toMatchObject({ status: 'picking', totalItems: 1 });
+    expect(await listedBoxes()).toBe(1);
 
     await db
       .update(wmsTables.outboundBatchWorkItems)
@@ -808,6 +814,7 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
       totalItems: 0,
       totalQty: 0,
     });
+    expect(await listedBoxes()).toBe(0);
   });
 
   it('rejects new membership when the derived work-item state has completed the batch', async () => {

@@ -29,8 +29,14 @@ export function planMatchingSave(input: {
   }
 
   const steps: MatchingSaveStep[] = [];
+  // 비매칭 상태에서 재고를 붙였으면 전략 칸을 안 바꿨어도 연결하려는 것이다 — upsert 가 variant 로 만든다
+  const linkingFromVoid =
+    input.strategy === 'void' &&
+    input.currentStrategy === 'void' &&
+    input.changedLinks &&
+    input.linkCount > 0;
 
-  if (input.strategy === 'void') {
+  if (input.strategy === 'void' && !linkingFromVoid) {
     if (input.currentStrategy !== 'void')
       steps.push({ kind: 'setStrategy', strategy: 'void' });
     // void 는 링크가 없다 — 정책만 저장한다

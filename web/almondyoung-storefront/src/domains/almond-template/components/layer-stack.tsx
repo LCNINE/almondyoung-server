@@ -121,9 +121,40 @@ function LayerWindow({
   const id = `${prefix}${bypass ? "bypass" : "window"}-${layer.id}`
   const below = layers.slice(0, index)
   const filterId = `cf-${id}`
+  const shadowId = `${id}-shadow`
 
   return (
     <>
+      {layer.shadow && (
+        // 창은 자기 색을 안 그려 그림자도 사라진다. 그림자만 남기려고 모양 안쪽을 가린 원래 도형을 아래에 깐다
+        <>
+          <defs>
+            <FullMask id={shadowId}>
+              <rect
+                x={-FAR}
+                y={-FAR}
+                width={FAR * 2}
+                height={FAR * 2}
+                fill="#ffffff"
+              />
+              <LayerGraphic layer={silhouette(layer, "#000000")} />
+            </FullMask>
+          </defs>
+          <g mask={`url(#${shadowId})`} pointerEvents="none">
+            <LayerGraphic
+              layer={{
+                ...layer,
+                filterBypass: false,
+                colorFilter: undefined,
+                blur: undefined,
+                glow: false,
+                bevel: false,
+                texture: false,
+              }}
+            />
+          </g>
+        </>
+      )}
       <defs>
         <FullMask id={id}>
           <LayerGraphic layer={silhouette(layer, "#ffffff")} />

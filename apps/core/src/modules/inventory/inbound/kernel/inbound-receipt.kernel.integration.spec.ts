@@ -142,6 +142,7 @@ describeIfDb('InboundReceiptKernel (PostgreSQL integration)', () => {
             wiring.location,
             wiring.eventStore,
             wiring.guard,
+            wiring.reservations,
           ).recordArrival(
             {
               source: 'direct',
@@ -285,7 +286,7 @@ describeIfDb('InboundReceiptKernel (PostgreSQL integration)', () => {
     });
   });
 
-  it('reservation rejection after releasing cancellation counters rolls back the entire caller transaction', async () => {
+  it('a reservation that cannot be released refuses the cancellation and rolls back the entire caller transaction', async () => {
     await inRollbackTx(db, async (tx) => {
       const f = await seedWarehouseAndSku(tx, randomUUID());
       const arrival = await kernel.recordArrival(
@@ -328,7 +329,7 @@ describeIfDb('InboundReceiptKernel (PostgreSQL integration)', () => {
         tx.transaction((sp) =>
           kernel.cancelLine({ receiptLineId: arrival.lines[0].id, expected: { source: 'direct' } }, sp),
         ),
-      ).rejects.toThrow(/예약된 재고/);
+      ).rejects.toThrow(/이 재고를 잡고 있습니다: resv-order-.* 1개/);
       expect({
         lines: await tx
           .select()

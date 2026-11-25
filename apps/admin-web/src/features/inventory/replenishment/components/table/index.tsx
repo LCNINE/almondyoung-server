@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -32,6 +33,7 @@ import {
   httpStatusOf,
   purchaseAction,
   serverMessageOf,
+  SKU_PARAM,
   summarizeActions,
   toCartPayload,
   toTransferPayload,
@@ -54,7 +56,17 @@ const PO_TYPES: Array<{ value: PurchaseOrderType; label: string }> = [
 export function ReplenishmentTable() {
   const [action, setAction] = useState<SuggestionActionFilter>('all');
   const [poType, setPoType] = useState<PurchaseOrderType>('foreign');
-  const [detailSkuId, setDetailSkuId] = useState<string | null>(null);
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const urlSkuId = searchParams.get(SKU_PARAM) || null;
+  const [detailSkuId, setDetailSkuId] = useState<string | null>(urlSkuId);
+  // 화면이 떠 있는 동안 주소의 sku 가 바뀌면(다른 링크·뒤로 가기) 드로어도 따라간다
+  const [seenUrlSkuId, setSeenUrlSkuId] = useState(urlSkuId);
+  if (urlSkuId !== seenUrlSkuId) {
+    setSeenUrlSkuId(urlSkuId);
+    setDetailSkuId(urlSkuId);
+  }
   const { data, isLoading, isError, error } =
     useReplenishmentSuggestions(action);
   const addToCart = useAddToCart();
@@ -262,7 +274,15 @@ export function ReplenishmentTable() {
       <ReplenishmentSkuDrawer
         skuId={detailSkuId}
         onOpenChange={(open) => {
-          if (!open) setDetailSkuId(null);
+          if (open) return;
+          setDetailSkuId(null);
+          // 주소로 연 판정이면 닫을 때 주소에서도 뺀다(다시 불러와도 안 열리게)
+          if (searchParams.has(SKU_PARAM)) {
+            const params = new URLSearchParams(searchParams.toString());
+            params.delete(SKU_PARAM);
+            const query = params.toString();
+            router.replace(query ? `${pathname}?${query}` : pathname);
+          }
         }}
       />
     </>

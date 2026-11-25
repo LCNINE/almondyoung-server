@@ -5,9 +5,13 @@
 
 ## 하는 일
 
-- 판매주문 라인에 `almond_design_id` 가 있으면 `pending` 행을 만든다.
+- 판매주문 라인에 `almond_design_id`(아몬드템플릿 시안) 또는 `print_file_id`(고객이 직접 올린 인쇄 파일, file-service `customer-print-file` 컨텍스트)가 있으면 `pending` 행을 만든다. 둘 다 있으면 시안을 쓴다.
+- 템플릿으로 게시한 주문제작 상품(`print_product_specs` 에 행이 있는 변형)인데 둘 다 없으면 `failed`(`no almond design or customer print file`)로 만들어 보드에 띄운다. 완성품 카드(`WOWPRESS_PRODUCTS`)는 시안 없이 사면 창고 재고로 나가므로 행을 만들지 않는다.
+- 고객 파일은 file-service 내부 조회로 주인(주문 고객)·용도를 확인하고, 상품별 접수 확장자(`print-source.ts`)가 맞을 때만 서명 URL 로 와우프레스에 넘긴다. 파일 이름은 `<줄 id>.<확장자>` 로 바꿔 보낸다.
 - `PrintOrderSubmitWorker` (매분): 판매주문 하나씩 집어 시안 주인 확인 → ugc 에서 인쇄 파일 링크 → 와우프레스 가격조회 → 주문 → 파일 전달. 아래 묶음 발주 참고.
   시안 ID 는 고객이 장바구니 메타데이터로 넣는 값이라, 시안 주인(ugc `almond_designs.user_id`)과 주문 고객(`sales_orders.customer_id`)이 다르면 주문하지 않고 `failed` 로 둔다.
+- 고객 파일 줄은 주문상세를 읽을 때마다 와우프레스의 지금 상태로 "다시 올려야 함"(`file_rejected_at`)을 정한다(`PrintFileRejectionManager`). 보드 기록(`last_error`)과는 따로 본다. 파일 에러(`jobstat` 121~127·129~131, 와우프레스 취소 제외)가 보이면 조건부 UPDATE 로 표시하고 같은 트랜잭션에서 `PrintFileRejected`(core.orders.events.v1)를 쌓는다 — 콜백과 폴러가 겹쳐도 한 번만 알린다. notification 이 알림톡을 보내고 스토어프론트 알림 벨은 `GET /store/print-orders/file-rejections` 로 읽는다. 에러가 아닌 상태가 보이면 표시를 지운다. 109·128 과 시안 줄의 에러는 보드 와우프레스 확인 탭에서 운영자가 처리한다.
+- 고객이 `POST /store/print-orders/:salesOrderLineId/file` 로 새 파일을 올리면 주인·용도·확장자를 확인하고 같은 와우프레스 주문번호로 `uploadurl` 을 다시 부른다(에러 상태에서 같은 주문번호로 올리면 재접수). 와우프레스가 받은 뒤에만 기록한다(`file_resubmitted_at`). 중간에 멈추면 표시가 남아 다시 올릴 수 있다. 와우프레스는 다시 올리면 작업상태를 접수대기(100)로 바꾸고 새 파일도 틀리면 다시 파일 에러로 바꾼다(방울이 답변 2026-11-24). 넘긴 뒤 1시간 안에 보이는 에러는 접수대기로 바뀌기 전의 옛 상태로 보고 넘기며, 그 뒤에도 같은 에러면 다시 알린다.
 - 와우프레스 주문상태 콜백(`POST /wowpress/callback`): 와우프레스가 상태가 바뀔 때마다 알려 주면 그 주문만 바로 다시 읽는다. 아래 상태 콜백 참고.
 - `PrintOrderTrackingWorker` (30분): 콜백을 놓친 경우를 위한 보조 확인. 주문상세로 송장·배송 상태, 제작 여부, 입금대기, 와우프레스 확인 필요(접수·파일 에러, 와우프레스 쪽 취소)를 반영한다. 고객 배송조회(`/store/orders/by-channel-order/:id/tracking`)에 한 항목으로 덧붙는다.
 - 취소: `PrintOrderCancellation` 이 판매주문 취소 앞단에서 와우프레스 취소를 먼저 시도한다. 아래 취소·환불 경로 참고.

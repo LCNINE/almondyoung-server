@@ -35,14 +35,16 @@ export function useShipmentByWaybill(warehouseId?: string | null) {
  */
 export function useOutboundBatches(
   warehouseId: string | null,
-  status: 'created' | 'picking'
+  status: 'created' | 'picking',
+  refetchInterval = 10_000
 ) {
   const api = useApiClient();
   return useQuery({
     queryKey: ['outbound-batches', warehouseId, status],
     enabled: warehouseId !== null,
-    // 어드민에서 넣은 배치·상자가 새로고침 없이 뜨게 — 창고 PC 는 앱을 띄워 둔 채로 쓴다
-    refetchInterval: 10_000,
+    // 어드민에서 넣은 배치·상자가 새로고침 없이 뜨게 — 창고 PC 는 앱을 띄워 둔 채로 쓴다.
+    // 같은 키를 여러 화면이 보면 가장 짧은 간격으로 받는다
+    refetchInterval,
     queryFn: () => {
       const qs = new URLSearchParams({
         warehouseId: warehouseId ?? '',

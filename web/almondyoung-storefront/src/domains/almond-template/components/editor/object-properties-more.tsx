@@ -28,11 +28,15 @@ export function ObjectPropertiesMore({
     spec,
     patch,
     duplicateSelected,
+    mergeDown,
+    mergeDownReason,
     editable,
     setOrder,
     setGeometry,
   } = editor
   const { objectMoreOpen } = panel
+  const mergeReason = mergeDownReason(selected.id)
+
   return (
     <div
       className={
@@ -253,6 +257,16 @@ export function ObjectPropertiesMore({
         >
           복제
         </button>
+        <span title={mergeReason || "아래 레이어와 병합"}>
+          <button
+            type="button"
+            className="w-full rounded border p-2 disabled:opacity-40"
+            disabled={!!mergeReason}
+            onClick={() => void mergeDown(selected.id)}
+          >
+            아래 레이어와 병합
+          </button>
+        </span>
         <button
           className="rounded border p-2 text-red-600"
           disabled={!editable}

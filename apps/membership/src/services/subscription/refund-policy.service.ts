@@ -363,7 +363,7 @@ export class RefundPolicyService {
     return {
       ...base,
       unavailableReason: benefitUnused
-        ? `결제 후 ${WITHDRAWAL_WINDOW_DAYS}일이 지나 환불이 불가합니다.`
+        ? `이용 시작 후 ${WITHDRAWAL_WINDOW_DAYS}일이 지나 환불이 불가합니다.`
         : '이번 결제 주기에 멤버십 혜택을 사용해 환불이 불가합니다.',
     };
   }

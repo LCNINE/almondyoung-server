@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsOptional } from 'class-validator';
+import { IsString, IsOptional, MaxLength } from 'class-validator';
 
 export class ReleaseReservationDto {
   @ApiProperty({
@@ -10,5 +10,6 @@ export class ReleaseReservationDto {
   })
   @IsOptional()
   @IsString()
+  @MaxLength(128)
   reason?: string;
 }

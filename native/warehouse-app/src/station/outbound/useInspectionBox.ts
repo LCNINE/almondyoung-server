@@ -6,7 +6,7 @@ import { useWorkScanQueue } from '../../core/hardware/scan/useWorkScanQueue';
 import { useWorkAreaBlocked } from '../../core/operations/WorkBoundary';
 import { rememberBoxLabel } from '../../core/operations/boxChecks';
 import { useWorkRuntime } from '../../core/operations/OperationContext';
-import { useBoxChecks } from '../../core/operations/workArea';
+import { useBoxChecks, useOtherWorkName } from '../../core/operations/workArea';
 import { formatTrackingNo, lineOfBarcode, progressOf, scanNamesOf, scannedLineOf } from '../../domains/outbound/inspection';
 import { useForceSimpleOutbound, useSimpleOutboundScan } from '../../domains/outbound/mutations';
 import type { ShipmentByWaybill, SimpleOutboundLineProgress, SimpleOutboundState } from '../../domains/outbound/types';
@@ -19,6 +19,9 @@ export const INTAKE_BLOCKED_MESSAGE = '앞 스캔을 확인하고 있어요. 확
 export const UNCERTAIN_SCAN_MESSAGE = '앞 스캔이 처리됐는지 확인하지 못했어요. 같은 상품을 다시 찍지 마세요.';
 // 보낸 뒤 응답을 기다리다 끊긴 스캔도 있다 — «보내지 못했다» 고 단정하지 않는다
 export const WAITING_SCAN_MESSAGE = '앞 스캔이 아직 끝나지 않았어요. 연결된 뒤 다시 해 주세요.';
+/** 이 상자에는 보낼 스캔이 없는데 다른 작업(입고 등)의 결과를 몰라 상품을 받지 않는다 */
+export const otherWorkMessage = (name: string) =>
+  `${name} 작업의 처리 여부를 확인하고 있어요. 아래 «처리 내역 확인»을 먼저 눌러 주세요.`;
 
 /** 오프라인이라 앞 스캔이 멈춰 있다 — 연결되면 그대로 보내지므로 «결과 모름» 과 다르다 */
 export class ScanWaitingError extends Error {
@@ -30,16 +33,23 @@ export class ScanWaitingError extends Error {
 /** 내려놓기·전환 전 정리 결과 — `checking` 이면 결과 모름이 남아 확인할 일로 넘어갔다 */
 export type SettleOutcome = 'settled' | 'checking';
 
+/** 서버가 반영한 상품 스캔 하나 */
+export interface AcceptedScan {
+  shipmentLineId: string | null;
+  quantity: number;
+  barcode: string;
+}
+
 export interface InspectionBoxEvents {
   /**
    * 서버가 반영한 스캔 — 오른 줄과 수량, 찍은 바코드. 다시 연 박스의 저장된 스캔은 조회한 진행에 이미 들어 있어 오른 줄을 못 찾는다(null) —
    * 그때는 바코드로 상품을 알아본다
    */
   onAccepted(shipmentLineId: string | null, quantity: number, barcode: string): void;
-  /** 마지막 스캔(또는 강제출고)으로 출고됐다 */
-  onShipped(): void;
-  /** 서버가 거절했거나 결과를 모른다 — 화면이 오류로 알린다 */
-  onRejected(message: string, barcode: string | null): void;
+  /** 마지막 스캔(또는 강제출고 — 그때는 null)으로 출고됐다. 상자를 끝낸 스캔도 기록에 남게 함께 넘긴다 */
+  onShipped(final: AcceptedScan | null): void;
+  /** 서버가 거절했거나 결과를 모른다 — 화면이 오류로 알린다. 이 상자에 없는 상품이면 서버가 알려 준 그 상품 이름도 */
+  onRejected(message: string, barcode: string | null, scannedName?: string): void;
   /** 그 사이 박스가 배치에서 빠져 서버가 상품을 받지 않았다 — 화면이 뺄 상품으로 넘어간다 */
   onWithdrawn(barcode: string): void;
   /** 출고 뒤에 줄 서 있던 스캔 — 보내지 않았다 */
@@ -61,15 +71,17 @@ export function useInspectionBox(box: ShipmentByWaybill, events: InspectionBoxEv
   const [workItemStatus, setWorkItemStatus] = useState(box.workItemStatus ?? 'queued');
   const [lastScan, setLastScan] = useState<{ barcode: string; shipmentLineId: string } | null>(null);
   const shipped = useRef(false);
+  // 강제출고를 보낸 그 렌더에서도 내려놓기를 막는다 — force.isPending 은 다음 렌더에야 바뀐다
+  const forcing = useRef(0);
 
   /** 서버 응답을 그린다. 출고됐으면 알리고 true */
-  const apply = (state: SimpleOutboundState): boolean => {
+  const apply = (state: SimpleOutboundState, final: AcceptedScan | null = null): boolean => {
     progressRef.current = state.lines;
     setProgress(state.lines);
     setWorkItemStatus(state.workItemStatus);
     if (state.status !== 'shipped') return false;
     shipped.current = true;
-    eventsRef.current.onShipped();
+    eventsRef.current.onShipped(final);
     return true;
   };
 
@@ -84,7 +96,8 @@ export function useInspectionBox(box: ShipmentByWaybill, events: InspectionBoxEv
       if (queue.detached()) return;
       const line = scannedLineOf(progressRef.current, state.lines);
       if (line) setLastScan({ barcode: input.barcode, shipmentLineId: line });
-      if (!apply(state)) eventsRef.current.onAccepted(line, input.quantity, input.barcode);
+      const accepted = { shipmentLineId: line, quantity: input.quantity, barcode: input.barcode };
+      if (!apply(state, accepted)) eventsRef.current.onAccepted(line, input.quantity, input.barcode);
     } catch (error) {
       const rejected = error instanceof ApiError && error.outcome === 'rejected';
       if (queue.detached()) {
@@ -93,17 +106,26 @@ export function useInspectionBox(box: ShipmentByWaybill, events: InspectionBoxEv
       }
 
       if (rejected && error.code === 'SHIPMENT_WITHDRAWN') eventsRef.current.onWithdrawn(input.barcode);
-      else eventsRef.current.onRejected(rejected ? errorMessage(error, 'outbound') : UNCERTAIN_SCAN_MESSAGE, input.barcode);
+      else
+        eventsRef.current.onRejected(
+          rejected ? errorMessage(error, 'outbound') : UNCERTAIN_SCAN_MESSAGE,
+          input.barcode,
+          rejected ? error.scannedSkuName : undefined
+        );
       // 확정된 거절만 큐에서 뺀다 — 결과를 모르는 스캔은 머리에 남겨 같은 키로 다시 맞춘다
       if (!rejected) throw error;
     }
   }, `outbound:${box.shipmentId}`, () => leavable());
 
-  const areaBlocked = useWorkAreaBlocked('outbound', {
+  const scanAllowance = {
     path: `/shipments/${box.shipmentId}/simple-outbound-scans`,
     operationId: queue.head()?.id,
-  });
+  };
+  const areaBlocked = useWorkAreaBlocked('outbound', scanAllowance);
+  // 이 박스의 작업·연결 확인만 — 다른 작업(입고 등)의 결과 모름은 상품 입력만 막고 내려놓기·전환은 막지 않는다
+  const boxBlocked = useWorkAreaBlocked('outbound', scanAllowance, undefined, true);
   const intakeBlocked = !queue.ready || !!queue.error() || areaBlocked || force.isPending;
+  const otherWork = useOtherWorkName();
 
   // 이 박스에 남은 결과 모름 — 박스만 막고, 내려놓기·전환은 허용한다(스캔은 저장돼 있고 같은 키로 다시 맞춘다)
   const checks = useBoxChecks(box.shipmentId);
@@ -129,7 +151,7 @@ export function useInspectionBox(box: ShipmentByWaybill, events: InspectionBoxEv
   // settle 을 기다리는 쪽(내려놓기·전환). 결과를 모르는 단순출고 스캔은 실행기의 약속이 풀리지 않은 채 머물러
   // 큐의 drain 이 끝나지 않는다 — 그래서 «비었다» 와 «확인 못 한 것이 생겼다» 를 렌더마다 직접 본다.
   const waiters = useRef<Array<{ resolve: (outcome: SettleOutcome) => void; reject: (error: Error) => void }>>([]);
-  const unsettled = !queue.ready || !!queue.error() || areaBlocked;
+  const unsettled = !queue.ready || !!queue.error() || boxBlocked;
   const waitingForNetwork = scan.isPaused ? queue.size() : 0;
   // 렌더를 기다리지 않는 판정 — 끊긴 직후 찍은 스캔은 아직 멈춤으로 그려지기 전일 수 있다
   const waitingNow = () => queue.size() > 0 && (scan.isPaused || !onlineManager.isOnline());
@@ -167,13 +189,18 @@ export function useInspectionBox(box: ShipmentByWaybill, events: InspectionBoxEv
       queue.enqueue({ barcode, quantity });
       return true;
     },
+    /** 상품을 받지 못한 까닭. 이 상자에 보낼 스캔이 없는데 막혔으면 막은 다른 작업을 알린다 */
+    blockedMessage(): string {
+      const onlyOtherWork = !boxBlocked && queue.ready && !queue.error() && queue.size() === 0 && !force.isPending;
+      return otherWork && onlyOtherWork && !shipped.current ? otherWorkMessage(otherWork) : INTAKE_BLOCKED_MESSAGE;
+    },
     /**
      * 앞 스캔이 다 보내질 때까지 기다린다 — 내려놓기·전환 전에(U13). 확인 못 한 스캔이 있거나 기다리는 사이 생기면
      * 기다리지 않고 거절한다(UNCERTAIN_SCAN_MESSAGE). 크기는 렌더 값이 아니라 지금 값을 본다 — 같은 틱의 accept 뒤에도 맞게.
      */
     settle(): Promise<SettleOutcome> {
       if (leavable()) return Promise.resolve('checking');
-      if (!queue.ready || queue.error() || areaBlocked) return Promise.reject(new Error(UNCERTAIN_SCAN_MESSAGE));
+      if (!queue.ready || queue.error() || boxBlocked || forcing.current > 0) return Promise.reject(new Error(UNCERTAIN_SCAN_MESSAGE));
       if (waitingNow()) return Promise.reject(new ScanWaitingError());
       if (queue.size() === 0) return Promise.resolve('settled');
       return new Promise<SettleOutcome>((resolve, reject) => {
@@ -189,6 +216,7 @@ export function useInspectionBox(box: ShipmentByWaybill, events: InspectionBoxEv
     retryHead: () => queue.retryHead(),
     /** 강제출고(F10, §7.4) — 남은 미피킹 수량을 배정 기준으로 채우고 출고 */
     async forceOut(): Promise<void> {
+      forcing.current += 1;
       try {
         apply(
           await force.mutateAsync({
@@ -199,6 +227,8 @@ export function useInspectionBox(box: ShipmentByWaybill, events: InspectionBoxEv
         );
       } catch (error) {
         eventsRef.current.onRejected(errorMessage(error, 'outbound'), null);
+      } finally {
+        forcing.current -= 1;
       }
     },
   };

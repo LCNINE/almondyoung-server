@@ -165,6 +165,20 @@ describe("레이어 꾸미기", () => {
     expect(html).toContain('filter="url(#cf-word)"')
   })
 
+  it("필터 무효화 레이어도 그림자는 모양 밖에 그린다", () => {
+    const html = renderToStaticMarkup(
+      <svg>
+        <LayerStack
+          layers={[{ ...top, id: "win", filterBypass: true, shadow: true }]}
+        />
+      </svg>
+    )
+
+    expect(html).toContain('<mask id="bypass-win-shadow"')
+    expect(html).toContain('mask="url(#bypass-win-shadow)"')
+    expect(html).toContain("feGaussianBlur")
+  })
+
   it("필터를 건 도형은 자기 색 대신 모양 안의 배경과 아래 레이어에 필터를 건다", () => {
     const photo: Layer = { ...rect, id: "photo", type: "image", image: "a" }
     const html = renderToStaticMarkup(

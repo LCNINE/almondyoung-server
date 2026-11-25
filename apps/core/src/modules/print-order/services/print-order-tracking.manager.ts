@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { CUSTOMER_FILE_UNDELIVERED_ERROR } from '../print-source';
 import { type PrintOrderRow } from '../schema/print-order.schema';
 import { WowpressClient } from '../wowpress/wowpress.client';
 import {
@@ -9,6 +10,7 @@ import {
   WOWPRESS_STATUS_CANCELLED,
   type WowpressOrderDetail,
 } from '../wowpress/wowpress.types';
+import { PrintFileRejectionManager } from './print-file-rejection.manager';
 import { isPreservedLastError, PrintOrderRepository } from './print-order.repository';
 
 export const WOWPRESS_STATUS_DELIVERED = 85;
@@ -38,6 +40,7 @@ export class PrintOrderTrackingManager {
   constructor(
     private readonly repository: PrintOrderRepository,
     private readonly wowpress: WowpressClient,
+    private readonly rejections: PrintFileRejectionManager,
   ) {}
 
   // 콜백 본문은 서명이 없어 믿지 않는다. 주문번호로 우리 행을 찾아 주문상세를 다시 불러 반영한다
@@ -65,6 +68,7 @@ export class PrintOrderTrackingManager {
     await this.fillVendorBox(row, detail.boxNumber);
     await this.markAwaitingPayment(row, detail.ordstat === WOWPRESS_STATUS_AWAITING_PAYMENT);
     await this.markVendorAttention(row, vendorAttention(detail));
+    await this.rejections.observe(row, detail);
     await this.markInProduction(row, !WOWPRESS_CANCELLABLE(detail) && detail.ordstat !== WOWPRESS_STATUS_CANCELLED);
 
     const now = new Date();
@@ -110,10 +114,13 @@ export class PrintOrderTrackingManager {
     await this.repository.updateTracked(row.id, { vendorInProduction: inProduction });
   }
 
-  // 중복 의심 같은 보존 기록은 덮지 않는다. 풀리면 우리가 쓴 기록만 지운다
+  // 중복 의심 같은 보존 기록은 덮지 않는다. 풀리면 우리가 쓴 기록만 지운다.
+  // 고객 파일을 못 넘긴 기록은 파일이 넘어갈 때까지 남긴다
   private async markVendorAttention(row: PrintOrderRow, attention: string | null): Promise<void> {
+    const undelivered = row.lastError === CUSTOMER_FILE_UNDELIVERED_ERROR;
+    if (undelivered && row.fileDeliveredAt === null) return;
     if (row.lastError === attention || isPreservedLastError(row.lastError)) return;
-    if (attention === null && !row.lastError?.startsWith(VENDOR_ATTENTION_PREFIX)) return;
+    if (attention === null && !undelivered && !row.lastError?.startsWith(VENDOR_ATTENTION_PREFIX)) return;
 
     await this.repository.updateTracked(row.id, { lastError: attention });
   }

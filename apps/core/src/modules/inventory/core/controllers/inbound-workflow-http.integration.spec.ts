@@ -24,6 +24,8 @@ import { SkuCatalogManager } from '../../sku-catalog/services/sku-catalog.manage
 import { SkuCatalogService } from '../../sku-catalog/services/sku-catalog.service';
 import { buildWiring, Database } from '../../inbound/services/__fixtures__/inbound-harness';
 import { wmsSchema, wmsTables } from '../../schema/inventory.schema';
+import { InboundArrivalFollowUp } from '../../inbound/services/inbound-arrival-follow-up';
+import { DeferredArrivalReservations } from '../../inbound/kernel/inbound-arrival-reservations.port';
 
 // Only the unused native OS transport is replaced. All requests below cross a
 // real listening HTTP socket into production routes/services and PostgreSQL.
@@ -48,7 +50,7 @@ describeIfDb('inbound workflow capability → native runner → Core HTTP → Po
     client = postgres(databaseUrl!, { max: 4 });
     db = drizzle(client, { schema: wmsSchema });
     const wiring = buildWiring(db);
-    const { dbService, command, location, eventStore, idempotency, guard } = wiring;
+    const { dbService, command, location, eventStore, idempotency, guard, reservations } = wiring;
     const catalogReader = new SkuCatalogReader(dbService);
     const catalog = new SkuCatalogService(catalogReader, new SkuCatalogManager(dbService, catalogReader));
     const module = await Test.createTestingModule({
@@ -63,12 +65,13 @@ describeIfDb('inbound workflow capability → native runner → Core HTTP → Po
             catalog,
             eventStore,
             idempotency,
-            new InboundReceiptKernel(command, location, eventStore, guard),
+            new InboundReceiptKernel(command, location, eventStore, guard, reservations),
+            new InboundArrivalFollowUp(new DeferredArrivalReservations()),
           ),
         },
         { provide: MovementService, useValue: new MovementService(dbService, eventStore, idempotency) },
         { provide: InboundPutawayReader, useValue: new InboundPutawayReader(dbService) },
-        { provide: InboundReceiptStateReader, useValue: new InboundReceiptStateReader(dbService) },
+        { provide: InboundReceiptStateReader, useValue: new InboundReceiptStateReader(dbService, reservations) },
       ],
     }).compile();
     app = module.createNestApplication();

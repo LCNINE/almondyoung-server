@@ -13,6 +13,13 @@ export class InboundPipelineItemDto {
   @ApiProperty({ description: '발주 잔량 (창고 불문, 전사 축용)' })
   onOrderTotalQty: number;
 
+  @ApiPropertyOptional({
+    description: '판매 창고행 발주의 가장 이른 입고 예정일 (YYYY-MM-DD)',
+    nullable: true,
+    type: String,
+  })
+  onOrderToSellableEta: string | null;
+
   @ApiProperty({ description: '이동 대기 (출발 창고 보유, 미선적)' })
   awaitingTransferQty: number;
 

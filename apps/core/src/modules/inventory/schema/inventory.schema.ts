@@ -287,6 +287,9 @@ export const shipmentOperationTypeEnum = pgEnum('shipment_operation_type', [
   // 운영자가 송장을 무효로 하거나 다시 받은 기록. 자동 무효화(박스 빼기·결품 이탈)는 그 작업이 남긴다.
   'waybill_void',
   'waybill_reissue',
+  // 재고를 이 상자에 먼저 배정하거나 그 표시를 거둔 기록. 재고를 내준 상자도 구성원(source)으로 남는다.
+  'stock_priority',
+  'stock_priority_cancel',
 ]);
 export const shipmentOperationStatusEnum = pgEnum('shipment_operation_status', [
   'pending',
@@ -1552,6 +1555,8 @@ export const productSellableQuantityProjections = pgTable(
     comingSoonDate: date('coming_soon_date'),
     inboundDate: date('inbound_date'),
     inboundApproximate: boolean('inbound_approximate').notNull().default(false),
+    // comingSoonDate 와 같은 이유로 둔다 — 체크만 바꾸면 reason 이 그대로라 변경 감지에 안 걸린다.
+    discontinuing: boolean('discontinuing').notNull().default(false),
     restockCalculatedAt: timestamp('restock_calculated_at', { withTimezone: true }),
     calculatedAt: timestamp('calculated_at', { withTimezone: true }).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -1674,6 +1679,7 @@ export const salesOrderLines = pgTable(
     compositionSetAt: timestamp('composition_set_at', { withTimezone: true }),
     compositionSetBy: uuid('composition_set_by'),
     almondDesignId: uuid('almond_design_id'),
+    printFileId: uuid('print_file_id'),
 
     productName: varchar('product_name', { length: 255 }).notNull(),
     quantity: integer('quantity').notNull(),
@@ -2147,6 +2153,8 @@ export const mergeGroups = pgTable('merge_groups', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+export type StockAllocation = 'normal' | 'priority';
+
 // Fulfillment Orders (FO)
 export const fulfillmentOrders = pgTable(
   'fulfillment_orders',
@@ -2160,6 +2168,8 @@ export const fulfillmentOrders = pgTable(
     // 출고 관련 필드들 (batchId 는 Task 25 contract 에서 제거 — FO↔batch 링크 은퇴, batch 단위는 shipment)
     fulfillmentMode: fulfillmentModeEnum('fulfillment_mode'),
     priority: taskPriorityEnum('priority').notNull().default('normal'),
+    // 재고 배정 순서. priority 는 대기 순번과 상관없이 먼저 받는다(여럿이면 그 안에서 대기 순번).
+    stockAllocation: varchar('stock_allocation', { length: 16 }).$type<StockAllocation>().notNull().default('normal'),
 
     // 수량 관련 필드들
     totalItems: integer('total_items').notNull().default(0),
@@ -2190,6 +2200,14 @@ export const fulfillmentOrders = pgTable(
     uqSalesOrder: uniqueIndex('uq_fulfillment_orders_sales_order')
       .on(t.salesOrderId)
       .where(sql`${t.salesOrderId} IS NOT NULL`),
+    // 우선할당 줄이 받을 몫은 예약마다 읽는다 — 표시된 주문만 담는다
+    idxStockPriority: index('idx_fulfillment_orders_stock_priority')
+      .on(t.id)
+      .where(sql`${t.stockAllocation} = 'priority'`),
+    ckStockAllocation: check(
+      'ck_fulfillment_orders_stock_allocation',
+      sql`${t.stockAllocation} IN ('normal', 'priority')`,
+    ),
   }),
 );
 
@@ -2614,6 +2632,8 @@ export const salesVariantPolicies = pgTable('sales_variant_policies', {
   comingSoonDate: date('coming_soon_date'),
   restockDate: date('restock_date'),
   restockApproximate: boolean('restock_approximate').notNull().default(false),
+  // 표시 전용 단종 예정. 판매·발주 동작은 바꾸지 않는다.
+  discontinuing: boolean('discontinuing').notNull().default(false),
   effectiveFrom: timestamp('effective_from', { withTimezone: true }),
   effectiveTo: timestamp('effective_to', { withTimezone: true }),
   updatedBy: uuid('updated_by'),
@@ -4278,6 +4298,60 @@ export const dispatchAttempts = pgTable(
   }),
 );
 
+/** 출고 시도마다 택배사에 마지막으로 물은 결과 한 줄. 배송 이력(shipment_tracking)과 달리 «아직 스캔이 없음»·«묻지 못함»도 남는다. */
+export const carrierTrackingChecks = pgTable(
+  'carrier_tracking_checks',
+  {
+    dispatchAttemptId: uuid('dispatch_attempt_id')
+      .primaryKey()
+      .references(() => dispatchAttempts.id, { onDelete: 'cascade' }),
+    /** 마지막으로 물은 시각 */
+    attemptedAt: timestamp('attempted_at', { withTimezone: true }).notNull(),
+    outcome: varchar('outcome', { length: 16 }).$type<'scans' | 'no_scan' | 'rejected' | 'unknown'>().notNull(),
+    errorCode: varchar('error_code', { length: 64 }),
+    /** 택배사가 답을 준 마지막 시각 — 묻지 못한 주기에는 그대로다 */
+    answeredAt: timestamp('answered_at', { withTimezone: true }),
+    scanCode: varchar('scan_code', { length: 16 }),
+    scanStatus: varchar('scan_status', { length: 16 }),
+    scanAt: timestamp('scan_at', { withTimezone: true }),
+    scanLocation: varchar('scan_location', { length: 255 }),
+    scanReason: varchar('scan_reason', { length: 255 }),
+    /** 택배사가 상자를 받은 것으로 보이는 첫 스캔 */
+    acceptedScanAt: timestamp('accepted_scan_at', { withTimezone: true }),
+  },
+  (t) => ({
+    idxAccepted: index('idx_carrier_tracking_checks_accepted')
+      .on(t.acceptedScanAt)
+      .where(sql`${t.acceptedScanAt} IS NOT NULL`),
+  }),
+);
+
+/** 택배사 확인이 필요한 송장을 사람이 확인한 기록. 지우지 않는다 — 다음 사람이 이어받는 이력이다. */
+export const carrierTrackingConfirmations = pgTable(
+  'carrier_tracking_confirmations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    dispatchAttemptId: uuid('dispatch_attempt_id')
+      .notNull()
+      .references(() => dispatchAttempts.id, { onDelete: 'cascade' }),
+    kind: varchar('kind', { length: 32 }).notNull(),
+    /** 확인할 때의 마지막 스캔. 새 스캔이 오면 이 기록은 지난 일이다. */
+    scanKey: varchar('scan_key', { length: 64 }).notNull(),
+    outcome: varchar('outcome', { length: 16 }).$type<'wait' | 'closed'>().notNull(),
+    resumeAt: timestamp('resume_at', { withTimezone: true }),
+    note: varchar('note', { length: 500 }).notNull(),
+    actorId: varchar('actor_id', { length: 255 }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    idxAttempt: index('idx_carrier_tracking_confirmations_attempt').on(t.dispatchAttemptId, t.createdAt),
+    ckResume: check(
+      'ck_carrier_tracking_confirmations_resume',
+      sql`(${t.outcome} = 'wait' AND ${t.resumeAt} IS NOT NULL) OR (${t.outcome} = 'closed' AND ${t.resumeAt} IS NULL)`,
+    ),
+  }),
+);
+
 export const dispatchAttemptSources = pgTable(
   'dispatch_attempt_sources',
   {
@@ -4419,6 +4493,8 @@ export const wmsTables = {
   // Outbound V2 expand model
   fulfillmentCommandRequests,
   outboundScanRejections,
+  carrierTrackingChecks,
+  carrierTrackingConfirmations,
   shipmentOperations,
   shipmentOperationMembers,
   outboundBatchWorkItems,

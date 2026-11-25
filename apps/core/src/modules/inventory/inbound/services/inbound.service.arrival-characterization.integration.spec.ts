@@ -456,7 +456,7 @@ describeIfDb('InboundService 입고 경로 동작 기준선 (PostgreSQL integrat
       });
     });
 
-    it('당일 취소: 역분개·카운터·작업 로그, 회차의 모든 라인이 취소되면 voided', async () => {
+    it('취소: 역분개·카운터·작업 로그, 회차의 모든 라인이 취소되면 voided', async () => {
       await inRollbackTx(db, async (tx) => {
         const { warehouse, skuA } = await seed(tx);
         const { receiptId, lineId, zoneId } = await receiveFive(tx, warehouse.id, skuA.id);
@@ -489,7 +489,7 @@ describeIfDb('InboundService 입고 경로 동작 기준선 (PostgreSQL integrat
       });
     });
 
-    it('당일 취소: 두 라인 중 하나만 취소하면 회차는 posted 로 남는다', async () => {
+    it('취소: 두 라인 중 하나만 취소하면 회차는 posted 로 남는다', async () => {
       await inRollbackTx(db, async (tx) => {
         const { warehouse, skuA, skuB } = await seed(tx);
         const result = await svc.simpleInbound(
@@ -510,7 +510,7 @@ describeIfDb('InboundService 입고 경로 동작 기준선 (PostgreSQL integrat
       });
     });
 
-    it('당일 취소 거절: 부분 수량 · 적치 존재 · 이미 취소', async () => {
+    it('취소 거절: 부분 수량 · 적치 존재 · 이미 취소', async () => {
       await inRollbackTx(db, async (tx) => {
         const { warehouse, skuA, skuB, shelf } = await seed(tx);
         const first = await receiveFive(tx, warehouse.id, skuA.id);

@@ -1,33 +1,43 @@
 'use client';
 
-import Link from 'next/link';
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { useOrderProgressOrders } from '@/lib/services/orders/queries';
 import {
   BOARD_STAGES,
   BoardStageKey,
+  ProgressItem,
   StageSummary,
   formatDwell,
-  arrivalLabel,
   gaveUpBadge,
-  shortageSummary,
   stateLabel,
 } from '@/lib/api/domains/orders/order-progress.shape';
 import { settlementLabel, settlementReason, settlementTiming } from '@/lib/api/domains/orders/cancel-request.shape';
 import { SettlementActions } from '@/features/order/cancel-settlement/settlement-actions';
 import { ManualRefundTodo } from '@/features/order/cancel-settlement/manual-refund-todo';
+import { CarrierAttentionPanel } from '@/features/order/carrier-tracking/carrier-attention-panel';
 import { PendingTransfers } from './pending-transfers';
+import { ShortageCell } from './shortage-cell';
 import { ShortageSplitAction } from './shortage-split-action';
+import { useOperatorNames } from '@/features/order/fulfillments/detail/operation-operator';
+import type { CsDrafts, SetCsDraft } from '../cs/cs-drafts';
+import { emptyCsDraft } from '../cs/cs-drafts';
+import { ContactCell, CustomerCell, GoodsCell } from '../cs/cs-cells';
+import { CsDetail } from '../cs/cs-detail';
 import { cn } from '@/lib/utils/ui';
 
-/** 아래 목록 — 세부 상태 칩, 갇힘만, 채널, 정렬. 체류 긴 순이 기본(스펙 D7). 행은 주문내역 지목 검색으로 간다. */
+/** 아래 목록 — 세부 상태 칩, 갇힘만, 채널, 정렬. 체류 긴 순이 기본(스펙 D7). 주문번호를 누르면 줄 아래에 CS 상세를 편다. */
 export function StageOrders(props: {
   stage: Exclude<BoardStageKey, 'collect'>;
   summary: StageSummary | undefined;
   now: Date;
+  drafts: CsDrafts;
+  setDraft: SetCsDraft;
 }) {
   const [state, setState] = useState('');
   const [stuck, setStuck] = useState(false);
+  const [followUpDue, setFollowUpDue] = useState(false);
+  // 펼친 줄은 목록이 다시 읽혀 빠져도 닫지 않는다 — 보던 상세를 잃지 않게 마지막 값을 들고 있다
+  const [opened, setOpened] = useState<ProgressItem | null>(null);
   const [channel, setChannel] = useState('');
   const [sort, setSort] = useState<'dwell' | 'ordered'>('dwell');
   const isCancelRequest = props.stage === 'cancel_request';
@@ -36,12 +46,40 @@ export function StageOrders(props: {
     stage: props.stage,
     state,
     stuck,
+    followUpDue,
     channel,
     sort,
   });
   const meta = BOARD_STAGES.find((s) => s.key === props.stage)!;
+  const columns = 7 + (isReserve ? 2 : 0) + (isCancelRequest ? 1 : 0);
   const items = q.data?.pages.flatMap((p) => p.items) ?? [];
   const open = props.summary?.open ?? 0;
+  const authorName = useOperatorNames(
+    items.map((r) => r.cs?.lastContact?.authorId)
+  );
+  const listed = opened
+    ? items.find((r) => r.salesOrderId === opened.salesOrderId)
+    : undefined;
+  const toggle = (r: ProgressItem) => {
+    if (opened?.salesOrderId === r.salesOrderId) {
+      setOpened(null);
+      return;
+    }
+    setOpened(r);
+    props.setDraft(r.salesOrderId, (d) => d);
+  };
+  const detail = opened && (
+    <CsDetail
+      key={opened.salesOrderId}
+      stage={props.stage}
+      item={listed ?? opened}
+      inList={listed !== undefined}
+      now={props.now}
+      draft={props.drafts[opened.salesOrderId] ?? emptyCsDraft()}
+      setDraft={props.setDraft}
+      onClose={() => setOpened(null)}
+    />
+  );
 
   return (
     <section className="flex flex-col rounded-lg border bg-white">
@@ -88,6 +126,17 @@ export function StageOrders(props: {
           >
             갇힘만
           </button>
+          <button
+            type="button"
+            aria-pressed={followUpDue}
+            onClick={() => setFollowUpDue((v) => !v)}
+            className={cn(
+              'rounded-md border px-2.5 py-1 text-[13px]',
+              followUpDue && 'border-red-600 bg-red-50 font-semibold text-red-600'
+            )}
+          >
+            오늘 연락할 주문
+          </button>
           <select
             className="rounded-md border px-2 py-1 text-[13px]"
             value={channel}
@@ -110,9 +159,28 @@ export function StageOrders(props: {
         </div>
       </div>
       {isCancelRequest && <PendingTransfers now={props.now} />}
+      {props.stage === 'track' && <CarrierAttentionPanel now={props.now} />}
+      {detail && !listed && <div className="border-b">{detail}</div>}
+      {q.isError && (
+        <div
+          role="alert"
+          className="flex items-center gap-2 border-b px-4 py-2 text-sm text-red-600"
+        >
+          {items.length > 0
+            ? '새 목록을 확인하지 못했어요. 아래는 조금 전 목록이에요.'
+            : '목록을 불러오지 못했어요.'}
+          <button
+            type="button"
+            className="rounded-md border px-2 py-0.5 text-xs"
+            onClick={() => void q.refetch()}
+          >
+            다시 시도
+          </button>
+        </div>
+      )}
       {items.length === 0 ? (
         <div className="px-4 py-10 text-center text-muted-foreground">
-          {q.isLoading
+          {q.isLoading || q.isError
             ? ''
             : open
               ? '조건에 맞는 주문 없음'
@@ -124,13 +192,14 @@ export function StageOrders(props: {
             <thead className="bg-slate-50 text-xs text-muted-foreground">
               <tr>
                 <th className="px-4 py-2 text-left font-medium">주문번호</th>
-                <th className="px-4 py-2 text-left font-medium">채널</th>
-                <th className="px-4 py-2 text-left font-medium">고객</th>
+                <th className="px-4 py-2 text-left font-medium">고객 · 연락처</th>
+                <th className="px-4 py-2 text-left font-medium">상품 · 금액</th>
                 <th className="px-4 py-2 text-left font-medium">주문일</th>
                 <th className="px-4 py-2 text-left font-medium">세부 상태</th>
                 {isReserve && (
                   <th className="px-4 py-2 text-left font-medium">모자람</th>
                 )}
+                <th className="px-4 py-2 text-left font-medium">연락</th>
                 <th className="px-4 py-2 text-right font-medium">체류</th>
                 {(isCancelRequest || isReserve) && (
                   <th className="px-4 py-2 text-right font-medium">조치</th>
@@ -140,17 +209,27 @@ export function StageOrders(props: {
             <tbody>
               {items.map((r) => {
                 const badge = gaveUpBadge(r.gaveUp);
+                const expanded = opened?.salesOrderId === r.salesOrderId;
                 return (
-                  <tr key={r.salesOrderId} className="border-t hover:bg-slate-50">
-                    <td className="px-4 py-2 font-mono text-[13px]">
-                      <Link
-                        href={`/order/history?orderNo=${encodeURIComponent(r.channelOrderId)}`}
+                  <Fragment key={r.salesOrderId}>
+                  <tr className="border-t hover:bg-slate-50">
+                    <td className="px-4 py-2">
+                      <button
+                        type="button"
+                        aria-expanded={expanded}
+                        className="whitespace-nowrap font-mono text-[13px] text-primary underline underline-offset-2"
+                        onClick={() => toggle(r)}
                       >
-                        {r.orderNo}
-                      </Link>
+                        {expanded ? '▾' : '▸'} {r.orderNo}
+                      </button>
+                      <div className="text-xs text-muted-foreground">{r.salesChannel}</div>
                     </td>
-                    <td className="px-4 py-2">{r.salesChannel}</td>
-                    <td className="px-4 py-2">{r.customerName ?? ''}</td>
+                    <td className="px-4 py-2">
+                      <CustomerCell customerName={r.customerName} cs={r.cs} />
+                    </td>
+                    <td className="px-4 py-2">
+                      <GoodsCell cs={r.cs} />
+                    </td>
                     <td className="px-4 py-2">
                       {new Date(r.orderedAt).toLocaleString('ko-KR', {
                         dateStyle: 'short',
@@ -182,17 +261,13 @@ export function StageOrders(props: {
                     {isReserve && (
                       <td className="px-4 py-2">
                         {r.shortage && (
-                          <>
-                            {shortageSummary(r.shortage)}
-                            {arrivalLabel(r.shortage.items[0].expectedArrival) && (
-                              <span className="ml-1.5 text-xs text-muted-foreground">
-                                {arrivalLabel(r.shortage.items[0].expectedArrival)}
-                              </span>
-                            )}
-                          </>
+                          <ShortageCell shortage={r.shortage} now={props.now} />
                         )}
                       </td>
                     )}
+                    <td className="px-4 py-2">
+                      <ContactCell cs={r.cs} now={props.now} authorName={authorName} />
+                    </td>
                     <td
                       className={cn(
                         'px-4 py-2 text-right tabular-nums',
@@ -220,6 +295,14 @@ export function StageOrders(props: {
                       </td>
                     )}
                   </tr>
+                  {expanded && (
+                    <tr>
+                      <td colSpan={columns} className="border-t p-0">
+                        {detail}
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 );
               })}
             </tbody>

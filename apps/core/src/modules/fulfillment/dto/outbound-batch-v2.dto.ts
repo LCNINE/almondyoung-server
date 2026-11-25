@@ -240,7 +240,10 @@ export class OutboundBatchV2ListItemDto {
   pickingMethod: PickingMethodEnum;
   @ApiPropertyOptional({ type: Number, nullable: true })
   cartCapacity: number | null;
+  @ApiProperty({ description: '빠진 상자를 뺀 상자별 줄 수의 합' })
   totalItems: number;
+  @ApiProperty({ description: '빠진 상자를 뺀 상자 수' })
+  totalBoxes: number;
   totalQty: number;
   @ApiProperty({ description: '빼는 중인 박스 수 — 배치 카드의 «빠지는 중 N»' })
   withdrawingItems: number;

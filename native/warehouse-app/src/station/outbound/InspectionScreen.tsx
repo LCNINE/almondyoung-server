@@ -10,9 +10,9 @@ import { printRaw, readLabelPrinter, type PrintRaw } from '../../core/hardware/p
 import { requestBoxChecksOpen } from '../../core/operations/boxChecks';
 import { useBoxChecks } from '../../core/operations/workArea';
 import { useHumanKeys, useScanEmit, useScanner } from '../../core/hardware/scan/useScanner';
-import { batchProgressOf, useBatchWorkItems } from '../../domains/outbound/batchStatus';
-import { classifyInspectScan, inspectionGateOf, isNotFound } from '../../domains/outbound/inspection';
-import { clearLastBox, readLastBox, writeLastBox } from '../../domains/outbound/lastBox';
+import { batchNameOf, batchProgressOf, useBatchWorkItems } from '../../domains/outbound/batchStatus';
+import { classifyInspectScan, inspectionGateOf, isNotFound, lineOfBarcode } from '../../domains/outbound/inspection';
+import { clearLastBox, readLastBatch, readLastBox, writeLastBox } from '../../domains/outbound/lastBox';
 import { fetchShipmentByWaybill, useOutboundBatches } from '../../domains/outbound/queries';
 import type { ShortPickResult } from '../../domains/outbound/shortPick';
 import type { ShipmentByWaybill } from '../../domains/outbound/types';
@@ -42,6 +42,7 @@ import {
   ManualWaybillInput,
   RecentList,
   WaitingPrompt,
+  type WaitingBatch,
   WorkGrid,
 } from './panels';
 import { RefillPanel } from './RefillPanel';
@@ -62,6 +63,7 @@ const REFILLED_ELSEWHERE_MESSAGE = '앞 박스의 결품이 반영돼 새 송장
 const WITHDRAWN_ELSEWHERE_MESSAGE = '박스를 뺐어요. 그 송장을 다시 찍어 주세요.';
 
 const WITHDRAWN_SCAN_MESSAGE = '이미 다 뺀 상자예요. 다음 송장을 찍어 주세요.';
+const NEW_WAYBILL_FIRST_MESSAGE = '새 송장을 먼저 찍어 주세요.';
 export const LEFT_BATCH_MESSAGE = '이 상자는 배치에서 빠졌어요. 방금 찍은 상품은 담지 말고, 담아 둔 상품을 꺼내 찍어 주세요.';
 
 /** 스테이션 F1 출고 검수(스펙 §6) — 송장 스캔 즉시 시작, 상품 스캔 = +1, 마지막 스캔 = 출고, 다음 송장 */
@@ -84,7 +86,7 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
   const [last, setLast] = useState<LastBox | null>(null);
   const [recent, setRecent] = useState<RecentEntry[]>([]);
   const [manual, setManual] = useState<string | null>(null);
-  const [batchId, setBatchId] = useState<string | null>(() => readLastBox(prefs)?.batchId ?? null);
+  const [batchId, setBatchId] = useState<string | null>(() => readLastBox(prefs)?.batchId ?? readLastBatch(prefs)?.id ?? null);
   const work = useRef<BoxWorkHandle | null>(null);
   // 진행 중인 작업 수 — 결품 결과는 거절하지 않고 겹쳐 들어온다(run 의 force)
   const busy = useRef(0);
@@ -113,22 +115,38 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
   const batches = useOutboundBatches(warehouseId, 'picking');
   const batchItems = useBatchWorkItems(batchId);
   const batch = batches.data?.find((b) => b.id === batchId);
-  useBatchProgress(batch && batchItems.data ? batchProgressOf(batch.batchNumber, batchItems.data) : null);
+  const progress = batch && batchItems.data ? batchProgressOf(batch.batchNumber, batchItems.data) : null;
+  useBatchProgress(progress);
+  // 시작만 한 배치는 진행 중 목록에 없다 — 배치 현황이 남긴 번호·이름으로 보인다
+  const saved = readLastBatch(prefs);
+  const label = batch
+    ? { code: batch.batchNumber, name: batchNameOf(batch) }
+    : saved && saved.id === batchId
+      ? { code: saved.batchNumber, name: saved.name }
+      : null;
+  const counted = label && batchItems.data ? batchProgressOf(label.code, batchItems.data) : null;
+  const waitingBatch: WaitingBatch | null =
+    label && counted && counted.done < counted.total ? { ...counted, name: label.name } : null;
 
   const note = useCallback(
     (entry: Omit<RecentEntry, 'id' | 'at'>) => setRecent((list) => pushRecent(list, { ...entry, at: Date.now() })),
     []
   );
   const reject = useCallback(
-    (message: string, detail?: string) => {
-      setAlert({ message, detail });
+    (message: string, detail?: string, item?: string) => {
+      setAlert({ message, detail, item });
       signal('error');
-      note({ kind: 'error', text: detail ?? message });
+      note({ kind: 'error', text: item && detail ? `${item} ${detail}` : (detail ?? message) });
     },
     [signal, note]
   );
 
   const lookup = (code: string) => fetchShipmentByWaybill(api, code, warehouseId);
+  /** 하던 박스를 다시 열지 못했다 — 그 박스의 배치 대신 배치 현황이 남긴 배치를 본다 */
+  const forgetRestoredBox = () => {
+    clearLastBox(prefs);
+    setBatchId(readLastBatch(prefs)?.id ?? null);
+  };
   const printFor = async (shipmentId: string): Promise<PrintStatus> => {
     const outcome = await printWaybill({ api, print, prefs }, shipmentId);
     void queryClient.invalidateQueries({ queryKey: ['waybill-label-states'] });
@@ -188,7 +206,7 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
         ? current.cause
         : undefined);
     if (gate.kind === 'reject') {
-      if (quiet) clearLastBox(prefs);
+      if (quiet) forgetRestoredBox();
       else reject(gate.message, found.trackingNo);
       return;
     }
@@ -382,6 +400,26 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
       });
       return;
     }
+    if (current.kind === 'reprint') {
+      // 새 송장을 기다리는 중 — 상품을 찍었으면 «운송장을 찾을 수 없어요» 대신 할 일을 다시 말한다.
+      // 송장과 길이가 같은 상품 바코드(12자리)도 있어 이 상자의 상품 바코드인지도 본다
+      void run(async () => {
+        try {
+          await show(await lookup(code));
+        } catch (error) {
+          // 출력이 실패했으면 찍을 새 송장이 없다 — 다시 출력하라는 큰 칸이 이미 떠 있으니 원래 거절대로
+          if (
+            !isNotFound(error) ||
+            current.print.kind === 'failed' ||
+            (classifyInspectScan(code, current.box.trackingNo) !== 'product' &&
+              lineOfBarcode(current.box.lines, code) === null)
+          )
+            throw error;
+          reject(NEW_WAYBILL_FIRST_MESSAGE, code);
+        }
+      });
+      return;
+    }
     if (current.kind !== 'inspect' && current.kind !== 'withdraw') {
       void open(code);
       return;
@@ -422,7 +460,7 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
       try {
         await show(await lookup(saved.trackingNo), true);
       } catch {
-        clearLastBox(prefs);
+        forgetRestoredBox();
       }
     });
   });
@@ -442,15 +480,16 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
    * 박스 화면이 내는 거절. 화면이 아직 그 박스면 알리고, 다른 박스로 넘어간 뒤 늦게 온 것(박스 빼기 실패)이면
    * 든 박스에 빨간 칸·오류음을 내지 않고 최근 목록에만 적는다
    */
-  const boxAlert = (box: ShipmentByWaybill) => (message: string, detail?: string) => {
+  const boxAlert = (box: ShipmentByWaybill) => (message: string, detail?: string, item?: string) => {
     const current = viewRef.current;
-    if (current.kind !== 'waiting' && current.box.shipmentId === box.shipmentId) reject(message, detail);
+    if (current.kind !== 'waiting' && current.box.shipmentId === box.shipmentId) reject(message, detail, item);
     else note({ kind: 'error', text: `${box.trackingNo} ${message}` });
   };
 
-  const onShipped = (box: ShipmentByWaybill) => {
+  const onShipped = (box: ShipmentByWaybill, final: { name: string; quantity: number } | null) => {
     clearLastBox(prefs);
     signal('complete');
+    if (final) note({ kind: 'scan', text: final.name, qty: final.quantity });
     note({ kind: 'shipped', text: box.trackingNo });
     setLast({ kind: 'shipped', trackingNo: box.trackingNo });
     setAlert(null);
@@ -557,6 +596,8 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
     run(async () => {
       const current = viewRef.current;
       if (current.kind !== 'reprint') return;
+      // 지난 거절은 지난 송장 때의 일이다 — 다시 뽑는 동안·실패했을 때 남기지 않는다
+      setAlert(null);
       go({ ...current, print: { kind: 'printing' } });
       const status = await printFor(current.box.shipmentId);
       settlePrint(current.box.shipmentId, status);
@@ -642,9 +683,15 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
         <WorkGrid
           left={
             <>
-              <BoxCard trackingNo={view.box.trackingNo} recipient={view.box.recipientMasked} ownerName={view.box.ownerName} />
-              {/* 방금 찍은 것의 거절 사유가 출력 상태보다 먼저다(§6.2 «오류음 + 사유 한 줄») */}
-              {alert ? (
+              <BoxCard
+                trackingNo={view.box.trackingNo}
+                recipient={view.box.recipientMasked}
+                ownerName={view.box.ownerName}
+                split={view.box.split}
+              />
+              {/* 방금 찍은 것의 거절 사유가 출력 상태보다 먼저다(§6.2 «오류음 + 사유 한 줄»).
+                  새 송장을 먼저 찍으라는 거절만은 새 송장 안내를 남기고 그 아래에 한 줄로 — 할 일이 그대로다 */}
+              {alert && alert.message !== NEW_WAYBILL_FIRST_MESSAGE ? (
                 <BigPanel content={{ kind: 'alert', ...alert }} />
               ) : view.print.kind === 'failed' ? (
                 <BigPanel content={{ kind: 'alert', message: view.print.message }} />
@@ -657,6 +704,12 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
                   }}
                 />
               )}
+              {alert && alert.message === NEW_WAYBILL_FIRST_MESSAGE ? (
+                <p role="alert" className="shrink-0 rounded-[10px] border-2 border-[#C8202F] bg-[#FDE8EA] p-3 font-semibold text-[#9E1320]">
+                  {alert.message}
+                  <span className="ml-2 font-mono font-normal">{alert.detail}</span>
+                </p>
+              ) : null}
             </>
           }
           right={
@@ -730,7 +783,7 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
               {alert ? (
                 <BigPanel content={{ kind: 'alert', ...alert }} />
               ) : (
-                <WaitingPrompt>
+                <WaitingPrompt batch={waitingBatch}>
                   {manual !== null ? (
                     <ManualWaybillInput
                       initial={manual}

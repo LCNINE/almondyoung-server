@@ -34,6 +34,27 @@ describe('F1 출고 검수 — 송장 스캔 즉시 시작, 상품 스캔 = +1, 
     expect(progress()).toHaveTextContent('0 / 4');
   });
 
+  it('나눈 상자를 찍으면 이 주문의 몇 번째 상자인지와 수량을 보인다 — 나누지 않은 상자는 보이지 않는다', async () => {
+    await setupInspection({ boxes: [{ ...BOX1, split: { boxQty: 4, orderQty: 6, boxNo: 1, boxCount: 2 } }, BOX2] });
+    await openBox('421033881907');
+    const share = screen.getByLabelText('나눈 상자');
+    expect(share).toHaveTextContent('이 주문 2상자 중 1');
+    expect(share).toHaveTextContent('주문 6개 중 이 상자 4개');
+
+    for (const code of ['8801002', '8801002', '8801002', '8801001']) scan(code);
+    expect(await screen.findByText('출고 완료')).toBeInTheDocument();
+    await openBox('421033881915');
+    expect(screen.queryByLabelText('나눈 상자')).toBeNull();
+  });
+
+  it('새 송장을 출력해야 하는 나눈 상자도 송장 카드에 나눈 상자를 보인다', async () => {
+    await setupInspection({
+      boxes: [{ ...BOX1, labelState: 'reprint_required', split: { boxQty: 4, orderQty: 6, boxNo: 2, boxCount: 2 } }],
+    });
+    scan('421033881907');
+    expect(await screen.findByLabelText('나눈 상자')).toHaveTextContent('이 주문 2상자 중 2');
+  });
+
   it('상품을 찍으면 그 줄이 오르고, 마지막 상품이면 출고되어 송장 대기로 — 직전 박스 완료를 보인다', async () => {
     const { server } = await setupInspection();
     await openBox('421033881907');
@@ -55,6 +76,65 @@ describe('F1 출고 검수 — 송장 스캔 즉시 시작, 상품 스캔 = +1, 
     scan('8801001');
     await waitFor(() => expect(progress()).toHaveTextContent('1 / 4'));
     expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('박스에 없는 상품은 서버가 알려 준 상품 이름을 바코드와 함께 보이고 최근 스캔에도 남긴다', async () => {
+    const { server } = await setupInspection();
+    server.config.skuNames['8801003'] = '샴푸 퍼퓸';
+    await openBox('421033881907');
+    scan('8801003');
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('이 송장에 없는 상품이에요');
+    expect(alert).toHaveTextContent('샴푸 퍼퓸');
+    expect(alert).toHaveTextContent('8801003');
+    const recent = within(screen.getByRole('list', { name: '최근 스캔' }));
+    expect(recent.getAllByRole('listitem')[0]).toHaveTextContent('샴푸 퍼퓸 8801003');
+  });
+
+  it('상자를 끝낸 마지막 스캔도 최근 스캔에 남긴다', async () => {
+    await setupInspection();
+    await openBox('421033881915');
+    scan('8801003');
+    expect(await screen.findByText('출고 완료')).toBeInTheDocument();
+    const items = within(screen.getByRole('list', { name: '최근 스캔' })).getAllByRole('listitem');
+    expect(items[0]).toHaveTextContent('4210-3388-1915 출고 완료');
+    expect(items[1]).toHaveTextContent('샴푸 퍼퓸+1');
+  });
+
+  it('송장 대기에 지금 배치와 남은 상자를 크게 보이고, 출고하면 줄인다', async () => {
+    await setupInspection({
+      picking: [batchSummary({ id: 'b-1', batchNumber: 'OB-1002' })],
+      prefs: stationPrefs({ 'almondwms.outbound.lastBatch': JSON.stringify({ id: 'b-1', batchNumber: 'OB-1002', name: '오전' }) }),
+    });
+    const now = await screen.findByRole('status', { name: '지금 배치' });
+    expect(now).toHaveTextContent('오전OB-1002');
+    expect(now).toHaveTextContent('남은 상자 2 / 2');
+    await openBox('421033881915');
+    scan('8801003');
+    expect(await screen.findByText('출고 완료')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('status', { name: '지금 배치' })).toHaveTextContent('남은 상자 1 / 2'));
+  });
+
+  it('하던 박스를 다시 열지 못하면 그 박스의 배치가 아니라 배치 현황이 남긴 배치를 보인다', async () => {
+    await setupInspection({
+      boxes: [BOX1, { ...BOX2, batchId: 'b-9', shipped: true }],
+      prefs: stationPrefs({
+        'almondwms.outbound.lastBox': JSON.stringify({ shipmentId: 's-2', trackingNo: '421033881915', batchId: 'b-9' }),
+        'almondwms.outbound.lastBatch': JSON.stringify({ id: 'b-1', batchNumber: 'OB-1002', name: null }),
+      }),
+    });
+    const now = await screen.findByRole('status', { name: '지금 배치' });
+    expect(now).toHaveTextContent('OB-1002');
+    expect(now).toHaveTextContent('남은 상자 1 / 1');
+  });
+
+  it('시작만 하고 아직 아무 상자도 찍지 않은 배치도 배치 현황이 남긴 번호로 보인다', async () => {
+    await setupInspection({
+      prefs: stationPrefs({ 'almondwms.outbound.lastBatch': JSON.stringify({ id: 'b-1', batchNumber: 'OB-1002', name: null }) }),
+    });
+    const now = await screen.findByRole('status', { name: '지금 배치' });
+    expect(now).toHaveTextContent('OB-1002');
+    expect(now).toHaveTextContent('남은 상자 2 / 2');
   });
 
   it('같은 송장을 다시 찍으면 다시 조회만 한다 — 서버에 쓰지 않고, 방금 보낸 스캔까지 보인다', async () => {
@@ -133,6 +213,35 @@ describe('F1 출고 검수 — 송장 스캔 즉시 시작, 상품 스캔 = +1, 
     expect(server.scans.filter((s) => s.shipmentId === 's-1')).toHaveLength(1);
     await waitFor(async () => expect(await runtime.store.pending('scope')).toHaveLength(0));
     expect(screen.queryByRole('button', { name: /확인할 일/ })).toBeNull();
+  });
+
+  it('입고 작업의 결과를 모르는 동안에도 보낸 스캔이 없는 상자는 다른 송장으로 바꾸고 내려놓을 수 있다 — 상품은 받지 않고 그 작업을 알린다', async () => {
+    const slow = { timeout: 4000 };
+    const { server, runtime } = await setupInspection();
+    await runtime.store.begin({
+      id: 'inbound',
+      scope: 'scope',
+      resource: '/inbound/simple:w',
+      path: '/inbound/simple',
+      method: 'POST',
+      createdAt: Date.now(),
+      bodyJson: JSON.stringify({ barcode: '8801009', quantity: 1 }),
+    });
+    await runtime.store.finish('inbound', 'uncertain');
+    await act(async () => runtime.runner.restore());
+    scan('421033881907');
+    expect(await screen.findByRole('heading', { name: '4210-3388-1907' }, slow)).toBeInTheDocument();
+    await act(async () => {});
+    scan('8801002');
+    expect(await screen.findByRole('alert', undefined, slow)).toHaveTextContent(
+      '입고 작업의 처리 여부를 확인하고 있어요. 아래 «처리 내역 확인»을 먼저 눌러 주세요.'
+    );
+    scan('421033881915');
+    expect(await screen.findByRole('heading', { name: '4210-3388-1915' }, slow)).toBeInTheDocument();
+    await act(async () => {});
+    press('Escape');
+    expect(await screen.findByText('송장 바코드', undefined, slow)).toBeInTheDocument();
+    expect(server.scans).toEqual([]);
   });
 
   it('다시 연 박스가 저장된 스캔을 다시 보내면 최근 목록에 그 상품 이름이 남는다', async () => {
@@ -306,6 +415,76 @@ describe('F1 출고 검수 — 송장 스캔 즉시 시작, 상품 스캔 = +1, 
     expect(within(screen.getByRole('table')).getByText('B-11-1')).toBeInTheDocument();
     await openBox('421033881907');
     expect(progress()).toHaveTextContent('0 / 4');
+  });
+
+  it('새 송장 화면에서 송장이 아닌 바코드를 찍으면 새 송장을 먼저 찍으라고 하고 새 송장 안내는 그대로 둔다', async () => {
+    await setupInspection({ boxes: [{ ...BOX1, labelState: 'reprint_required' }] });
+    scan('421033881907');
+    expect(await screen.findByText('새 송장 출력됨')).toBeInTheDocument();
+    scan('8801002');
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('새 송장을 먼저 찍어 주세요');
+    expect(alert).toHaveTextContent('8801002');
+    expect(alert).not.toHaveTextContent('운송장을 찾을 수 없어요');
+    expect(screen.getByText('새 송장 출력됨')).toBeInTheDocument();
+    expect(screen.getByText('옛 송장은 버리고 새 송장을 찍으세요')).toBeInTheDocument();
+    expect(flash()).toBe('error');
+    await openBox('421033881907');
+    expect(progress()).toHaveTextContent('0 / 4');
+  });
+
+  it('송장과 길이가 같은 상품 바코드도 이 상자의 상품이면 새 송장을 먼저 찍으라고 한다', async () => {
+    const lines = BOX1.lines.map((line, index) => (index === 0 ? { ...line, barcode: '880100200001' } : line));
+    await setupInspection({ boxes: [{ ...BOX1, lines, labelState: 'reprint_required' }] });
+    scan('421033881907');
+    expect(await screen.findByText('새 송장 출력됨')).toBeInTheDocument();
+    scan('880100200001');
+    expect(await screen.findByRole('alert')).toHaveTextContent('새 송장을 먼저 찍어 주세요');
+    expect(screen.getByText('새 송장 출력됨')).toBeInTheDocument();
+  });
+
+  it('새 송장 출력이 실패했으면 상품을 찍어도 새 송장을 찍으라고 하지 않는다 — 찍을 새 송장이 없다', async () => {
+    await setupInspection({
+      boxes: [{ ...BOX1, labelState: 'reprint_required' }],
+      print: async () => {
+        throw new Error('offline');
+      },
+    });
+    scan('421033881907');
+    expect(await screen.findByRole('button', { name: /다시 출력/ })).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText('새 송장 출력 중')).toBeNull());
+    scan('8801002');
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('이 운송장을 찾을 수 없어요'));
+    expect(screen.queryByText('새 송장을 먼저 찍어 주세요.')).toBeNull();
+  });
+
+  it('새 송장을 다시 출력하면 지난 «새 송장을 먼저» 줄은 지운다 — 다시 출력이 실패해도 남기지 않는다', async () => {
+    let fail = false;
+    await setupInspection({
+      boxes: [{ ...BOX1, labelState: 'reprint_required' }],
+      print: async () => {
+        if (fail) throw new Error('offline');
+      },
+    });
+    scan('421033881907');
+    expect(await screen.findByText('새 송장 출력됨')).toBeInTheDocument();
+    scan('8801002');
+    expect(await screen.findByText('새 송장을 먼저 찍어 주세요.')).toBeInTheDocument();
+    fail = true;
+    press('F12');
+    // 다시 출력 실패는 큰 칸의 빨간 사유로 바뀐다 — 그 자리에 지난 거절 줄이 함께 남지 않는다
+    await waitFor(() => expect(screen.queryByText('새 송장 출력됨')).toBeNull());
+    await waitFor(() => expect(screen.queryByText('새 송장 출력 중')).toBeNull());
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+    expect(screen.queryByText('새 송장을 먼저 찍어 주세요.')).toBeNull();
+  });
+
+  it('새 송장 화면에서 송장처럼 생겼는데 없는 번호는 지금처럼 운송장을 찾을 수 없다고 한다', async () => {
+    await setupInspection({ boxes: [{ ...BOX1, labelState: 'reprint_required' }] });
+    scan('421033881907');
+    expect(await screen.findByText('새 송장 출력됨')).toBeInTheDocument();
+    scan('421099999999');
+    expect(await screen.findByRole('alert')).toHaveTextContent('이 운송장을 찾을 수 없어요');
   });
 
   it('프린터가 없으면 새 송장 대신 «프린터 있는 자리» 로 거절한다', async () => {

@@ -27,6 +27,8 @@ export interface MoveInput {
   quantity: number;
   /** 선택 사유. MoveLineDto.memo 로 전달된다. */
   reason?: string;
+  /** 평소 선반이 비어 있으면 도착 로케이션으로 정한다(서버가 비어 있을 때만 채운다). */
+  rememberAsUsual?: boolean;
   /** (c) 시트 진입 시 1회 생성, 재시도에 재사용. */
   idempotencyKey: string;
 }

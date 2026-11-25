@@ -30,6 +30,7 @@ const GUIDES: Record<string, Guide> = {
   window: { format: 'jpg', dpi: 700, note: '현수막: 1/10 축소 파일 · 700dpi' },
   menu: { format: 'jpg', dpi: 300, note: '포스터류: JPG 300dpi' },
   diploma: { format: 'jpg', dpi: 300, note: '포스터류: JPG 300dpi' },
+  invitation: { format: 'pdf', dpi: 300, note: '소량 청첩장: PDF(앞 1쪽·뒤 2쪽)로 접수' },
 };
 
 const FORMATS: { format: AlmondPrintFormat; label: string }[] = [

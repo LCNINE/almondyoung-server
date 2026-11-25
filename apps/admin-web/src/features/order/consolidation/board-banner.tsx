@@ -4,17 +4,18 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { usePermissionCheck } from '@/hooks/use-permission';
 import { useWarehouses } from '@/lib/services/inventory/queries';
-import { useConsolidationBoard } from '@/lib/services/orders';
+import { useConsolidationBoardCount } from '@/lib/services/orders';
 import { defaultWarehouseId } from './board-model';
 
 export function ConsolidationBoardBanner() {
   const { data: warehouses = [] } = useWarehouses();
   const { can } = usePermissionCheck();
   const canRead = can(['fulfillment.shipment.read']);
-  const board = useConsolidationBoard(
+  // 숫자만 보이므로 받는 분이 든 보드 대신 묶음 수만 받는다
+  const board = useConsolidationBoardCount(
     canRead ? defaultWarehouseId(warehouses) : ''
   );
-  const count = board.data?.groups.length ?? 0;
+  const count = board.data?.groupCount ?? 0;
 
   if (board.isError || count === 0) {
     return null;

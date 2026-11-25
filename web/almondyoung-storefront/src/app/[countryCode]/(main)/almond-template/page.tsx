@@ -98,6 +98,7 @@ export default async function AlmondTemplatePage({
   return (
     <AlmondTemplateEditor
       productId={product}
+      kind={kind in PRINT_SPECS ? (kind as PrintKind) : undefined}
       variantId={variant}
       size={size}
       mode="designer"

@@ -22,9 +22,12 @@ import type {
   ListFulfillmentsQuery,
   FulfillmentOrdersQuery,
   ShipmentConsolidationCandidateQuery,
+  OutboundBatchV2,
   OutboundBatchV2ListQuery,
   SupplierQueueStage,
   OutboundPreparationSummary,
+  OutboundPreparationCounts,
+  ConsolidationBoardCount,
   PreparationBucket,
 } from '@/lib/types/dto/fulfillment';
 import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
@@ -66,21 +69,53 @@ export const useSalesOrderItems = (orderId: string) => {
 
 // ===== 출고 배치 관련 쿼리 (D2) =====
 
-// 출고 준비 화면은 숫자를 보고 일하므로 들어올 때마다 다시 읽는다(메뉴 배지는 캐시를 그대로 쓴다)
+// 출고 준비 화면은 숫자를 보고 일하므로 들어올 때마다 다시 읽는다.
+// 화주 필터 없이 읽은 내역은 메뉴 배지 숫자도 그 값으로 맞춘다
 export const useOutboundPreparationSummary = (
   warehouseId: string,
   enabled = true,
   refetchOnMount: boolean | 'always' = true,
   holders: readonly string[] = []
 ) => {
+  const queryClient = useQueryClient();
+
   return useQuery({
     queryKey: orderQueryKeys.outboundPreparationSummary(warehouseId, holders),
-    queryFn: () =>
-      orders.outboundPreparation.summary(warehouseId, undefined, holders),
+    queryFn: async () => {
+      const summary = await orders.outboundPreparation.summary(
+        warehouseId,
+        undefined,
+        holders
+      );
+
+      if (holders.length === 0) {
+        const countsKey = orderQueryKeys.outboundPreparationCounts(warehouseId);
+
+        // 먼저 떠난 숫자 조회가 늦게 와서 이 값을 덮지 않게 한다
+        await queryClient.cancelQueries({ queryKey: countsKey, exact: true });
+        queryClient.setQueryData<OutboundPreparationCounts>(countsKey, {
+          warehouseId,
+          buckets: summary.buckets.map(({ bucket, count }) => ({
+            bucket,
+            count,
+          })),
+        });
+      }
+
+      return summary;
+    },
     enabled: !!warehouseId && enabled,
     refetchOnMount,
   });
 };
+
+// 메뉴 배지 — 받는 분이 든 내역 대신 숫자만 받는다
+export const useOutboundPreparationCounts = (warehouseId: string) =>
+  useQuery({
+    queryKey: orderQueryKeys.outboundPreparationCounts(warehouseId),
+    queryFn: () => orders.outboundPreparation.counts(warehouseId),
+    enabled: !!warehouseId,
+  });
 
 export const useLoadMoreOutboundPreparation = (
   warehouseId: string,
@@ -154,6 +189,54 @@ export const useOutboundBatchesV2 = (query: OutboundBatchV2ListQuery = {}) => {
     queryKey: orderQueryKeys.outboundBatchesV2(query),
     queryFn: () => orders.outboundBatches.listV2(query),
     placeholderData: keepPreviousData,
+  });
+};
+
+/** 물류앱에서 막힌 상자가 보이는 동안 다시 읽는 간격 — 작업자가 다시 찍어 풀리면 화면에서도 곧 사라지게 */
+export const SCAN_REJECTION_REFRESH_MS = 15_000;
+
+// 막힌 작업 항목만 id 순으로 — 막힘과 무관한 항목 추가·순서 변화는 다르다고 보지 않는다
+const scanRejectionsOf = (batch: OutboundBatchV2) =>
+  JSON.stringify(
+    batch.workItems
+      .filter((item) => item.scanRejection)
+      .map((item) => [item.id, item.scanRejection])
+      .sort(([a], [b]) => String(a).localeCompare(String(b)))
+  );
+
+/**
+ * 배치에 물류앱에서 막힌 상자가 있는 동안 배치를 따로 다시 읽어, 막힘 표시가 달라졌을 때만 배치 데이터를 바꾼다.
+ * 배치 데이터를 바꿀 때마다 후보 조회(useOutboundBatchEligibleShipments, 키가 배치 조회 시각)가 다시 돌므로
+ * 배치 쿼리 자체를 주기로 다시 읽지 않는다.
+ */
+export const useFollowBatchScanRejections = (
+  id: string,
+  batch: OutboundBatchV2 | undefined,
+  batchUpdatedAt: number
+) => {
+  const queryClient = useQueryClient();
+  const watching = !!batch?.workItems.some((item) => item.scanRejection);
+  useQuery({
+    // 배치를 새로 받을 때마다 새로 시작한다 — 첫 재조회는 받은 때로부터 한 간격 뒤
+    queryKey: ['scan-rejection-follow', 'outbound-batch', id, batchUpdatedAt],
+    queryFn: async () => {
+      const startedAt = Date.now();
+      const next = await orders.outboundBatches.getV2(id);
+      const batchKey = orderQueryKeys.outboundBatchV2(id);
+      const current = queryClient.getQueryState<OutboundBatchV2>(batchKey);
+      // 읽는 사이 배치를 새로 받았으면 그쪽이 더 새롭다
+      if (!current?.data || current.dataUpdatedAt >= startedAt)
+        return startedAt;
+      if (scanRejectionsOf(next) !== scanRejectionsOf(current.data))
+        queryClient.setQueryData(batchKey, next);
+      return startedAt;
+    },
+    enabled: !!id && watching && batchUpdatedAt > 0,
+    initialData: batchUpdatedAt,
+    initialDataUpdatedAt: batchUpdatedAt,
+    refetchInterval: SCAN_REJECTION_REFRESH_MS,
+    staleTime: SCAN_REJECTION_REFRESH_MS,
+    gcTime: 0,
   });
 };
 
@@ -277,10 +360,31 @@ export const useShipmentConsolidationCandidates = (
 
 export const useConsolidationCandidatesV2 = useShipmentConsolidationCandidates;
 
-export const useConsolidationBoard = (warehouseId: string) =>
-  useQuery({
+// 보드를 읽으면 메뉴 배지 숫자도 그 값으로 맞춘다
+export const useConsolidationBoard = (warehouseId: string) => {
+  const queryClient = useQueryClient();
+
+  return useQuery({
     queryKey: orderQueryKeys.consolidationBoard(warehouseId),
-    queryFn: () => orders.consolidation.getBoard(warehouseId),
+    queryFn: async () => {
+      const board = await orders.consolidation.getBoard(warehouseId);
+      const countKey = orderQueryKeys.consolidationBoardCount(warehouseId);
+
+      await queryClient.cancelQueries({ queryKey: countKey, exact: true });
+      queryClient.setQueryData<ConsolidationBoardCount>(countKey, {
+        groupCount: board.groups.length,
+      });
+
+      return board;
+    },
+    enabled: !!warehouseId,
+  });
+};
+
+export const useConsolidationBoardCount = (warehouseId: string) =>
+  useQuery({
+    queryKey: orderQueryKeys.consolidationBoardCount(warehouseId),
+    queryFn: () => orders.consolidation.getBoardCount(warehouseId),
     enabled: !!warehouseId,
   });
 
@@ -402,11 +506,31 @@ export const useFulfillmentShipments = (
   });
 };
 
-export const useShipmentDetail = (shipmentId: string) => {
+/** 재고는 계속 바뀐다 — 창을 열 때마다 새로 읽고 남기지 않는다 */
+export const useStockPriorityPreview = (shipmentId: string) => {
+  return useQuery({
+    queryKey: orderQueryKeys.stockPriority(shipmentId),
+    queryFn: () => orders.fulfillmentOrder.getStockPriority(shipmentId),
+    staleTime: 0,
+    gcTime: 0,
+  });
+};
+
+export const useShipmentDetail = (
+  shipmentId: string,
+  options?: { followScanRejection?: boolean }
+) => {
   return useQuery({
     queryKey: orderQueryKeys.shipment(shipmentId),
     queryFn: () => orders.fulfillmentOrder.getShipment(shipmentId),
     enabled: !!shipmentId,
+    // 물류앱에서 막힌 표시가 있는 동안만 다시 읽는다
+    ...(options?.followScanRejection && {
+      refetchInterval: (query: {
+        state: { data?: { scanRejection?: unknown } };
+      }) =>
+        query.state.data?.scanRejection ? SCAN_REJECTION_REFRESH_MS : false,
+    }),
   });
 };
 
@@ -774,6 +898,7 @@ export function useOrderProgressOrders(params: {
   stage: string;
   state: string;
   stuck: boolean;
+  followUpDue: boolean;
   channel: string;
   sort: 'dwell' | 'ordered';
 }) {
@@ -784,6 +909,7 @@ export function useOrderProgressOrders(params: {
         stage: params.stage,
         state: params.state || undefined,
         stuck: params.stuck || undefined,
+        followUpDue: params.followUpDue || undefined,
         channel: params.channel || undefined,
         sort: params.sort,
         limit: 50,

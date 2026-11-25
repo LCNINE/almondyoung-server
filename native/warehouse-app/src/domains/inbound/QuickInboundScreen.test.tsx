@@ -3,7 +3,7 @@ import {
   TestWorkProvider,
   receiptFixture,
 } from './__fixtures__/workRuntime';
-import { describe, it, expect } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -23,10 +23,17 @@ import {
   ScanProvider,
   useScanBus,
 } from '../../core/hardware/scan/ScanProvider';
-import type { ApiClient } from '../../core/data/httpClient';
+import { ApiError, type ApiClient } from '../../core/data/httpClient';
 import type { Session } from '../../core/auth/session';
 import { QuickInboundScreen } from './QuickInboundScreen';
 import { scanHid } from '../../core/hardware/scan/__fixtures__/hid';
+import { playInboundSaved, playInboundSaveFailed } from './saveFeedback';
+
+vi.mock('./saveFeedback', () => ({
+  playInboundSaved: vi.fn(),
+  playInboundSaveFailed: vi.fn(),
+  primeInboundSaveSound: vi.fn(),
+}));
 
 it('간편입고 재개에서 숫자패드 → HID 위치 스캔 → 명시적 적치로 이어진다', async () => {
   const calls: Call[] = [];
@@ -78,6 +85,19 @@ const BOX_SKU = [
   },
 ];
 
+const SECOND_SKU = [
+  {
+    id: 's2',
+    code: 'PT-002',
+    name: '면바지',
+    currentStock: 0,
+    safetyStock: 0,
+    barcodes: [
+      { id: 'b3', barcode: '7701', isPrimary: true, packingUnit: null },
+    ],
+  },
+];
+
 interface Call {
   path: string;
   method?: string;
@@ -106,7 +126,10 @@ async function renderScreen(
     draft?: Promise<void>;
     draftLoadFails?: { now: boolean };
     serverDown?: { now: boolean };
+    simpleFails?: boolean;
     savedScans?: string[];
+    waiting?: Array<{ skuId: string; orders: number; qty: number }>;
+    ready?: unknown[];
   }
 ) {
   const qc = new QueryClient({
@@ -150,11 +173,18 @@ async function renderScreen(
             },
           ],
         };
+      if (o.path.startsWith('/waiting-orders?'))
+        return { items: [...(hold?.waiting ?? [])] };
+      if (o.path.startsWith('/ready-shipments?'))
+        return { items: hold?.ready ?? [], waitingOnOtherSkus: 0 };
       if (o.path.startsWith('/inventory/skus/search/advanced?'))
         return { items: BOX_SKU, total: 1 };
       if (o.path.startsWith('/inventory/skus?barcode=880')) return BOX_SKU;
+      if (o.path.startsWith('/inventory/skus?barcode=7701')) return SECOND_SKU;
       if (o.path.startsWith('/inventory/skus?barcode=')) return [];
       if (o.path === '/inbound/simple') {
+        if (hold?.simpleFails) throw new ApiError('권한이 없어요', 403);
+
         return {
           id: 'r-1',
           lines: [{ id: 'ln-1', skuId: 's1', quantity: 20 }],
@@ -274,6 +304,7 @@ async function renderScreen(
       <>
         <ScanButton code="8801" />
         <ScanButton code="8802" />
+        <ScanButton code="7701" />
         {/* 미등록 바코드 — 등록 후 재스캔이 가드를 뚫는지 확인하는 테스트 전용 */}
         <ScanButton code="9999" />
         <QuickInboundScreen />
@@ -305,7 +336,81 @@ async function renderScreen(
   );
 }
 
+const READY_BOX = {
+  shipmentId: 'sh-1',
+  status: 'planned',
+  orderNos: ['A-1001'],
+  recipientMasked: '김*영',
+  skuCount: 1,
+  totalQty: 2,
+  readiness: 'putaway_required',
+};
+
 describe('QuickInboundScreen', () => {
+  beforeEach(() => {
+    vi.mocked(playInboundSaved).mockClear();
+    vi.mocked(playInboundSaveFailed).mockClear();
+  });
+
+  it('등록에 성공하면 토스트를 보이고 완료음을 한 번 낸다', async () => {
+    const user = userEvent.setup();
+    await renderScreen([]);
+    await screen.findByText('간편입고');
+
+    await user.click(screen.getByRole('button', { name: '스캔:8802' }));
+    await screen.findByText('코튼셔츠');
+    await user.click(screen.getByRole('button', { name: '등록' }));
+
+    expect(await screen.findByText('입고를 저장했어요')).toBeInTheDocument();
+    expect(playInboundSaved).toHaveBeenCalledTimes(1);
+    expect(playInboundSaveFailed).not.toHaveBeenCalled();
+  });
+
+  it('등록에 실패하면 오류음을 내고 완료음과 토스트는 없다', async () => {
+    const user = userEvent.setup();
+    await renderScreen([], undefined, false, { simpleFails: true });
+    await screen.findByText('간편입고');
+
+    await user.click(screen.getByRole('button', { name: '스캔:8802' }));
+    await screen.findByText('코튼셔츠');
+    await user.click(screen.getByRole('button', { name: '등록' }));
+
+    await waitFor(() => expect(playInboundSaveFailed).toHaveBeenCalledTimes(1));
+    expect(playInboundSaved).not.toHaveBeenCalled();
+    expect(screen.queryByText('입고를 저장했어요')).not.toBeInTheDocument();
+  });
+
+  it('미발송 주문 칸을 그 화면의 입고 줄로 보인다', async () => {
+    const calls: Call[] = [];
+    await renderScreen(calls, { lineId: 'ln-1' }, false, {
+      ready: [READY_BOX],
+    });
+
+    expect(await screen.findByText('미발송 주문')).toBeInTheDocument();
+    expect(screen.getByText('적치하면 나갈 수 있어요')).toBeInTheDocument();
+    expect(
+      calls.some(
+        (c) =>
+          c.path.startsWith('/ready-shipments?') &&
+          c.path.includes('receiptLineIds=ln-1')
+      )
+    ).toBe(true);
+  });
+
+  it('확정 전에는 /ready-shipments 를 부르지 않는다', async () => {
+    const user = userEvent.setup();
+    const calls: Call[] = [];
+    await renderScreen(calls);
+    await screen.findByText('간편입고');
+
+    await user.click(screen.getByRole('button', { name: '스캔:8801' }));
+    await screen.findByText('코튼셔츠');
+
+    expect(calls.some((c) => c.path.startsWith('/ready-shipments'))).toBe(
+      false
+    );
+  });
+
   it('스캔하면 카트에 담긴다', async () => {
     const user = userEvent.setup();
     await renderScreen([]);
@@ -727,6 +832,71 @@ it('상품 검색과 키보드 수량 입력만으로 간편입고하고 재선�
   );
 });
 
+it('상품을 고른 직후 수정이 열려 있어도 그 줄을 지우면 수정이 닫히고 다른 작업이 풀린다', async () => {
+  await renderScreen([]);
+  await screen.findByText('간편입고');
+  await userEvent.click(screen.getByRole('button', { name: '스캔:7701' }));
+  await screen.findByText('면바지');
+  await userEvent.type(
+    await screen.findByLabelText('상품명·코드 검색'),
+    '셔츠{Enter}'
+  );
+  await userEvent.click(
+    await screen.findByRole('button', { name: '코튼셔츠 선택' })
+  );
+  await screen.findByLabelText(/입고 수량 직접 입력/);
+
+  const trash = screen.getByRole('button', { name: '코튼셔츠 삭제' });
+  expect(trash).toBeEnabled();
+  await userEvent.click(trash);
+
+  await waitFor(() =>
+    expect(
+      screen.queryByRole('button', { name: '코튼셔츠 삭제' })
+    ).not.toBeInTheDocument()
+  );
+  expect(
+    screen.queryByLabelText(/입고 수량 직접 입력/)
+  ).not.toBeInTheDocument();
+  await waitFor(() =>
+    expect(screen.getByLabelText('면바지 수량')).toBeEnabled()
+  );
+  await userEvent.click(screen.getByRole('button', { name: '스캔:7701' }));
+  await waitFor(() =>
+    expect(screen.getByLabelText('면바지 수량')).toHaveTextContent('2')
+  );
+});
+
+it('한 줄을 수정하는 중에 다른 줄을 지워도 수정창과 입력한 숫자가 남는다', async () => {
+  await renderScreen([]);
+  await screen.findByText('간편입고');
+  await userEvent.click(screen.getByRole('button', { name: '스캔:8801' }));
+  await screen.findByText('코튼셔츠');
+  await userEvent.click(screen.getByRole('button', { name: '스캔:7701' }));
+  await screen.findByText('면바지');
+
+  await userEvent.click(screen.getByLabelText('코튼셔츠 수량'));
+  const input = await screen.findByLabelText(/입고 수량 직접 입력/);
+  await userEvent.clear(input);
+  await userEvent.type(input, '7');
+
+  const otherQty = screen.getByLabelText('면바지 수량');
+  expect(otherQty).toBeDisabled();
+  expect(otherQty).toHaveClass('disabled:opacity-40');
+  expect(screen.getByRole('button', { name: '면바지 삭제' })).toHaveClass(
+    'disabled:opacity-40'
+  );
+
+  await userEvent.click(screen.getByRole('button', { name: '면바지 삭제' }));
+
+  await waitFor(() =>
+    expect(
+      screen.queryByRole('button', { name: '면바지 삭제' })
+    ).not.toBeInTheDocument()
+  );
+  expect(screen.getByLabelText(/입고 수량 직접 입력/)).toHaveValue('7');
+});
+
 for (const returned of [3, 10]) {
   it(`회송 ${returned}개인 입고는 회송 누계와 서버의 잔여 적치 정책을 따로 표시한다`, async () => {
     await renderScreen([], {
@@ -799,4 +969,61 @@ it('a blocked diagnostic row does not prevent a valid neighbor from resuming put
   expect(calls.every((call) => !call.method || call.method === 'GET')).toBe(
     true
   );
+});
+
+it('담은 목록과 적치 대기에 기다리는 주문을 보이고, 다 적치하면 숨긴다', async () => {
+  const user = userEvent.setup();
+  await renderScreen([], undefined, false, {
+    waiting: [{ skuId: 's1', orders: 2, qty: 5 }],
+  });
+  await waitFor(() =>
+    expect(document.querySelector('[aria-busy]')).toHaveAttribute(
+      'aria-busy',
+      'false'
+    )
+  );
+  await user.click(screen.getByRole('button', { name: '스캔:8802' }));
+  expect(
+    await screen.findByText('기다리는 주문 2건 · 5개')
+  ).toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: '등록' }));
+  await screen.findByText('적치 대기');
+  expect(screen.getByText('기다리는 주문 2건 · 5개')).toBeInTheDocument();
+
+  const open = screen.getByRole('button', { name: '적치' });
+  await waitFor(() => expect(open).toBeEnabled());
+  await user.click(open);
+  const dialog = await screen.findByRole('dialog', { name: '적치' });
+  scanHid(dialog, 'B-05-03');
+  const submit = within(dialog).getByRole('button', { name: '적치' });
+  await waitFor(() => expect(submit).toBeEnabled());
+  await user.click(submit);
+  expect(await screen.findByText('완료')).toBeInTheDocument();
+  expect(screen.queryByText(/기다리는 주문/)).not.toBeInTheDocument();
+});
+
+it('일부만 적치하면 남은 기다리는 주문을 다시 읽어 보인다', async () => {
+  const waiting = [{ skuId: 's1', orders: 2, qty: 5 }];
+  await renderScreen([], {}, false, { waiting });
+  const open = await screen.findByRole('button', { name: '적치' });
+  await waitFor(() => expect(open).toBeEnabled());
+  expect(
+    await screen.findByText('기다리는 주문 2건 · 5개')
+  ).toBeInTheDocument();
+  await userEvent.click(open);
+  const dialog = await screen.findByRole('dialog', { name: '적치' });
+  expect(
+    await within(dialog).findByText(/기다리는 주문 2건 · 5개/)
+  ).toBeInTheDocument();
+  waiting[0] = { skuId: 's1', orders: 1, qty: 3 };
+  const keypad = within(dialog).getByRole('button', { name: '지우기' });
+  await userEvent.click(keypad);
+  scanHid(keypad, 'B-05-03');
+  const submit = within(dialog).getByRole('button', { name: '적치' });
+  await waitFor(() => expect(submit).toBeEnabled());
+  await userEvent.click(submit);
+  expect(await screen.findByText(/잔여 18개/)).toBeInTheDocument();
+  expect(
+    await screen.findByText('기다리는 주문 1건 · 3개')
+  ).toBeInTheDocument();
 });

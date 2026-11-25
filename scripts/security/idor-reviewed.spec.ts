@@ -27,9 +27,9 @@ const EXPECTED_OPEN: string[] = [
 const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predicate: string; note?: string }> = {
   'analytics GET /best-product': {
     verdict: 'N/A',
-    evidence: 'apps/analytics/src/features/analytics-api/analytics.controller.ts:48',
-    predicate: '',
-    note: "무인증(컨트롤러에 @UseGuards 없음). ProductRankingQuery.getProductRanking(product-ranking.query.ts:21-58)은 최근 90일 전체 주문을 masterId 로 group by 해 주문수/판매수량을 합산한 플랫폼 전역 집계 — 특정 고객 식별자로 필터하지 않으므로 '남의 데이터'를 특정 식별자로 찾아가는 IDOR 은 성립하지 않는다. 같은 컨트롤러의 /frequently-purchased(개인 구매내역)에는 JwtAuthGuard 를 명시적으로 붙였는데(controller.ts:74) /best-product 에는 안 붙어있어, '베스트상품' 랭킹은 공개 노출을 의도하고 개인 구매내역만 보호한 것으로 보인다(스토어의 '인기상품' 위젯류와 유사). 다만 주문수·판매수량 자체는 매출과 직결된 지표라 단순 상품명/가격 카탈로그보다 민감도가 높음 — IDOR 은 아니지만 무인증 노출이 의도인지 재확인이 필요한 정보노출 소지로 observations 에 별도 기록.",
+    evidence: 'apps/analytics/src/features/analytics-api/analytics.controller.ts:55',
+    predicate: '@UseGuards(JwtAuthGuard, PermissionGuard)',
+    note: "플랫폼 전역 집계 — ProductRankingQuery.getProductRanking 은 최근 90일 전체 주문을 masterId 로 group by 해 주문수/판매수량을 합산하고 특정 고객 식별자로 필터하지 않으므로 IDOR 대상 아님. 원래 무인증이었으나 매출과 직결된 지표라 #721 에서 @RequirePermission('analytics.report.read') + JwtAuthGuard 로 닫았다(같은 컨트롤러의 /summary 와 같은 권한). 부르는 화면이 없었다.",
   },
   'analytics GET /frequently-purchased': {
     verdict: 'SAFE',
@@ -192,6 +192,18 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
     evidence: 'apps/core/src/modules/library/services/ownership.service.ts:365',
     predicate: 'if (row.ownership.customerId !== customerId) {',
     note: 'OwnershipController.download -> service.getDownloadable(id, customerId) -> _loadOwnedOrThrow(138줄)에서 동일 검증.',
+  },
+  'core GET /store/print-orders/file-rejections': {
+    verdict: 'SAFE',
+    evidence: 'apps/core/src/modules/print-order/services/print-order.reader.ts:136',
+    predicate: 'eq(orders.customerId, customerId)',
+    note: 'fileRejections(customer.userId) -> reader.customerFileRejections 가 sales_orders.customer_id 로 자기 주문 줄만 읽는다. 경로에 id 가 없다.',
+  },
+  'core POST /store/print-orders/:salesOrderLineId/file': {
+    verdict: 'SAFE',
+    evidence: 'apps/core/src/modules/print-order/services/print-file-reupload.manager.ts:40',
+    predicate: 'if (!ctx || ctx.order.customerId !== customerId)',
+    note: 'reupload 가 줄의 판매주문 고객과 토큰 사용자를 대조하고 남의 줄이면 404. 새 파일도 file-service 내부 조회로 주인이 같은지 본다.',
   },
   'core GET /store/orders/:id/actions': {
     verdict: 'SAFE',
@@ -1768,15 +1780,15 @@ const keyOf = (r: AuditRow): string => `${r.app} ${r.verb} ${r.route}`;
 describe('IDOR 검사 대상 집합', () => {
   it('감사 스크립트가 idorTarget 을 내보낸다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(targets).toHaveLength(287);
+    expect(targets).toHaveLength(289);
   });
 
   // search 와 analytics 가 둘 다 `GET /health` 이고, user-service 와 file-service 가 둘 다
   // `POST /files/upload` 다. `<VERB> <route>` 로 키를 만들면 그만큼 뭉개지고 스냅샷이 조용히 잃는다.
   it('키에 app 이 들어가야 충돌하지 않는다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(new Set(targets.map(keyOf)).size).toBe(287);
-    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(285);
+    expect(new Set(targets.map(keyOf)).size).toBe(289);
+    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(287);
   });
 
   it('감사 스크립트의 대상 집합과 명단이 정확히 일치한다', () => {

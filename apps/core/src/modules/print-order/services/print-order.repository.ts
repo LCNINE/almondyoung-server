@@ -232,6 +232,53 @@ export class PrintOrderRepository {
     return this.updateWhere(and(eq(t.id, id), inArray(t.status, TRACKED_STATUSES)), patch, tx);
   }
 
+  // 다시 올리기를 줄마다 하나씩만 하게, 본 거절 표시를 재접수 대기로 바꿔 선점한다. 외부 호출은 잠금 밖에서 한다.
+  // 선점한 채 멈추면 대기 시간이 지난 뒤 폴러가 다시 거절을 찍는다
+  async claimReupload(id: string, rejectedAt: Date): Promise<Date | null> {
+    const t = wmsTables.printOrders;
+    const claimedAt = new Date();
+    const claimed = await this.updateWhere(
+      and(eq(t.id, id), inArray(t.status, TRACKED_STATUSES), eq(t.fileRejectedAt, rejectedAt)),
+      { fileRejectedAt: null, fileResubmittedAt: claimedAt },
+    );
+
+    return claimed ? claimedAt : null;
+  }
+
+  // 넘기지 못했으면 거절 표시를 되돌려 고객이 다시 올릴 수 있게 한다. 그사이 새 관찰이 표시를 바꿨으면 두지 않는다
+  async releaseReupload(id: string, claimedAt: Date, rejectedAt: Date): Promise<void> {
+    const t = wmsTables.printOrders;
+    await this.updateWhere(and(eq(t.id, id), isNull(t.fileRejectedAt), eq(t.fileResubmittedAt, claimedAt)), {
+      fileRejectedAt: rejectedAt,
+      fileResubmittedAt: null,
+    });
+  }
+
+  // 와우프레스가 새 파일을 받았다. 재접수 대기 표시는 선점할 때 남겼다. 와우프레스가 정상을 보여 표시가 지워졌어도 기록한다.
+  // 그 뒤 다른 다시 올리기가 선점했거나 새 거절이 찍혔으면 이 파일은 더 최신이 아니라 0행이다
+  recordResubmittedFile(id: string, fileId: string, claimedAt: Date): Promise<boolean> {
+    const t = wmsTables.printOrders;
+    return this.updateWhere(
+      and(
+        eq(t.id, id),
+        inArray(t.status, TRACKED_STATUSES),
+        isNull(t.fileRejectedAt),
+        or(isNull(t.fileResubmittedAt), eq(t.fileResubmittedAt, claimedAt)),
+      ),
+      { printFileId: fileId, fileDeliveredAt: new Date() },
+    );
+  }
+
+  async findBySalesOrderLineId(salesOrderLineId: string, tx?: DbTx): Promise<PrintOrderRow | null> {
+    const t = wmsTables.printOrders;
+    const [row] = await this.dbService.run(
+      (trx) => trx.select().from(t).where(eq(t.salesOrderLineId, salesOrderLineId)).limit(1),
+      tx,
+    );
+
+    return row ?? null;
+  }
+
   async updateOwned(id: string, claimedAt: Date, patch: Partial<PrintOrderRow>, tx?: DbTx): Promise<boolean> {
     const t = wmsTables.printOrders;
     return this.updateWhere(and(eq(t.id, id), eq(t.status, 'submitting'), eq(t.submittingAt, claimedAt)), patch, tx);

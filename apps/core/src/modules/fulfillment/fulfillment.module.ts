@@ -65,6 +65,11 @@ import { PickToTotePickingStrategy } from './picking/pick-to-tote.strategy';
 import { ShipmentDispatchService } from './services/shipment-dispatch.service';
 import { ShipmentDeliveryTrackingService } from './services/shipment-delivery-tracking.service';
 import { CarrierTrackingPoller } from './services/carrier-tracking.poller';
+import { CarrierTrackingChecker } from './carrier-tracking/carrier-tracking.checker';
+import { CarrierTrackingManager } from './carrier-tracking/carrier-tracking.manager';
+import { CarrierTrackingReader } from './carrier-tracking/carrier-tracking.reader';
+import { CarrierTrackingService } from './carrier-tracking/carrier-tracking.service';
+import { CarrierTrackingController } from './controllers/carrier-tracking.controller';
 import { ShipmentShortPickService } from './services/shipment-short-pick.service';
 import { ToteLifecycleService } from './services/tote-lifecycle.service';
 import { ShipmentRecallService } from './services/shipment-recall.service';
@@ -75,6 +80,16 @@ import { SimpleOutboundService } from './services/simple-outbound.service';
 import { OutboundScanRejectionManager } from './scan-rejections/outbound-scan-rejection.manager';
 import { OutboundRejectionInterceptor } from './scan-rejections/outbound-rejection.interceptor';
 import { ShipmentWaybillReader } from './reader/shipment-waybill.reader';
+import { BatchPickListReader } from './reader/batch-pick-list';
+import { BatchPickListController } from './controllers/batch-pick-list.controller';
+import { WaitingOrdersReader } from './reader/waiting-orders.reader';
+import { ReadyShipmentsReader } from './reader/ready-shipments.reader';
+import { ReadyShipmentsController } from './controllers/ready-shipments.controller';
+import { WaitingOrdersController } from './controllers/waiting-orders.controller';
+import { StockPriorityController } from './controllers/stock-priority.controller';
+import { StockPriorityManager } from './stock-priority/stock-priority.manager';
+import { StockPriorityReader } from './stock-priority/stock-priority.reader';
+import { StockPriorityService } from './stock-priority/stock-priority.service';
 import { RefillPendingReader } from './reader/refill-pending.reader';
 import { OutboundRefillController } from './controllers/outbound-refill.controller';
 import { DraftBoxAmender } from './draft-box/draft-box-amender';
@@ -100,6 +115,8 @@ import { ReturnBinController } from './controllers/return-bin.controller';
 import { ToteController } from './controllers/tote.controller';
 import { ShipmentTrackingController } from './controllers/shipment-tracking.controller';
 import { ShipmentShortPickController } from './controllers/shipment-short-pick.controller';
+import { ReservationReleaseController } from './controllers/reservation-release.controller';
+import { ReservationReleaseService } from './services/reservation-release.service';
 import { ShipmentRecallController, ShipmentRecallOperationController } from './controllers/shipment-recall.controller';
 
 @Module({
@@ -148,6 +165,10 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     LocationOutboundController,
     FulfillmentsController,
     OutboundBatchV2Controller,
+    BatchPickListController,
+    WaitingOrdersController,
+    ReadyShipmentsController,
+    StockPriorityController,
     PickingV2Controller,
     PickingCommandV2Controller,
     ToteController,
@@ -160,7 +181,9 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     ShipmentPlanningController,
     FulfillmentOperationController,
     ShipmentTrackingController,
+    CarrierTrackingController,
     ShipmentShortPickController,
+    ReservationReleaseController,
     ShipmentRecallController,
     ShipmentRecallOperationController,
     OutboundRefillController,
@@ -180,6 +203,10 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     ShipmentDispatchService,
     ShipmentDeliveryTrackingService,
     CarrierTrackingPoller,
+    CarrierTrackingChecker,
+    CarrierTrackingReader,
+    CarrierTrackingManager,
+    CarrierTrackingService,
     ShipmentShortPickService,
     ShipmentRecallService,
     ToteLifecycleService,
@@ -204,6 +231,7 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     FulfillmentInvariantService,
     FulfillmentReconciliationService,
     ShipmentReservationService,
+    ReservationReleaseService,
     ShipmentPlanningService,
     BoxAllocationManager,
     BoxWithdrawalService,
@@ -221,6 +249,12 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     LocationOutboundService,
     ReturnBinService,
     ShipmentWaybillReader,
+    BatchPickListReader,
+    WaitingOrdersReader,
+    ReadyShipmentsReader,
+    StockPriorityReader,
+    StockPriorityManager,
+    StockPriorityService,
     RefillPendingReader,
     DraftBoxAmender,
     LineCompositionEditReader,

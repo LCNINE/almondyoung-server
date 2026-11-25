@@ -75,8 +75,6 @@ export const getBreadcrumbItems = (pathname: string): BreadcrumbItem[] => {
       items.push({ label: '지역별 출고' });
     } else if (pathname.includes('/regional-invoice')) {
       items.push({ label: '송장출력' });
-    } else if (pathname.includes('/shipment-round')) {
-      items.push({ label: '출고회차별조회' });
     } else if (pathname.includes('/picking-list')) {
       items.push({ label: '피킹리스트' });
     } else if (pathname.includes('/inspection')) {

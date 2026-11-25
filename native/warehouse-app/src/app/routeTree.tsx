@@ -29,6 +29,7 @@ import { PutawayRoute } from './routes/PutawayRoute';
 import { ReturnPutawayRoute } from './routes/ReturnPutawayRoute';
 import { LocationLabelRoute } from './routes/LocationLabelRoute';
 import { OutboundBatchesRoute } from './routes/OutboundBatchesRoute';
+import { BatchPickListRoute } from './routes/BatchPickListRoute';
 import { OutboundRoute } from './routes/OutboundRoute';
 import { SimpleOutboundRoute } from './routes/SimpleOutboundRoute';
 import { WithdrawRoute } from './routes/WithdrawRoute';
@@ -48,6 +49,8 @@ export interface RouterContext {
 declare module '@tanstack/history' {
   interface HistoryState {
     shipment?: ShipmentByWaybill;
+    /** F2 배치 현황으로 돌아올 때 보던 배치 */
+    batchId?: string;
   }
 }
 
@@ -223,6 +226,12 @@ const outboundBatchesRoute = createRoute({
   path: '/outbound/batches',
   component: OutboundBatchesRoute,
 });
+// 배치 피킹 목록(위치 순서·상품·수량) — F2 에서 연다. A4 로 인쇄한다
+const outboundBatchPickListRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: '/outbound/batches/$batchId/pick-list',
+  component: BatchPickListRoute,
+});
 const outboundSimpleRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: '/outbound/simple/$shipmentId',
@@ -281,6 +290,7 @@ export const routeTree = rootRoute.addChildren([
     packingRoute,
     outboundRoute,
     outboundBatchesRoute,
+    outboundBatchPickListRoute,
     outboundSimpleRoute,
     outboundWithdrawRoute,
     customerReturnsRoute,

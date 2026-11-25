@@ -46,7 +46,8 @@ function AdjustStockScreenContent({
     initialLocationId
   );
   const [term, setTerm] = useState('');
-  const [delta, setDelta] = useState(0);
+  const [count, setCount] = useState(0);
+  const [counted, setCounted] = useState(false);
   const [reason, setReason] = useState<string | null>(null);
   const [otherReason, setOtherReason] = useState('');
   const [confirming, setConfirming] = useState(false);
@@ -122,6 +123,10 @@ function AdjustStockScreenContent({
     [rows, locationId]
   );
 
+  // 조정은 맞출 수량을 받아 화면의 현재 ON_HAND 와의 차이를 보낸다. 제조는 만든 수량 그대로다.
+  // ponytail: 화면을 연 뒤 다른 작업이 같은 칸 재고를 움직이면 맞춘 값이 그만큼 어긋난다. 서버가 목표 수량을 받게 되면 거기로 옮긴다.
+  const delta = isManufacture ? count : counted ? count - currentOnHand : 0;
+
   const effectiveReason = isManufacture
     ? '제조'
     : reason === OTHER
@@ -132,7 +137,8 @@ function AdjustStockScreenContent({
     isSet &&
     Boolean(warehouseId) &&
     Boolean(locationId) &&
-    (isManufacture ? delta > 0 && stock.data !== undefined : delta !== 0) &&
+    stock.data !== undefined &&
+    (isManufacture ? delta > 0 : delta !== 0) &&
     effectiveReason.length > 0;
 
   // 키가 어떤 payload 에 묶여 있는지 추적한다. "요청은 커밋됐는데 응답만
@@ -309,9 +315,10 @@ function AdjustStockScreenContent({
 
       <section className="space-y-2">
         <h2 className="text-sm font-semibold text-gray-700">
-          {isManufacture ? '만든 수량' : '조정 수량'}
+          {isManufacture ? '만든 수량' : '맞출 수량'}
         </h2>
         <div
+          data-testid="adjust-quantity"
           className={cn(
             'rounded-lg border p-3 text-center text-2xl font-semibold',
             delta > 0 && 'border-green-500 bg-green-50 text-green-700',
@@ -319,18 +326,25 @@ function AdjustStockScreenContent({
             delta === 0 && 'border-gray-200 bg-white text-gray-400'
           )}
         >
-          {delta > 0 ? `+${delta}` : delta}
+          {isManufacture ? (delta > 0 ? `+${delta}` : delta) : counted ? count : currentOnHand}
         </div>
+        {!isManufacture && counted && (
+          <p data-testid="adjust-change" className="text-center text-sm text-gray-600">
+            {currentOnHand} → {count} ({delta > 0 ? `+${delta}` : delta})
+          </p>
+        )}
         <NumberPad
-          value={delta}
-          onChange={setDelta}
-          allowNegative={!isManufacture}
+          value={count}
+          onChange={(next) => {
+            setCount(next);
+            setCounted(true);
+          }}
           keyboard={!confirming && !adjust.isPending}
         />
         <p className="text-xs text-gray-500">
           {isManufacture
             ? '늘리기만 할 수 있어요. 줄여야 하면 재고 조회에서 재고 조정을 쓰세요.'
-            : '파손·분실은 −, 발견은 +. 실제 수량을 그대로 맞추려면 실사를 쓰세요.'}
+            : '이 위치에 지금 실제로 있는 수량을 그대로 넣으세요.'}
         </p>
       </section>
 
@@ -389,9 +403,9 @@ function AdjustStockScreenContent({
         message={
           isManufacture
             ? `${detail.data?.name ?? '상품'} · ${selected?.code ?? ''} · +${delta} (${currentOnHand} → ${currentOnHand + delta}) · 사유 제조`
-            : `${selected?.code ?? ''} 의 ${detail.data?.name ?? '상품'} 을(를) ${
+            : `${selected?.code ?? ''} 의 ${detail.data?.name ?? '상품'} 을(를) ${currentOnHand} → ${currentOnHand + delta}개로 맞춥니다(${
                 delta > 0 ? `+${delta}` : delta
-              } 조정합니다. 사유: ${effectiveReason}`
+              }). 사유: ${effectiveReason}`
         }
         confirmLabel={isManufacture ? '등록' : '조정'}
         danger={!isManufacture && delta < 0}

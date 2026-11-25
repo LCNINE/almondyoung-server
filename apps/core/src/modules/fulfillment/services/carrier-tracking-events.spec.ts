@@ -48,11 +48,11 @@ describe('carrierScansToTrackingEvents', () => {
     ).toEqual([]);
   });
 
-  // 수신 경로는 출고 전 시각의 이벤트를 TRACKING_EVENT_BEFORE_DISPATCH(409)로 거절한다 — 한진의 07 집하출발은
-  // 기사가 «집하하러» 출발한 시각이라 창고 출고보다 앞설 수 있다. 매 주기 409 를 쌓지 않게 미리 거른다.
+  // 수신 경로는 출고 전 시각의 이벤트를 TRACKING_EVENT_BEFORE_DISPATCH(409)로 거절한다 — 상자를 먼저 넘기고 출고 처리를
+  // 나중에 하면 집하 스캔이 앞선다. 매 주기 409 를 쌓지 않게 미리 거른다.
   it('출고 시각보다 앞선 스캔은 건너뛴다', () => {
     expect(
-      carrierScansToTrackingEvents('HANJIN', [scan('07', 'in_transit', '2026-09-20T00:59:59.999Z')], dispatchedAt),
+      carrierScansToTrackingEvents('HANJIN', [scan('11', 'in_transit', '2026-09-20T00:59:59.999Z')], dispatchedAt),
     ).toEqual([]);
   });
 

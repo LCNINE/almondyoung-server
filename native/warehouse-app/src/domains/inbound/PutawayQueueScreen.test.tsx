@@ -23,9 +23,10 @@ import {
   ScanProvider,
   useScanBus,
 } from '../../core/hardware/scan/ScanProvider';
-import type { ApiClient } from '../../core/data/httpClient';
+import { NetworkError, type ApiClient } from '../../core/data/httpClient';
 import type { Session } from '../../core/auth/session';
 import type { PutawayPendingResult } from './types';
+import type { ReturnGoods } from './returnGoods';
 import { PutawayQueueScreen } from './PutawayQueueScreen';
 import { scanHid } from '../../core/hardware/scan/__fixtures__/hid';
 
@@ -163,6 +164,24 @@ interface RenderOpts {
     Array<{ id: string }> | Promise<Array<{ id: string }>>
   >;
   /** 검색어(부분 문자열)로 대상 로케이션 후보를 내려주는 목 — 적치 완료 시나리오용. */
+  /** GET /inventory/stocks/return-zone 응답 — 없으면 빈 목록, 'error' 면 실패 */
+  returnGoods?: ReturnGoods | 'error';
+  /** GET /waiting-orders 응답 — 없으면 기다리는 주문 없음 */
+  waiting?: Array<{ skuId: string; orders: number; qty: number }>;
+  /** GET /ready-shipments 의 상자 줄 — 없으면 없음 */
+  ready?: unknown[];
+  /** GET /ready-shipments 경로를 모은다 */
+  readyCalls?: string[];
+  /** POST /movement/move 본문을 모은다 */
+  moves?: unknown[];
+  /** POST /movement/move 멱등키를 모은다 */
+  moveKeys?: string[];
+  /** 앞의 N번 이동은 응답을 받지 못한 것처럼 실패한다 */
+  moveFailures?: number;
+  /** POST /movement/move 응답 — 없으면 { success: true } */
+  moveResponse?: unknown;
+  /** 반품 양품 조회를 차례로 소비한다(마지막 항목 반복) — 'error' 는 실패 */
+  returnGoodsSequence?: Array<ReturnGoods | 'error'>;
   locations?: Record<
     string,
     Array<{
@@ -182,6 +201,8 @@ function renderScreen(prefsSeed?: Record<string, string>, opts?: RenderOpts) {
   let queueCallCount = 0;
   let scanCallCount = 0;
   let pageFailures = opts?.pageFailures ?? 0;
+  let moveFailures = opts?.moveFailures ?? 0;
+  let returnGoodsCalls = 0;
   const client: ApiClient = {
     request: (async (o: { path: string }) => {
       if (o.path.startsWith('/inbound/lines/')) {
@@ -254,7 +275,46 @@ function renderScreen(prefsSeed?: Record<string, string>, opts?: RenderOpts) {
         if (found) return { items: found[1], total: found[1].length };
         return { items: [], total: 0 };
       }
+      if (o.path.startsWith('/waiting-orders?'))
+        return { items: opts?.waiting ?? [] };
+      if (o.path.startsWith('/ready-shipments?')) {
+        opts?.readyCalls?.push(o.path);
+        return { items: opts?.ready ?? [], waitingOnOtherSkus: 0 };
+      }
       if (o.path === '/inbound/putaway') return { success: true };
+      if (o.path.startsWith('/inventory/stocks/return-zone')) {
+        opts?.calls?.push(o.path);
+        if (opts?.returnGoodsSequence) {
+          const next =
+            opts.returnGoodsSequence[
+              Math.min(returnGoodsCalls++, opts.returnGoodsSequence.length - 1)
+            ];
+          if (next === 'error')
+            throw new Error('GET /inventory/stocks/return-zone → 500');
+          return next;
+        }
+        if (opts?.returnGoods === 'error')
+          throw new Error('GET /inventory/stocks/return-zone → 500');
+        return (
+          opts?.returnGoods ?? {
+            locationId: 'loc-return',
+            locationCode: 'zone-return-default',
+            warehouseId: 'w-1',
+            items: [],
+          }
+        );
+      }
+      if (o.path === '/movement/move') {
+        const { body, idempotencyKey } = o as {
+          body?: unknown;
+          idempotencyKey?: string;
+        };
+        if (idempotencyKey) opts?.moveKeys?.push(idempotencyKey);
+        if (moveFailures-- > 0)
+          throw new NetworkError(new TypeError('Failed to fetch'));
+        opts?.moves?.push(body);
+        return opts?.moveResponse ?? { success: true };
+      }
       throw new Error(`GET ${o.path} → 404`);
     }) as unknown as ApiClient['request'],
   };
@@ -293,7 +353,30 @@ function renderScreen(prefsSeed?: Record<string, string>, opts?: RenderOpts) {
   return qc;
 }
 
+const READY_BOX = {
+  shipmentId: 'sh-1',
+  status: 'planned',
+  orderNos: ['A-1001'],
+  recipientMasked: '김*영',
+  skuCount: 1,
+  totalQty: 2,
+  readiness: 'putaway_required',
+};
+
 describe('PutawayQueueScreen', () => {
+  it('미발송 주문 칸을 그 화면의 입고 줄로 보인다', async () => {
+    const calls: string[] = [];
+    renderScreen(SELECTED, { ready: [READY_BOX], readyCalls: calls });
+    await screen.findByText('무선마우스 블랙');
+
+    expect(await screen.findByText('미발송 주문')).toBeInTheDocument();
+    expect(screen.getByText('적치하면 나갈 수 있어요')).toBeInTheDocument();
+    const read = calls.find((path) => path.startsWith('/ready-shipments?'));
+    expect(
+      new URL(read!, 'http://localhost').searchParams.get('receiptLineIds')
+    ).toBe('l-1,l-2');
+  });
+
   it('200건 목록 밖·기간 밖 상품도 서버 검색으로 적치한다', async () => {
     const calls: string[] = [];
     renderScreen(SELECTED, {
@@ -951,4 +1034,311 @@ it('opens the putaway sheet for an inbound_shipment line', async () => {
   expect(
     await screen.findByRole('dialog', { name: '적치' })
   ).toBeInTheDocument();
+});
+
+describe('반품 양품', () => {
+  const RETURN_GOODS: ReturnGoods = {
+    locationId: 'loc-return',
+    locationCode: 'zone-return-default',
+    warehouseId: 'w-1',
+    items: [
+      {
+        skuId: 's-9',
+        skuCode: 'PAD-01',
+        skuName: '마우스패드',
+        quantity: 2,
+        usualLocationId: 'loc-a1',
+        usualLocationCode: 'A-01-01',
+      },
+      {
+        skuId: 's-8',
+        skuCode: 'CASE-01',
+        skuName: '파우치',
+        quantity: 1,
+        usualLocationId: null,
+        usualLocationCode: null,
+      },
+    ],
+  };
+
+  it('반품 자리에 남은 양품을 평소 선반과 함께 입고 목록 위에 보인다', async () => {
+    renderScreen(SELECTED, { returnGoods: RETURN_GOODS });
+    const group = await screen.findByRole('region', { name: '반품 양품' });
+    expect(group).toHaveTextContent('zone-return-default에서 선반으로');
+    expect(
+      within(group).getByRole('button', { name: /마우스패드/ })
+    ).toHaveTextContent('평소 선반 A-01-01');
+    expect(
+      within(group).getByRole('button', { name: /파우치/ })
+    ).toHaveTextContent('평소 선반 없음');
+    expect(await screen.findByText('무선마우스 블랙')).toBeInTheDocument();
+  });
+
+  it('평소 선반이 미리 들어간 시트에서 적치하면 반품 자리에서 그 선반으로 옮긴다', async () => {
+    const moves: unknown[] = [];
+    renderScreen(SELECTED, { returnGoods: RETURN_GOODS, moves });
+    await userEvent.click(
+      await screen.findByRole('button', { name: /마우스패드/ })
+    );
+    const dialog = await screen.findByRole('dialog', {
+      name: '반품 양품 적치',
+    });
+    expect(dialog).toHaveTextContent('A-01-01평소 선반');
+    await userEvent.click(within(dialog).getByRole('button', { name: '적치' }));
+    await waitFor(() => expect(dialog).not.toBeInTheDocument());
+    expect(moves).toEqual([
+      expect.objectContaining({
+        warehouseId: 'w-1',
+        lines: [
+          expect.objectContaining({
+            skuId: 's-9',
+            fromLocationId: 'loc-return',
+            toLocationId: 'loc-a1',
+            quantity: 2,
+          }),
+        ],
+      }),
+    ]);
+    expect(
+      await screen.findByText('마우스패드 2개를 A-01-01에 넣었어요.')
+    ).toBeInTheDocument();
+  });
+
+  it('평소 선반이 없으면 찍은 선반으로 옮기고, 반품 자리는 후보에서 뺀다', async () => {
+    const moves: unknown[] = [];
+    renderScreen(SELECTED, {
+      returnGoods: RETURN_GOODS,
+      moves,
+      locations: {
+        B02: [
+          {
+            id: 'loc-return',
+            code: 'zone-return-default',
+            displayName: '반품',
+            isActive: true,
+            isSystem: false,
+          },
+          {
+            id: 'loc-b2',
+            code: 'B02',
+            displayName: 'B02',
+            isActive: true,
+            isSystem: false,
+          },
+        ],
+      },
+    });
+    await userEvent.click(
+      await screen.findByRole('button', { name: /파우치/ })
+    );
+    const dialog = await screen.findByRole('dialog', {
+      name: '반품 양품 적치',
+    });
+    expect(dialog).toHaveTextContent('평소 선반이 정해지지 않은 상품이에요');
+    const submit = within(dialog).getByRole('button', { name: '적치' });
+    expect(submit).toBeDisabled();
+    scanHid(submit, 'B02');
+    await waitFor(() => expect(submit).toBeEnabled());
+    await userEvent.click(submit);
+    await waitFor(() => expect(dialog).not.toBeInTheDocument());
+    expect(moves).toEqual([
+      expect.objectContaining({
+        lines: [
+          expect.objectContaining({
+            fromLocationId: 'loc-return',
+            toLocationId: 'loc-b2',
+            quantity: 1,
+          }),
+        ],
+      }),
+    ]);
+  });
+
+  const B02 = {
+    B02: [
+      {
+        id: 'loc-b2',
+        code: 'B02',
+        displayName: 'B02',
+        isActive: true,
+        isSystem: false,
+      },
+    ],
+  };
+  const NO_SHELF_YET: ReturnGoods = {
+    ...RETURN_GOODS,
+    items: [{ ...RETURN_GOODS.items[1], canRememberUsual: true }],
+  };
+
+  async function putPouchOnB02() {
+    await userEvent.click(
+      await screen.findByRole('button', { name: /파우치/ })
+    );
+    const dialog = await screen.findByRole('dialog', {
+      name: '반품 양품 적치',
+    });
+    const submit = within(dialog).getByRole('button', { name: '적치' });
+    scanHid(submit, 'B02');
+    await waitFor(() => expect(submit).toBeEnabled());
+    return { dialog, submit };
+  }
+
+  it('평소 선반이 비어 있으면 찍은 선반을 평소 선반으로 정하자고 켜 두고, 정했으면 알린다', async () => {
+    const moves: unknown[] = [];
+    renderScreen(SELECTED, {
+      returnGoods: NO_SHELF_YET,
+      moves,
+      locations: B02,
+      moveResponse: { usualShelfSkuIds: ['s-8'] },
+    });
+    const { dialog, submit } = await putPouchOnB02();
+    expect(
+      within(dialog).getByRole('checkbox', {
+        name: /이 선반을 평소 선반으로 정하기/,
+      })
+    ).toBeChecked();
+    await userEvent.click(submit);
+    await waitFor(() => expect(dialog).not.toBeInTheDocument());
+    expect(moves).toEqual([
+      expect.objectContaining({
+        lines: [
+          expect.objectContaining({
+            toLocationId: 'loc-b2',
+            rememberAsUsual: true,
+          }),
+        ],
+      }),
+    ]);
+    expect(
+      await screen.findByText(
+        '파우치 1개를 B02에 넣었어요. 평소 선반으로 정했어요: B02'
+      )
+    ).toBeInTheDocument();
+  });
+
+  it('끄고 적치하면 평소 선반을 정하자고 보내지 않는다', async () => {
+    const moves: unknown[] = [];
+    renderScreen(SELECTED, {
+      returnGoods: NO_SHELF_YET,
+      moves,
+      locations: B02,
+    });
+    const { dialog, submit } = await putPouchOnB02();
+    await userEvent.click(
+      within(dialog).getByRole('checkbox', {
+        name: /이 선반을 평소 선반으로 정하기/,
+      })
+    );
+    await userEvent.click(submit);
+    await waitFor(() => expect(dialog).not.toBeInTheDocument());
+    const [move] = moves as Array<{ lines: Array<Record<string, unknown>> }>;
+    expect(move.lines[0]).not.toHaveProperty('rememberAsUsual');
+    expect(
+      await screen.findByText('파우치 1개를 B02에 넣었어요.')
+    ).toBeInTheDocument();
+  });
+
+  it('평소 선반이 이미 있거나 서버가 정할 수 있다고 하지 않으면 묻지 않는다', async () => {
+    renderScreen(SELECTED, { returnGoods: RETURN_GOODS, locations: B02 });
+    const { dialog } = await putPouchOnB02();
+    expect(within(dialog).queryByRole('checkbox')).not.toBeInTheDocument();
+  });
+
+  it('입고 대기가 없고 반품 양품만 있으면 «적치할 항목이 없어요» 대신 입고 쪽만 비었다고 말한다', async () => {
+    renderScreen(SELECTED, {
+      returnGoods: RETURN_GOODS,
+      queue: { total: 0, truncated: false, items: [] },
+    });
+    expect(
+      await screen.findByText(/입고 적치 대기는 없어요/)
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/적치할 항목이 없어요/)).not.toBeInTheDocument();
+  });
+
+  it('상품·원위치로 좁힌 화면에서는 반품 양품을 묻지도 보이지도 않는다', async () => {
+    const calls: string[] = [];
+    renderScreen(SELECTED, {
+      search: { skuId: 's-1' },
+      returnGoods: RETURN_GOODS,
+      calls,
+    });
+    expect(await screen.findByText('무선마우스 블랙')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('region', { name: '반품 양품' })
+    ).not.toBeInTheDocument();
+    expect(calls.some((path) => path.includes('return-zone'))).toBe(false);
+  });
+
+  it('반품 양품을 못 불러오면 그렇다고 알리고 입고 목록은 그대로 보인다', async () => {
+    renderScreen(SELECTED, { returnGoods: 'error' });
+    expect(
+      await screen.findByText(/반품 양품을 불러오지 못했어요/)
+    ).toBeInTheDocument();
+    expect(screen.getByText('무선마우스 블랙')).toBeInTheDocument();
+  });
+
+  it('보낸 이동의 결과를 기다리는 동안 대상지·수량을 바꾸거나 다시 보낼 수 없다', async () => {
+    const moves: unknown[] = [];
+    const moveKeys: string[] = [];
+    renderScreen(SELECTED, {
+      returnGoods: RETURN_GOODS,
+      moves,
+      moveKeys,
+      moveFailures: 1000,
+    });
+    await userEvent.click(
+      await screen.findByRole('button', { name: /마우스패드/ })
+    );
+    const dialog = await screen.findByRole('dialog', {
+      name: '반품 양품 적치',
+    });
+    await userEvent.click(within(dialog).getByRole('button', { name: '적치' }));
+    expect(
+      await within(dialog).findByText('A-01-01에 2개 옮기는 중이에요')
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).queryByRole('button', { name: '변경' })
+    ).not.toBeInTheDocument();
+    expect(
+      within(dialog).queryByRole('button', { name: '전량' })
+    ).not.toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: '적치' })).toBeDisabled();
+    expect(moves).toEqual([]);
+    expect(new Set(moveKeys).size).toBe(1);
+  });
+
+  it('적치 뒤 다시 읽기에 실패하면 옛 줄을 고를 수 없게 숨기고 다시 확인을 준다', async () => {
+    renderScreen(SELECTED, {
+      returnGoodsSequence: [RETURN_GOODS, 'error'],
+    });
+    await userEvent.click(
+      await screen.findByRole('button', { name: /마우스패드/ })
+    );
+    const dialog = await screen.findByRole('dialog', {
+      name: '반품 양품 적치',
+    });
+    await userEvent.click(within(dialog).getByRole('button', { name: '적치' }));
+    await waitFor(() => expect(dialog).not.toBeInTheDocument());
+    expect(
+      await screen.findByText(/반품 양품을 불러오지 못했어요/)
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /파우치/ })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: '다시 확인' })
+    ).toBeInTheDocument();
+  });
+});
+
+it('기다리는 주문이 있는 상품 줄에만 건수와 수량을 보인다', async () => {
+  renderScreen(SELECTED, { waiting: [{ skuId: 's-2', orders: 1, qty: 3 }] });
+  expect(
+    await screen.findByRole('button', {
+      name: /USB-C 케이블 1m.*기다리는 주문 1건 · 3개/,
+    })
+  ).toBeInTheDocument();
+  expect(
+    screen.getByRole('button', { name: /무선마우스 블랙/ })
+  ).not.toHaveTextContent('기다리는 주문');
 });

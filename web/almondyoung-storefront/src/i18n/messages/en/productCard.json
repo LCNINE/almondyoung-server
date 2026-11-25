@@ -1,5 +1,7 @@
 {
   "digitalBadge": "Digital",
+  "discontinuingBadge": "Discontinuing",
+  "partialDiscontinuingBadge": "Some options ending",
   "partialSoldOutBadge": "Some sold out",
   "partialComingSoonBadge": "Some coming soon",
   "variantComingSoon": "Coming soon",

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react"
-import { PRINT_PRODUCTS, PRINT_SPECS } from "../lib/catalog"
+import { PRINT_PRODUCTS, PRINT_SPECS, type PrintKind } from "../lib/catalog"
 import type { TemplateProduct } from "../lib/template-product"
 import {
   layerImageDpi,
@@ -14,7 +14,7 @@ import {
   type Design,
   type Layer,
 } from "../lib/document"
-import { mm } from "../lib/layer"
+import { mm, nextGroupName } from "../lib/layer"
 import { useCanvasInteraction } from "./use-canvas-interaction"
 import { useDesignHistory } from "./use-design-history"
 import { useEditorShortcuts } from "./use-editor-shortcuts"
@@ -41,6 +41,7 @@ export type EditorTool =
   | "draw"
 export type AlmondEditorProps = {
   productId?: string
+  kind?: PrintKind
   templateProduct?: TemplateProduct
   mode?: EditorMode
   variantId?: string
@@ -52,6 +53,7 @@ export type AlmondEditorProps = {
 
 export function useAlmondEditor({
   productId = "",
+  kind: initialKind,
   templateProduct,
   mode = "customer",
   variantId = "",
@@ -61,7 +63,11 @@ export function useAlmondEditor({
   initialDesign,
 }: AlmondEditorProps) {
   // 게시한 상품은 PRINT_PRODUCTS 에 없어 상품 페이지가 찾아 준 인쇄 유형과 시안 크기로 시작한다
-  const kind = templateProduct?.kind ?? PRINT_PRODUCTS[productId]?.kind ?? "pet"
+  const kind =
+    templateProduct?.kind ??
+    initialKind ??
+    PRINT_PRODUCTS[productId]?.kind ??
+    "pet"
   const { design, setDesign, history, future, change, commit, undo, redo } =
     useDesignHistory(() => {
       if (initialDesign) return initialDesign
@@ -259,7 +265,7 @@ export function useAlmondEditor({
   const mergeGroup = () => {
     if (group.length < 2) return
     const groupId = crypto.randomUUID()
-    const groupName = `그룹 ${new Set(layers.map((layer) => layer.groupId).filter(Boolean)).size + 1}`
+    const groupName = nextGroupName(layers)
     const top = Math.max(...group.map((layer) => layers.indexOf(layer)))
     const rest = layers.filter((layer) => !groupIds.includes(layer.id))
     const at = rest.filter((layer) => layers.indexOf(layer) < top).length

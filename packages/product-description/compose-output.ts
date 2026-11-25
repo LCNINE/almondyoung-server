@@ -14,7 +14,11 @@ export function appendUnusedImages(markdown: string, fileIds: string[]): string 
 
   const directives = missing.map((fileId) => createProductImageDirective({ fileId, alt: '' })).join('\n');
   const lines = markdown.split('\n');
-  const hashtagAt = lines.findLastIndex((line) => HASHTAG_LINE.test(line.trim()));
+  // Medusa tsconfig 가 ES2021 이라 findLastIndex 를 쓰면 Medusa 빌드가 깨진다
+  let hashtagAt = lines.length - 1;
+  while (hashtagAt >= 0 && !HASHTAG_LINE.test(lines[hashtagAt].trim())) {
+    hashtagAt--;
+  }
 
   if (hashtagAt === -1) return `${markdown.trimEnd()}\n\n${directives}`;
 

@@ -212,3 +212,129 @@ describeIfDb('getLocationContents (DB integration, rollback-only)', () => {
     });
   });
 });
+
+describeIfDb('getReturnZoneGoods (DB integration, rollback-only)', () => {
+  async function seedReturnZone(tx: DbTx) {
+    const base = await seedEntities(tx);
+    const [zone] = await tx
+      .insert(wmsTables.locations)
+      .values({
+        warehouseId: base.warehouse.id,
+        code: `IT-RET-${randomUUID().slice(0, 8)}`,
+        locationType: 'zone',
+        isSystem: true,
+        systemRole: 'return_default',
+      })
+      .returning();
+    return { ...base, zone };
+  }
+
+  async function sku(tx: DbTx, primaryLocationId: string | null) {
+    const [holder] = await tx
+      .insert(wmsTables.holders)
+      .values({ name: `it-h-${randomUUID().slice(0, 8)}` })
+      .returning();
+    const [row] = await tx
+      .insert(wmsTables.skus)
+      .values({ name: 'it-sku', code: `IT-${randomUUID()}`, holderId: holder.id, primaryLocationId })
+      .returning();
+    return row;
+  }
+
+  it('반품 기본존의 판매 가능 재고만, 평소 선반과 함께 돌려준다', async () => {
+    await inRollbackTx(async (tx) => {
+      const { warehouse, sku: plain, locA, zone } = await seedReturnZone(tx);
+      const withShelf = await sku(tx, locA.id);
+      await tx.insert(wmsTables.stockLedgers).values([
+        { skuId: plain.id, warehouseId: warehouse.id, locationId: zone.id, stockState: 'ON_HAND', qty: 2 },
+        { skuId: plain.id, warehouseId: warehouse.id, locationId: zone.id, stockState: 'DEFECTIVE', qty: 4 },
+        { skuId: withShelf.id, warehouseId: warehouse.id, locationId: zone.id, stockState: 'ON_HAND', qty: 3 },
+        { skuId: withShelf.id, warehouseId: warehouse.id, locationId: zone.id, stockState: 'RETURNED', qty: 5 },
+        { skuId: withShelf.id, warehouseId: warehouse.id, locationId: locA.id, stockState: 'ON_HAND', qty: 9 },
+      ]);
+
+      const result = await reader.getReturnZoneGoods(warehouse.id, tx);
+
+      expect(result).toMatchObject({ locationId: zone.id, locationCode: zone.code, warehouseId: warehouse.id });
+      expect(result.items).toHaveLength(2);
+      expect(result.items).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            skuId: plain.id,
+            quantity: 2,
+            usualLocationId: null,
+            usualLocationCode: null,
+            canRememberUsual: true,
+          }),
+          expect.objectContaining({
+            skuId: withShelf.id,
+            quantity: 3,
+            usualLocationId: locA.id,
+            usualLocationCode: locA.code,
+            canRememberUsual: false,
+          }),
+        ]),
+      );
+    });
+  });
+
+  it('다 옮겨 판매 가능 재고가 0 이면 비어 있다', async () => {
+    await inRollbackTx(async (tx) => {
+      const { warehouse, sku: plain, zone } = await seedReturnZone(tx);
+      await tx
+        .insert(wmsTables.stockLedgers)
+        .values({ skuId: plain.id, warehouseId: warehouse.id, locationId: zone.id, stockState: 'ON_HAND', qty: 0 });
+
+      expect((await reader.getReturnZoneGoods(warehouse.id, tx)).items).toEqual([]);
+    });
+  });
+
+  it('평소 선반이 다른 창고·사용 중지·시스템 로케이션이면 비워 둔다', async () => {
+    await inRollbackTx(async (tx) => {
+      const { warehouse, zone } = await seedReturnZone(tx);
+      const [otherWarehouse] = await tx
+        .insert(wmsTables.warehouses)
+        .values({ name: `it-wh-${randomUUID().slice(0, 8)}` })
+        .returning();
+      const [elsewhere] = await tx
+        .insert(wmsTables.locations)
+        .values({ warehouseId: otherWarehouse.id, code: `IT-OTHER-${randomUUID().slice(0, 8)}`, locationType: 'zone' })
+        .returning();
+      const [inactive] = await tx
+        .insert(wmsTables.locations)
+        .values({
+          warehouseId: warehouse.id,
+          code: `IT-OFF-${randomUUID().slice(0, 8)}`,
+          locationType: 'zone',
+          isActive: false,
+        })
+        .returning();
+      const skus = [await sku(tx, elsewhere.id), await sku(tx, inactive.id), await sku(tx, zone.id)];
+      await tx.insert(wmsTables.stockLedgers).values(
+        skus.map((s) => ({
+          skuId: s.id,
+          warehouseId: warehouse.id,
+          locationId: zone.id,
+          stockState: 'ON_HAND' as const,
+          qty: 1,
+        })),
+      );
+
+      const { items } = await reader.getReturnZoneGoods(warehouse.id, tx);
+
+      expect(items).toHaveLength(3);
+      for (const item of items) {
+        expect(item.usualLocationId).toBeNull();
+        // 쓸 수 없는 자리라도 이미 정해져 있으니 적치가 덮지 않는다.
+        expect(item.canRememberUsual).toBe(false);
+      }
+    });
+  });
+
+  it('반품 기본존이 없는 창고는 찾지 못했다고 알린다', async () => {
+    await inRollbackTx(async (tx) => {
+      const { warehouse } = await seedEntities(tx);
+      await expect(reader.getReturnZoneGoods(warehouse.id, tx)).rejects.toBeInstanceOf(NotFoundError);
+    });
+  });
+});

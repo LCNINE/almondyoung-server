@@ -1260,3 +1260,95 @@ describe('다시 보내 확정된 단순출고 스캔', () => {
     ).toBe(false);
   });
 });
+
+describe('관리자 화면에 남은 출고 저장 거절', () => {
+  const path = '/shipments/s1/simple-outbound-scans';
+  const notice =
+    '바구니 배정이 남아 있어 출고하지 못했어요. 관리자 화면에 이 박스가 표시됐어요. 관리자를 불러 주세요.';
+  const refuse = () => {
+    throw new ConflictError(
+      'Shipment cannot dispatch while a tote assignment is active',
+      'SHIPMENT_TOTE_NOT_RELEASED',
+      undefined,
+      undefined,
+      path,
+      true
+    );
+  };
+
+  it('남았다는 사실을 저장하고, 같은 키로 다시 불러도 같은 문구를 준다', async () => {
+    const store = createOperationStore(crypto.randomUUID());
+    let sent = 0;
+    const runner = createOperationRunner({
+      store,
+      getScope: async () => 'a',
+      wait: async () => {},
+      api: {
+        request: async () => {
+          sent += 1;
+          return refuse();
+        },
+      },
+    });
+    const scan = {
+      method: 'POST',
+      path,
+      body: { barcode: 'b', quantity: 1 },
+      idempotencyKey: 'k1',
+    };
+
+    const first = await runner.request(scan).catch((e) => e);
+    const again = await runner.request(scan).catch((e) => e);
+
+    expect(sent).toBe(1);
+    expect(await store.get('k1')).toMatchObject({
+      status: 'rejected',
+      rejectionRecorded: true,
+    });
+    expect(errorMessage(first, 'outbound')).toBe(notice);
+    expect(errorMessage(again, 'outbound')).toBe(notice);
+  });
+
+  it('업데이트 전에 저장된 거절은 지금 문구로 보인다', async () => {
+    const store = createOperationStore(crypto.randomUUID());
+    await store.begin({
+      id: 'old',
+      scope: 'a',
+      resource: '/shipments/s1',
+      method: 'POST',
+      path,
+      bodyJson: JSON.stringify({ barcode: 'b', quantity: 1 }),
+      createdAt: Date.now(),
+    });
+    await store.finish('old', 'sending');
+    await store.finish(
+      'old',
+      'rejected',
+      undefined,
+      'SHIPMENT_TOTE_NOT_RELEASED',
+      undefined,
+      undefined,
+      undefined,
+      409
+    );
+    const runner = createOperationRunner({
+      store,
+      getScope: async () => 'a',
+      wait: async () => {},
+      api: { request: async () => refuse() },
+    });
+
+    const error = await runner
+      .request({
+        method: 'POST',
+        path,
+        body: { barcode: 'b', quantity: 1 },
+        idempotencyKey: 'old',
+      })
+      .catch((e) => e);
+
+    expect(errorMessage(error, 'outbound')).toBe(
+      '바구니 배정이 남아 있어 출고하지 못했어요. 관리자에게 바구니 배정을 풀어 달라고 해 주세요.'
+    );
+  });
+});

@@ -14,6 +14,15 @@ import { InboundService } from '../inbound.service';
 import { InboundPutawayReader } from '../inbound-putaway.reader';
 import { MovementService } from '../../../movement/services/movement.service';
 import { InboundReceiptKernel } from '../../kernel/inbound-receipt.kernel';
+import { InboundReservationRelease } from '../../kernel/inbound-reservation-release.port';
+import { InboundReceiptStateReader } from '../inbound-receipt-state.reader';
+import { UnifiedReservationService } from '../../../shared/services/unified-reservation.service';
+import { FulfillmentInvariantService } from '../../../../fulfillment/services/fulfillment-invariant.service';
+import { FulfillmentProgressService } from '../../../../fulfillment/services/fulfillment-progress.service';
+import { ShipmentReservationService } from '../../../../fulfillment/services/shipment-reservation.service';
+import { StockRemovalReservations } from '../../../../fulfillment/stock-removal/stock-removal-reservations';
+import { InboundArrivalFollowUp } from '../inbound-arrival-follow-up';
+import { DeferredArrivalReservations } from '../../kernel/inbound-arrival-reservations.port';
 
 export type Database = PostgresJsDatabase<typeof wmsSchema>;
 
@@ -36,6 +45,21 @@ export function dbServiceFor(database: Database): DbService<typeof wmsSchema> {
   return adapter as unknown as DbService<typeof wmsSchema>;
 }
 
+/** 취소·회송이 놓는 예약 — 운영 배선(StockRemovalModule)과 같은 구현을 쓴다. */
+export function reservationReleaseFor(
+  dbService: DbService<typeof wmsSchema>,
+  sellable: ProductSellableQuantityService,
+): InboundReservationRelease {
+  return new StockRemovalReservations(
+    new ShipmentReservationService(
+      dbService,
+      new UnifiedReservationService(dbService, sellable),
+      new FulfillmentProgressService(),
+      new FulfillmentInvariantService(),
+    ),
+  );
+}
+
 /**
  * InboundService 조립에 필요한 하위 서비스 일체 — command(InventoryCommandService)
  * 를 스펙에서 직접 써야 할 때(예: 일반 이동이 입고 대기를 보호하는지 검증) 매번 손으로
@@ -56,23 +80,31 @@ export function buildWiring(database: Database) {
     findById: (skuId: string, tx?: DbTx) =>
       (tx ?? database).query.skus.findFirst({ where: eq(wmsTables.skus.id, skuId) }),
   };
-  return { dbService, guard, outbox, sellable, eventStore, location, command, idempotency, skuCatalog };
+  const reservations = reservationReleaseFor(dbService, sellable);
+  return { dbService, guard, outbox, sellable, eventStore, location, command, idempotency, skuCatalog, reservations };
 }
 
 export function makeInboundService(database: Database): InboundService {
-  const { dbService, skuCatalog, command, location, eventStore, idempotency, guard } = buildWiring(database);
+  const { dbService, skuCatalog, command, location, eventStore, idempotency, guard, reservations } =
+    buildWiring(database);
   return new InboundService(
     dbService,
     skuCatalog as never,
     eventStore,
     idempotency,
-    new InboundReceiptKernel(command, location, eventStore, guard),
+    new InboundReceiptKernel(command, location, eventStore, guard, reservations),
+    new InboundArrivalFollowUp(new DeferredArrivalReservations()),
   );
 }
 
 export function makeInboundReceiptKernel(database: Database): InboundReceiptKernel {
-  const { command, location, eventStore, guard } = buildWiring(database);
-  return new InboundReceiptKernel(command, location, eventStore, guard);
+  const { command, location, eventStore, guard, reservations } = buildWiring(database);
+  return new InboundReceiptKernel(command, location, eventStore, guard, reservations);
+}
+
+export function makeInboundReceiptStateReader(database: Database): InboundReceiptStateReader {
+  const { dbService, reservations } = buildWiring(database);
+  return new InboundReceiptStateReader(dbService, reservations);
 }
 
 export function makeInboundPutawayReader(database: Database): InboundPutawayReader {

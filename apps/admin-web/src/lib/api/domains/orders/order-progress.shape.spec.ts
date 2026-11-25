@@ -7,7 +7,7 @@ import {
   cardAlertText,
   initialBoardStage,
   isSplitQtyAllowed,
-  shortageSummary,
+  shortageKindsText,
   splitUnreservedErrorText,
   SPLIT_QTY_ERROR,
   STALL_BOARD_RESERVE_HREF,
@@ -248,18 +248,19 @@ describe('자동 멈춤 표시 (#1016 12번)', () => {
       expect(page.items.slice(1).map((i) => i.shortage)).toEqual([null, null, null, null, null, null]);
     });
 
-    it('shortageSummary: «N종 중 M종 · 품목 수량»', () => {
-      expect(shortageSummary(shortage())).toBe('10종 중 1종 · 헤어클립 세트 2개');
-      expect(shortageSummary(shortage({ shortSkuKinds: 2, items: [item(3), item(1)] }))).toBe('10종 중 2종 · 품목3 3개, 품목1 1개');
-      expect(shortageSummary(shortage({ shortSkuKinds: 3, items: [item(3), item(2), item(1)] }))).toBe('10종 중 3종 · 품목3 3개 외 2');
+    it('shortageKindsText: «N종 중 M종»', () => {
+      expect(shortageKindsText(shortage({ skuKinds: 10, shortSkuKinds: 3 }))).toBe('10종 중 3종');
     });
 
-    it('arrivalLabel: YYYY-MM-DD 를 Date 없이 MM-DD 로, 없으면 빈 문자열', () => {
-      expect(arrivalLabel('2026-10-25')).toBe('입고 10-25');
-      expect(arrivalLabel('2026-01-01')).toBe('입고 01-01');
-      expect(arrivalLabel(null)).toBe('');
-      expect(arrivalLabel('')).toBe('');
-      expect(arrivalLabel('내일')).toBe('');
+    it('arrivalLabel: YYYY-MM-DD 를 Date 없이 MM-DD 로, 지난 날은 지났다고, 없으면 빈 문자열', () => {
+      expect(arrivalLabel('2026-10-25', '2026-10-24')).toBe('입고 10-25');
+      // 오늘은 아직 지나지 않았다
+      expect(arrivalLabel('2026-10-25', '2026-10-25')).toBe('입고 10-25');
+      expect(arrivalLabel('2026-10-25', '2026-10-26')).toBe('10-25 예정이 지남');
+      expect(arrivalLabel('2025-12-31', '2026-01-01')).toBe('12-31 예정이 지남');
+      expect(arrivalLabel(null, '2026-10-24')).toBe('');
+      expect(arrivalLabel('', '2026-10-24')).toBe('');
+      expect(arrivalLabel('내일', '2026-10-24')).toBe('');
     });
 
     it('toProgressPage: splittable 이 없는 옛 core 응답은 false (버튼을 내지 않는다)', () => {

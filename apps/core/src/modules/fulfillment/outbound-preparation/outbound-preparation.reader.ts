@@ -9,29 +9,55 @@ import {
   OptionLine,
   uniqueInOrder,
 } from '../services/consolidation-shipment-reads';
-import { isRecipientComplete } from '../services/recipient-completeness';
+import { isRecipientComplete, recipientNameOf } from '../services/recipient-completeness';
 import {
   classifyPreparation,
   isSingleItem,
   PREPARATION_BUCKETS,
   PreparationFacts,
 } from './outbound-preparation-classify';
+import { loadStockGiven } from '../stock-priority/stock-given';
 import { loadSellmateShipmentIds } from '../services/sellmate-handed-over-shipments';
 import { waybillFailureText } from '../waybill/waybill-failure-text';
 import { loadShortPickReturns } from './short-pick-returns';
 import { batchExitReasonOf, loadNeedsNewWaybill, loadReturnedWorkItems } from './batch-returns';
 import { OUR_HOLDER_KEY, preparationOwnerOf } from './preparation-owner';
 import { loadNeedsInfoLines, loadUntrustedLineSkus, needsInfoIssues, needsInfoReasonText } from './needs-info';
-import { loadWarehouseStock, readPipelineScope, shortageStockOf } from './shortage-stock';
+import { loadWaitingQuantities, loadWarehouseStock, readPipelineScope, shortageStockOf } from './shortage-stock';
 import { InboundPipelineReader } from '../../inventory/stock-projection/services/inbound-pipeline.reader';
 import {
   OutboundPreparationQueryDto,
+  OutboundPreparationCountsDto,
   OutboundPreparationSummaryDto,
   PreparationBucketDto,
   PreparationHolderDto,
 } from '../dto/outbound-preparation.dto';
 
 type PreparationLineQuantity = PreparationFacts['lines'][number] & { name: string; skuId: string };
+
+// 상자에 든 주문 중 가장 이른 주문일
+function earliestOrderDates(lines: readonly OptionLine[]): Map<string, Date> {
+  const earliest = new Map<string, Date>();
+
+  for (const line of lines) {
+    const at = line.salesOrderCreatedAt;
+    const current = earliest.get(line.shipmentId);
+
+    if (at && (!current || at < current)) {
+      earliest.set(line.shipmentId, at);
+    }
+  }
+
+  return earliest;
+}
+
+// 주문일이 없는 상자는 뒤로
+function compareOrderedAt(a: Date | undefined, b: Date | undefined): number {
+  if (a && b) return a.getTime() - b.getTime();
+  if (a) return -1;
+  if (b) return 1;
+  return 0;
+}
 
 // 분류마다 한 번에 돌려주는 상자 수. 나머지는 화면이 `bucket`·`offset` 으로 더 부른다.
 const BUCKET_PAGE_SIZE = 200;
@@ -45,9 +71,28 @@ export class OutboundPreparationReader {
     private readonly inboundPipeline: InboundPipelineReader,
   ) {}
 
-  async summarize(
+  summarize(
     warehouseId: string,
     page?: Pick<OutboundPreparationQueryDto, 'bucket' | 'offset' | 'holders'>,
+    tx?: DbTx,
+  ): Promise<OutboundPreparationSummaryDto> {
+    return this.collect(warehouseId, page, false, tx);
+  }
+
+  // 분류는 내역과 같은 판정으로 하고, 상자 목록(받는 분 포함)은 싣지 않는다
+  async countBuckets(warehouseId: string, tx?: DbTx): Promise<OutboundPreparationCountsDto> {
+    const summary = await this.collect(warehouseId, undefined, true, tx);
+
+    return {
+      warehouseId,
+      buckets: summary.buckets.map(({ bucket, count }) => ({ bucket, count })),
+    };
+  }
+
+  private async collect(
+    warehouseId: string,
+    page: Pick<OutboundPreparationQueryDto, 'bucket' | 'offset' | 'holders'> | undefined,
+    countsOnly: boolean,
     tx?: DbTx,
   ): Promise<OutboundPreparationSummaryDto> {
     return this.dbService.run(async (trx) => {
@@ -92,15 +137,24 @@ export class OutboundPreparationReader {
       const returned = await loadReturnedWorkItems(trx, ids);
       const shortPicks = await loadShortPickReturns(trx, returned);
       const newWaybills = await loadNeedsNewWaybill(trx, [...returned.keys()]);
-      // 분류마다 결품으로 돌아온 상자, 배치에서 빠져 돌아온 상자 순으로 앞에 모은다 — 쪽 나누기 전에 정렬해야 다음 쪽에 묻히지 않는다
-      const rank = (id: string) => (shortPicks.has(id) ? 0 : returned.has(id) ? 1 : 2);
-      const shipments = [0, 1, 2].flatMap((order) => kept.filter((shipment) => rank(shipment.id) === order));
-
       if (ids.length === 0) {
         return { warehouseId, buckets, awaitingMatchingCount: backlog.count, holders: [] };
       }
 
       const lines = await loadShipmentLines(trx, ids);
+      const orderedAt = earliestOrderDates(lines);
+      // 분류마다 결품으로 돌아온 상자, 배치에서 빠져 돌아온 상자 순으로 앞에 모으고, 그 안에서는 우선할당, 오래된 주문 순 —
+      // 쪽 나누기 전에 정렬해야 다음 쪽에 묻히지 않는다. 주문일이 없거나 같으면 상자를 만든 순서 그대로다
+      const rank = (id: string) => (shortPicks.has(id) ? 0 : returned.has(id) ? 1 : 2);
+      const waiting = new Set(
+        lines.filter((line) => line.stockAllocation !== 'priority').map((line) => line.shipmentId),
+      );
+      const shipments = [...kept].sort(
+        (a, b) =>
+          rank(a.id) - rank(b.id) ||
+          Number(waiting.has(a.id)) - Number(waiting.has(b.id)) ||
+          compareOrderedAt(orderedAt.get(a.id), orderedAt.get(b.id)),
+      );
       const quantitiesByShipment = await this.lineQuantities(ids, trx);
       const splits = await loadSplitShares(trx, ids);
       const workItems = await trx
@@ -178,6 +232,7 @@ export class OutboundPreparationReader {
         bucket.batchReturnCount += exit && !shortPick ? 1 : 0;
 
         if (
+          countsOnly ||
           (page?.bucket && bucketName !== page.bucket) ||
           bucket.count <= (page?.offset ?? 0) ||
           bucket.shipments.length >= BUCKET_PAGE_SIZE
@@ -195,9 +250,14 @@ export class OutboundPreparationReader {
 
         const names = shipmentLines.map((line) => line.skuName);
 
+        const recipientName = bucketName === 'ready' ? recipientNameOf(shipment.recipientSnapshot) : null;
+
         bucket.shipments.push({
           shipmentId: shipment.id,
           orderNos: uniqueInOrder(shipmentLines.flatMap((line) => line.displayOrderNo ?? line.channelOrderId ?? [])),
+          orderCount: new Set(shipmentLines.map((line) => line.salesOrderId)).size,
+          orderedAt: orderedAt.get(shipment.id)?.toISOString() ?? null,
+          ...(recipientName && { recipient: { shipmentId: shipment.id, name: recipientName } }),
           itemSummary: names.length > 1 ? `${names[0]} 외 ${names.length - 1}건` : (names[0] ?? ''),
           totalQty: shipmentLines.reduce((total, line) => total + line.qty, 0),
           single,
@@ -218,7 +278,13 @@ export class OutboundPreparationReader {
               }
             : null,
           owner: owner.key === OUR_HOLDER_KEY ? null : { id: owner.key, name: owner.name },
+          stockPriority: !waiting.has(shipment.id),
+          stockGiven: null,
         });
+      }
+
+      if (countsOnly) {
+        return { warehouseId, buckets, awaitingMatchingCount: backlog.count, holders: [] };
       }
 
       await this.fillWaybillFailures(trx, buckets.find((entry) => entry.bucket === 'resume')?.shipments ?? []);
@@ -229,8 +295,12 @@ export class OutboundPreparationReader {
       await this.fillShortageStock(
         trx,
         warehouseId,
-        buckets.find((entry) => entry.bucket === 'unavailable')?.shipments ?? [],
+        buckets.flatMap(({ bucket, shipments }) => (bucket === 'unavailable' || bucket === 'partial' ? shipments : [])),
         quantitiesByShipment,
+      );
+      await this.fillStockGiven(
+        trx,
+        buckets.flatMap(({ bucket, shipments }) => (bucket === 'unavailable' || bucket === 'partial' ? shipments : [])),
       );
 
       return {
@@ -293,7 +363,17 @@ export class OutboundPreparationReader {
     }
   }
 
-  // 출고불가 상자의 줄마다 이 창고 재고·다른 상자 몫과 들어올 예정을 싣는다.
+  // 출고불가·부분출고 상자가 다른 주문을 우선할당하면서 재고를 내준 기록을 싣는다.
+  private async fillStockGiven(trx: DbTx, shipments: PreparationBucketDto['shipments']): Promise<void> {
+    const waiting = shipments.filter((shipment) => !shipment.stockPriority);
+    const given = await loadStockGiven(
+      trx,
+      waiting.map((shipment) => shipment.shipmentId),
+    );
+    for (const shipment of waiting) shipment.stockGiven = given.get(shipment.shipmentId) ?? null;
+  }
+
+  // 출고불가·부분출고 상자의 모자란 줄마다 이 창고 재고·다른 상자 몫과 들어올 예정을 싣는다.
   private async fillShortageStock(
     trx: DbTx,
     warehouseId: string,
@@ -304,10 +384,14 @@ export class OutboundPreparationReader {
       return;
     }
 
+    const isShort = (line: PreparationLineQuantity) => line.confirmedQty < line.qty;
     const skuIds = uniqueInOrder(
-      shipments.flatMap((shipment) => (quantitiesByShipment.get(shipment.shipmentId) ?? []).map((line) => line.skuId)),
+      shipments.flatMap((shipment) =>
+        (quantitiesByShipment.get(shipment.shipmentId) ?? []).filter(isShort).map((line) => line.skuId),
+      ),
     );
     const stock = await loadWarehouseStock(trx, warehouseId, skuIds);
+    const waiting = await loadWaitingQuantities(trx, warehouseId, skuIds);
     const scope = await readPipelineScope(trx, warehouseId);
     const pipeline = new Map(
       scope.elsewhere
@@ -319,14 +403,30 @@ export class OutboundPreparationReader {
       const quantities = quantitiesByShipment.get(shipment.shipmentId) ?? [];
 
       shipment.lines = shipment.lines.map((line, index) => {
-        const skuId = quantities[index]?.skuId;
+        const quantity = quantities[index];
 
-        return skuId
-          ? {
-              ...line,
-              stock: shortageStockOf(stock.get(skuId), pipeline.get(skuId), line.reservedQty, scope),
-            }
-          : line;
+        if (!quantity || !isShort(quantity)) {
+          return line;
+        }
+
+        const { skuId } = quantity;
+        // 같은 상품이 이 상자의 다른 줄에 잡은 몫도 이 상자 것이다
+        const ownReserved = quantities
+          .filter((entry) => entry.skuId === skuId)
+          .reduce((total, entry) => total + entry.confirmedQty, 0);
+
+        return {
+          ...line,
+          stock: {
+            skuId,
+            ...shortageStockOf(
+              { ...(stock.get(skuId) ?? { onHand: 0, reserved: 0 }), waiting: waiting.get(skuId) ?? 0 },
+              pipeline.get(skuId),
+              ownReserved,
+              scope,
+            ),
+          },
+        };
       });
     }
   }

@@ -20,6 +20,15 @@ export const receiptActionBlockReasons = [
 ] as const;
 export type ReceiptActionBlockReason =
   (typeof receiptActionBlockReasons)[number];
+export interface ReceiptCancelReservations {
+  /** 취소하면 예약을 놓고 다시 재고를 기다리게 되는 주문 */
+  orderCount: number;
+  quantity: number;
+  /** 0 보다 크면 지금은 취소할 수 없다 */
+  missingQty: number;
+  /** 이미 출고 준비에 들어가 예약을 놓지 못하는 주문 */
+  heldBy: Array<{ orderNo: string | null; quantity: number }>;
+}
 export interface ReceiptLineState {
   lineId: string;
   receiptId: string;
@@ -40,6 +49,11 @@ export interface ReceiptLineState {
   putawayBlockReason: ReceiptActionBlockReason | null;
   canCancel: boolean;
   cancelBlockReason: ReceiptActionBlockReason | null;
+  // 단건 상태에만 오고, 옛 서버는 보내지 않는다.
+  cancelReservations?: ReceiptCancelReservations | null;
+  usualLocationId?: string | null;
+  usualLocationCode?: string | null;
+  canRememberUsual?: boolean;
 }
 export class ReceiptStateError extends Error {}
 export function validateReceiptLineState(

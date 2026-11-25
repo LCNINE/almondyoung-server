@@ -23,9 +23,12 @@ const EMPTY_AFTER_REMOVE = '막힌 박스를 모두 뺐어요. 배치에 남은 
 export function StartBatchButton({
   batchId,
   onStarted,
+  label = '작업 시작',
 }: {
   batchId: string;
   onStarted?: (outcome: RemovedOnStart) => void;
+  /** 시작 뒤 이어서 할 일까지 하는 화면이 이름을 바꾼다(「작업 시작하고 송장 인쇄」) */
+  label?: string;
 }) {
   const api = useApiClient();
   const queryClient = useQueryClient();
@@ -96,7 +99,7 @@ export function StartBatchButton({
   return (
     <div className="space-y-2">
       <Button onClick={() => start.mutate()} disabled={busy}>
-        작업 시작
+        {label}
       </Button>
       {notice !== null && <p role="alert">{notice}</p>}
       {groups !== null && blockers !== null && (

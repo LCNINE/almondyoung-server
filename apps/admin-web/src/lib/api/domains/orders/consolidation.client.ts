@@ -20,6 +20,7 @@ import type {
   CreateShipmentConsolidationRequest,
   ShipmentConsolidationResponse,
   ConsolidationBoardResponse,
+  ConsolidationBoardCount,
   ConsolidationOptionsResponse,
   ConsolidationProgressResponse,
 } from '@/lib/types/dto/fulfillment';
@@ -55,6 +56,17 @@ export const consolidationClient = {
   ): Promise<ConsolidationBoardResponse> => {
     const res = await client.get(
       `${ALMONDYOUNG_API_BASE_URL}/shipments/consolidation-board`,
+      { params: { warehouseId } }
+    );
+
+    return res.data;
+  },
+
+  getBoardCount: async (
+    warehouseId: string
+  ): Promise<ConsolidationBoardCount> => {
+    const res = await client.get(
+      `${ALMONDYOUNG_API_BASE_URL}/shipments/consolidation-board/count`,
       { params: { warehouseId } }
     );
 

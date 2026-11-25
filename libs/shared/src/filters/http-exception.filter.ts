@@ -10,6 +10,7 @@ interface ErrorResponse {
   details?: unknown;
   requiredPermissions?: unknown;
   rejectionRecorded?: unknown;
+  scannedSkuName?: unknown;
 }
 
 type PreparationDetails = { reasonCode: string; recovery: 'retry_preparation' | 'review_batch' };
@@ -69,6 +70,8 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     let requiredPermissions: string[] | undefined;
     // 거절을 관리자 화면에 남겼다는 표시 — 현장 앱이 «관리자에게 알려 주세요» 대신 그 사실을 말한다.
     let rejectionRecorded = false;
+    // 출고 검수에서 상자에 없는 상품을 찍었을 때 그 상품 이름 — 현장 앱이 무엇을 잘못 집었는지 보인다.
+    let scannedSkuName: string | undefined;
 
     // 1. Custom ApplicationException 처리
     if (exception instanceof ApplicationException) {
@@ -116,6 +119,13 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         requiredPermissions = required;
       }
       rejectionRecorded = status === 409 && errorResponse?.rejectionRecorded === true;
+      if (
+        status === 409 &&
+        errorCode === 'SIMPLE_OUTBOUND_SKU_NOT_IN_SHIPMENT' &&
+        typeof errorResponse?.scannedSkuName === 'string'
+      ) {
+        scannedSkuName = errorResponse.scannedSkuName;
+      }
       devMessage = `${exception.message} - ${request.method} ${request.url}`;
     }
     // 3. 일반 Error 처리
@@ -140,6 +150,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       ...(details !== undefined && { details }),
       ...(requiredPermissions !== undefined && { requiredPermissions }),
       ...(rejectionRecorded && { rejectionRecorded }),
+      ...(scannedSkuName !== undefined && { scannedSkuName }),
       ...(process.env.NODE_ENV !== 'production' &&
         devMessage && {
           devMessage: devMessage,

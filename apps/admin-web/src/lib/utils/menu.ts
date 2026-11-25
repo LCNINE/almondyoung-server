@@ -34,25 +34,25 @@ const allMenus: MainMenu[] = [
     id: 'company',
     title: '회사/조직',
     icon: 'Users',
-    defaultPath: '/company/my-account', // 첫 번째 페이지
+    defaultPath: '/company/attendance',
     children: [
       {
         id: 'user-management',
         title: '사용자관리',
         children: [
-          {
-            id: 'my-account',
-            title: '내 계정 정보',
-            path: '/company/my-account',
-            children: [
-              { id: 'sub-users', title: '하부사용자 관리', isComingSoon: true },
-              {
-                id: 'attendance',
-                title: '내 출퇴근',
-                path: '/company/attendance/records',
-              },
-            ],
-          },
+          // {
+          //   id: 'my-account',
+          //   title: '내 계정 정보',
+          //   path: '/company/my-account',
+          //   children: [
+          //     { id: 'sub-users', title: '하부사용자 관리', isComingSoon: true },
+          //     {
+          //       id: 'attendance',
+          //       title: '내 출퇴근',
+          //       path: '/company/attendance/records',
+          //     },
+          //   ],
+          // },
           {
             id: 'admin-accounts',
             title: '관리자·권한',
@@ -216,11 +216,6 @@ const allMenus: MainMenu[] = [
             id: 'regional-invoice',
             title: '(자체배송) 지역별 출고',
             path: '/order/regional-invoice',
-          },
-          {
-            id: 'shipment-round',
-            title: '송장 출력 / 출고 회차별 조회',
-            path: '/order/shipment-round',
           },
           {
             id: 'picking-list',

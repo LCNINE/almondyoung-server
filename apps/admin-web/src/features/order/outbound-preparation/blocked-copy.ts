@@ -1,5 +1,6 @@
 import type {
   NeedsInfoIssue,
+  PreparationIncoming,
   PreparationLineDto,
   PreparationLineStock,
 } from '@/lib/types/dto/fulfillment';
@@ -18,10 +19,24 @@ export function etaText(date: string | null): string | null {
   return match ? `${Number(match[2])}월 ${Number(match[3])}일` : null;
 }
 
-function withEta(text: string, eta: string | null, suffix: string): string {
-  const day = etaText(eta);
+// 예정일은 오늘까지 유효하다. 지난 날을 «예정»이라고 쓰지 않는다
+function isOverdue(eta: string, today: string): boolean {
+  return eta.slice(0, 10) < today;
+}
 
-  return day ? `${text}(${day} ${suffix})` : text;
+function withEta(
+  text: string,
+  eta: string | null | undefined,
+  suffix: string,
+  today: string
+): string {
+  const day = etaText(eta ?? null);
+
+  if (!eta || !day) return text;
+
+  return isOverdue(eta, today)
+    ? `${text}(${day} 예정이 지났어요)`
+    : `${text}(${day} ${suffix})`;
 }
 
 /** 출고불가 줄: 주문 수량, 이 창고 재고와 그중 다른 주문 몫, 모자란 수량 */
@@ -37,28 +52,94 @@ export function shortageLineText(
       ? `이 창고 재고 ${onHand} (다른 주문 몫 ${Math.min(onHand, reservedByOthers)})`
       : `이 창고 재고 ${Math.max(0, onHand)}`;
 
-  return `주문 ${line.qty} · ${stock} · 모자람 ${short}`;
+  return `${short}개 모자람 · 주문 ${line.qty} · ${stock}`;
 }
 
-/** 모자란 상품이 언제·어디서 오는지. 남는 재고 → 이 창고로 오는 것 → 다른 창고에 있는 것 순 */
-export function incomingText(stock: PreparationLineStock): string {
+function freeStock(stock: PreparationLineStock): number {
+  return stock.available ?? Math.max(0, stock.onHand - stock.reservedByOthers);
+}
+
+function incomingTotal(incoming: PreparationIncoming): number {
+  return incoming.inTransit + incoming.ordered + incoming.inboundShipment;
+}
+
+/** 먼저 들어올 상품이 앞: 남는 재고 → 예정일 → 예정일을 모르거나 지남 → 다른 창고 → 예정 없음 */
+export function arrivalSortKey(
+  stock: PreparationLineStock,
+  today: string
+): string {
+  if (freeStock(stock) > 0) return '0';
+
+  const { incoming, elsewhere } = stock;
+
+  if (incoming && incomingTotal(incoming) > 0) {
+    const days = [
+      incoming.inTransit > 0 ? incoming.inTransitEta : null,
+      incoming.ordered > 0 ? incoming.orderedEta : null,
+      incoming.inboundShipment > 0 ? incoming.inboundShipmentEta : null,
+    ].filter((day): day is string => !!day && !isOverdue(day, today));
+
+    return days.length > 0 ? `1${days.sort()[0]}` : '2';
+  }
+
+  return elsewhere && elsewhere.onHand + elsewhere.ordered > 0 ? '3' : '4';
+}
+
+// 이 창고에서 기다리는 수량을 남는 재고와 올 것으로 다 채우지 못할 때만. 다른 창고에 있는 것은 옮겨 와야 오므로 세지 않는다
+function lackingText(stock: PreparationLineStock): string | null {
+  const { incoming, waiting } = stock;
+
+  if (!incoming || waiting === undefined) return null;
+
+  const lacking = waiting - freeStock(stock) - incomingTotal(incoming);
+
+  if (lacking <= 0) return null;
+
+  return lacking === waiting
+    ? `기다리는 ${waiting}개가 모두 모자라요`
+    : `모두 ${waiting}개 기다려 ${lacking}개 모자라요`;
+}
+
+/** 모자란 상품이 언제·어디서 오는지. 남는 재고 → 이 창고로 오는 것과 모자란 수량 → 다른 창고에 있는 것 순. 오늘은 한국 날짜(YYYY-MM-DD) */
+export function incomingText(
+  stock: PreparationLineStock,
+  today: string
+): string {
+  const { state, action } = incomingCopy(stock, today);
+
+  return action ? `${state} — ${action}` : state;
+}
+
+/** incomingText 를 상태와 할 일로 나눈 것. 들어올 예정이 없을 때만 할 일이 따로 있다 */
+export function incomingCopy(
+  stock: PreparationLineStock,
+  today: string
+): { state: string; action: string | null } {
   const { incoming, elsewhere } = stock;
   // 재고가 막 들어와 아직 확보 전이면 발주·이동을 권하지 않는다(확보는 주기적으로 오래 기다린 주문부터 한다)
-  const free = Math.max(0, stock.onHand - stock.reservedByOthers);
+  const free = freeStock(stock);
   const coming = incoming
     ? [
         incoming.inTransit > 0 &&
           withEta(
             `이동 중 ${incoming.inTransit}개`,
             incoming.inTransitEta,
-            '도착 예정'
+            '도착 예정',
+            today
           ),
-        incoming.ordered > 0 && `발주 ${incoming.ordered}개`,
+        incoming.ordered > 0 &&
+          withEta(
+            `발주 ${incoming.ordered}개`,
+            incoming.orderedEta,
+            '입고 예정',
+            today
+          ),
         incoming.inboundShipment > 0 &&
           withEta(
             `선적 ${incoming.inboundShipment}개`,
             incoming.inboundShipmentEta,
-            '도착 예정'
+            '도착 예정',
+            today
           ),
       ].filter((part): part is string => typeof part === 'string')
     : [];
@@ -70,7 +151,8 @@ export function incomingText(stock: PreparationLineStock): string {
           withEta(
             `다른 창고로 발주 ${elsewhere.ordered}개`,
             elsewhere.orderedEta,
-            '입고 예정'
+            '입고 예정',
+            today
           ),
       ].filter((part): part is string => typeof part === 'string')
     : [];
@@ -82,20 +164,28 @@ export function incomingText(stock: PreparationLineStock): string {
     coming.length === 0 &&
     away.length === 0
   ) {
-    return '들어올 예정이 없어요 — 발주하거나 다른 창고에서 옮겨 와야 해요';
+    return {
+      state: '들어올 예정이 없어요',
+      action: stock.waiting
+        ? `기다리는 ${stock.waiting}개만큼 발주하거나 다른 창고에서 옮겨 와야 해요`
+        : '발주하거나 다른 창고에서 옮겨 와야 해요',
+    };
   }
 
-  return [
+  const state = [
     free > 0 && `이 창고에 남는 재고 ${free}개 — 곧 자동으로 확보돼요`,
     incoming
       ? coming.length > 0
         ? `이 창고로 올 것: ${coming.join(', ')}`
         : '이 창고로 올 것은 없어요'
       : '이 창고로 올 것은 입고 화면에서 확인해 주세요',
+    lackingText(stock),
     ...away,
   ]
     .filter((part): part is string => typeof part === 'string')
     .join(' · ');
+
+  return { state, action: null };
 }
 
 export interface NeedsInfoCopy {

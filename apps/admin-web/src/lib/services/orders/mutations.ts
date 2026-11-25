@@ -24,6 +24,8 @@ import type {
 import type {
   SplitShipmentRequest,
   SplitUnreservedShipmentRequest,
+  SetStockPriorityRequest,
+  ShipmentCommandReason,
   ReviseShipmentRecipientRequest,
   PlanShipmentRequest,
   RecallShipmentRequest,
@@ -98,8 +100,20 @@ export const useUpdateSalesOrderMemo = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ id, memo }: { id: string; memo: string }) =>
-      orders.salesOrders.updateSalesOrder(id, { memo }),
+    // expectedMemo 를 주면 그 사이 메모가 바뀐 저장을 서버가 거절한다
+    mutationFn: ({
+      id,
+      memo,
+      expectedMemo,
+    }: {
+      id: string;
+      memo: string;
+      expectedMemo?: string;
+    }) =>
+      orders.salesOrders.updateSalesOrder(
+        id,
+        expectedMemo === undefined ? { memo } : { memo, expectedMemo }
+      ),
     onSuccess: async (_, { id, memo }) => {
       // 다른 페이지·검색에 남은 상세는 옛 메모라, 돌아갔을 때 새로 읽기 전에는 고칠 수 없게 지운다
       queryClient.removeQueries({
@@ -658,6 +672,70 @@ export const useSplitUnreservedShipment = () => {
 };
 useSplitUnreservedShipment.permission = [
   'fulfillment.warehouse.operate',
+] as const satisfies PermissionRequirement;
+
+// 다른 주문의 상자도 바뀐다 — 상자·출고주문·출고 준비·정체 보드·재고를 모두 다시 읽는다
+function invalidateStockPriority(
+  queryClient: ReturnType<typeof useQueryClient>
+) {
+  for (const queryKey of [
+    ['shipments'],
+    ['order-progress'],
+    ['inventory'],
+    orderQueryKeys.fulfillments,
+    orderQueryKeys.outboundPreparation,
+    orderQueryKeys.orderStats,
+  ]) {
+    void queryClient.invalidateQueries({ queryKey });
+  }
+}
+
+export const useSetStockPriority = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      shipmentId,
+      data,
+      idempotencyKey,
+    }: {
+      shipmentId: string;
+      data: SetStockPriorityRequest;
+      idempotencyKey: string;
+    }) =>
+      orders.fulfillmentOrder.setStockPriority(
+        shipmentId,
+        data,
+        idempotencyKey
+      ),
+    onSettled: () => invalidateStockPriority(queryClient),
+  });
+};
+useSetStockPriority.permission = [
+  'fulfillment.reservation.transfer',
+] as const satisfies PermissionRequirement;
+
+export const useCancelStockPriority = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      shipmentId,
+      data,
+      idempotencyKey,
+    }: {
+      shipmentId: string;
+      data: ShipmentCommandReason;
+      idempotencyKey: string;
+    }) =>
+      orders.fulfillmentOrder.cancelStockPriority(
+        shipmentId,
+        data,
+        idempotencyKey
+      ),
+    onSettled: () => invalidateStockPriority(queryClient),
+  });
+};
+useCancelStockPriority.permission = [
+  'fulfillment.reservation.transfer',
 ] as const satisfies PermissionRequirement;
 
 export const useSplitUnreservedMany = () => {

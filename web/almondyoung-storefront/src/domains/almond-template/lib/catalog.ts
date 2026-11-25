@@ -7,6 +7,7 @@ export type PrintKind =
   | "menu"
   | "diploma"
   | "nail"
+  | "invitation"
 
 export const PRINT_PRODUCTS: Record<
   string,
@@ -318,7 +319,24 @@ export const PRINT_SPECS: Record<
     duplex: true,
     note: "90×90mm는 이지템플릿 명함의 기본 규격에 없습니다. 안전선 1.5mm는 임시값이며 비규격·용지·수량을 확인해야 합니다.",
   },
+  invitation: {
+    label: "청첩장·초대장",
+    sizes: [
+      [100, 180],
+      [110, 158],
+    ],
+    safetyMm: 3,
+    bleedMm: 1,
+    fileScale: 1,
+    minImageDpi: 300,
+    duplex: true,
+    note: "소량 청첩장 엽서형. 작업 크기는 사방 1mm 크고, 글자·사진은 재단선 안쪽 3mm까지 둡니다.",
+  },
 }
+
+// 명함 상품은 따로 없어 같은 규격의 주의사항 카드 상품으로 작업한다
+export const workKind = (kind: PrintKind): PrintKind =>
+  kind === "bizcard" ? "card" : kind
 
 export function sizeFromOption(
   kind: PrintKind,

@@ -8,6 +8,7 @@ import type {
   FieldCaptureDetailDto,
   FieldCapturePhotosDto,
   FieldCaptureProgressDto,
+  FieldCaptureRemainingDto,
   MyTodayDto,
   MyCaptureItemsDto,
   ShelfPositionDto,
@@ -36,6 +37,10 @@ export class SkuFieldCaptureService {
     return this.reader.getProgress();
   }
 
+  getRemaining(): Promise<FieldCaptureRemainingDto> {
+    return this.reader.getRemaining();
+  }
+
   listPhotos(filter: FieldCapturePhotoFilter): Promise<FieldCapturePhotosDto> {
     return this.reader.listPhotos(filter);
   }
@@ -45,7 +50,7 @@ export class SkuFieldCaptureService {
   }
 
   async listItems(filter: FieldCaptureListFilter, actor: FieldCaptureActor): Promise<MyCaptureItemsDto> {
-    return { items: await this.reader.listItems(filter, actor.workerId) };
+    return this.reader.listItems(filter, actor.workerId);
   }
 
   cancel(skuId: string, actor: FieldCaptureActor): Promise<void> {

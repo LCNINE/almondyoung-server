@@ -78,10 +78,11 @@ export class ChannelOrderTranslator {
     });
     // 계약에는 살아있는 라인만 넣는다. 해시는 전 라인으로 계산해 취소가 modification 으로 세지지 않게 한다.
     const items = allItems.filter((entry) => !entry.cancelled).map((entry) => entry.item);
-    // almondDesignId 는 해시 입력에서 뺀다 — 이미 수집된 주문의 해시가 배포로 바뀌어 오격리되는 걸 막는다.
+    // almondDesignId·printFileId 는 해시 입력에서 뺀다 — 이미 수집된 주문의 해시가 배포로 바뀌어 오격리되는 걸 막는다.
     const changeItems = allItems.map(({ item }) => {
       const rest = { ...item };
       delete rest.almondDesignId;
+      delete rest.printFileId;
       return rest;
     });
 
@@ -167,6 +168,7 @@ export class ChannelOrderTranslator {
       ...(line.fulfillmentKind ? { fulfillmentKind: line.fulfillmentKind } : {}),
       ...(line.requiresShipping !== undefined ? { requiresShipping: line.requiresShipping } : {}),
       ...(line.almondDesignId ? { almondDesignId: line.almondDesignId } : {}),
+      ...(line.printFileId ? { printFileId: line.printFileId } : {}),
     };
   }
 

@@ -9,7 +9,9 @@ export type ReasonedOperationType =
   | 'recall'
   | 'short_pick'
   | 'waybill_void'
-  | 'waybill_reissue';
+  | 'waybill_reissue'
+  | 'stock_priority'
+  | 'stock_priority_cancel';
 
 export type RequestChannel = 'kakao' | 'phone' | 'store_inquiry' | 'marketplace_inquiry' | 'other';
 
@@ -68,6 +70,16 @@ export const SHIPMENT_OPERATION_REASONS: Record<ReasonedOperationType, ReadonlyA
     { code: 'label_damaged', label: '송장 출력 불량·분실', customerRequest: false },
     { code: 'carrier_error', label: '택배사 접수 오류', customerRequest: false },
     { code: 'address_correction', label: '주소 오류 정정(택배사·주소 확인 결과)', customerRequest: false },
+    { code: 'other', label: '기타', customerRequest: false },
+  ],
+  stock_priority: [
+    { code: 'customer_urgent', label: '고객이 급하게 보내 달라고 요청', customerRequest: true },
+    { code: 'blocked_by_waiting_order', label: '먼저 들어온 주문이 재고를 잡고 있어 못 나감', customerRequest: false },
+    { code: 'other', label: '기타', customerRequest: false },
+  ],
+  stock_priority_cancel: [
+    { code: 'no_longer_urgent', label: '먼저 보낼 필요가 없어짐', customerRequest: false },
+    { code: 'set_by_mistake', label: '잘못 지정함', customerRequest: false },
     { code: 'other', label: '기타', customerRequest: false },
   ],
 };

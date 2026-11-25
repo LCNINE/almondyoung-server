@@ -30,6 +30,7 @@ const APRON_CHINA_REASON = '앞치마(공급처 중국) — 주문제작이라 �
 export const EXCLUDED_PRODUCT_SERIALS: ReadonlyMap<string, string> = new Map<string, string>([
   ['13248', 'akf쌍커풀테이프 — 재고동기화 금지, 품절 유지 (2026-07-23)'],
   ['13333', '미스티 래쉬 — 중국 소싱, 재고동기화 금지 + 품절 유지 (2026-07-23)'],
+  ['13410', 'BUP(매칭용) — 공급처 3PL 제품, 마켓 주문 매칭용 품목이라 부천 재고와 무관. 셀메이트 미발송이 쌓여 저녁 맞추기 이월로만 잡힌다 (2026-11-23 물류팀 확인)'],
   // 씨엠 쌍커풀 테이프(카페코드 P0000EAZ)는 현재 셀메이트 export에 없어 상품일련번호를 모른다.
   // 셀메이트에 다시 잡히면 여기에 일련번호를 추가할 것. 지금은 아래 NAME_PATTERN이 안전망.
   ...APRON_CHINA_SERIALS.map((serial): [string, string] => [serial, APRON_CHINA_REASON]),

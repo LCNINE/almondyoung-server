@@ -1,5 +1,5 @@
 import { ApiError } from '../../core/data/httpClient';
-import type { ShipmentByWaybill, ShipmentByWaybillLine, SimpleOutboundLineProgress } from './types';
+import type { ShipmentByWaybill, ShipmentByWaybillLine, SimpleOutboundLineProgress, SplitShare } from './types';
 import { labelGateOf } from './labelGate';
 import type { LabelItemChange } from './waybillLabel';
 
@@ -163,4 +163,13 @@ export function remainingOf(progress: readonly SimpleOutboundLineProgress[], shi
 
 export function formatTrackingNo(trackingNo: string): string {
   return /^\d{12}$/.test(trackingNo) ? trackingNo.replace(/^(\d{4})(\d{4})(\d{4})$/, '$1-$2-$3') : trackingNo;
+}
+
+/** 나눈 상자 표시 — 주문의 일부만 담긴 게 정상임을 작업자가 알게 한다 */
+export function splitShareLines(split: SplitShare | null | undefined): { title: string; detail: string } | null {
+  if (!split || split.boxCount < 2) return null;
+  return {
+    title: `이 주문 ${split.boxCount}상자 중 ${split.boxNo}`,
+    detail: `주문 ${split.orderQty}개 중 이 상자 ${split.boxQty}개`,
+  };
 }

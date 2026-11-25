@@ -86,7 +86,7 @@ export default function OptionSelect({
   selectedValues,
 }: OptionSelectProps) {
   const t = useTranslations("productDetail.options")
-  const { visibleValues, outOfStockSet, comingSoonByValue, restockByValue, priceByValue } = useMemo(() => {
+  const { visibleValues, outOfStockSet, discontinuingSet, comingSoonByValue, restockByValue, priceByValue } = useMemo(() => {
     const rawValues = (option.values ?? []).map((v) => v.value)
     const allValues = variants
       ? sortByPimRank(rawValues, option.id, option.title, variants)
@@ -95,6 +95,7 @@ export default function OptionSelect({
       return {
         visibleValues: allValues,
         outOfStockSet: new Set<string>(),
+        discontinuingSet: new Set<string>(),
         comingSoonByValue: {} as Record<string, { date: string | null }>,
         restockByValue: {} as Record<string, { date: string }>,
         priceByValue: {} as Record<string, number>,
@@ -109,6 +110,7 @@ export default function OptionSelect({
 
     const visible: string[] = []
     const outOfStock = new Set<string>()
+    const discontinuing = new Set<string>()
     const comingSoonByValue: Record<string, { date: string | null }> = {}
     // 품절 옵션의 입고예정일. 품절 칩은 누를 수 없어 RestockNotice 가 영영 안 뜨므로
     // (선택된 variant 만 보는 컴포넌트다) 날짜를 칩 라벨에 직접 적는다.
@@ -129,6 +131,10 @@ export default function OptionSelect({
       if (matchingVariants.length === 0) continue
 
       visible.push(value)
+      if (matchingVariants.every((v) => v.metadata?.discontinuing === true)) {
+        discontinuing.add(value)
+      }
+
       if (!matchingVariants.some(hasStock)) {
         outOfStock.add(value)
         // 출시예정이 재입고보다 우선 — 한 번도 안 나온 상품에 "입고" 는 틀린 안내다.
@@ -150,7 +156,14 @@ export default function OptionSelect({
       }
     }
 
-    return { visibleValues: visible, outOfStockSet: outOfStock, comingSoonByValue, restockByValue, priceByValue }
+    return {
+      visibleValues: visible,
+      outOfStockSet: outOfStock,
+      discontinuingSet: discontinuing,
+      comingSoonByValue,
+      restockByValue,
+      priceByValue,
+    }
   }, [option, variants, selectedOptions])
 
   // 값이 많으면 드롭다운으로 전환해 세로 공간을 절약
@@ -163,7 +176,31 @@ export default function OptionSelect({
     visibleValues.length > 0 &&
     visibleValues.every((value) => comingSoonByValue[value])
 
+  const discontinuingBadge = (className: string) => (
+    <span
+      className={cn(
+        "rounded-[5px] bg-red-600 px-[7px] text-[12px] leading-5 font-extrabold whitespace-nowrap text-white",
+        className
+      )}
+    >
+      {t("discontinuingBadge")}
+    </span>
+  )
+
+  // 드롭다운 항목엔 칩 모서리가 없어 이름 옆에 붙인다.
   const renderValueLabel = (value: string, isOutOfStock: boolean) => {
+    const label = renderStockLabel(value, isOutOfStock)
+    if (!discontinuingSet.has(value)) return label
+
+    return (
+      <span className="inline-flex items-center gap-1.5">
+        {label}
+        {discontinuingBadge("shrink-0")}
+      </span>
+    )
+  }
+
+  const renderStockLabel = (value: string, isOutOfStock: boolean) => {
     if (!isOutOfStock) return value
     const comingSoon = comingSoonByValue[value]
     if (!comingSoon) {
@@ -235,7 +272,12 @@ export default function OptionSelect({
           </SelectContent>
         </Select>
       ) : (
-        <div className="flex flex-wrap gap-2">
+        <div
+          className={cn(
+            "flex flex-wrap",
+            discontinuingSet.size > 0 ? "gap-x-2 gap-y-4 pt-2.5" : "gap-2"
+          )}
+        >
           {visibleValues.map((v) => {
             const isOutOfStock = outOfStockSet.has(v)
             const isCurrent = v === current
@@ -247,7 +289,7 @@ export default function OptionSelect({
                 onClick={() => updateOption(option.id, v)}
                 disabled={isDisabled}
                 className={cn(
-                  "rounded-full border px-4 py-2 text-sm transition-colors",
+                  "relative rounded-full border px-4 py-2 text-sm transition-colors",
                   getButtonStyle(isCurrent, isOutOfStock),
                   isDisabled && "pointer-events-none"
                 )}
@@ -255,10 +297,12 @@ export default function OptionSelect({
               >
                 <span className="flex flex-col items-center leading-tight">
                   <span>
-                    {renderValueLabel(v, isOutOfStock)}
+                    {renderStockLabel(v, isOutOfStock)}
                   </span>
                   {renderPriceLabel(v)}
                 </span>
+                {discontinuingSet.has(v) &&
+                  discontinuingBadge("absolute -top-[11px] right-1.5")}
               </button>
             )
           })}

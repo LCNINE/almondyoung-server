@@ -56,7 +56,12 @@ export class PrintCatalogReader {
     return {
       ...axes,
       bleedMatches: entry.bleedMm === axes.cutsizeHalfMm,
-      accessoryAxes: PRINT_KIND_ACCESSORIES[kind] ?? [],
+      accessoryAxes: (PRINT_KIND_ACCESSORIES[kind] ?? [])
+        .map((axis) => ({
+          ...axis,
+          choices: axis.choices.filter((c) => c.forSizeno === undefined || c.forSizeno === entry.sizeno),
+        }))
+        .filter((axis) => axis.choices.length > 0),
     };
   }
 
@@ -88,6 +93,9 @@ export class PrintCatalogReader {
     const axes = buildPrintOptions(prodInfo, entry);
     const color = axes.colors.find((c) => c.colorno === combo.colorno);
     if (!color) throw new BadRequestError(`Unknown colorno for ${kind}: ${combo.colorno}`);
+
+    const misfit = this.chosenAccessories(kind, combo).find((c) => c.forSizeno !== undefined && c.forSizeno !== entry.sizeno);
+    if (misfit) throw new BadRequestError(`${misfit.label} 은 이 크기에 맞지 않습니다.`);
 
     const prsjob: Record<string, unknown> = {
       covercd: 0,

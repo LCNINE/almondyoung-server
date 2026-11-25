@@ -102,11 +102,12 @@ export class PurchaseOrderExpectedArrivalReader {
     }, tx);
   }
 
+  /** 예정일은 그 범위의 가장 이른 것이다. `sellableEta` 는 그중 판매 창고로 들어오는 발주만 따진 날(date 문자열)이다. */
   async sumOutstandingBySku(
     skuIds: string[],
     scope: 'non_sellable_source' | 'all',
     tx?: DbTx,
-  ): Promise<Map<string, { qty: number; eta: Date | null }>> {
+  ): Promise<Map<string, { qty: number; eta: Date | null; sellableEta: string | null }>> {
     if (skuIds.length === 0) return new Map();
 
     return this.dbService.run(async (trx) => {
@@ -117,6 +118,9 @@ export class PurchaseOrderExpectedArrivalReader {
           skuId: pol.skuId,
           qty: sql<number>`SUM(${outstandingQtySql()})::int`,
           eta: sql<string | null>`MIN(${pol.expectedArrival})`,
+          sellableEta: sql<
+            string | null
+          >`MIN(CASE WHEN ${inSellableWarehouse(po.sourceWarehouseId)} THEN ${pol.expectedArrival} END)::text`,
         })
         .from(pol)
         .innerJoin(po, eq(po.id, pol.poId))
@@ -128,7 +132,12 @@ export class PurchaseOrderExpectedArrivalReader {
           ),
         )
         .groupBy(pol.skuId);
-      return new Map(rows.map((row) => [row.skuId, { qty: Number(row.qty), eta: row.eta ? new Date(row.eta) : null }]));
+      return new Map(
+        rows.map((row) => [
+          row.skuId,
+          { qty: Number(row.qty), eta: row.eta ? new Date(row.eta) : null, sellableEta: row.sellableEta },
+        ]),
+      );
     }, tx);
   }
 }

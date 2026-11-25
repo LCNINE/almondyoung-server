@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Search, Trash2, Loader2, Plus } from 'lucide-react';
+import { Search, Trash2, Loader2, Plus, PackageSearch } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useDebounced } from '@/hooks/use-debounced';
@@ -12,9 +12,10 @@ import type { SkuLinkState } from '@/lib/types/ui/matching';
 interface SkuLookupSectionProps {
   links: SkuLinkState[];
   onChange: (links: SkuLinkState[]) => void;
+  productName?: string;
 }
 
-export function SkuLookupSection({ links, onChange }: SkuLookupSectionProps) {
+export function SkuLookupSection({ links, onChange, productName }: SkuLookupSectionProps) {
   const [search, setSearch] = useState('');
   const readOnly = usePermissionReadOnly() !== null;
   const debounced = useDebounced(search, 350);
@@ -99,16 +100,31 @@ export function SkuLookupSection({ links, onChange }: SkuLookupSectionProps) {
         </div>
       )}
 
-      <div className="relative">
-        <Search className="pointer-events-none absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-        <Input
-          placeholder="재고 이름 또는 SKU 코드로 검색"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="h-9 pl-8 text-xs"
-        />
-        {isFetching && (
-          <Loader2 className="absolute right-2.5 top-2.5 h-3.5 w-3.5 animate-spin text-muted-foreground" />
+      <div className="flex gap-1.5">
+        <div className="relative flex-1">
+          <Search className="pointer-events-none absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+          <Input
+            placeholder="재고 이름 또는 SKU 코드로 검색"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="h-9 pl-8 text-xs"
+          />
+          {isFetching && (
+            <Loader2 className="absolute right-2.5 top-2.5 h-3.5 w-3.5 animate-spin text-muted-foreground" />
+          )}
+        </div>
+        {productName && (
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            aria-label="상품명으로 검색"
+            title="상품명으로 검색"
+            className="h-9 w-9 shrink-0"
+            onClick={() => setSearch(productName)}
+          >
+            <PackageSearch className="h-4 w-4" />
+          </Button>
         )}
       </div>
 

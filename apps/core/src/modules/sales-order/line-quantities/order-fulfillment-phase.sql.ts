@@ -120,6 +120,7 @@ export function orderFulfillmentPhaseSql(salesOrderScope: SQL): SQL {
                   from ${t.printOrders} as print_row
                  where print_row.sales_order_id in (${salesOrderScope})
                    and print_row.status <> 'cancelled'
+                   and (print_row.almond_design_id is not null or print_row.print_file_id is not null)
                  group by print_row.sales_order_id
               ) as print_share on print_share.sales_order_id = phase_so.id
              where phase_so.id in (${salesOrderScope})

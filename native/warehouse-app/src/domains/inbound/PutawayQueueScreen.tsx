@@ -1,4 +1,5 @@
 import { isActionablePutaway } from './types';
+import { usualShelfNotice } from './RememberUsualToggle';
 import { useWorkCapabilities } from '../../core/operations/useWorkCapabilities';
 import { useWorkRuntime } from '../../core/operations/OperationContext';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -13,6 +14,18 @@ import { WarehousePicker } from '../warehouse/WarehousePicker';
 import { PutawaySheet, type LocationRef } from './PutawaySheet';
 import { usePutawayPending, type PutawayDays } from './queries';
 import type { PutawayPendingItem, PutawayTarget } from './types';
+import {
+  CancelReceiptDialog,
+  type CancelReceiptTarget,
+} from './CancelReceiptDialog';
+import { useReturnGoods } from './returnGoods';
+import { useWaitingOrders } from './waitingOrders';
+import { ReadyShipmentsSection } from './ReadyShipmentsSection';
+import { WaitingOrdersFailed, WaitingOrdersNote } from './WaitingOrdersNote';
+import {
+  ReturnPutawaySheet,
+  type ReturnPutawayTarget,
+} from './ReturnPutawaySheet';
 
 const DAY_OPTIONS: Array<{ value: PutawayDays; label: string }> = [
   { value: 1, label: '최근 1일' },
@@ -60,6 +73,17 @@ export function PutawayQueueScreen({
   const scanId = useRef(0);
   const [notice, setNotice] = useState<string | null>(null);
   const [lastDest, setLastDest] = useState<LocationRef | null>(null);
+  const [returnTarget, setReturnTarget] = useState<ReturnPutawayTarget | null>(
+    null
+  );
+  const [cancelTarget, setCancelTarget] = useState<CancelReceiptTarget | null>(
+    null
+  );
+  // 반품 양품은 입고와 따로 반품 자리 재고 기준으로 본다 — 상품·원위치로 좁힌 화면에서는 숨긴다.
+  const returnGoods = useReturnGoods(warehouseId, supported && !filtered);
+  // 다시 읽기에 실패하면 남아 있는 옛 줄로 시트를 열지 않는다
+  const returnItems =
+    filtered || returnGoods.isError ? [] : (returnGoods.data?.items ?? []);
 
   const queue = usePutawayPending(
     warehouseId,
@@ -69,6 +93,10 @@ export function PutawayQueueScreen({
   );
   const byBarcode = useSkuByBarcode();
   const items = queue.data?.items ?? [];
+  const waiting = useWaitingOrders(
+    warehouseId,
+    items.map((item) => item.skuId)
+  );
   function select(item: PutawayPendingItem) {
     if (!supported || !isActionablePutaway(item)) return;
     setTarget({
@@ -79,6 +107,8 @@ export function PutawayQueueScreen({
   }
   useEffect(() => {
     setTarget(null);
+    setReturnTarget(null);
+    setCancelTarget(null);
     setLastDest(null);
   }, [warehouseId, skuId, originLocationId]);
 
@@ -102,7 +132,8 @@ export function PutawayQueueScreen({
   );
 
   useScanner((event) => {
-    if (target || !warehouseId || !supported) return;
+    if (target || returnTarget || cancelTarget || !warehouseId || !supported)
+      return;
     clearScanFeedback();
     const id = scanId.current;
     setNotice('상품을 확인하고 있어요.');
@@ -185,6 +216,59 @@ export function PutawayQueueScreen({
         </p>
       ) : null}
 
+      {returnItems.length > 0 && returnGoods.data ? (
+        <section aria-label="반품 양품" className="space-y-2">
+          <h2 className="text-sm font-semibold text-gray-700">
+            반품 양품 — {returnGoods.data.locationCode}에서 선반으로
+          </h2>
+          <ul className="space-y-2">
+            {returnItems.map((item) => (
+              <li key={item.skuId}>
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-3 rounded-lg border border-emerald-200 bg-white p-3 text-left active:bg-gray-50"
+                  disabled={returnGoods.isFetching}
+                  onClick={() => {
+                    clearScanFeedback();
+                    setReturnTarget({
+                      ...item,
+                      returnLocationId: returnGoods.data.locationId,
+                      returnLocationCode: returnGoods.data.locationCode,
+                    });
+                  }}
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium text-gray-800">
+                      {item.skuName}
+                    </span>
+                    <span className="block text-xs text-gray-500">
+                      {item.usualLocationCode
+                        ? `평소 선반 ${item.usualLocationCode}`
+                        : '평소 선반 없음'}
+                    </span>
+                  </span>
+                  <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">
+                    양품 {item.quantity}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+      {returnGoods.isError && !filtered ? (
+        <div role="alert" className="text-sm text-red-600">
+          반품 양품을 불러오지 못했어요. {errorMessage(returnGoods.error)}{' '}
+          <button
+            type="button"
+            className="underline"
+            onClick={() => void returnGoods.refetch()}
+          >
+            다시 확인
+          </button>
+        </div>
+      ) : null}
+
       {queue.isError ? (
         <p role="alert" className="text-sm text-red-600">
           {errorMessage(queue.error, 'putaway')}
@@ -195,17 +279,23 @@ export function PutawayQueueScreen({
       ) : null}
       {queue.isSuccess && !queue.isFetching && items.length === 0 ? (
         <p className="text-sm text-gray-500">
-          적치할 항목이 없어요.
+          {returnItems.length > 0
+            ? '입고 적치 대기는 없어요.'
+            : '적치할 항목이 없어요.'}
           {days === 'all' ? '' : ' 기간 필터를 넓혀 보세요.'}
         </p>
       ) : null}
+      <WaitingOrdersFailed failed={waiting.failed} />
       {items.length > 0 && (
         <ul className="space-y-2">
           {items.map((item) => (
-            <li key={item.lineId}>
+            <li
+              key={item.lineId}
+              className="rounded-lg border border-gray-200 bg-white"
+            >
               <button
                 type="button"
-                className="flex w-full items-center gap-3 rounded-lg border border-gray-200 bg-white p-3 text-left active:bg-gray-50"
+                className="flex w-full items-center gap-3 rounded-lg p-3 text-left active:bg-gray-50"
                 disabled={
                   !supported || !isActionablePutaway(item) || queue.isFetching
                 }
@@ -217,13 +307,17 @@ export function PutawayQueueScreen({
                 }}
               >
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium text-gray-800">
+                  <span
+                    id={`putaway-${item.lineId}`}
+                    className="block truncate font-medium text-gray-800"
+                  >
                     {item.skuName}
                   </span>
                   <span className="block text-xs text-gray-500">
                     {item.originLocationCode ?? '원위치 확인 필요'} ·{' '}
                     {formatTime(item.receivedAt)}
                   </span>
+                  <WaitingOrdersNote waiting={waiting.of(item.skuId)} />
                   {!item.canPutaway && (
                     <span className="block text-sm text-amber-700">
                       입고내역과 원위치를 확인해 주세요.
@@ -234,10 +328,30 @@ export function PutawayQueueScreen({
                   잔여 {item.pendingQty}
                 </span>
               </button>
+              <div className="flex justify-end border-t border-gray-100 px-3 py-1">
+                <button
+                  type="button"
+                  aria-describedby={`putaway-${item.lineId}`}
+                  className="px-2 py-1 text-sm text-gray-600 underline disabled:opacity-50"
+                  disabled={!supported || queue.isFetching}
+                  onClick={() => {
+                    clearScanFeedback();
+                    setCancelTarget(item);
+                  }}
+                >
+                  잘못 입고 · 취소
+                </button>
+              </div>
             </li>
           ))}
         </ul>
       )}
+
+      {/* 화면 순서대로 넘긴다 — 100줄이 넘으면 화면 앞쪽 100줄만 본다 */}
+      <ReadyShipmentsSection
+        warehouseId={warehouseId}
+        receiptLineIds={items.map((item) => item.lineId)}
+      />
 
       {queue.hasNextPage && !queue.isFetchNextPageError ? (
         <Button
@@ -285,6 +399,40 @@ export function PutawayQueueScreen({
         />
       ) : null}
 
+      {returnTarget && warehouseId ? (
+        <ReturnPutawaySheet
+          target={returnTarget}
+          warehouseId={warehouseId}
+          onCancel={() => {
+            clearScanFeedback();
+            setReturnTarget(null);
+          }}
+          onDone={(dest, quantity, usualShelfSet) => {
+            clearScanFeedback();
+            setReturnTarget(null);
+            setNotice(
+              `${returnTarget.skuName} ${quantity}개를 ${dest.code}에 넣었어요.` +
+                (usualShelfSet ? ` ${usualShelfNotice(dest.code)}` : '')
+            );
+          }}
+        />
+      ) : null}
+
+      {cancelTarget && warehouseId ? (
+        <CancelReceiptDialog
+          target={cancelTarget}
+          warehouseId={warehouseId}
+          onClose={() => setCancelTarget(null)}
+          onFinished={(message) => {
+            clearScanFeedback();
+            setCancelTarget(null);
+            setNotice(message);
+            // 실패해도 다른 기기가 먼저 처리했을 수 있다
+            void queue.refetch();
+          }}
+        />
+      ) : null}
+
       {target ? (
         <PutawaySheet
           target={target}
@@ -294,10 +442,11 @@ export function PutawayQueueScreen({
             clearScanFeedback();
             setTarget(null);
           }}
-          onDone={(dest) => {
+          onDone={(dest, _quantity, usualShelfSet) => {
             clearScanFeedback();
             setLastDest(dest);
             setTarget(null);
+            if (usualShelfSet) setNotice(usualShelfNotice(dest.code));
             // 잔량이 남으면 무효화된 큐가 줄어든 수량으로 다시 내려준다.
           }}
         />

@@ -31,7 +31,21 @@ import { WarehousePicker } from '../warehouse/WarehousePicker';
 import { useSkuByBarcode } from '../inventory/useSkuByBarcode';
 import { scanIncrement } from './packingUnit';
 import { useSimpleInbound } from './mutations';
+import { usualShelfNotice } from './RememberUsualToggle';
+import {
+  playInboundSaved,
+  playInboundSaveFailed,
+  primeInboundSaveSound,
+} from './saveFeedback';
+import { SaveToast, useSaveToast } from './SaveToast';
 import { PutawaySheet, type LocationRef } from './PutawaySheet';
+import { useWaitingOrders } from './waitingOrders';
+import {
+  CancelReceiptDialog,
+  type CancelReceiptTarget,
+} from './CancelReceiptDialog';
+import { ReadyShipmentsSection } from './ReadyShipmentsSection';
+import { WaitingOrdersFailed, WaitingOrdersNote } from './WaitingOrdersNote';
 import type { FreshLine, PutawayTarget } from './types';
 
 /** 이전 입고 결과를 확인하다 멈춘 이유 — 그대로 작업자에게 보여 준다. */
@@ -51,11 +65,12 @@ interface CartRow {
   quantity: number;
 }
 
-function QuickInboundScreenContent() {
+function QuickInboundScreenContent({ station }: { station: boolean }) {
   const { warehouseId, isSet } = useWarehouse();
   const lookup = useSkuByBarcode();
   const api = useApiClient();
   const submit = useSimpleInbound();
+  const toast = useSaveToast();
 
   const initialDraft = useRef({
     receiptId: null as string | null,
@@ -77,6 +92,7 @@ function QuickInboundScreenContent() {
     }));
   const runtime = useWorkRuntime();
   const session = useSession();
+  const [receivedAt, setReceivedAt] = useState<string | null>(null);
   const [currentLines, setCurrentLines] = useState<
     import('./receiptHistory').ReceiptHistoryLine[]
   >([]);
@@ -147,6 +163,7 @@ function QuickInboundScreenContent() {
           ? (op.result as SimpleInboundResult).id
           : undefined);
       let historyLines: import('./receiptHistory').ReceiptHistoryLine[] = [];
+      let receivedAt: string | null = null;
       if (latest.staged.length) {
         if ((await runtime.store.pending(scope)).length)
           throw new CheckStop('처리 내역을 먼저 확인해 주세요.');
@@ -174,6 +191,7 @@ function QuickInboundScreenContent() {
         )
           throw new CheckStop('입고내역을 확인해 주세요.');
         historyLines = receipt.lines;
+        receivedAt = receipt.occurredAt;
       }
       if (
         !live ||
@@ -186,6 +204,7 @@ function QuickInboundScreenContent() {
         throw new CheckStop('처리 내역을 먼저 확인해 주세요.');
       if (!live || thisGeneration !== generation) return;
       setCurrentLines(historyLines);
+      setReceivedAt(receivedAt);
       if (live && thisGeneration === generation) setReconciled(true);
     };
     const runReconcile = () => {
@@ -227,9 +246,14 @@ function QuickInboundScreenContent() {
   const [notice, setNotice] = useState<string | null>(null);
 
   const [putawayFor, setPutawayFor] = useState<PutawayTarget | null>(null);
+  const [cancelFor, setCancelFor] = useState<CancelReceiptTarget | null>(null);
   const [lastDest, setLastDest] = useState<LocationRef | null>(null);
   // 적치 대기 목록으로 넘어간 뒤에는 스캔이 카트를 건드리면 안 된다.
   const stagedMode = staged.length > 0;
+  const waiting = useWaitingOrders(
+    warehouseId,
+    (stagedMode ? staged : cart).map((row) => row.skuId)
+  );
 
   // 저장된 작업을 못 읽었거나 이전 입고 결과를 확인하지 못했다 — 기다려도 준비되지 않는다.
   const loadFailed = !draft.ready && !!draft.error;
@@ -412,6 +436,7 @@ function QuickInboundScreenContent() {
 
   return (
     <div className="space-y-4" aria-busy={!draft.ready || !reconciled}>
+      <SaveToast message={toast.message} station={station} />
       <ScreenHeader title="간편입고" backTo="/inbound" />
 
       {!stagedMode && !prepFailure && (!draft.ready || !reconciled) ? (
@@ -468,6 +493,7 @@ function QuickInboundScreenContent() {
             주세요.
           </p>
           <Link to="/inbound/history">입고내역 · 취소</Link>
+          <WaitingOrdersFailed failed={waiting.failed} />
           {!reconciled && !prepFailure && (
             <p role="alert">
               입고 상태를 확인하고 있어요. 확인이 안 되면 입고내역 또는 적치
@@ -497,6 +523,10 @@ function QuickInboundScreenContent() {
                     <span className="block font-mono text-xs text-gray-500">
                       {line.skuCode}
                     </span>
+                    {line.canceledQty > 0 ||
+                    line.putawayDoneQty >= line.quantity ? null : (
+                      <WaitingOrdersNote waiting={waiting.of(line.skuId)} />
+                    )}
                     {/* 예정 입고 화면 배너와 같은 문구 — 부분 적치가 손대지 않은 라인과
                       시각적으로 구분되지 않는 문제를 막는다. */}
                     {line.putawayDoneQty > 0 &&
@@ -522,6 +552,27 @@ function QuickInboundScreenContent() {
                   <span className="text-lg font-semibold text-gray-900">
                     {line.quantity}
                   </span>
+                  {current &&
+                  receivedAt &&
+                  line.canceledQty === 0 &&
+                  line.putawayDoneQty < line.quantity ? (
+                    <button
+                      type="button"
+                      className="shrink-0 px-1 py-1.5 text-xs text-gray-600 underline disabled:opacity-50"
+                      disabled={!reconciled || !!draft.error}
+                      onClick={() =>
+                        setCancelFor({
+                          lineId: line.lineId,
+                          source: current.source,
+                          skuName: line.skuName,
+                          originLocationCode: current.originLocationCode,
+                          receivedAt,
+                        })
+                      }
+                    >
+                      잘못 입고 · 취소
+                    </button>
+                  ) : null}
                   {(line.canceledQty ?? 0) > 0 ? (
                     <span>취소됨</span>
                   ) : line.putawayDoneQty >= line.quantity ? (
@@ -545,6 +596,7 @@ function QuickInboundScreenContent() {
                         )
                           setPutawayFor({
                             lineId: line.lineId,
+                            skuId: line.skuId,
                             skuName: line.skuName,
                             skuCode: line.skuCode,
                             source: current.source,
@@ -562,6 +614,10 @@ function QuickInboundScreenContent() {
               );
             })}
           </ul>
+          <ReadyShipmentsSection
+            warehouseId={warehouseId}
+            receiptLineIds={staged.map((row) => row.lineId)}
+          />
           <Button
             type="button"
             className="w-full border border-gray-300 bg-white text-gray-800 hover:bg-gray-50"
@@ -616,6 +672,7 @@ function QuickInboundScreenContent() {
             }
             onSubmit={(code) => scanQueue.enqueue(code)}
           />
+          <WaitingOrdersFailed failed={waiting.failed} />
           {!draft.ready ? null : cart.length === 0 ? (
             <p className="text-sm text-gray-500">
               상품을 검색해서 선택하거나 바코드를 입력해 주세요.
@@ -635,11 +692,12 @@ function QuickInboundScreenContent() {
                       <span className="block font-mono text-xs text-gray-500">
                         {row.skuCode}
                       </span>
+                      <WaitingOrdersNote waiting={waiting.of(row.skuId)} />
                     </span>
                     <button
                       type="button"
                       aria-label={`${row.skuName} 수량`}
-                      className="text-lg font-semibold text-gray-900 underline"
+                      className="text-lg font-semibold text-gray-900 underline disabled:opacity-40"
                       disabled={
                         !reconciled ||
                         !draft.ready ||
@@ -659,14 +717,13 @@ function QuickInboundScreenContent() {
                     <button
                       type="button"
                       aria-label={`${row.skuName} 삭제`}
-                      className="shrink-0 rounded p-1 text-gray-400 active:bg-gray-100"
+                      className="shrink-0 rounded p-1 text-gray-400 active:bg-gray-100 disabled:opacity-40"
                       disabled={
                         !reconciled ||
                         !draft.ready ||
                         scanQueue.blocked() ||
                         submit.isPending ||
-                        saving ||
-                        !!editing
+                        saving
                       }
                       onClick={async () => {
                         if (!reconciled || savingRef.current) return;
@@ -676,6 +733,8 @@ function QuickInboundScreenContent() {
                           await setCart((prev) =>
                             prev.filter((r) => r.skuId !== row.skuId)
                           );
+                          // 지운 줄을 고치던 중이었으면 수정도 닫는다 — 다른 줄의 수정은 그대로 둔다.
+                          setEditing((cur) => (cur === row.skuId ? null : cur));
                         } catch {
                           setNotice(
                             '삭제를 저장하지 못했어요. 다시 시도해 주세요.'
@@ -751,6 +810,7 @@ function QuickInboundScreenContent() {
             }
             onClick={() => {
               if (!warehouseId) return;
+              primeInboundSaveSound();
               submit.mutate(
                 {
                   warehouseId,
@@ -761,7 +821,11 @@ function QuickInboundScreenContent() {
                   idempotencyKey,
                 },
                 {
+                  onError: () => playInboundSaveFailed(),
                   onSuccess: async (result) => {
+                    playInboundSaved();
+                    toast.show('입고를 저장했어요');
+
                     // 응답 lines[] 를 카트 행과 skuId 로 맞춰 이름을 되살린다.
                     await draft.update((prev) => ({
                       ...prev,
@@ -788,15 +852,29 @@ function QuickInboundScreenContent() {
         </section>
       )}
 
+      {cancelFor && warehouseId ? (
+        <CancelReceiptDialog
+          target={cancelFor}
+          warehouseId={warehouseId}
+          onClose={() => setCancelFor(null)}
+          onFinished={(message) => {
+            setCancelFor(null);
+            setNotice(message);
+            void reconcileRef.current?.().catch(() => {});
+          }}
+        />
+      ) : null}
+
       {putawayFor ? (
         <PutawaySheet
           target={putawayFor}
           warehouseId={warehouseId}
           lastDest={lastDest}
           onCancel={() => setPutawayFor(null)}
-          onDone={async (dest) => {
+          onDone={async (dest, _quantity, usualShelfSet) => {
             setLastDest(dest);
             setPutawayFor(null);
+            if (usualShelfSet) setNotice(usualShelfNotice(dest.code));
             await reconcileRef.current?.().catch(() => {});
           }}
         />
@@ -805,10 +883,10 @@ function QuickInboundScreenContent() {
   );
 }
 
-export function QuickInboundScreen() {
+export function QuickInboundScreen({ station = false }: { station?: boolean }) {
   return (
     <WorkArea kind="inbound">
-      <QuickInboundScreenContent />
+      <QuickInboundScreenContent station={station} />
     </WorkArea>
   );
 }

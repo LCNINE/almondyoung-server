@@ -6,9 +6,18 @@ import {
   inboundPendingQuantitySql,
   inboundReceiptInvalidSql,
 } from '../../shared/availability/inbound-origin-availability';
-import { isTodaySeoul } from '../../shared/services/time.util';
 import { ReceiptLineState } from '../dto/inbound-receipt-state.dto';
+import { InboundReservationRelease } from '../kernel/inbound-reservation-release.port';
 import { receiptActionPolicy, ReceiptPolicyFacts } from './inbound-receipt-policy';
+import { usualShelfOf } from '../../core/services/usual-shelf';
+
+interface PrimaryLocationRow {
+  primaryLocationId: string | null;
+  primaryCode: string | null;
+  primaryWarehouseId: string | null;
+  primaryIsActive: boolean | null;
+  primaryIsSystem: boolean | null;
+}
 
 export interface ReceiptFactsRow extends Omit<
   ReceiptLineState,
@@ -96,13 +105,12 @@ export function receiptFactsCtes(where: SQL, page: SQL = sql``): SQL {
     )`;
 }
 
-export function receiptStateFromFacts(row: ReceiptFactsRow, now = new Date()): ReceiptLineState {
+export function receiptStateFromFacts(row: ReceiptFactsRow): ReceiptLineState {
   const policy = receiptActionPolicy({
     ...row,
     onHandQty: Number(row.onHandQty),
     bucketPendingQty: Number(row.bucketPendingQty),
     custodyQty: Number(row.custodyQty),
-    isToday: isTodaySeoul(new Date(row.receivedAt), now),
   } satisfies ReceiptPolicyFacts);
   return {
     lineId: row.lineId,
@@ -126,18 +134,44 @@ export function receiptStateFromFacts(row: ReceiptFactsRow, now = new Date()): R
 
 @Injectable()
 export class InboundReceiptStateReader {
-  constructor(@InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>) {}
+  constructor(
+    @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
+    private readonly reservations: InboundReservationRelease,
+  ) {}
 
   async getLineState(params: { lineId: string; warehouseId: string }, tx?: DbTx): Promise<ReceiptLineState> {
     return this.dbService.run(async (trx) => {
+      // 평소 선반은 같은 문장에 붙인다 — 상태 조회는 한 번의 쿼리로 끝난다.
       const rows = (await trx.execute(
-        sql`WITH ${receiptFactsCtes(sql`irl.id = ${params.lineId}::uuid`)} SELECT * FROM facts`,
-      )) as unknown as ReceiptFactsRow[];
+        sql`WITH ${receiptFactsCtes(sql`irl.id = ${params.lineId}::uuid`)}
+          SELECT facts.*, s.primary_location_id AS "primaryLocationId", pl.code AS "primaryCode",
+            pl.warehouse_id AS "primaryWarehouseId", pl.is_active AS "primaryIsActive", pl.is_system AS "primaryIsSystem"
+          FROM facts
+          LEFT JOIN skus s ON s.id = facts."skuId"
+          LEFT JOIN locations pl ON pl.id = s.primary_location_id`,
+      )) as unknown as Array<ReceiptFactsRow & PrimaryLocationRow>;
       const row = rows[0];
       if (!row) throw new NotFoundException('inbound line not found');
       if (row.warehouseId.toLowerCase() !== params.warehouseId.toLowerCase())
         throw new ForbiddenException('warehouse mismatch');
-      return receiptStateFromFacts(row);
+      const usual = usualShelfOf(
+        {
+          primaryLocationId: row.primaryLocationId,
+          code: row.primaryCode,
+          warehouseId: row.primaryWarehouseId,
+          isActive: row.primaryIsActive,
+          isSystem: row.primaryIsSystem,
+        },
+        row.warehouseId,
+      );
+      const state = receiptStateFromFacts(row);
+      const cancelReservations = state.canCancel
+        ? await this.reservations.preview(
+            { skuId: state.skuId, warehouseId: state.warehouseId, quantity: state.quantity },
+            trx,
+          )
+        : null;
+      return { ...state, ...usual, cancelReservations };
     }, tx);
   }
 }

@@ -9,6 +9,30 @@ const COLLAPSED_COUNT = 5;
 
 const won = (v: number) => v.toLocaleString('ko-KR');
 
+function SkuLinkTag({ variant }: { variant: VariantPreviewDto }) {
+  if (variant.skuLinkState === 'unlinked') {
+    return (
+      <span className="shrink-0 rounded-[4px] bg-[#fef2f2] px-1.5 py-px text-[11px] font-medium text-[#b91c1c]">
+        연결 안 됨
+      </span>
+    );
+  }
+
+  if (variant.skuLinkState === 'void') {
+    return (
+      <span className="shrink-0 rounded-[4px] border border-[#e5e7eb] px-1.5 text-[11px] text-[#6b7280]">
+        재고 안 씀
+      </span>
+    );
+  }
+
+  return (
+    <span className="shrink-0 text-[11px] text-[#6b7280]">
+      SKU {variant.skuCount}종
+    </span>
+  );
+}
+
 function VariantRow({ variant }: { variant: VariantPreviewDto }) {
   const inactive = variant.status !== 'active';
 
@@ -20,11 +44,12 @@ function VariantRow({ variant }: { variant: VariantPreviewDto }) {
       >
         {variant.name || '이름 없음'}
       </span>
-      <span className="shrink-0 tabular-nums">
+      <span className="flex shrink-0 items-baseline gap-2 tabular-nums">
+        <SkuLinkTag variant={variant} />
         {variant.basePrice == null ? (
           <span className="text-muted-foreground">-</span>
         ) : (
-          <>
+          <span>
             <span className="text-[#3f6212]">{won(variant.basePrice)}</span>
             {variant.membershipPrice != null && (
               <span className="text-[#a86500]">
@@ -32,7 +57,7 @@ function VariantRow({ variant }: { variant: VariantPreviewDto }) {
                 {won(variant.membershipPrice)}
               </span>
             )}
-          </>
+          </span>
         )}
       </span>
     </div>
@@ -52,7 +77,12 @@ export function VariantPreviewCell({
 
   // 옵션 없는 상품은 품목 이름이 비어 있는 게 정상이라 줄을 그리면 '이름 없음' 만 남는다.
   if (optionGroupNames.length === 0) {
-    return <span className="text-[#1e3a89]">단일상품</span>;
+    return (
+      <div className="flex items-baseline justify-between gap-2 text-xs">
+        <span className="text-[#1e3a89]">단일상품</span>
+        {variantPreviews[0] && <SkuLinkTag variant={variantPreviews[0]} />}
+      </div>
+    );
   }
 
   // 미리보기 없는 응답(전량 조회)은 종전 요약 표기로 물러선다.

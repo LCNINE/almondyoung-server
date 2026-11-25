@@ -61,6 +61,11 @@ export class MatchingPolicyDto {
   @IsOptional()
   @IsBoolean()
   restockApproximate?: boolean;
+
+  @ApiProperty({ description: '단종 예정 표시. 표시 전용이라 판매·발주는 바뀌지 않는다', required: false })
+  @IsOptional()
+  @IsBoolean()
+  discontinuing?: boolean;
 }
 
 export class UpsertMatchingDto {

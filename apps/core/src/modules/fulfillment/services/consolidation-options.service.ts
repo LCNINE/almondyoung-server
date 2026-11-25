@@ -1,6 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { DbTx } from '../../inventory/schema/inventory.schema';
-import { ConsolidationBoardResponseDto, ConsolidationOptionsResponseDto } from '../dto/consolidation.dto';
+import {
+  ConsolidationBoardCountDto,
+  ConsolidationBoardResponseDto,
+  ConsolidationOptionsResponseDto,
+} from '../dto/consolidation.dto';
 import { ConsolidationBoardReader } from './consolidation-board.reader';
 import { ConsolidationOptionsReader } from './consolidation-options.reader';
 
@@ -17,5 +21,9 @@ export class ConsolidationOptionsService {
 
   findBoard(warehouseId: string, tx?: DbTx): Promise<ConsolidationBoardResponseDto> {
     return this.board.findBoard(warehouseId, tx);
+  }
+
+  countBoardGroups(warehouseId: string, tx?: DbTx): Promise<ConsolidationBoardCountDto> {
+    return this.board.countGroups(warehouseId, tx);
   }
 }

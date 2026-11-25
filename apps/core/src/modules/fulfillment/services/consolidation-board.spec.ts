@@ -105,6 +105,46 @@ describe('groupConsolidationBoard', () => {
     expect(groupConsolidationBoard([row('a', empty), row('b', empty)])).toHaveLength(1);
   });
 
+  it('크기 때문에 나눈 상자끼리만 남으면 묶지 않는다', () => {
+    const apart = new Map([
+      ['a', { family: 'f', side: 'a' }],
+      ['b', { family: 'f', side: 'b' }],
+    ]);
+
+    expect(groupConsolidationBoard([row('a'), row('b')], apart)).toEqual([]);
+  });
+
+  it('크기로 나눈 두 쪽이 한 묶음에 있으면 쪽마다 따로 묶고 다른 주문 상자는 섞지 않는다', () => {
+    const apart = new Map([
+      ['a', { family: 'f', side: 'a' }],
+      ['b1', { family: 'f', side: 'b' }],
+      ['b2', { family: 'f', side: 'b' }],
+    ]);
+    const groups = groupConsolidationBoard([row('a'), row('b1'), row('b2'), row('c'), row('d')], apart);
+
+    expect(groups.map((group) => group.shipments.map((shipment) => shipment.shipmentId))).toEqual([
+      ['b1', 'b2'],
+      ['c', 'd'],
+    ]);
+    expect(new Set(groups.map((group) => group.key)).size).toBe(2);
+  });
+
+  it('크기로 나눈 한쪽만 묶음에 있으면 다른 주문 상자와 그대로 묶는다', () => {
+    const apart = new Map([['a', { family: 'f', side: 'a' }]]);
+    const groups = groupConsolidationBoard([row('a'), row('c')], apart);
+
+    expect(groups.map((group) => group.shipments.map((shipment) => shipment.shipmentId))).toEqual([['a', 'c']]);
+  });
+
+  it('다른 나누기 묶음의 상자끼리는 한 묶음이다', () => {
+    const apart = new Map([
+      ['a', { family: 'f1', side: 'a' }],
+      ['b', { family: 'f2', side: 'b' }],
+    ]);
+
+    expect(groupConsolidationBoard([row('a'), row('b')], apart)).toHaveLength(1);
+  });
+
   it('배치나 송장이 있거나 planned 인 상자가 있으면 canMergeNow 가 false 다', () => {
     expect(groupConsolidationBoard([row('a'), row('b', address, 'id:c1', { batchId: 'x' })])[0].canMergeNow).toBe(
       false,
@@ -242,13 +282,18 @@ describe('assembleConsolidationBoard', () => {
     const [group] = assembleConsolidationBoard(
       [shipmentRow('a'), shipmentRow('b')],
       [optionLine('a'), optionLine('b')],
-      { ...noProgress, splitByShipment: new Map([['b', { boxQty: 1, orderQty: 3, boxNo: 2, boxCount: 2 }]]) },
+      {
+        ...noProgress,
+        splitByShipment: new Map([
+          ['b', { boxQty: 1, orderQty: 3, boxNo: 2, boxCount: 2, reasonCode: null, reason: null }],
+        ]),
+      },
       inHouse,
     );
 
     expect(group.shipments.map((shipment) => shipment.split)).toEqual([
       null,
-      { boxQty: 1, orderQty: 3, boxNo: 2, boxCount: 2 },
+      { boxQty: 1, orderQty: 3, boxNo: 2, boxCount: 2, reasonCode: null, reason: null },
     ]);
   });
 

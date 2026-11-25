@@ -6,6 +6,7 @@ import { DbTx, wmsTables } from '../../schema/inventory.schema';
 import type { InboundShipment, InboundShipmentLine } from '../../schema/inventory.schema';
 import { InboundReceiptKernel } from '../../inbound/kernel/inbound-receipt.kernel';
 import { InventoryIdempotencyService } from '../../core/services/inventory-idempotency.service';
+import { InboundArrivalFollowUp } from '../../inbound/services/inbound-arrival-follow-up';
 import { warehouseEndpoint, warehouseRequest } from '../../core/services/warehouse-operation-contract';
 import { ProductSellableQuantityService } from '../../product-sellable-quantity/services/product-sellable-quantity.service';
 import {
@@ -56,6 +57,7 @@ export class InboundShipmentReceivingManager {
     private readonly kernel: InboundReceiptKernel,
     private readonly idempotency: InventoryIdempotencyService,
     private readonly productSellableQuantity: ProductSellableQuantityService,
+    private readonly arrivalFollowUp: InboundArrivalFollowUp,
   ) {}
 
   async receiveBox(
@@ -67,7 +69,9 @@ export class InboundShipmentReceivingManager {
   ): Promise<ReceiveBoxResult> {
     const endpoint = warehouseEndpoint('inbound_shipment.box.receive', dto);
     const request: ReceiveBoxDto & { shipmentId: string; boxId: string } = { shipmentId, boxId, ...dto };
-    return this.idempotency.withIdempotency(
+    // 원장에 실제로 들어간 것 — 같은 키 재시도(본문을 안 탄다)와 0 만 센 상자는 비어 있다
+    const arrived: { at?: { warehouseId: string; skuIds: string[] } } = {};
+    const result = await this.idempotency.withIdempotency(
       endpoint,
       dto.idempotencyKey,
       warehouseRequest(request, actorId),
@@ -133,6 +137,9 @@ export class InboundShipmentReceivingManager {
         if (arrival && arrival.lines.length !== ledger.length) {
           throw new Error(`kernel returned ${arrival.lines.length} receipt lines for ${ledger.length} inputs`);
         }
+        if (arrival) {
+          arrived.at = { warehouseId: shipment.warehouseId, skuIds: arrival.lines.map((line) => line.skuId) };
+        }
 
         // 집계 id 는 미리 만든다 — RETURNING 행 순서에 기대지 않는다
         const countRows = planned.map((p) => ({
@@ -177,12 +184,17 @@ export class InboundShipmentReceivingManager {
       },
       tx,
     );
+    // 트랜잭션 주인일 때만 — 바깥 tx 는 아직 커밋 전이라 크론이 맡는다
+    if (tx === undefined && arrived.at) {
+      await this.arrivalFollowUp.afterArrival(arrived.at.warehouseId, arrived.at.skuIds);
+    }
+    return result;
   }
 
   /**
    * 상자 확정 취소 — 그 상자의 회차 라인을 전부 커널 `cancelLine` 으로 되돌린다 (spec §8.3).
    *
-   * 규칙(당일·전량·적치/회송 없음)은 커널이 본다 — 거절은 그대로 올라가고, 한 라인이라도 거절되면
+   * 규칙(전량·적치/회송 없음)은 커널이 본다 — 거절은 그대로 올라가고, 한 라인이라도 거절되면
    * 트랜잭션째 되돌아가 «일부만 취소된 상자»가 남지 않는다(호출자가 tx 를 넘기면 그 tx 를 되돌리는 것은
    * 호출자 몫이다 — 이어서 쓸 거면 세이브포인트로 감싼다). 원장에 들어간 줄이 없는 상자(0·자유 줄뿐)도
    * 취소할 수 있다 — 그때는 커널을 부르지 않는다.
@@ -245,7 +257,13 @@ export class InboundShipmentReceivingManager {
 
         // 커널은 SKU 순으로 부른다 — 도착이 (sku, 창고) 락을 미리 잡는 순서와 같아야 교차 교착이 없다
         const canceledSkuIds = new Set<string>();
-        for (const { receiptLineId } of orderReceiptLinesForCancel(ledger)) {
+        const receiptLines = orderReceiptLinesForCancel(ledger);
+        // 품목마다 «상자 → 재고» 로 잠그면 앞 품목의 재고를 쥔 채 다음 품목의 상자를 잠근다 — 예약은 한 번에 놓는다
+        await this.kernel.releaseForCancel(
+          receiptLines.map(({ receiptLineId }) => receiptLineId),
+          trx,
+        );
+        for (const { receiptLineId } of receiptLines) {
           const line = await this.kernel.cancelLine({ receiptLineId, expected: { source: 'inbound_shipment' } }, trx);
           canceledSkuIds.add(line.skuId);
         }

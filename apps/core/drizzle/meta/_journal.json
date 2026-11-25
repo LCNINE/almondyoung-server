@@ -1170,6 +1170,41 @@
       "when": 1795077455511,
       "tag": "20261119083735_add-outbound-scan-rejections",
       "breakpoints": true
+    },
+    {
+      "idx": 167,
+      "version": "7",
+      "when": 1795497625271,
+      "tag": "20261124052025_add-fulfillment-order-stock-allocation",
+      "breakpoints": true
+    },
+    {
+      "idx": 168,
+      "version": "7",
+      "when": 1795507175424,
+      "tag": "20261124075935_add-customer-print-file",
+      "breakpoints": true
+    },
+    {
+      "idx": 169,
+      "version": "7",
+      "when": 1795509819845,
+      "tag": "20261124084339_add-variant-discontinuing",
+      "breakpoints": true
+    },
+    {
+      "idx": 170,
+      "version": "7",
+      "when": 1795510200171,
+      "tag": "20261124085000_add-carrier-tracking-checks",
+      "breakpoints": true
+    },
+    {
+      "idx": 171,
+      "version": "7",
+      "when": 1795511083893,
+      "tag": "20261124090443_add-sales-order-contacts",
+      "breakpoints": true
     }
   ]
 }

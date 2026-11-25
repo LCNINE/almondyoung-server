@@ -60,6 +60,16 @@ export interface WithdrawalRemoval {
   cartQty: number;
 }
 
+export interface SplitShare {
+  /** 이 상자에 담긴 수량 */
+  boxQty: number;
+  /** 나눈 상자들(이미 나간 상자 포함)의 수량 합 */
+  orderQty: number;
+  /** 만든 순서로 매긴 번호(1부터) */
+  boxNo: number;
+  boxCount: number;
+}
+
 export interface ShipmentByWaybill {
   warehouseId?: string;
   outboundContract?: 'legacy' | 'location';
@@ -86,6 +96,8 @@ export interface ShipmentByWaybill {
   deliveryNote?: string | null;
   /** 위탁 업체(3pl) 박스면 그 화주 이름. 자사 박스는 null, 옛 core 면 필드가 없다 */
   ownerName?: string | null;
+  /** 나눈 상자면 묶음 안의 이 상자 번호와 수량. 나누지 않은 상자는 null, 옛 core 면 필드가 없다 */
+  split?: SplitShare | null;
   /** 결품 보고 버전(core A5). 활성 작업 항목과 active 세션이 둘 다 있을 때만 값이 있다 */
   shortPickContext?: ShortPickContext | null;
 }
@@ -95,7 +107,10 @@ export interface OutboundBatchSummary {
   batchNumber: string;
   name: string;
   status: string;
+  /** 상자마다 줄 수를 더한 값 — 상자 수가 아니다 */
   totalItems: number;
+  /** 빠진 상자를 뺀 상자 수. 옛 core 면 없다 */
+  totalBoxes?: number;
   totalQty: number;
   /** 「작업 시작」을 누른 시각. null 이면 아직 시작 전이다. */
   startedAt: string | null;

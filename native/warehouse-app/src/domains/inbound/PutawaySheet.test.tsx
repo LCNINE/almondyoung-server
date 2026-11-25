@@ -13,6 +13,7 @@ import { ScanProvider } from '../../core/hardware/scan/ScanProvider';
 import type { ApiClient } from '../../core/data/httpClient';
 import type { Session } from '../../core/auth/session';
 import type { PutawayTarget } from './types';
+import type { ReceiptLineState } from './receiptState';
 import { PutawaySheet } from './PutawaySheet';
 import { scanHid } from '../../core/hardware/scan/__fixtures__/hid';
 
@@ -28,6 +29,7 @@ const session = {
 const TARGET: PutawayTarget = {
   source: 'direct',
   lineId: 'ln-1',
+  skuId: 's1',
   skuCode: 'CT-001',
   skuName: '코튼셔츠',
   pendingQty: 50,
@@ -42,6 +44,20 @@ const LAST_DEST = {
   isSystem: false,
 } as const;
 
+interface ClientOpts {
+  failPutawayOnce?: boolean;
+  /** 입고 줄 상태에 덧붙일 값(평소 선반 등) */
+  receipt?: Partial<ReceiptLineState>;
+  /** POST /inbound/putaway 응답 — 없으면 { success: true } */
+  putawayResponse?: unknown;
+  /** 입고 줄 상태를 늦게 돌려준다 — 다시 읽는 동안 상태가 비는 순간을 화면에 남긴다 */
+  receiptDelayMs?: number;
+  /** GET /waiting-orders 응답 — 없으면 기다리는 주문 없음, 'error' 면 실패 */
+  waiting?: Array<{ skuId: string; orders: number; qty: number }> | 'error';
+  /** GET /ready-shipments 의 상자 줄 — 없으면 없음 */
+  ready?: unknown[];
+}
+
 interface Call {
   path: string;
   method?: string;
@@ -49,10 +65,7 @@ interface Call {
   idempotencyKey?: string;
 }
 
-function makeClient(
-  calls: Call[],
-  opts: { failPutawayOnce?: boolean } = {}
-): ApiClient {
+function makeClient(calls: Call[], opts: ClientOpts = {}): ApiClient {
   let putawayAttempts = 0;
   return {
     request: (async (o: Call) => {
@@ -191,12 +204,19 @@ function makeClient(
         }
         return { items: [], total: 0 };
       }
+      if (o.path.startsWith('/waiting-orders?')) {
+        if (opts.waiting === 'error')
+          throw new Error('GET /waiting-orders → 500');
+        return { items: opts.waiting ?? [] };
+      }
+      if (o.path.startsWith('/ready-shipments?'))
+        return { items: opts.ready ?? [], waitingOnOtherSkus: 0 };
       if (o.path === '/inbound/putaway') {
         putawayAttempts += 1;
         if (opts.failPutawayOnce && putawayAttempts === 1) {
           throw new Error('POST /inbound/putaway → 500');
         }
-        return { success: true };
+        return opts.putawayResponse ?? { success: true };
       }
       throw new Error(`GET ${o.path} → 404`);
     }) as unknown as ApiClient['request'],
@@ -206,7 +226,7 @@ function makeClient(
 function renderSheet(
   props: Partial<ComponentProps<typeof PutawaySheet>> = {},
   calls: Call[] = [],
-  clientOpts: { failPutawayOnce?: boolean } = {}
+  clientOpts: ClientOpts = {}
 ) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -216,12 +236,19 @@ function renderSheet(
   const runtime = createTestWorkRuntime({
     request: (r) =>
       r.path.startsWith('/inbound/lines/')
-        ? (Promise.resolve(
-            receiptFixture({
-              ...target,
-              quantity: target.pendingQty,
-              warehouseId: props.warehouseId ?? 'w-1',
-            })
+        ? (new Promise((resolve) =>
+            setTimeout(
+              () =>
+                resolve(
+                  receiptFixture({
+                    ...target,
+                    quantity: target.pendingQty,
+                    warehouseId: props.warehouseId ?? 'w-1',
+                    ...clientOpts.receipt,
+                  })
+                ),
+              clientOpts.receiptDelayMs ?? 0
+            )
           ) as never)
         : client.request(r),
   });
@@ -249,7 +276,32 @@ function renderSheet(
   return { onDone, onCancel, rerender: view.rerender };
 }
 
+const READY_BOX = {
+  shipmentId: 'sh-1',
+  status: 'planned',
+  orderNos: ['A-1001'],
+  recipientMasked: '김*영',
+  skuCount: 1,
+  totalQty: 2,
+  readiness: 'putaway_required',
+};
+
 describe('PutawaySheet', () => {
+  it('미발송 주문 칸을 그 화면의 입고 줄로 보인다', async () => {
+    const calls: Call[] = [];
+    renderSheet({}, calls, { ready: [READY_BOX] });
+
+    expect(await screen.findByText('미발송 주문')).toBeInTheDocument();
+    expect(screen.getByText('적치하면 나갈 수 있어요')).toBeInTheDocument();
+    expect(
+      calls.some(
+        (c) =>
+          c.path.startsWith('/ready-shipments?') &&
+          c.path.includes('receiptLineIds=ln-1')
+      )
+    ).toBe(true);
+  });
+
   it.each([
     ['direct', '지우기', 5],
     ['direct', '전량', 50],
@@ -376,7 +428,9 @@ describe('PutawaySheet', () => {
     );
     await user.click(screen.getByRole('button', { name: '적치' }));
 
-    await waitFor(() => expect(onDone).toHaveBeenCalledWith(LAST_DEST, 50));
+    await waitFor(() =>
+      expect(onDone).toHaveBeenCalledWith(LAST_DEST, 50, false)
+    );
     const putaway = calls.find((c) => c.path === '/inbound/putaway');
     expect(putaway?.body).toMatchObject({
       lineId: 'ln-1',
@@ -685,5 +739,176 @@ describe('PutawaySheet', () => {
     expect(putaways).toHaveLength(2);
     expect(putaways[0].idempotencyKey).not.toBe(putaways[1].idempotencyKey);
     expect(putaways[1].body).toMatchObject({ quantity: 3 });
+  });
+
+  describe('평소 선반', () => {
+    const USUAL = {
+      usualLocationId: 'l-usual',
+      usualLocationCode: 'U-01-01',
+      canRememberUsual: false,
+    };
+
+    it('평소 선반이 있으면 대상지로 미리 넣고, 적치는 정하자고 보내지 않는다', async () => {
+      const calls: Call[] = [];
+      renderSheet({}, calls, { receipt: USUAL });
+      const dialog = await screen.findByRole('dialog', { name: '적치' });
+      await waitFor(() => expect(dialog).toHaveTextContent('U-01-01평소 선반'));
+      expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+      const submit = screen.getByRole('button', { name: '적치' });
+      await waitFor(() => expect(submit).toBeEnabled());
+      await userEvent.click(submit);
+      await waitFor(() =>
+        expect(
+          calls.find((c) => c.path === '/inbound/putaway')?.body
+        ).toMatchObject({
+          toLocationId: 'l-usual',
+        })
+      );
+      expect(
+        calls.find((c) => c.path === '/inbound/putaway')?.body
+      ).not.toHaveProperty('rememberAsUsual');
+    });
+
+    it('미리 넣은 평소 선반을 «변경»으로 비우면 다시 채우지 않고 고를 수 있게 남긴다', async () => {
+      renderSheet({}, [], { receipt: USUAL });
+      await screen.findByText('평소 선반');
+      await userEvent.click(screen.getByRole('button', { name: '변경' }));
+      expect(
+        await screen.findByRole('button', { name: '평소 선반 U-01-01 사용' })
+      ).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: '적치' })).toBeDisabled();
+    });
+
+    it('평소 선반이 비어 있으면 찍은 선반을 정하자고 켜 두고, 정했으면 알린다', async () => {
+      const calls: Call[] = [];
+      const { onDone } = renderSheet({}, calls, {
+        receipt: {
+          usualLocationId: null,
+          usualLocationCode: null,
+          canRememberUsual: true,
+        },
+        putawayResponse: { success: true, usualShelfSet: true },
+      });
+      await waitFor(() =>
+        expect(
+          screen.queryByText('입고 상태를 다시 확인해 주세요.')
+        ).not.toBeInTheDocument()
+      );
+      const submit = screen.getByRole('button', { name: '적치' });
+      scanHid(submit, 'B-05-03');
+      const toggle = await screen.findByRole('checkbox', {
+        name: /이 선반을 평소 선반으로 정하기/,
+      });
+      expect(toggle).toBeChecked();
+      await waitFor(() => expect(submit).toBeEnabled());
+      await userEvent.click(submit);
+      await waitFor(() => expect(onDone).toHaveBeenCalled());
+      expect(
+        calls.find((c) => c.path === '/inbound/putaway')?.body
+      ).toMatchObject({
+        toLocationId: 'l-dst',
+        rememberAsUsual: true,
+      });
+      expect(onDone).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'l-dst' }),
+        50,
+        true
+      );
+    });
+
+    it('다른 창고에 평소 선반이 있거나 옛 서버라 정할 수 없으면 묻지 않는다', async () => {
+      renderSheet({}, [], {
+        receipt: {
+          usualLocationId: null,
+          usualLocationCode: null,
+          canRememberUsual: false,
+        },
+      });
+      await waitFor(() =>
+        expect(
+          screen.queryByText('입고 상태를 다시 확인해 주세요.')
+        ).not.toBeInTheDocument()
+      );
+      const submit = screen.getByRole('button', { name: '적치' });
+      scanHid(submit, 'B-05-03');
+      await screen.findByText('B-05-03');
+      expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    });
+
+    it('적치를 누르고 입고 상태를 다시 읽는 동안에도 토글과 멱등 키가 흔들리지 않는다', async () => {
+      const calls: Call[] = [];
+      renderSheet({}, calls, {
+        receiptDelayMs: 50,
+        receipt: {
+          usualLocationId: null,
+          usualLocationCode: null,
+          canRememberUsual: true,
+        },
+      });
+      await waitFor(() =>
+        expect(
+          screen.queryByText('입고 상태를 다시 확인해 주세요.')
+        ).not.toBeInTheDocument()
+      );
+      const submit = screen.getByRole('button', { name: '적치' });
+      scanHid(submit, 'B-05-03');
+      await screen.findByRole('checkbox', {
+        name: /이 선반을 평소 선반으로 정하기/,
+      });
+      await waitFor(() => expect(submit).toBeEnabled());
+      await userEvent.click(submit);
+      // 다시 읽는 중 — 상태가 비어도 «정할 수 있음»은 이 줄에서 받은 값 그대로다.
+      expect(screen.getByRole('checkbox')).toBeChecked();
+      await waitFor(() =>
+        expect(calls.filter((c) => c.path === '/inbound/putaway')).toHaveLength(
+          1
+        )
+      );
+      expect(
+        calls.find((c) => c.path === '/inbound/putaway')?.body
+      ).toMatchObject({ rememberAsUsual: true });
+    });
+  });
+});
+
+describe('기다리는 주문', () => {
+  const WAITING = [{ skuId: 's1', orders: 2, qty: 5 }];
+
+  it('이 상품을 기다리는 주문과 왜 선반에 넣어야 하는지 보인다', async () => {
+    renderSheet({}, [], { waiting: WAITING });
+    expect(
+      await screen.findByText(/기다리는 주문 2건 · 5개/)
+    ).toHaveTextContent(
+      '기다리는 주문 2건 · 5개 — 선반에 넣어야 출고할 수 있어요.'
+    );
+  });
+
+  it('기다리는 주문이 없으면 아무것도 보이지 않는다', async () => {
+    const calls: Call[] = [];
+    renderSheet({}, calls, { waiting: [] });
+    await waitFor(() =>
+      expect(calls.some((c) => c.path.startsWith('/waiting-orders?'))).toBe(
+        true
+      )
+    );
+    expect(await screen.findByText(/잔여 50개/)).toBeInTheDocument();
+    expect(screen.queryByText(/기다리는 주문/)).not.toBeInTheDocument();
+  });
+
+  it('확인하지 못해도 적치는 그대로 된다', async () => {
+    const user = userEvent.setup();
+    const calls: Call[] = [];
+    const onDone = vi.fn();
+    renderSheet({ lastDest: LAST_DEST, onDone }, calls, { waiting: 'error' });
+    expect(
+      await screen.findByText('기다리는 주문을 확인하지 못했어요.')
+    ).toBeInTheDocument();
+    await user.click(
+      screen.getByRole('button', { name: '직전 대상지 A-01-01 사용' })
+    );
+    const submit = screen.getByRole('button', { name: '적치' });
+    await waitFor(() => expect(submit).toBeEnabled());
+    await user.click(submit);
+    await waitFor(() => expect(onDone).toHaveBeenCalled());
   });
 });

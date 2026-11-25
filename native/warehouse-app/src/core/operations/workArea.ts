@@ -31,6 +31,41 @@ export function useUnresolvedWork() {
   };
 }
 
+// 기기에 남는 작업은 실행기가 저장해 두는 쓰기 경로뿐이다 — 출고 상자 경로는 따로 본다
+const WORK_NAMES: Array<[prefixes: string[], name: string]> = [
+  [['/inbound/putaway', '/movement/'], '적치·이동'],
+  [['/inbound/', '/purchase-orders/', '/inventory/inbound-shipments/'], '입고'],
+  [['/inventory/stocks/adjust'], '재고 조정'],
+  [['/stocktaking/'], '실사'],
+];
+
+function workNameOf(path: string): string | null {
+  return (
+    WORK_NAMES.find(([prefixes]) =>
+      prefixes.some((p) => path.startsWith(p))
+    )?.[1] ?? null
+  );
+}
+
+/**
+ * 상자에 묶이지 않은 남은 작업(입고·적치 등)의 이름 — 출고 상자를 막는 까닭을 알릴 때 쓴다.
+ * 없으면 null, 여러 종류이거나 모르는 작업이면 «다른».
+ */
+export function otherWorkName(operations: StoredOperation[]): string | null {
+  const names = new Set(
+    operations
+      .filter((op) => shipmentOf(op.path) === null)
+      .map((op) => workNameOf(op.path))
+  );
+  if (names.size === 0) return null;
+  const [only] = names;
+  return names.size === 1 && only ? only : '다른';
+}
+
+export function useOtherWorkName(): string | null {
+  return otherWorkName(useContext(AreaContext).operations);
+}
+
 /** 박스에 묶인 결과 모름(확인할 일). `shipmentId` 를 주면 그 박스 것만 */
 export function useBoxChecks(shipmentId?: string): StoredOperation[] {
   const { operations } = useContext(AreaContext);

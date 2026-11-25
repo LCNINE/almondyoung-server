@@ -22,6 +22,7 @@ import {
   splitUnreservedErrorText,
 } from '@/lib/api/domains/orders/order-progress.shape';
 import { parseServerError } from '@/lib/api/server-error';
+import { kstToday } from '@/features/order/matching/lib/date-key';
 import { usePermissionCheck } from '@/hooks/use-permission';
 import { useSplitUnreservedShipment } from '@/lib/services/orders/mutations';
 
@@ -40,6 +41,7 @@ export function ShortageSplitAction(props: { shortage: ReserveShortageView }) {
   // 다이얼로그는 포털이어도 React 트리로는 이 span 의 자손이라 클릭이 표 행으로 버블된다
   const stop = (e: MouseEvent) => e.stopPropagation();
 
+  const today = kstToday();
   const kind = shortageActionKind(shortage);
   if (kind !== 'split') {
     return (
@@ -108,9 +110,9 @@ export function ShortageSplitAction(props: { shortage: ReserveShortageView }) {
                 <span>{item.skuName}</span>
                 <span className="tabular-nums">
                   {item.shortQty.toLocaleString('ko-KR')}개
-                  {arrivalLabel(item.expectedArrival) && (
+                  {arrivalLabel(item.expectedArrival, today) && (
                     <span className="ml-2 text-muted-foreground">
-                      {arrivalLabel(item.expectedArrival)}
+                      {arrivalLabel(item.expectedArrival, today)}
                     </span>
                   )}
                 </span>

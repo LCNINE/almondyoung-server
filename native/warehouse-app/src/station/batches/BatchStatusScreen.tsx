@@ -1,5 +1,5 @@
-import { useNavigate } from '@tanstack/react-router';
-import { useState } from 'react';
+import { useNavigate, useRouterState } from '@tanstack/react-router';
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useWarehouse } from '../../app/warehouse-context';
 import { useApiClient } from '../../core/data/ApiClientProvider';
@@ -8,15 +8,16 @@ import { loadFailed } from '../../core/data/loadFailed';
 import { Button } from '../../core/design/Button';
 import { LoadFailure } from '../../core/design/LoadFailure';
 import { cn } from '../../core/design/cn';
-import { printRaw, type PrintRaw } from '../../core/hardware/print/labelPrinter';
+import { printRaw, readLabelPrinter, type PrintRaw } from '../../core/hardware/print/labelPrinter';
 import { BatchLabelPrintButton } from '../../domains/outbound/BatchLabelPrintButton';
 import {
+  arrangeBatches,
   batchNameOf,
   batchProgressOf,
   boxCountsOf,
   boxRowOf,
   hasCancelPending,
-  mergeBatches,
+  isNewBatch,
   sortBoxRows,
   useBatchWorkItems,
   type BoxCounts,
@@ -25,7 +26,7 @@ import {
 import { formatTrackingNo } from '../../domains/outbound/inspection';
 import { JoinBoxPanel } from '../../domains/outbound/JoinBoxPanel';
 import { useOutboundBatches } from '../../domains/outbound/queries';
-import { writeLastBox } from '../../domains/outbound/lastBox';
+import { writeLastBatch, writeLastBox } from '../../domains/outbound/lastBox';
 import { RemoveBoxPanel } from '../../domains/outbound/RemoveBoxPanel';
 import { RemovedOnStartNotice, StartBatchButton, type RemovedOnStart } from '../../domains/outbound/StartBatchButton';
 import type { OutboundBatchSummary } from '../../domains/outbound/types';
@@ -33,6 +34,7 @@ import { fetchBatchLabelStates, type BatchWorkItem } from '../../domains/outboun
 import { WarehousePicker } from '../../domains/warehouse/WarehousePicker';
 import { useBatchProgress } from '../status/batchProgress';
 
+const SECONDARY = 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-50';
 const TH = 'border-b border-[#D5D8DE] bg-[#F6F7F8] px-4 py-2.5 text-left text-[13px] font-semibold text-[#535968]';
 
 /** 스테이션 F2 배치 현황(스펙 §8, 목업 ⑤) — 관리자 작업, 마우스 허용. 시작·일괄 인쇄·넣기·빼기는 지금 부품 그대로 쓴다 */
@@ -46,12 +48,33 @@ function BatchStatus({ warehouseId, prefs, print }: { warehouseId: string; prefs
   const navigate = useNavigate();
   const picking = useOutboundBatches(warehouseId, 'picking');
   const created = useOutboundBatches(warehouseId, 'created');
-  const batches = mergeBatches(picking.data, created.data);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const { active, empty } = arrangeBatches(picking.data, created.data);
+  const [showEmpty, setShowEmpty] = useState(false);
+  // 진행할 배치가 없으면 빈 배치를 접어 둘 이유가 없다
+  const emptyShown = showEmpty || active.length === 0;
+  // 고를 수 있는 것은 보이는 줄뿐이다 — 접으면 빈 배치를 고른 채 남지 않는다
+  const batches = emptyShown ? [...active, ...empty] : active;
+  // 피킹 목록에서 돌아오면 보던 배치를 다시 고른다
+  const returnedTo = useRouterState({ select: (state) => state.location.state.batchId });
+  const [selectedId, setSelectedId] = useState<string | null>(returnedTo ?? null);
   const [panel, setPanel] = useState<'join' | 'remove' | null>(null);
   const [printing, setPrinting] = useState(false);
   const [removedOnStart, setRemovedOnStart] = useState<Record<string, RemovedOnStart>>({});
+  // 「작업 시작하고 송장 인쇄」로 시작한 배치 — 인쇄 단추가 처음 그려질 때 한 번 인쇄한다
+  const [autoPrintFor, setAutoPrintFor] = useState<string | null>(null);
   const selected = batches.find((batch) => batch.id === selectedId) ?? batches[0] ?? null;
+  // 고른 배치를 붙잡는다 — 새 배치가 맨 위로 들어와도 보던 배치가 바뀌지 않게. 끝나서 목록에서 빠지면 맨 위로
+  const pinId = selected?.id ?? null;
+  // 목록이 오기 전엔 붙잡지 않는다 — 돌아와 고를 배치를 빈 목록으로 지우지 않게. 한쪽이 실패했으면 보이는 줄로 붙잡는다
+  const listed = [picking, created].every((list) => list.data !== undefined || loadFailed(list));
+  useEffect(() => {
+    if (listed && pinId !== selectedId && !printing) setSelectedId(pinId);
+  }, [listed, pinId, selectedId, printing]);
+  // 빈 배치를 보고 있으면 펼친 채 둔다 — 진행할 배치가 새로 들어와도 보던 빈 배치가 접혀 사라지지 않게(접기는 사람이 한다)
+  const viewingEmpty = selected !== null && empty.some((batch) => batch.id === selected.id);
+  useEffect(() => {
+    if (viewingEmpty) setShowEmpty(true);
+  }, [viewingEmpty]);
   const items = useBatchWorkItems(selected?.id ?? null);
   useBatchProgress(selected && items.data ? batchProgressOf(selected.batchNumber, items.data) : null);
 
@@ -63,7 +86,7 @@ function BatchStatus({ warehouseId, prefs, print }: { warehouseId: string; prefs
         className="shrink-0 text-base"
         message="배치 목록을 불러오지 못했어요."
         error={failed[0].error}
-        stale={batches.length > 0}
+        stale={active.length + empty.length > 0}
         retrying={failed.some((list) => list.isFetching)}
         onRetry={() => failed.forEach((list) => void list.refetch())}
       />
@@ -71,8 +94,9 @@ function BatchStatus({ warehouseId, prefs, print }: { warehouseId: string; prefs
 
   if (lists.some((list) => list.isPending && !loadFailed(list)))
     return <p className="p-6 text-lg text-[#535968]">배치 목록을 불러오고 있어요.</p>;
-  if (failure && batches.length === 0) return <div className="p-6">{failure}</div>;
-  if (!failure && batches.length === 0) return <p className="p-6 text-lg text-[#535968]">진행 중인 배치가 없어요.</p>;
+  if (failure && active.length + empty.length === 0) return <div className="p-6">{failure}</div>;
+  if (!failure && active.length + empty.length === 0) return <p className="p-6 text-lg text-[#535968]">진행 중인 배치가 없어요.</p>;
+  const canPrint = readLabelPrinter(prefs) !== null;
 
   const select = (id: string) => {
     // 인쇄 중엔 바꾸지 않는다 — 인쇄 단추가 고른 배치에 매여 있다(프린터는 한 대)
@@ -91,15 +115,41 @@ function BatchStatus({ warehouseId, prefs, print }: { warehouseId: string; prefs
               <StartBatchButton
                 key={selected.id}
                 batchId={selected.id}
-                onStarted={(outcome) => setRemovedOnStart((prev) => ({ ...prev, [selected.id]: outcome }))}
+                // 프린터가 없으면 시작만 — 시작한 뒤 인쇄 단추가 프린터 설정을 안내한다
+                label={canPrint ? '작업 시작하고 송장 인쇄' : '작업 시작'}
+                onStarted={(outcome) => {
+                  writeLastBatch(prefs, { id: selected.id, batchNumber: selected.batchNumber, name: batchNameOf(selected) });
+                  setRemovedOnStart((prev) => ({ ...prev, [selected.id]: outcome }));
+                  if (canPrint) setAutoPrintFor(selected.id);
+                }}
               />
             ) : (
               <>
-                <BatchLabelPrintButton key={selected.id} batchId={selected.id} prefs={prefs} print={print} onRunningChange={setPrinting} />
-                <Button type="button" className="mt-2" onClick={() => setPanel(panel === 'join' ? null : 'join')}>
+                <BatchLabelPrintButton
+                  key={selected.id}
+                  batchId={selected.id}
+                  prefs={prefs}
+                  print={print}
+                  afterPrinted="이제 F1 «출고 검수»에서 송장을 찍으세요."
+                  autoPrint={autoPrintFor === selected.id}
+                  onAutoPrintStarted={() => setAutoPrintFor(null)}
+                  onRunningChange={(running) => {
+                    if (running)
+                      writeLastBatch(prefs, { id: selected.id, batchNumber: selected.batchNumber, name: batchNameOf(selected) });
+                    setPrinting(running);
+                  }}
+                />
+                <Button
+                  type="button"
+                  className={cn('mt-2', SECONDARY)}
+                  onClick={() => void navigate({ to: '/outbound/batches/$batchId/pick-list', params: { batchId: selected.id } })}
+                >
+                  피킹 목록
+                </Button>
+                <Button type="button" className={cn('mt-2', SECONDARY)} onClick={() => setPanel(panel === 'join' ? null : 'join')}>
                   박스 넣기
                 </Button>
-                <Button type="button" className="mt-2" onClick={() => setPanel(panel === 'remove' ? null : 'remove')}>
+                <Button type="button" className={cn('mt-2', SECONDARY)} onClick={() => setPanel(panel === 'remove' ? null : 'remove')}>
                   박스 빼기
                 </Button>
               </>
@@ -131,9 +181,23 @@ function BatchStatus({ warehouseId, prefs, print }: { warehouseId: string; prefs
               </tr>
             </thead>
             <tbody>
-              {batches.map((batch) => (
+              {active.map((batch) => (
                 <BatchRow key={batch.id} batch={batch} selected={batch.id === selected?.id} onSelect={() => select(batch.id)} />
               ))}
+              {empty.length > 0 && active.length > 0 ? (
+                <tr className="border-b border-[#E4E6EA]">
+                  <td colSpan={4} className="px-4 py-2">
+                    <button type="button" className="text-sm text-[#535968] hover:text-[#15171C]" onClick={() => setShowEmpty(!showEmpty)}>
+                      {showEmpty ? `빈 배치 ${empty.length}개 접기` : `빈 배치 ${empty.length}개 보기 — 상자가 없는 시작 전 배치`}
+                    </button>
+                  </td>
+                </tr>
+              ) : null}
+              {emptyShown
+                ? empty.map((batch) => (
+                    <BatchRow key={batch.id} batch={batch} selected={batch.id === selected?.id} onSelect={() => select(batch.id)} />
+                  ))
+                : null}
             </tbody>
           </table>
         </div>
@@ -155,13 +219,21 @@ function BatchRow({ batch, selected, onSelect }: { batch: OutboundBatchSummary; 
         </button>
         {batchNameOf(batch) ? <span className="ml-3 text-sm text-[#535968]">{batchNameOf(batch)}</span> : null}
       </td>
-      <td className="px-4">{batch.startedAt === null ? '시작 전' : '진행 중'}</td>
+      <td className="px-4">
+        {isNewBatch(batch) ? (
+          <span className="font-semibold text-[#1D5BD8]">새 배치</span>
+        ) : batch.startedAt === null ? (
+          '빈 배치'
+        ) : (
+          '진행 중'
+        )}
+      </td>
       <td className="px-4">
         <span className="flex items-center gap-3">
           <span className="h-2 flex-1 rounded bg-[#C9D8F5]">
             <span className="block h-2 rounded bg-[#1D5BD8]" style={{ width: `${percent}%` }} />
           </span>
-          <span className="font-mono">{progress ? `${progress.done}/${progress.total}` : `0/${batch.totalItems}`}</span>
+          <span className="font-mono">{progress ? `${progress.done}/${progress.total}` : `0/${batch.totalBoxes ?? batch.totalItems}`}</span>
         </span>
       </td>
       <td className="px-4 text-right font-mono">{batch.withdrawingItems > 0 ? batch.withdrawingItems : ''}</td>

@@ -203,8 +203,8 @@ describe('AdjustStockScreen', () => {
     }> = [];
     renderScreen(makeClient(calls), 'l-1');
 
-    await userEvent.click(await screen.findByRole('button', { name: '2' }));
-    await userEvent.click(screen.getByRole('button', { name: '부호' }));
+    await userEvent.click(await screen.findByRole('button', { name: '1' }));
+    await userEvent.click(screen.getByRole('button', { name: '0' }));
     await userEvent.click(screen.getByRole('button', { name: '파손' }));
     await userEvent.click(screen.getByRole('button', { name: '조정하기' }));
 
@@ -222,11 +222,28 @@ describe('AdjustStockScreen', () => {
     expect(adjust?.idempotencyKey).toEqual(expect.any(String));
   });
 
+  it('맞출 수량으로 0 을 넣으면 현재 수량만큼 줄인다', async () => {
+    const calls: Array<{ path: string; body?: unknown }> = [];
+    renderScreen(makeClient(calls), 'l-1');
+
+    await userEvent.click(await screen.findByRole('button', { name: '0' }));
+    expect(screen.getByTestId('adjust-change')).toHaveTextContent('12 → 0 (-12)');
+
+    await userEvent.click(screen.getByRole('button', { name: '분실' }));
+    await userEvent.click(screen.getByRole('button', { name: '조정하기' }));
+    expect(await screen.findByRole('dialog')).toHaveTextContent('12 → 0개로 맞춥니다');
+    await userEvent.click(screen.getByRole('button', { name: '조정' }));
+
+    const adjust = calls.find((c) => c.path === '/inventory/stocks/adjust');
+    expect(adjust?.body).toMatchObject({ delta: -12, reason: '분실' });
+  });
+
   it('제조 사유로 양수 조정을 보낸다', async () => {
     const calls: Array<{ path: string; body?: unknown }> = [];
     renderScreen(makeClient(calls), 'l-1');
 
-    await userEvent.click(await screen.findByRole('button', { name: '4' }));
+    await userEvent.click(await screen.findByRole('button', { name: '1' }));
+    await userEvent.click(screen.getByRole('button', { name: '6' }));
     await userEvent.click(screen.getByRole('button', { name: '제조' }));
     await userEvent.click(screen.getByRole('button', { name: '조정하기' }));
     await userEvent.click(await screen.findByRole('button', { name: '조정' }));
@@ -393,8 +410,8 @@ describe('AdjustStockScreen', () => {
     }> = [];
     renderScreen(makeClient(calls), 'l-1');
 
-    await userEvent.click(await screen.findByRole('button', { name: '2' }));
-    await userEvent.click(screen.getByRole('button', { name: '부호' }));
+    await userEvent.click(await screen.findByRole('button', { name: '1' }));
+    await userEvent.click(screen.getByRole('button', { name: '0' }));
     await userEvent.click(screen.getByRole('button', { name: '파손' }));
     await userEvent.click(screen.getByRole('button', { name: '조정하기' }));
 
@@ -434,8 +451,8 @@ describe('AdjustStockScreen', () => {
   it('조정을 확인하면 실제로 상세 화면으로 이동한다', async () => {
     renderScreen(makeClient([]), 'l-1');
 
-    await userEvent.click(await screen.findByRole('button', { name: '2' }));
-    await userEvent.click(screen.getByRole('button', { name: '부호' }));
+    await userEvent.click(await screen.findByRole('button', { name: '1' }));
+    await userEvent.click(screen.getByRole('button', { name: '0' }));
     await userEvent.click(screen.getByRole('button', { name: '파손' }));
     await userEvent.click(screen.getByRole('button', { name: '조정하기' }));
 
@@ -462,8 +479,8 @@ describe('AdjustStockScreen', () => {
 
     renderScreen(makeClient(calls), 'l-1');
 
-    await userEvent.click(await screen.findByRole('button', { name: '2' }));
-    await userEvent.click(screen.getByRole('button', { name: '부호' }));
+    await userEvent.click(await screen.findByRole('button', { name: '1' }));
+    await userEvent.click(screen.getByRole('button', { name: '0' }));
     await userEvent.click(screen.getByRole('button', { name: '파손' }));
     await userEvent.click(screen.getByRole('button', { name: '조정하기' }));
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
@@ -533,8 +550,8 @@ describe('AdjustStockScreen', () => {
     };
     renderScreen(client, 'l-1');
 
-    await userEvent.click(await screen.findByRole('button', { name: '2' }));
-    await userEvent.click(screen.getByRole('button', { name: '부호' }));
+    await userEvent.click(await screen.findByRole('button', { name: '1' }));
+    await userEvent.click(screen.getByRole('button', { name: '0' }));
     await userEvent.click(screen.getByRole('button', { name: '파손' }));
     await userEvent.click(screen.getByRole('button', { name: '조정하기' }));
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
@@ -544,7 +561,7 @@ describe('AdjustStockScreen', () => {
     const firstKey = calls[0].idempotencyKey;
     expect(firstKey).toEqual(expect.any(String));
 
-    // 실패 후 폼은 여전히 편집 가능하다 — delta 를 -2 에서 -23 으로 바꾼다.
+    // 실패 후 폼은 여전히 편집 가능하다 — 맞출 수량을 10 에서 103 으로 바꾼다.
     await userEvent.click(screen.getByRole('button', { name: '3' }));
     shouldFail = false;
     await userEvent.click(screen.getByRole('button', { name: '조정하기' }));
@@ -552,7 +569,7 @@ describe('AdjustStockScreen', () => {
     await userEvent.click(screen.getByRole('button', { name: '조정' }));
 
     await waitFor(() => expect(calls).toHaveLength(2));
-    expect(calls[1].body).toMatchObject({ delta: -23 });
+    expect(calls[1].body).toMatchObject({ delta: 91 });
     expect(calls[1].idempotencyKey).toEqual(expect.any(String));
     expect(calls[1].idempotencyKey).not.toEqual(firstKey);
   });
@@ -592,8 +609,8 @@ describe('AdjustStockScreen', () => {
     };
     renderScreen(client, 'l-1');
 
-    await userEvent.click(await screen.findByRole('button', { name: '2' }));
-    await userEvent.click(screen.getByRole('button', { name: '부호' }));
+    await userEvent.click(await screen.findByRole('button', { name: '1' }));
+    await userEvent.click(screen.getByRole('button', { name: '0' }));
     await userEvent.click(screen.getByRole('button', { name: '파손' }));
     await userEvent.click(screen.getByRole('button', { name: '조정하기' }));
     expect(await screen.findByRole('dialog')).toBeInTheDocument();

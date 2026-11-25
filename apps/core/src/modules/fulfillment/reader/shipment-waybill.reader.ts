@@ -12,6 +12,8 @@ import { warehouseIdOf } from '../shipment/shipment-owner';
 import { labelLocationCode } from '../waybill/label/label-items';
 import { cancellationVoidKey, withdrawalVoidKey } from '../services/waybill-void-keys';
 import { loadPendingCancellations, PendingCancellationLine } from './pending-cancellations';
+import { loadSplitShares } from '../services/consolidation-shipment-reads';
+import type { ShipmentSplitShareDto } from '../dto/consolidation.dto';
 
 // 보충 대기·배치 오케스트레이터·스펙이 이 경로로 가져다 쓴다 — 정본을 옮긴 뒤에도 그대로 둔다
 export { maskName, readDeliveryNote, readRecipientName } from './recipient-snapshot';
@@ -64,6 +66,8 @@ export interface ShipmentByWaybillResult {
   deliveryNote: string | null;
   /** 위탁 업체(3pl) 박스면 그 화주 이름 — 검수할 때 업체 물건임을 보여 준다. 자사 박스는 null */
   ownerName: string | null;
+  /** 나누기로 이어진 상자 묶음 안에서 이 상자의 번호·수량(관리자 합포장 화면과 같은 정의). 나누지 않은 상자·빠진 상자는 null */
+  split: ShipmentSplitShareDto | null;
   lines: ShipmentByWaybillLine[];
   /** 송장 상태(스펙 §10.5). 활성 작업 항목이 없으면 null — 시작된 배치에서 빠진 박스(withdrawn)만 예외. */
   labelState: LabelState | null;
@@ -245,6 +249,7 @@ export class ShipmentWaybillReader {
         recipientMasked: maskName(readRecipientName(shipment.recipientSnapshot)),
         deliveryNote: readDeliveryNote(shipment.recipientSnapshot),
         ownerName: await this.loadOwnerName(trx, waybill.shipmentId),
+        split: (await loadSplitShares(trx, [waybill.shipmentId])).get(waybill.shipmentId) ?? null,
         lines: lines.map((line) => ({
           ...line,
           pickedQty: pickedByLine.get(line.shipmentLineId) ?? 0,
@@ -419,6 +424,7 @@ export class ShipmentWaybillReader {
       recipientMasked: maskName(readRecipientName(shipment.recipientSnapshot)),
       deliveryNote: readDeliveryNote(shipment.recipientSnapshot),
       ownerName: await this.loadOwnerName(trx, waybill.shipmentId),
+      split: null,
       lines: lines.map((line) => ({ ...line, pickedQty: 0, allocations: [] })),
       labelState: 'withdrawn',
       labelChanges: [],

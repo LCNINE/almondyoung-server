@@ -5,7 +5,7 @@ import {
   type ColumnDef,
   type Table as TanstackTable,
 } from '@tanstack/react-table';
-import { useMemo } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import type {
   ProductOptionGroup,
   ProductVariantRow,
@@ -24,6 +24,7 @@ import {
   willComingSoonClearOnStock,
 } from '@/lib/services/matching';
 import { Badge } from '@/components/ui/badge';
+import { SellPolicyInfo } from '@/features/matching/products/components/sell-policy-info';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { BlockedReason } from '@/components/auth/blocked-reason';
@@ -123,7 +124,8 @@ export function useProductVariantsTableColumns(
     const renderBulkHeader = (
       label: string,
       isOn: (policy: StockPolicyDto) => boolean,
-      nextPolicy: (policy: StockPolicyDto, checked: boolean) => StockPolicyDto
+      nextPolicy: (policy: StockPolicyDto, checked: boolean) => StockPolicyDto,
+      info?: ReactNode
     ) =>
       function BulkPolicyHeader({
         table,
@@ -139,7 +141,10 @@ export function useProductVariantsTableColumns(
         // 품목이 하나뿐이면 일괄이랄 게 없다 — 행 체크박스로 충분하다.
         if (!bulk || rows.length < 2) {
           return (
-            <span className="block text-center whitespace-nowrap">{label}</span>
+            <span className="flex items-center justify-center gap-1 whitespace-nowrap">
+              {label}
+              {info}
+            </span>
           );
         }
 
@@ -149,7 +154,10 @@ export function useProductVariantsTableColumns(
 
         return (
           <div className="flex flex-col items-center w-full gap-1">
-            <span className="whitespace-nowrap">{label}</span>
+            <span className="flex items-center gap-1 whitespace-nowrap">
+              {label}
+              {info}
+            </span>
             <Checkbox
               checked={
                 onCount === 0
@@ -388,11 +396,31 @@ export function useProductVariantsTableColumns(
               },
             }),
             columnHelper.display({
+              id: 'discontinuing',
+              header: renderBulkHeader(
+                '단종 예정',
+                (p) => !!p.discontinuing,
+                (p, checked) => ({ ...p, discontinuing: checked })
+              ),
+              cell: ({ row }) => {
+                const policy = normalizeStockPolicy(
+                  row.original.matchingInfo?.stockPolicy
+                );
+                return renderPolicyCheckbox(
+                  row.original,
+                  !!policy.discontinuing,
+                  '단종 예정',
+                  (current, checked) => ({ ...current, discontinuing: checked })
+                );
+              },
+            }),
+            columnHelper.display({
               id: 'preStockSellable',
               header: renderBulkHeader(
                 '선판매',
                 (p) => p.preStockSellable,
-                (p, checked) => ({ ...p, preStockSellable: checked })
+                (p, checked) => ({ ...p, preStockSellable: checked }),
+                <SellPolicyInfo />
               ),
               cell: ({ row }) => {
                 const policy = normalizeStockPolicy(
@@ -415,7 +443,8 @@ export function useProductVariantsTableColumns(
               header: renderBulkHeader(
                 '항상 판매',
                 (p) => p.alwaysSellableZeroStock,
-                (p, checked) => ({ ...p, alwaysSellableZeroStock: checked })
+                (p, checked) => ({ ...p, alwaysSellableZeroStock: checked }),
+                <SellPolicyInfo />
               ),
               cell: ({ row }) => {
                 const policy = normalizeStockPolicy(

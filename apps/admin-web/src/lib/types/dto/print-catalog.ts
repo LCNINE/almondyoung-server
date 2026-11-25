@@ -1,4 +1,4 @@
-export const PRINT_KINDS = ['card', 'bizcard', 'nail', 'pet', 'mini', 'window', 'menu'] as const;
+export const PRINT_KINDS = ['card', 'bizcard', 'nail', 'pet', 'mini', 'window', 'menu', 'invitation'] as const;
 export type PrintKind = (typeof PRINT_KINDS)[number];
 
 export interface PrintSizeDto {

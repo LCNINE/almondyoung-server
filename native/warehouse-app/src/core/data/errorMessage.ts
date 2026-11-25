@@ -20,6 +20,9 @@ export type ErrorContext =
 export const STOCK_ADJUST_PERMISSION_MESSAGE =
   '재고 조정 권한이 없어요. 관리자에게 요청해 주세요.';
 
+const INBOUND_CANCEL_CONFLICT_MESSAGE =
+  '이 재고를 잡은 주문 때문에 취소하지 못했어요. 입고내역에서 다시 열어 확인해 주세요.';
+
 const CONTEXTUAL: Record<ErrorContext, Partial<Record<number, string>>> = {
   adjust: { 403: STOCK_ADJUST_PERMISSION_MESSAGE },
   'return-putaway': { 404: '등록되지 않은 되돌림 바구니예요.' },
@@ -29,10 +32,11 @@ const CONTEXTUAL: Record<ErrorContext, Partial<Record<number, string>>> = {
   stocktaking: { 400: '실사가 진행 중이 아니에요. 세션 상태를 확인해 주세요.' },
   movement: { 400: '출발지 재고가 부족해요. 다시 확인해 주세요.' },
   inbound: { 400: '입고기본존 재고가 부족해요. 새로고침 후 확인해 주세요.' },
-  // 취소는 서버가 "적치 존재"·"당일 아님"·"전량 아님"을 모두 400 으로 낸다.
+  // 취소는 서버가 "적치 존재"·"이미 취소"·"전량 아님"을 모두 400 으로 낸다.
   // 현장에서 실제로 부딪히는 건 앞의 둘이고, 앱은 전량만 보내므로 셋째는 안 난다.
   'inbound-cancel': {
-    400: '이미 적치했거나 오늘 입고분이 아니라 취소할 수 없어요.',
+    400: '이미 적치했거나 취소된 입고라 취소할 수 없어요. 목록을 다시 확인해 주세요.',
+    409: INBOUND_CANCEL_CONFLICT_MESSAGE,
   },
   'po-receive': {
     400: '이 발주는 다른 창고에서 받습니다. 창고 선택을 확인해 주세요.',
@@ -75,6 +79,7 @@ const INSPECTION_MISMATCH_MESSAGE =
 const DISPATCH_MISMATCH_MESSAGE =
   '출고 수량과 재고 기록이 맞지 않아 출고하지 못했어요. 담은 상품은 그대로 두고 관리자에게 확인해 주세요.';
 const PICKING_METHOD_MESSAGE = '이 배치의 피킹 방식을 확인해야 해요. 관리자에게 문의해 주세요.';
+const SESSION_RECORD_MESSAGE = '배치 재고 기록을 확인해야 해요. 관리자에게 문의해 주세요.';
 const WAITING_OPERATION_MESSAGE =
   '이 박스에 처리 중인 변경(취소·합포장 등)이 있어요. 관리자에게 확인해 주세요.';
 
@@ -83,9 +88,10 @@ const SAVE_POINT_OUTBOUND_MESSAGES: Record<string, string> = {
   SHIPMENT_COMPONENT_CHANGED_RETRY: RETRY_OUTBOUND_MESSAGE,
   SHIPMENT_WORK_ITEM_CHANGED: RETRY_OUTBOUND_MESSAGE,
   SHIPMENT_SESSION_CHANGED: RETRY_OUTBOUND_MESSAGE,
+  FULFILLMENT_INVARIANT_COMPONENT_CHANGED_RETRY: RETRY_OUTBOUND_MESSAGE,
   WORK_ITEM_STALE_LEASE_VERSION: RETRY_OUTBOUND_MESSAGE,
   SHIPMENT_WORK_ITEM_MISSING: BATCH_RECORD_MISSING_MESSAGE,
-  SHIPMENT_SESSION_MISSING: BATCH_RECORD_MISSING_MESSAGE,
+  SHIPMENT_SESSION_MISSING: SESSION_RECORD_MESSAGE,
   WORK_ITEM_NOT_CLAIMABLE: BATCH_RECORD_MISSING_MESSAGE,
   SHIPMENT_INSPECTION_LINE_UNKNOWN: INSPECTION_MISMATCH_MESSAGE,
   SHIPMENT_LINE_OVER_INSPECTED: INSPECTION_MISMATCH_MESSAGE,
@@ -167,14 +173,12 @@ const OUTBOUND_CONFLICT_MESSAGES: Record<string, string> = {
     '결품 처리 중인 박스예요. 관리자에게 문의해 주세요.',
   OUTBOUND_BATCH_STARTED_RETRY:
     '방금 작업이 시작된 배치예요. 다시 넣어 주세요.',
-  PICKING_SESSION_NOT_ACTIVE:
-    '배치 재고 기록을 확인해야 해요. 관리자에게 문의해 주세요.',
+  PICKING_SESSION_NOT_ACTIVE: SESSION_RECORD_MESSAGE,
   SHIPMENT_NOT_DISPATCHABLE:
     '지금 출고할 수 없는 박스예요. 주문이 취소되거나 바뀌었을 수 있어요. 담은 상품은 그대로 두고 관리자에게 확인해 주세요.',
   SHIPMENT_NOT_INSPECTION_READY:
     '아직 검수할 수 없는 박스예요. 관리자에게 확인해 주세요.',
-  SHIPMENT_SESSION_NOT_ACTIVE:
-    '배치 재고 기록을 확인해야 해요. 관리자에게 문의해 주세요.',
+  SHIPMENT_SESSION_NOT_ACTIVE: SESSION_RECORD_MESSAGE,
   SHIPMENT_PACKER_LEASE_REQUIRED:
     '이 박스의 작업자 확인이 맞지 않아요. 관리자에게 확인해 주세요.',
 };
@@ -210,6 +214,73 @@ const RETURN_PUTAWAY_MESSAGES: Record<string, string> = {
   SIMPLE_OUTBOUND_BARCODE_UNKNOWN: '등록되지 않은 바코드예요. 상품을 확인해 주세요.',
 };
 
+// 출고 저장 거절을 서버가 관리자 화면에 남겼으면, 관리자에게 무엇을 말할지 대신 그 사실을 알린다.
+// 작업자가 그 자리에서 할 일이 정해진 코드(한 번 더·두고 넘어가기 등)는 여기 없으니 원래 안내를 둔다.
+const RECORDED_NOTICE = '관리자 화면에 이 박스가 표시됐어요. 관리자를 불러 주세요.';
+const KEEP_GOODS = '담은 상품은 그대로 두세요.';
+const RECORDED_BATCH_RECORD = '이 박스의 배치 작업 기록을 찾지 못했어요.';
+const RECORDED_INSPECTION = `검수 기록이 맞지 않아 반영하지 못했어요. ${KEEP_GOODS}`;
+const RECORDED_DISPATCH = `출고 수량과 재고 기록이 맞지 않아 출고하지 못했어요. ${KEEP_GOODS}`;
+const RECORDED_PICKING_METHOD = '이 배치의 피킹 방식을 확인해야 해요.';
+const RECORDED_WAITING_OPERATION = '이 박스에 처리 중인 변경(취소·합포장 등)이 있어요.';
+const RECORDED_HANDOFF = '다른 작업자가 맡은 박스예요.';
+const RECORDED_SESSION = '배치 재고 기록을 확인해야 해요.';
+
+const RECORDED_REASONS: Record<string, string> = {
+  SHIPMENT_WORK_ITEM_MISSING: RECORDED_BATCH_RECORD,
+  WORK_ITEM_NOT_CLAIMABLE: RECORDED_BATCH_RECORD,
+  SIMPLE_OUTBOUND_WORK_ITEM_MISSING: RECORDED_BATCH_RECORD,
+  SHIPMENT_INSPECTION_LINE_UNKNOWN: RECORDED_INSPECTION,
+  SHIPMENT_LINE_OVER_INSPECTED: RECORDED_INSPECTION,
+  SHIPMENT_INSPECTION_BARCODE_UNKNOWN: RECORDED_INSPECTION,
+  SHIPMENT_INSPECTION_SKU_MISMATCH: RECORDED_INSPECTION,
+  SHIPMENT_INSPECTION_CUSTODY_SHORT: RECORDED_INSPECTION,
+  SHIPMENT_INSPECTION_INCOMPLETE: RECORDED_INSPECTION,
+  SHIPMENT_DISPATCH_ALLOCATION_MISMATCH: RECORDED_DISPATCH,
+  SHIPMENT_DISPATCH_CUSTODY_MISMATCH: RECORDED_DISPATCH,
+  SHIPMENT_TOTE_NOT_RELEASED: '바구니 배정이 남아 있어 출고하지 못했어요.',
+  SHIPMENT_INVOICE_NOT_READY: '이 박스의 송장이 출고할 상태가 아니에요.',
+  WAYBILL_STALE: '주문(주소·상품)이 바뀌어 이 송장은 쓸 수 없어요.',
+  WAYBILL_NOT_DISPATCHABLE: '한진 등록이 끝나지 않은 송장이에요.',
+  WORK_ITEM_HANDOFF_REQUIRED: RECORDED_HANDOFF,
+  SIMPLE_OUTBOUND_CLAIMED_BY_OTHER: RECORDED_HANDOFF,
+  SHIPMENT_PACKER_LEASE_REQUIRED: '이 박스의 작업자 확인이 맞지 않아요.',
+  PICKING_BATCH_STRATEGY_MISMATCH: RECORDED_PICKING_METHOD,
+  PICKING_STRATEGY_PROVIDER_MISMATCH: RECORDED_PICKING_METHOD,
+  PICKING_STRATEGY_REGISTRY_UNAVAILABLE: RECORDED_PICKING_METHOD,
+  SIMPLE_OUTBOUND_METHOD_UNSUPPORTED: RECORDED_PICKING_METHOD,
+  WORK_ITEM_WAITING_OPERATION_CONFLICT: RECORDED_WAITING_OPERATION,
+  WORK_ITEM_WAITING_OPERATION_INVALID: RECORDED_WAITING_OPERATION,
+  WORK_ITEM_WAITING_OPERATION_MISSING: RECORDED_WAITING_OPERATION,
+  WORK_ITEM_WAITING_OPERATION_UNSUPPORTED: RECORDED_WAITING_OPERATION,
+  SHIPMENT_NOT_DISPATCHABLE: `지금 출고할 수 없는 박스예요. 주문이 취소되거나 바뀌었을 수 있어요. ${KEEP_GOODS}`,
+  SHIPMENT_NOT_INSPECTION_READY: '아직 검수할 수 없는 박스예요.',
+  SHIPMENT_SESSION_MISSING: RECORDED_SESSION,
+  SHIPMENT_SESSION_NOT_ACTIVE: RECORDED_SESSION,
+  PICKING_SESSION_NOT_ACTIVE: RECORDED_SESSION,
+  SIMPLE_OUTBOUND_PLAN_INVALIDATED: '출고 계획이 바뀌었어요.',
+};
+
+function recordedReason(error: ApiError): string | undefined {
+  if (error.preparation) {
+    if (error.preparation.recovery === 'review_batch')
+      return '출고 대상이나 작업 상태가 바뀌었어요.';
+    if (error.preparation.reasonCode === 'SOURCE_INSUFFICIENT') return '출고할 재고가 부족해요.';
+    if (error.preparation.reasonCode === 'REPLAN_LIMIT_REACHED')
+      return '출고 준비를 여러 번 다시 했지만 맞추지 못했어요.';
+    return '재고가 변경됐어요.';
+  }
+  if (!error.code) return undefined;
+  if (RECORDED_REASONS[error.code]) return RECORDED_REASONS[error.code];
+  if (
+    SAVE_POINT_OUTBOUND_MESSAGES[error.code] ||
+    OUTBOUND_CONFLICT_MESSAGES[error.code] ||
+    RETURN_CONFLICT_MESSAGES[error.code]
+  )
+    return undefined;
+  return '반영되지 않았어요.';
+}
+
 export const NETWORK_FAILURE_MESSAGE = '서버에 연결하지 못했어요. 네트워크를 확인해 주세요.';
 
 export function errorMessage(error: unknown, context?: ErrorContext): string {
@@ -218,6 +289,10 @@ export function errorMessage(error: unknown, context?: ErrorContext): string {
     if (error instanceof ApiError && error.code && RETURN_PUTAWAY_MESSAGES[error.code])
       return RETURN_PUTAWAY_MESSAGES[error.code];
     return errorMessage(error, 'returns');
+  }
+  if (error instanceof ApiError && context === 'outbound' && error.rejectionRecorded) {
+    const reason = recordedReason(error);
+    if (reason) return `${reason} ${RECORDED_NOTICE}`;
   }
   if (
     error instanceof ApiError &&
@@ -280,6 +355,7 @@ export function errorMessage(error: unknown, context?: ErrorContext): string {
       const specific = OUTBOUND_CONFLICT_MESSAGES[error.code];
       if (specific) return specific;
     }
+    if (context === 'inbound-cancel') return INBOUND_CANCEL_CONFLICT_MESSAGE;
     return '다른 작업자가 먼저 변경했어요. 새로고침 후 다시 시도해 주세요.';
   }
   if (error instanceof Error) {

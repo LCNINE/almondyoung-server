@@ -42,6 +42,28 @@ function fitBarcode(data: string, widthMm: number, baseDots: number, yMm: number
   return { ok: true, barcode: { ...barcode, xMm: (widthMm - barcodeWidthMm(barcode)) / 2 } };
 }
 
+/**
+ * 좌우에 quiet zone(모듈 × 10)이 남는 가장 굵은 모듈로 맞춘다. 30mm 에 11자리는 2 dot 이면 28mm 라 여백이 1mm 뿐이라
+ * 스캔이 안 됐다(2026-11-24 실물). 1 dot(템플릿 8 dot/mm)은 300dpi 라벨 프린터에서 2 dot(0.17mm)로 나가 읽힌다.
+ * 어느 모듈로도 여백이 안 남으면 예전대로 폭에만 맞춘다.
+ */
+function fitBarcodeWithQuietZone(
+  data: string,
+  widthMm: number,
+  baseDots: number,
+  yMm: number,
+  heightMm: number,
+): Fitted {
+  const plan = planCode128(data);
+  if (!plan) return { ok: false, reason: 'UNSUPPORTED_CODE' };
+  for (let dots = baseDots; dots >= 1; dots--) {
+    if (((plan.modules + 20) * dots) / DOTS_PER_MM > widthMm) continue;
+    const barcode: BarcodePlacement = { kind: 'CODE128_OPTIMAL', data, xMm: 0, yMm, heightMm, moduleDots: dots };
+    return { ok: true, barcode: { ...barcode, xMm: (widthMm - barcodeWidthMm(barcode)) / 2 } };
+  }
+  return fitBarcode(data, widthMm, baseDots, yMm, heightMm);
+}
+
 const LOCATION_W = 50;
 const LOCATION_H = 30;
 
@@ -62,7 +84,7 @@ export function renderLocationLabel(code: string): Rendered {
 /** SKU 라벨. 30×10 은 바코드 위·이름 아래(숫자 없음), 50×30 은 이름 위·바코드와 숫자 아래. */
 export function renderSkuLabel(size: SkuLabelSize, sku: { name: string; barcode: string }): Rendered {
   if (size === '30x10') {
-    const fitted = fitBarcode(sku.barcode, 30, 2, 0.6, 5);
+    const fitted = fitBarcodeWithQuietZone(sku.barcode, 30, 2, 0.6, 5);
     if (!fitted.ok) return fitted;
     const lines = wrapLines(sku.name, 28, 5, 2);
     const els = lines.map((t, i) => text({ x: 15, y: 7.6 + i * 1.8, pt: 5, anchor: 'middle', text: t }));

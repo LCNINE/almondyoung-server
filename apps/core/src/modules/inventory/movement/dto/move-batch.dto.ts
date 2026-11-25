@@ -12,6 +12,7 @@ import {
   MaxLength,
   Min,
   IsDateString,
+  IsBoolean,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -37,6 +38,14 @@ export class MoveLineDto {
   @IsOptional()
   @IsString()
   memo?: string;
+
+  @ApiProperty({
+    description: '상품의 평소 선반이 비어 있으면 도착 로케이션으로 정한다. 이미 정해져 있으면 바꾸지 않는다.',
+    required: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  rememberAsUsual?: boolean;
 }
 
 export class MoveBatchDto extends WarehouseOperationVersionDto {

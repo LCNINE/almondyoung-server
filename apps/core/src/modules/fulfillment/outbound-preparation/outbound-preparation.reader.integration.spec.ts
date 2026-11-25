@@ -164,6 +164,13 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
         ['needs_info', 1],
       ]);
       expect(summary.awaitingMatchingCount - before.count).toBe(2);
+
+      const counts = await reader.countBuckets(base.warehouseId, tx);
+
+      expect(counts).toEqual({
+        warehouseId: base.warehouseId,
+        buckets: summary.buckets.map(({ bucket, count }) => ({ bucket, count })),
+      });
       expect(summary.buckets.find(({ bucket }) => bucket === 'needs_info')?.shipments[0].reason).toBe(
         '배송 프로필이 상품마다 달라요',
       );
@@ -328,6 +335,144 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
     });
   });
 
+  it.each([
+    ['does_not_fit', '한 상자에 다 들어가지 않음', 'ready'],
+    ['other', '선물 포장 따로', 'mergeable'],
+  ])('%s 사유로 나눈 두 상자는 %s 로 사유를 싣고 %s 로 간다', async (reasonCode, reason, bucket) => {
+    await inRollbackTx(db, async (tx) => {
+      const base = await consolidationBase(tx, 2);
+      const source = await createConsolidationSource(tx, wired, base, { quantity: 2, customerId: randomUUID() });
+      const actor = { id: randomUUID(), roles: ['master'] };
+      const split = await planning.split(
+        source.shipment.id,
+        {
+          reason,
+          reasonCode,
+          expectedManifestVersion: source.shipment.manifestVersion,
+          moves: [{ shipmentLineId: source.line.id, expectedLineVersion: source.line.lineVersion, qty: 1 }],
+        },
+        randomUUID(),
+        actor,
+        tx,
+      );
+      const pair = [source.shipment.id, split.target.shipmentId];
+      const summary = await reader.summarize(base.warehouseId, undefined, tx);
+
+      expect(idsIn(summary, bucket)).toEqual(expect.arrayContaining(pair));
+      expect(
+        summary.buckets
+          .flatMap((entry) => entry.shipments)
+          .filter((shipment) => pair.includes(shipment.shipmentId))
+          .map((shipment) => shipment.split?.reason),
+      ).toEqual([reason, reason]);
+
+      const board = await new ConsolidationBoardReader(dbService).findBoard(base.warehouseId, tx);
+      const grouped = board.groups.some((group) =>
+        group.shipments.some((shipment) => pair.includes(shipment.shipmentId)),
+      );
+
+      expect(grouped).toBe(bucket === 'mergeable');
+    });
+  });
+
+  it('크기로 나눈 짝만 보낼 수 있으면 다른 주문 상자가 묶음에 있어도 합칠 주문으로 보지 않는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const base = await consolidationBase(tx, 2);
+      const customerId = randomUUID();
+      const source = await createConsolidationSource(tx, wired, base, { quantity: 2, customerId });
+      const waiting = await createConsolidationSource(tx, wired, base, { quantity: 1, customerId });
+      const split = await planning.split(
+        source.shipment.id,
+        {
+          reason: '한 상자에 다 들어가지 않음',
+          reasonCode: 'does_not_fit',
+          expectedManifestVersion: source.shipment.manifestVersion,
+          moves: [{ shipmentLineId: source.line.id, expectedLineVersion: source.line.lineVersion, qty: 1 }],
+        },
+        randomUUID(),
+        { id: randomUUID(), roles: ['master'] },
+        tx,
+      );
+      const summary = await reader.summarize(base.warehouseId, undefined, tx);
+
+      expect(idsIn(summary, 'unavailable')).toContain(waiting.shipment.id);
+      expect(idsIn(summary, 'ready')).toEqual(expect.arrayContaining([source.shipment.id, split.target.shipmentId]));
+    });
+  });
+
+  it('크기로 나눈 한쪽을 다른 이유로 다시 나누면 그 둘만 합칠 주문으로 가고 반대쪽은 완전출고다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const base = await consolidationBase(tx, 4);
+      const source = await createConsolidationSource(tx, wired, base, { quantity: 4, customerId: randomUUID() });
+      const actor = { id: randomUUID(), roles: ['master'] };
+      const bySize = await planning.split(
+        source.shipment.id,
+        {
+          reason: '한 상자에 다 들어가지 않음',
+          reasonCode: 'does_not_fit',
+          expectedManifestVersion: source.shipment.manifestVersion,
+          moves: [{ shipmentLineId: source.line.id, expectedLineVersion: source.line.lineVersion, qty: 2 }],
+        },
+        randomUUID(),
+        actor,
+        tx,
+      );
+      const [half] = await tx
+        .select()
+        .from(wmsTables.shipmentLines)
+        .where(eq(wmsTables.shipmentLines.shipmentId, bySize.target.shipmentId));
+      const [halfBox] = await tx
+        .select()
+        .from(wmsTables.shipments)
+        .where(eq(wmsTables.shipments.id, bySize.target.shipmentId));
+      const again = await planning.split(
+        halfBox.id,
+        {
+          reason: '선물 포장 따로',
+          reasonCode: 'other',
+          expectedManifestVersion: halfBox.manifestVersion,
+          moves: [{ shipmentLineId: half.id, expectedLineVersion: half.lineVersion, qty: 1 }],
+        },
+        randomUUID(),
+        actor,
+        tx,
+      );
+      const summary = await reader.summarize(base.warehouseId, undefined, tx);
+
+      expect(idsIn(summary, 'ready')).toContain(source.shipment.id);
+      expect(idsIn(summary, 'mergeable')).toEqual(
+        expect.arrayContaining([bySize.target.shipmentId, again.target.shipmentId]),
+      );
+      expect(idsIn(summary, 'mergeable')).not.toContain(source.shipment.id);
+    });
+  });
+
+  it('크기로 나눈 두 쪽과 같은 고객의 다른 주문 상자가 함께 있으면 셋 다 완전출고다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const base = await consolidationBase(tx, 3);
+      const customerId = randomUUID();
+      const source = await createConsolidationSource(tx, wired, base, { quantity: 2, customerId });
+      const other = await createConsolidationSource(tx, wired, base, { quantity: 1, customerId });
+      const split = await planning.split(
+        source.shipment.id,
+        {
+          reason: '한 상자에 다 들어가지 않음',
+          reasonCode: 'does_not_fit',
+          expectedManifestVersion: source.shipment.manifestVersion,
+          moves: [{ shipmentLineId: source.line.id, expectedLineVersion: source.line.lineVersion, qty: 1 }],
+        },
+        randomUUID(),
+        { id: randomUUID(), roles: ['master'] },
+        tx,
+      );
+      const summary = await reader.summarize(base.warehouseId, undefined, tx);
+
+      expect(idsIn(summary, 'ready')).toEqual(
+        expect.arrayContaining([source.shipment.id, split.target.shipmentId, other.shipment.id]),
+      );
+    });
+  });
+
   it('셀메이트 상자는 어느 분류에도 없고 합칠 상대도 되지 않는다', async () => {
     await inRollbackTx(db, async (tx) => {
       const base = await consolidationBase(tx);
@@ -428,6 +573,151 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
         ),
       ).toBe(true);
       expect(summary.awaitingMatchingCount).toBe(backlog.count);
+    });
+  });
+
+  it('분류 안에서 오래된 주문부터 놓고 주문일을 싣고, 받는 분은 완전출고 상자에만 싣는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const base = await consolidationBase(tx);
+      const source = (quantity = 1) =>
+        createConsolidationSource(tx, wired, base, { quantity, customerId: randomUUID() });
+      const newest = await source();
+      const middle = await source();
+      const oldest = await source();
+      const joined = await source();
+      const partial = await source(3);
+      const at = (day: number) => new Date(Date.UTC(2026, 0, day, 3));
+      const orderDates: [typeof newest, Date][] = [
+        [newest, at(5)],
+        [middle, at(3)],
+        [oldest, at(2)],
+        [joined, at(1)],
+        [partial, at(4)],
+      ];
+
+      for (const [fixture, date] of orderDates) {
+        await tx
+          .update(wmsTables.salesOrders)
+          .set({ orderDate: date })
+          .where(eq(wmsTables.salesOrders.id, fixture.salesOrderId));
+      }
+
+      // 더 오래된 주문 줄을 가장 최근 상자에 합친다 — 상자의 주문일은 든 주문 중 가장 이른 날이다
+      await tx
+        .update(wmsTables.shipmentLines)
+        .set({ shipmentId: newest.shipment.id })
+        .where(eq(wmsTables.shipmentLines.id, joined.line.id));
+      await tx
+        .update(wmsTables.shipments)
+        .set({ status: 'canceled' })
+        .where(eq(wmsTables.shipments.id, joined.shipment.id));
+      await tx
+        .update(wmsTables.stockReservations)
+        .set({ quantity: 1 })
+        .where(eq(wmsTables.stockReservations.targetId, partial.line.id));
+
+      const summary = await reader.summarize(base.warehouseId, undefined, tx);
+      const ready = summary.buckets.find(({ bucket }) => bucket === 'ready')?.shipments ?? [];
+      const partialRows = summary.buckets.find(({ bucket }) => bucket === 'partial')?.shipments ?? [];
+
+      expect(ready.map(({ shipmentId }) => shipmentId)).toEqual([
+        newest.shipment.id,
+        oldest.shipment.id,
+        middle.shipment.id,
+      ]);
+      expect(ready.map(({ orderedAt }) => orderedAt)).toEqual([
+        at(1).toISOString(),
+        at(2).toISOString(),
+        at(3).toISOString(),
+      ]);
+      expect(ready.map(({ shipmentId, recipient }) => recipient?.shipmentId === shipmentId)).toEqual([
+        true,
+        true,
+        true,
+      ]);
+      expect(ready[0].recipient?.name).toBe(CONSOLIDATION_RECIPIENT.recipientName);
+      expect(partialRows).toHaveLength(1);
+      expect(partialRows[0]).toMatchObject({ shipmentId: partial.shipment.id, orderedAt: at(4).toISOString() });
+      expect(partialRows[0]).not.toHaveProperty('recipient');
+    });
+  });
+
+  it('우선할당한 상자를 앞에 놓고 표시하고, 합포장은 담긴 주문이 모두 우선할당일 때만 표시한다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const base = await consolidationBase(tx);
+      const source = () => createConsolidationSource(tx, wired, base, { quantity: 1, customerId: randomUUID() });
+      const plain = await source();
+      const mixed = await source();
+      const joined = await source();
+      const urgent = await source();
+      const prioritize = (fulfillmentOrderId: string) =>
+        tx
+          .update(wmsTables.fulfillmentOrders)
+          .set({ stockAllocation: 'priority' })
+          .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId));
+
+      await tx
+        .update(wmsTables.shipmentLines)
+        .set({ shipmentId: mixed.shipment.id })
+        .where(eq(wmsTables.shipmentLines.id, joined.line.id));
+      await tx
+        .update(wmsTables.shipments)
+        .set({ status: 'canceled' })
+        .where(eq(wmsTables.shipments.id, joined.shipment.id));
+      await prioritize(urgent.fulfillmentOrderId);
+      await prioritize(joined.fulfillmentOrderId);
+
+      const summary = await reader.summarize(base.warehouseId, undefined, tx);
+      const ready = summary.buckets.find(({ bucket }) => bucket === 'ready')?.shipments ?? [];
+
+      expect(ready[0]).toMatchObject({ shipmentId: urgent.shipment.id, stockPriority: true });
+      expect(new Map(ready.map((row) => [row.shipmentId, row.stockPriority]))).toEqual(
+        new Map([
+          [urgent.shipment.id, true],
+          [plain.shipment.id, false],
+          [mixed.shipment.id, false],
+        ]),
+      );
+    });
+  });
+
+  it('다른 주문을 우선할당하면서 재고를 내준 부분출고 상자에 그 기록을 싣고, 완전출고 상자에는 싣지 않는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const base = await consolidationBase(tx);
+      const source = (quantity: number) =>
+        createConsolidationSource(tx, wired, base, { quantity, customerId: randomUUID() });
+      const giver = await source(3);
+      const refilled = await source(1);
+      const receiver = await source(1);
+      await tx
+        .update(wmsTables.stockReservations)
+        .set({ quantity: 1 })
+        .where(eq(wmsTables.stockReservations.targetId, giver.line.id));
+      const [operation] = await tx
+        .insert(wmsTables.shipmentOperations)
+        .values({
+          type: 'stock_priority',
+          status: 'completed',
+          operatorId: randomUUID(),
+          reason: '우선할당',
+          idempotencyKey: randomUUID(),
+          requestHash: 'a'.repeat(64),
+          completedAt: new Date(),
+        })
+        .returning();
+      await tx.insert(wmsTables.shipmentOperationMembers).values([
+        { operationId: operation.id, shipmentId: receiver.shipment.id, role: 'target' },
+        { operationId: operation.id, shipmentId: giver.shipment.id, role: 'source' },
+        { operationId: operation.id, shipmentId: refilled.shipment.id, role: 'source' },
+      ]);
+
+      const summary = await reader.summarize(base.warehouseId, undefined, tx);
+      const rows = new Map(summary.buckets.flatMap(({ shipments }) => shipments.map((row) => [row.shipmentId, row])));
+      expect(rows.get(giver.shipment.id)?.stockGiven).toEqual({
+        at: operation.createdAt,
+        orderNos: rows.get(receiver.shipment.id)?.orderNos,
+      });
+      expect(rows.get(refilled.shipment.id)?.stockGiven).toBeNull();
     });
   });
 
@@ -666,7 +956,15 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
         name: expect.any(String),
         qty: 5,
         reservedQty: 0,
-        stock: { onHand: 4, reservedByOthers: reserved, incoming: null, elsewhere: null },
+        stock: {
+          skuId: base.skuId,
+          onHand: 4,
+          reservedByOthers: reserved,
+          available: 4 - reserved,
+          waiting: 5,
+          incoming: null,
+          elsewhere: null,
+        },
       });
 
       // 판매 창고가 여럿이면 이 창고로 들어올 수량은 모르고, 판매하지 않는 창고 보유·발주만 안다
@@ -677,8 +975,11 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
       await seedWarehouseWithZone(tx);
 
       expect(lineOf(await reader.summarize(base.warehouseId, undefined, tx))?.stock).toEqual({
+        skuId: base.skuId,
         onHand: 4,
         reservedByOthers: reserved,
+        available: 4 - reserved,
+        waiting: 5,
         incoming: null,
         elsewhere: expect.objectContaining({ onHand: expect.any(Number), ordered: expect.any(Number) }),
       });
@@ -689,18 +990,173 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
         .where(not(eq(wmsTables.warehouses.id, base.warehouseId)));
 
       expect(lineOf(await reader.summarize(base.warehouseId, undefined, tx))?.stock).toEqual({
+        skuId: base.skuId,
         onHand: 4,
         reservedByOthers: reserved,
-        incoming: { inTransit: 0, inTransitEta: null, ordered: 0, inboundShipment: 0, inboundShipmentEta: null },
+        available: 4 - reserved,
+        waiting: 5,
+        incoming: {
+          inTransit: 0,
+          inTransitEta: null,
+          ordered: 0,
+          orderedEta: null,
+          inboundShipment: 0,
+          inboundShipmentEta: null,
+        },
         elsewhere: { onHand: 0, ordered: 0, orderedEta: null },
       });
-      // 출고불가가 아닌 상자는 재고를 싣지 않는다
+      // 모자란 줄이 없는 상자는 재고를 싣지 않는다
       expect(
         (await reader.summarize(base.warehouseId, undefined, tx)).buckets
           .flatMap(({ bucket, shipments }) => (bucket === 'unavailable' ? [] : shipments))
           .flatMap(({ lines }) => lines)
           .some((line) => line.stock !== undefined),
       ).toBe(false);
+    });
+  });
+
+  it('부분출고 상자는 모자란 줄에만, 이 상자가 잡은 몫을 뺀 재고와 들어올 예정을 싣는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const base = await consolidationBase(tx, 10);
+      const held = await createConsolidationSource(tx, wired, base, { quantity: 2, customerId: randomUUID() });
+      const partial = await createConsolidationSource(tx, wired, base, { quantity: 3, customerId: randomUUID() });
+      const joined = await createConsolidationSource(tx, wired, base, { quantity: 1, customerId: randomUUID() });
+
+      // 같은 상품의 다른 줄은 다 잡혀 있다
+      await tx
+        .update(wmsTables.shipmentLines)
+        .set({ shipmentId: partial.shipment.id })
+        .where(eq(wmsTables.shipmentLines.id, joined.line.id));
+      await tx
+        .update(wmsTables.stockReservations)
+        .set({ quantity: 1 })
+        .where(eq(wmsTables.stockReservations.targetId, partial.line.id));
+      await tx
+        .update(wmsTables.warehouses)
+        .set({ isSellable: true })
+        .where(eq(wmsTables.warehouses.id, base.warehouseId));
+      await tx
+        .update(wmsTables.warehouses)
+        .set({ isSellable: false })
+        .where(not(eq(wmsTables.warehouses.id, base.warehouseId)));
+
+      const summary = await reader.summarize(base.warehouseId, undefined, tx);
+      const box = summary.buckets
+        .find(({ bucket }) => bucket === 'partial')
+        ?.shipments.find(({ shipmentId }) => shipmentId === partial.shipment.id);
+      // 다른 주문 줄이 든 상자다
+      expect(box?.orderCount).toBe(2);
+      const short = box?.lines.find((line) => line.qty === 3);
+      const full = box?.lines.find((line) => line.qty === 1);
+
+      expect(short?.reservedQty).toBe(1);
+      expect(short?.stock).toEqual({
+        skuId: base.skuId,
+        onHand: 10,
+        // 다른 상자가 잡은 2개만. 이 상자의 두 줄이 잡은 2개는 세지 않는다
+        reservedByOthers: 2,
+        available: 6,
+        waiting: 2,
+        incoming: {
+          inTransit: 0,
+          inTransitEta: null,
+          ordered: 0,
+          orderedEta: null,
+          inboundShipment: 0,
+          inboundShipmentEta: null,
+        },
+        elsewhere: { onHand: 0, ordered: 0, orderedEta: null },
+      });
+      expect(full?.reservedQty).toBe(1);
+      expect(full?.stock).toBeUndefined();
+      const ready = summary.buckets.find(({ bucket }) => bucket === 'ready')?.shipments;
+      expect(ready?.find(({ shipmentId }) => shipmentId === held.shipment.id)?.orderCount).toBe(1);
+    });
+  });
+
+  it('기다리는 수량은 이 창고에서 그 상품 재고를 다 못 잡은 모든 상자를 세고, 바로 오는 발주의 예정일을 싣는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const base = await consolidationBase(tx, 20);
+      const make = (quantity: number) =>
+        createConsolidationSource(tx, wired, base, { quantity, customerId: randomUUID() });
+      const unavailable = await make(5);
+      const partial = await make(3);
+      const ready = await make(2);
+      const handedOver = await make(4);
+      const planned = await make(1);
+      const unreserve = (lineId: string, quantity: number) =>
+        tx
+          .update(wmsTables.stockReservations)
+          .set(quantity > 0 ? { quantity } : { status: 'pending' })
+          .where(eq(wmsTables.stockReservations.targetId, lineId));
+
+      await unreserve(unavailable.line.id, 0);
+      await unreserve(partial.line.id, 1);
+      // 셀메이트가 내보낼 상자도 들어올 재고를 함께 기다린다(목록에는 없다)
+      await unreserve(handedOver.line.id, 0);
+      await seedHandedOverOrder(tx, handedOver.salesOrderId);
+      // 출고 계획이 끝난 상자는 재고를 기다리지 않는다
+      await unreserve(planned.line.id, 0);
+      await tx
+        .update(wmsTables.shipments)
+        .set({ status: 'planned' })
+        .where(eq(wmsTables.shipments.id, planned.shipment.id));
+      // 다른 창고의 상자는 세지 않는다
+      const elsewhere = await seedWarehouseWithZone(tx);
+      const other = await make(9);
+      await unreserve(other.line.id, 0);
+      await tx
+        .update(wmsTables.shipments)
+        .set({ warehouseId: elsewhere.warehouseId })
+        .where(eq(wmsTables.shipments.id, other.shipment.id));
+      await tx
+        .update(wmsTables.warehouses)
+        .set({ isSellable: true })
+        .where(eq(wmsTables.warehouses.id, base.warehouseId));
+      await tx
+        .update(wmsTables.warehouses)
+        .set({ isSellable: false })
+        .where(not(eq(wmsTables.warehouses.id, base.warehouseId)));
+
+      const [supplier] = await tx
+        .insert(wmsTables.suppliers)
+        .values({ name: `it-supplier-${randomUUID().slice(0, 8)}`, defaultWarehouseId: base.warehouseId })
+        .returning({ id: wmsTables.suppliers.id });
+      const [po] = await tx
+        .insert(wmsTables.purchaseOrders)
+        .values({
+          type: 'domestic',
+          supplierId: supplier.id,
+          status: 'confirmed',
+          sourceWarehouseId: base.warehouseId,
+          destinationWarehouseId: base.warehouseId,
+          requiresTransfer: false,
+        })
+        .returning({ id: wmsTables.purchaseOrders.id });
+      await tx.insert(wmsTables.purchaseOrderLines).values({
+        poId: po.id,
+        skuId: base.skuId,
+        quantity: 6,
+        unitPrice: 1000,
+        status: 'ordered',
+        orderedQty: 6,
+        receivedQty: 0,
+        expectedArrival: '2026-01-05',
+      });
+
+      const summary = await reader.summarize(base.warehouseId, undefined, tx);
+      const stockOf = (shipmentId: string) =>
+        summary.buckets.flatMap(({ shipments }) => shipments).find((shipment) => shipment.shipmentId === shipmentId)
+          ?.lines[0].stock;
+
+      // 5 + (3 − 1) + 4
+      expect(stockOf(unavailable.shipment.id)?.waiting).toBe(11);
+      expect(stockOf(partial.shipment.id)?.waiting).toBe(11);
+      expect(stockOf(unavailable.shipment.id)?.incoming).toEqual(
+        expect.objectContaining({ ordered: 6, orderedEta: '2026-01-05' }),
+      );
+      expect(stockOf(ready.shipment.id)).toBeUndefined();
+      expect(stockOf(handedOver.shipment.id)).toBeUndefined();
     });
   });
 

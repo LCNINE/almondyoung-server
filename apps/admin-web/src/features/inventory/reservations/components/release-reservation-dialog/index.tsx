@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { useReleaseReservation } from '@/lib/services/inventory';
 import type { ReservationDto } from '@/lib/types/dto/inventory';
 import { toast } from 'sonner';
+import { releaseErrorText } from './release-error-text';
 
 type Props = {
   row: ReservationDto | null;
@@ -27,8 +28,8 @@ export function ReleaseReservationDialog({ row, open, onOpenChange }: Props) {
       await releaseMutation.mutateAsync(row.id);
       toast.success('예약이 해제되었습니다.');
       onOpenChange(false);
-    } catch {
-      toast.error('예약 해제에 실패했습니다.');
+    } catch (error) {
+      toast.error(releaseErrorText(error));
     }
   };
 

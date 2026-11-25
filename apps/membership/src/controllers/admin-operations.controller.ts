@@ -17,7 +17,7 @@ import {
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody, ApiQuery } from '@nestjs/swagger';
 import { ApplicationException } from '@app/shared';
 import { PermissionCheckpoints, RequirePermission, PiiResponse } from '@app/authorization';
 import { IdempotentAdminOp } from '../shared/idempotency/idempotent-admin-op.decorator';
@@ -735,6 +735,31 @@ export class AdminOperationsController {
   }
 
   /**
+   * 수동 송금 환불의 셀메이트 지출결의서 기록 (관리자). submitted=false 는 잘못 누른 기록을 되돌린다.
+   */
+  @RequirePermission('membership.billing.refund')
+  @Put('subscriptions/:contractId/refund/resolution')
+  @ApiOperation({
+    summary: '수동 송금 환불 결의서 기록 (어드민)',
+    description: '셀메이트에 지출결의서를 올렸는지 기록합니다. 돈을 보내거나 결의서를 올리지 않습니다.',
+  })
+  @ApiParam({ name: 'contractId', description: '구독 계약 ID', type: 'string' })
+  @UseGuards(JwtAuthGuard)
+  async setRefundResolution(
+    @User('userId') adminId: string,
+    @Param('contractId') contractId: string,
+    @Body() dto: { submitted?: boolean },
+  ) {
+    if (typeof dto?.submitted !== 'boolean') throw new BadRequestException('submitted 는 boolean 이어야 합니다');
+
+    try {
+      return await this.cancellationService.setRefundResolutionSubmitted(contractId, adminId, dto.submitted);
+    } catch (error) {
+      this.handleError(error, '환불 결의서 기록', contractId);
+    }
+  }
+
+  /**
    * 해지·환불 견적 (관리자)
    *
    * 강제취소 다이얼로그가 "지금 해지하면 정책상 얼마" 를 보여주기 위한 계산기.
@@ -1034,9 +1059,14 @@ export class AdminOperationsController {
   @Get('members/:userId')
   @ApiOperation({ summary: '멤버십 회원 상세 조회' })
   @UseGuards(JwtAuthGuard)
-  async getMemberDetail(@Param('userId') userId: string) {
+  @ApiQuery({
+    name: 'contractId',
+    required: false,
+    description: '이 계약 기준으로 조회(재가입 회원의 옛 계약 환불 처리용)',
+  })
+  async getMemberDetail(@Param('userId') userId: string, @Query('contractId') contractId?: string) {
     try {
-      const result = await this.adminOperationsService.getMemberDetail(userId);
+      const result = await this.adminOperationsService.getMemberDetail(userId, contractId);
       if (!result) {
         throw new NotFoundException(`멤버십 회원을 찾을 수 없습니다: ${userId}`);
       }

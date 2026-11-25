@@ -51,6 +51,9 @@ export interface AdminMemberListItem {
   refundCompleted?: boolean;
   refundCompletedAt?: string | null;
   eligibleRefundAmount?: number | null;
+  /** 셀메이트에 지출결의서를 올렸다고 기록한 시각·관리자. 과도기엔 undefined. */
+  refundResolutionSubmittedAt?: string | null;
+  refundResolutionSubmittedBy?: string | null;
   hasPaymentIntent?: boolean;
   billingPath?: string;
   /** 서버가 확정한 종료 사실(경로·상태·사유). 해지된 적이 없으면 null, 과도기엔 undefined. */
@@ -125,6 +128,8 @@ export interface AdminMemberDetail {
   eligibleRefundAmount: number | null;
   refundCompleted: boolean;
   refundCompletedAt: string | null;
+  /** 셀메이트 지출결의서 기록 시각. 과도기엔 undefined. */
+  refundResolutionSubmittedAt?: string | null;
   /** 해지 예약을 철회해 자동결제를 재개할 수 있는지(서버 판정). 1회 결제 계약은 false. */
   canUndoCancellation: boolean;
   /** 계좌 송금이 남은 환불 건의 수취 계좌. 이게 없으면 관리자가 어디로 보낼지 알 수 없다. */
@@ -339,9 +344,13 @@ export const membershipApi = {
     return res.data;
   },
 
-  getMemberDetail: async (userId: string): Promise<AdminMemberDetail> => {
+  getMemberDetail: async (
+    userId: string,
+    contractId?: string
+  ): Promise<AdminMemberDetail> => {
     const res = await client.get(
-      `${MEMBERSHIP_SERVICE_BASE_URL}/admin/members/${encodeURIComponent(userId)}`
+      `${MEMBERSHIP_SERVICE_BASE_URL}/admin/members/${encodeURIComponent(userId)}`,
+      contractId ? { params: { contractId } } : undefined
     );
     return res.data;
   },
@@ -402,6 +411,17 @@ export const membershipApi = {
       `${MEMBERSHIP_SERVICE_BASE_URL}/admin/subscriptions/${encodeURIComponent(contractId)}/refund/manual-complete`,
       body,
       idemConfig()
+    );
+    return res.data;
+  },
+
+  setRefundResolution: async (
+    contractId: string,
+    submitted: boolean
+  ): Promise<{ contractId: string; refundResolutionSubmittedAt: string | null }> => {
+    const res = await client.put(
+      `${MEMBERSHIP_SERVICE_BASE_URL}/admin/subscriptions/${encodeURIComponent(contractId)}/refund/resolution`,
+      { submitted }
     );
     return res.data;
   },

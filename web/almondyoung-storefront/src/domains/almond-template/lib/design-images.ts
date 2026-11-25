@@ -115,11 +115,11 @@ async function downscaled(blob: Blob, maxPx: number) {
   return canvas.toDataURL("image/webp", 0.85)
 }
 
-async function rasterize(
+export async function rasterize(
   markup: string,
   previews: Readonly<Record<string, string>>,
   maxPx: number,
-  { lenient = false } = {}
+  { lenient = false, originals = false } = {}
 ) {
   const svg = new DOMParser().parseFromString(markup, "image/svg+xml")
   await Promise.all(
@@ -127,15 +127,30 @@ async function rasterize(
       const href = node.getAttribute("href") ?? ""
       const fileId = href.match(/\/files\/public\/([0-9a-f-]{36})/)?.[1]
       const source = fileId ? fileImageRef(fileId) : href
-      if (!source.startsWith("data:") && !fileId) return node.remove()
+      if (!source.startsWith("data:") && !fileId) {
+        if (originals) {
+          throw new Error("병합할 이미지를 불러올 수 없습니다.")
+        }
+
+        return node.remove()
+      }
       // 클립아트 SVG 는 createImageBitmap 이 디코딩하지 못하고, 자체 완결이라 그대로 그려도 된다
       if (source.startsWith("data:image/svg+xml")) return
 
       try {
         const blob = await retryTransient(() =>
-          imageBlob(previewOf(source, previews))
+          imageBlob(originals ? source : previewOf(source, previews))
         )
-        node.setAttribute("href", await downscaled(blob, maxPx))
+        const href = originals
+          ? await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader()
+              reader.onload = () => resolve(String(reader.result))
+              reader.onerror = () => reject(reader.error)
+              reader.readAsDataURL(blob)
+            })
+          : await downscaled(blob, maxPx)
+
+        node.setAttribute("href", href)
       } catch (error) {
         // 썸네일은 사진 하나를 못 읽어도 나머지로 그린다(인쇄용 PNG 는 빠지면 안 되므로 그대로 실패)
         if (!lenient)
@@ -167,10 +182,16 @@ async function rasterize(
     .split(/[\s,]+/)
     .map(Number)
   const scale = maxPx / Math.max(viewWidth, viewHeight)
-  const width = Math.max(1, Math.round(viewWidth * scale))
-  const height = Math.max(1, Math.round(viewHeight * scale))
+  const round = originals ? Math.ceil : Math.round
+  const width = Math.max(1, round(viewWidth * scale))
+  const height = Math.max(1, round(viewHeight * scale))
   root.setAttribute("width", String(width))
   root.setAttribute("height", String(height))
+
+  if (originals) {
+    root.setAttribute("preserveAspectRatio", "none")
+  }
+
   const markupText = new XMLSerializer().serializeToString(svg)
   const image = new Image()
   image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(markupText)}`

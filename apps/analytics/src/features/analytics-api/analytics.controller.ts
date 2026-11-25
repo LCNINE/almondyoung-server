@@ -49,8 +49,11 @@ export class AnalyticsController {
     return this.analyticsService.getSummary();
   }
 
-  @Public()
+  // 상품별 주문수·판매수량은 매출과 직결된 지표라 공개하지 않는다(#721). 부르는 화면이 없다.
+  @RequirePermission('analytics.report.read')
   @Get('best-product')
+  @UseGuards(JwtAuthGuard, PermissionGuard)
+  @ApiBearerAuth()
   @ApiOperation({
     summary: 'Best product metrics',
     description: 'Returns per-product order counts and quantities for best products.',

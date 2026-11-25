@@ -958,4 +958,146 @@ describeIfDb('V2 draft shipment partial reservation (DB integration)', () => {
       });
     }
   });
+
+  describe('releaseReservation', () => {
+    async function confirmedRows(tx: DbTx, lineId: string) {
+      return tx
+        .select()
+        .from(wmsTables.stockReservations)
+        .where(
+          and(
+            eq(wmsTables.stockReservations.shipmentLineId, lineId),
+            eq(wmsTables.stockReservations.status, 'confirmed'),
+          ),
+        );
+    }
+
+    it('releases a 1-of-5 shipment-line reservation and recomputes line and FO in the same transaction', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const fixture = await physicalOrder(tx, { quantity: 5, onHand: 1 });
+        await wired.fulfillments.create({ salesOrderId: fixture.salesOrderId, warehouseId: fixture.warehouseId }, tx);
+        const before = await loadV2(tx, fixture.salesOrderId);
+        expect(before.line.reservedQty).toBe(1);
+        expect(before.fo).toMatchObject({ status: 'partially_reserved', totalReservedQty: 1 });
+        const [row] = await confirmedRows(tx, before.line.id);
+
+        const result = await wired.shipmentReservations.releaseReservation(row.id, '현장 해제', tx);
+
+        expect(result).toMatchObject({
+          reservationId: row.id,
+          shipmentLineId: before.line.id,
+          releasedQty: 1,
+          reservationVersion: before.shipment.reservationVersion + 1,
+        });
+        const [released] = await tx
+          .select()
+          .from(wmsTables.stockReservations)
+          .where(eq(wmsTables.stockReservations.id, row.id));
+        expect(released).toMatchObject({ status: 'released', stateReason: '현장 해제' });
+        expect(released.invalidatedAt).not.toBeNull();
+        const after = await loadV2(tx, fixture.salesOrderId);
+        expect(after.line.reservedQty).toBe(0);
+        expect(after.fo).toMatchObject({ status: 'created', totalReservedQty: 0 });
+      });
+    });
+
+    it('releases only the chosen row when a line holds two confirmed rows', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const fixture = await physicalOrder(tx, { quantity: 5, onHand: 3 });
+        await wired.fulfillments.create({ salesOrderId: fixture.salesOrderId, warehouseId: fixture.warehouseId }, tx);
+        const loaded = await loadV2(tx, fixture.salesOrderId);
+        const [a] = await confirmedRows(tx, loaded.line.id);
+        await tx
+          .update(wmsTables.stockLedgers)
+          .set({ qty: 4 })
+          .where(
+            and(
+              eq(wmsTables.stockLedgers.skuId, fixture.skuId),
+              eq(wmsTables.stockLedgers.warehouseId, fixture.warehouseId),
+            ),
+          );
+        const [b] = await tx
+          .insert(wmsTables.stockReservations)
+          .values({
+            targetType: 'SHIPMENT_LINE',
+            targetId: loaded.line.id,
+            shipmentLineId: loaded.line.id,
+            skuId: fixture.skuId,
+            warehouseId: fixture.warehouseId,
+            quantity: 1,
+            status: 'confirmed',
+            requestedAt: loaded.line.createdAt,
+          })
+          .returning();
+        await wired.shipmentReservations.recompute(loaded.line.shipmentId, tx);
+        expect((await loadV2(tx, fixture.salesOrderId)).line.reservedQty).toBe(4);
+
+        await wired.shipmentReservations.releaseReservation(b.id, 'b only', tx);
+
+        const rows = await tx
+          .select()
+          .from(wmsTables.stockReservations)
+          .where(inArray(wmsTables.stockReservations.id, [a.id, b.id]));
+        expect(rows.find((r) => r.id === a.id)).toMatchObject({ status: 'confirmed', quantity: 3 });
+        expect(rows.find((r) => r.id === b.id)).toMatchObject({ status: 'released' });
+        const after = await loadV2(tx, fixture.salesOrderId);
+        expect(after.line.reservedQty).toBe(3);
+        expect(after.fo.totalReservedQty).toBe(3);
+      });
+    });
+
+    it('rejects release on a non-draft shipment and changes nothing', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const fixture = await physicalOrder(tx, { quantity: 2, onHand: 2 });
+        await wired.fulfillments.create({ salesOrderId: fixture.salesOrderId, warehouseId: fixture.warehouseId }, tx);
+        const before = await loadV2(tx, fixture.salesOrderId);
+        const [row] = await confirmedRows(tx, before.line.id);
+        await tx
+          .update(wmsTables.shipments)
+          .set({ status: 'planned' })
+          .where(eq(wmsTables.shipments.id, before.shipment.id));
+
+        await expect(wired.shipmentReservations.releaseReservation(row.id, 'x', tx)).rejects.toThrow(
+          '작업이 시작된 상자의 예약은 풀 수 없습니다',
+        );
+
+        const [still] = await tx
+          .select()
+          .from(wmsTables.stockReservations)
+          .where(eq(wmsTables.stockReservations.id, row.id));
+        expect(still.status).toBe('confirmed');
+        const after = await loadV2(tx, fixture.salesOrderId);
+        expect(after.line.reservedQty).toBe(2);
+        expect(after.shipment.reservationVersion).toBe(before.shipment.reservationVersion);
+      });
+    });
+
+    it('rejects a second release of the same row', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const fixture = await physicalOrder(tx, { quantity: 2, onHand: 2 });
+        await wired.fulfillments.create({ salesOrderId: fixture.salesOrderId, warehouseId: fixture.warehouseId }, tx);
+        const loaded = await loadV2(tx, fixture.salesOrderId);
+        const [row] = await confirmedRows(tx, loaded.line.id);
+
+        await wired.shipmentReservations.releaseReservation(row.id, 'first', tx);
+        await expect(wired.shipmentReservations.releaseReservation(row.id, 'second', tx)).rejects.toThrow(
+          '이미 풀린 예약입니다',
+        );
+
+        const [after] = await tx
+          .select()
+          .from(wmsTables.stockReservations)
+          .where(eq(wmsTables.stockReservations.id, row.id));
+        expect(after.stateReason).toBe('first');
+      });
+    });
+
+    it('rejects an unknown reservation id', async () => {
+      await inRollbackTx(db, async (tx) => {
+        await expect(wired.shipmentReservations.releaseReservation(randomUUID(), 'x', tx)).rejects.toThrow(
+          '예약을 찾을 수 없습니다',
+        );
+      });
+    });
+  });
 });

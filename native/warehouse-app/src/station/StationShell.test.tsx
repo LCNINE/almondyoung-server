@@ -7,10 +7,13 @@ import {
   createRoute,
   createRouter,
 } from '@tanstack/react-router';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SessionProvider } from '../app/session-context';
 import { WarehouseProvider } from '../app/warehouse-context';
 import type { Session } from '../core/auth/session';
+import { ApiClientProvider } from '../core/data/ApiClientProvider';
 import { createMemoryPrefs } from '../core/data/devicePrefs';
+import type { ApiClient } from '../core/data/httpClient';
 import { ScanProvider } from '../core/hardware/scan/ScanProvider';
 import { useStationActions } from './ActionRegistry';
 import type { StationAction } from './actions';
@@ -38,6 +41,9 @@ function scan(code: string) {
   });
 }
 
+// 셸이 상단 알림용으로 시작 전 배치 목록을 읽는다 — 없음
+const emptyApi: ApiClient = { request: async <T,>() => [] as T };
+
 const session: Session = {
   bootstrap: async () => {},
   isAuthenticated: () => true,
@@ -48,7 +54,7 @@ const session: Session = {
   subscribe: () => () => {},
 };
 
-function renderShell(initial = '/outbound') {
+function renderShell(initial = '/outbound', api: ApiClient = emptyApi) {
   const beeps: Beep[] = [];
   const sink: ToneSink = { now: () => 0, beep: (b) => void beeps.push(b) };
   const root = createRootRoute({ component: () => <StationShell sink={sink} /> });
@@ -66,17 +72,22 @@ function renderShell(initial = '/outbound') {
     page('/settings'),
   ]);
   const router = createRouter({ routeTree: tree, history: createMemoryHistory({ initialEntries: [initial] }) });
+  const queryClient = new QueryClient();
   render(
     <SessionProvider session={session}>
-      <ScanProvider>
-        <WarehouseProvider prefs={createMemoryPrefs({ 'almondwms.warehouse': JSON.stringify({ id: 'w-1', name: '부천 창고' }) })}>
-          {/* 테스트 전용 라우터라 앱의 Register 타입과 다르다 */}
-          <RouterProvider router={router as never} />
-        </WarehouseProvider>
-      </ScanProvider>
+      <QueryClientProvider client={queryClient}>
+        <ApiClientProvider client={api}>
+          <ScanProvider>
+            <WarehouseProvider prefs={createMemoryPrefs({ 'almondwms.warehouse': JSON.stringify({ id: 'w-1', name: '부천 창고' }) })}>
+              {/* 테스트 전용 라우터라 앱의 Register 타입과 다르다 */}
+              <RouterProvider router={router as never} />
+            </WarehouseProvider>
+          </ScanProvider>
+        </ApiClientProvider>
+      </QueryClientProvider>
     </SessionProvider>
   );
-  return { router, beeps };
+  return { router, beeps, queryClient };
 }
 
 const flash = () => document.querySelector('[data-flash]')?.getAttribute('data-flash') ?? null;
@@ -90,6 +101,15 @@ describe('StationShell', () => {
     expect(within(tabs).getAllByRole('link')).toHaveLength(7);
     expect(within(tabs).getByRole('link', { name: /출고 검수/ })).toHaveAttribute('data-active', 'true');
     expect(within(tabs).getByRole('link', { name: /재고 조회/ })).toHaveAttribute('data-active', 'false');
+  });
+
+  it('시작 전 배치 조회가 배열이 아닌 응답을 받아도 셸은 그대로 그린다', async () => {
+    const { queryClient } = renderShell('/outbound', { request: async <T,>() => ({}) as T });
+    await waitFor(() => expect(queryClient.getQueryState(['outbound-batches', 'w-1', 'created'])?.status).toBe('success'));
+    // 응답을 받아 다시 그린 뒤에도 탭이 남아 있다
+    await act(async () => {});
+    expect(screen.getByRole('navigation', { name: '탭' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /시작 전 배치/ })).toBeNull();
   });
 
   it('입력칸에 포커스가 있어도 F3 이 입고 탭으로 간다', async () => {

@@ -1,8 +1,15 @@
 /** @jest-environment jsdom */
-import { render, screen, waitFor, within } from '@testing-library/react';
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { toast } from 'sonner';
 import type {
+  ScanRejection,
   BatchClaimState,
   EligibleShipmentV2,
   OutboundBatchV2,
@@ -58,6 +65,7 @@ jest.mock('@/lib/services/orders', () => ({
     dataUpdatedAt: mockBatchAt,
     refetch: mockRefetch,
   }),
+  useFollowBatchScanRejections: () => undefined,
   useOutboundBatchEligibleShipments: (
     _id: string,
     options?: { enabled?: boolean; snapshotAt?: number }
@@ -117,11 +125,20 @@ const STAFF = [
 ];
 
 const mockStaffQueries: Array<Record<string, unknown>> = [];
+let mockStaffPending = false;
 
 jest.mock('@/lib/services/users/queries', () => ({
   STAFF_CANDIDATE_LIMIT: 1000,
   useAdminUsers: (query: Record<string, unknown>) => {
     mockStaffQueries.push(query);
+    if (mockStaffPending) {
+      return {
+        data: undefined,
+        isPending: true,
+        isError: false,
+        isPlaceholderData: false,
+      };
+    }
     return {
       data: mockCanReadAccounts ? { data: STAFF } : undefined,
       isPending: false,
@@ -243,6 +260,7 @@ beforeEach(() => {
   jest.mocked(toast.error).mockClear();
   mockKey = 0;
   mockStaffQueries.length = 0;
+  mockStaffPending = false;
   mockCanHandoff = true;
   mockCanReadAccounts = true;
   mockBatch = batchWith([picking]);
@@ -801,5 +819,310 @@ describe('취소를 기다리는 상자', () => {
 
     await waitFor(() => expect(mockExclude).toHaveBeenCalledTimes(1));
     expect(mockExclude.mock.calls[0][0]).toMatchObject({ reason });
+  });
+});
+
+describe('물류앱에서 막힌 상자', () => {
+  const rejection = (over: Partial<ScanRejection> = {}): ScanRejection => ({
+    shipmentId: 'ship-1',
+    workItemId: 'item-1',
+    code: 'SHIPMENT_TOTE_NOT_RELEASED',
+    reasonCode: null,
+    message: '바구니 배정이 남아 있어 출고하지 못했어요.',
+    action: 'release_tote',
+    route: 'simple_scan',
+    barcode: '880000000001',
+    skuName: '상품 A',
+    quantity: 2,
+    actorId: 'worker-b',
+    rejectedAt: '2026-01-02T03:04:05.000Z',
+    ...over,
+  });
+
+  it('사유 문장·찍은 상품·작업자를 그 상자 줄에 보이고, 바구니면 남은 바구니를 가리킨다', () => {
+    mockBatch = {
+      ...batchWith([{ ...picking, scanRejection: rejection() }]),
+      toteAssignments: [
+        {
+          id: 'ta-1',
+          toteId: 'tote-1',
+          toteBarcode: 'TOTE-7',
+          shipmentId: 'ship-1',
+          toteStatus: 'in_use',
+          assignedBy: 'worker-a',
+          assignedAt: '2026-01-02T00:00:00.000Z',
+          releasedAt: null,
+        },
+      ],
+    };
+    renderDrawer();
+    const row = screen.getAllByRole('row')[1];
+    const notice = within(row).getByRole('region', { name: '물류앱에서 막힘' });
+
+    expect(
+      within(notice).getByText(
+        '물류앱에서 막힘 — 바구니 배정이 남아 있어 출고하지 못했어요.'
+      )
+    ).toBeTruthy();
+    expect(
+      within(notice).getByText(/출고 검수 스캔 · 상품 A ×2 · .* · 이두리/)
+    ).toBeTruthy();
+    expect(within(notice).getByText('TOTE-7')).toBeTruthy();
+  });
+
+  it('담당 때문이면 이 줄의 넘기기로 보내고, 넘길 수 없으면 상자 상세로 잇는다', () => {
+    mockCanHandoff = true;
+    mockBatch = batchWith([
+      { ...picking, scanRejection: rejection({ action: 'handoff_worker' }) },
+    ]);
+    const { unmount } = renderDrawer();
+    let row = screen.getAllByRole('row')[1];
+    expect(
+      within(row).getByText(/이 줄의 «넘기기»로 담당을 바꿔 주세요/)
+    ).toBeTruthy();
+    expect(
+      within(row).getByRole('button', { name: '피킹 넘기기' })
+    ).toBeTruthy();
+    unmount();
+
+    mockCanHandoff = false;
+    renderDrawer();
+    row = screen.getAllByRole('row')[1];
+    expect(within(row).queryByText(/이 줄의 «넘기기»/)).toBeNull();
+    expect(
+      within(row)
+        .getByRole('link', { name: '상자 상세에서 확인' })
+        .getAttribute('href')
+    ).toBe('/order/fulfillments?shipmentId=ship-1');
+  });
+
+  it('거절 뒤 담당을 넘겼으면 받은 작업자가 다시 찍기를 기다린다고 보이고 넘기라고 하지 않는다', () => {
+    mockCanHandoff = true;
+    const handedOffAt = '2026-01-02T04:00:00.000Z';
+    mockBatch = batchWith([
+      {
+        ...picking,
+        scanRejection: rejection({
+          action: 'handoff_worker',
+          message: '다른 작업자가 맡은 상자라 반영하지 못했어요.',
+          handedOff: { at: handedOffAt, workerId: 'worker-b' },
+        }),
+      },
+    ]);
+    renderDrawer();
+    const row = screen.getAllByRole('row')[1];
+    const notice = within(row).getByRole('region', {
+      name: '작업자가 다시 찍기를 기다림',
+    });
+
+    expect(notice.textContent).toContain(
+      `작업자가 다시 찍기를 기다려요 — ${new Date(handedOffAt).toLocaleString('ko-KR')}에 이두리에게 넘겼어요`
+    );
+    expect(notice.textContent).toContain(
+      '막혔던 것: 출고 검수 스캔 · 상품 A ×2'
+    );
+    expect(notice.textContent).toContain(
+      '넘겨받은 작업자가 물류앱에서 다시 찍어 반영되면 이 표시는 사라져요.'
+    );
+    expect(
+      within(row).queryByRole('region', { name: '물류앱에서 막힘' })
+    ).toBeNull();
+    expect(within(row).queryByText(/이 줄의 «넘기기»/)).toBeNull();
+  });
+
+  it('송장 때문에 막힌 뒤 새 송장이 발급됐으면 다시 찍기를 기다린다고 보이고 송장을 확인하라고 하지 않는다', () => {
+    const issuedAt = '2026-01-02T05:00:00.000Z';
+    mockBatch = batchWith([
+      {
+        ...picking,
+        scanRejection: rejection({
+          action: 'check_waybill',
+          message: '송장이 출고할 수 있는 상태가 아니라 반영하지 못했어요.',
+          newWaybill: { issuedAt, trackingNo: '123456789012' },
+        }),
+      },
+    ]);
+    renderDrawer();
+    const row = screen.getAllByRole('row')[1];
+    const notice = within(row).getByRole('region', {
+      name: '작업자가 다시 찍기를 기다림',
+    });
+
+    expect(notice.textContent).toContain(
+      `작업자가 다시 찍기를 기다려요 — ${new Date(issuedAt).toLocaleString('ko-KR')}에 새 송장을 발급했어요 · 123456789012`
+    );
+    expect(notice.textContent).toContain(
+      '막혔던 것: 출고 검수 스캔 · 상품 A ×2'
+    );
+    expect(within(notice).queryByRole('link')).toBeNull();
+    expect(
+      within(row).queryByRole('region', { name: '물류앱에서 막힘' })
+    ).toBeNull();
+  });
+
+  it('담당 때문에 막힌 상자를 넘기면 막힌 작업자를 미리 골라 맨 위에 둔다', async () => {
+    mockBatch = batchWith([
+      {
+        ...picking,
+        pickerClaim: claim({ state: 'active', workerId: 'worker-z' }),
+        scanRejection: rejection({
+          action: 'handoff_worker',
+          actorId: 'worker-b',
+        }),
+      },
+    ]);
+    const { user, dialog } = await openHandoff('피킹 넘기기');
+    const options = within(dialog).getAllByRole('option');
+
+    expect(options[0].textContent).toContain('이두리');
+    expect(options[0].textContent).toContain('물류앱에서 막힌 작업자');
+    expect(within(dialog).getByText(/받는 사람:/).textContent).toContain(
+      '이두리 (lee2)'
+    );
+
+    await user.click(
+      within(dialog).getByRole('button', { name: '이두리 (lee2)에게 넘기기' })
+    );
+    await waitFor(() => expect(mockPickingHandoff).toHaveBeenCalledTimes(1));
+    expect(mockPickingHandoff.mock.calls[0][0].data).toMatchObject({
+      targetWorkerId: 'worker-b',
+    });
+  });
+
+  it('미리 고른 사람은 검색해도 남고, 다른 사람을 누르면 바뀐다', async () => {
+    mockBatch = batchWith([
+      {
+        ...picking,
+        pickerClaim: claim({ state: 'active', workerId: 'worker-z' }),
+        scanRejection: rejection({
+          action: 'handoff_worker',
+          actorId: 'worker-b',
+        }),
+      },
+    ]);
+    const { user, dialog } = await openHandoff('피킹 넘기기');
+    await user.type(
+      within(dialog).getByPlaceholderText('이름이나 아이디로 찾기'),
+      'zzz'
+    );
+    await user.clear(
+      within(dialog).getByPlaceholderText('이름이나 아이디로 찾기')
+    );
+
+    expect(
+      within(dialog).getByRole('button', { name: '이두리 (lee2)에게 넘기기' })
+    ).toBeTruthy();
+
+    await user.click(within(dialog).getByText('김하나'));
+    expect(
+      within(dialog).getByRole('button', { name: '김하나 (kim1)에게 넘기기' })
+    ).toBeTruthy();
+  });
+
+  it('목록을 불러오는 동안 다른 사람을 찾으면 보이지 않는 막힌 작업자를 고르지 않는다', async () => {
+    mockStaffPending = true;
+    mockBatch = batchWith([
+      {
+        ...picking,
+        pickerClaim: claim({ state: 'active', workerId: 'worker-z' }),
+        scanRejection: rejection({
+          action: 'handoff_worker',
+          actorId: 'worker-b',
+        }),
+      },
+    ]);
+    const { user, dialog } = await openHandoff('피킹 넘기기');
+    mockStaffPending = false;
+    await user.type(
+      within(dialog).getByPlaceholderText('이름이나 아이디로 찾기'),
+      '하나'
+    );
+
+    expect(await within(dialog).findByText('김하나')).toBeTruthy();
+    expect(within(dialog).queryByText('이두리')).toBeNull();
+    expect(within(dialog).getByText('받을 작업자를 골라 주세요.')).toBeTruthy();
+  });
+
+  it('창을 연 사이 막힘이 풀리면 미리 고른 사람을 거둔다', async () => {
+    const blocked = {
+      ...picking,
+      pickerClaim: claim({ state: 'active', workerId: 'worker-z' }),
+      scanRejection: rejection({
+        action: 'handoff_worker',
+        actorId: 'worker-b',
+      }),
+    };
+    mockBatch = batchWith([blocked]);
+    const user = userEvent.setup();
+    const view = render(
+      <BatchDetailDrawer
+        batchId="batch-1"
+        open
+        onOpenChange={() => undefined}
+      />
+    );
+    await user.click(screen.getByRole('button', { name: '피킹 넘기기' }));
+    const dialog = await screen.findByRole('dialog', { name: '피킹 넘기기' });
+    expect(
+      within(dialog).getByRole('button', { name: '이두리 (lee2)에게 넘기기' })
+    ).toBeTruthy();
+
+    mockBatch = batchWith([{ ...blocked, scanRejection: null }]);
+    view.rerender(
+      <BatchDetailDrawer
+        batchId="batch-1"
+        open
+        onOpenChange={() => undefined}
+      />
+    );
+
+    expect(within(dialog).getByText('받을 작업자를 골라 주세요.')).toBeTruthy();
+  });
+
+  it('이미 넘겼거나 담당 사유가 아니거나 막힌 사람이 지금 담당이면 미리 고르지 않는다', async () => {
+    const cases: Array<Partial<ScanRejection>> = [
+      {
+        action: 'handoff_worker',
+        actorId: 'worker-b',
+        handedOff: { at: '2026-01-02T04:00:00.000Z', workerId: 'worker-b' },
+      },
+      { action: 'check_waybill', actorId: 'worker-b' },
+      { action: 'handoff_worker', actorId: 'worker-a' },
+    ];
+    for (const over of cases) {
+      mockBatch = batchWith([{ ...picking, scanRejection: rejection(over) }]);
+      const { dialog } = await openHandoff('피킹 넘기기');
+
+      expect(
+        within(dialog).getByText('받을 작업자를 골라 주세요.')
+      ).toBeTruthy();
+      expect(within(dialog).queryByText('물류앱에서 막힌 작업자')).toBeNull();
+      cleanup();
+    }
+  });
+
+  it('송장·상자 확인이면 상자 상세로 잇는다', () => {
+    mockBatch = batchWith([
+      { ...picking, scanRejection: rejection({ action: 'check_waybill' }) },
+    ]);
+    renderDrawer();
+
+    expect(
+      screen
+        .getByRole('link', { name: '상자 상세에서 확인' })
+        .getAttribute('href')
+    ).toBe('/order/fulfillments?shipmentId=ship-1');
+  });
+
+  it('풀린 상자(서버가 싣지 않음)와 옛 응답에는 아무것도 보이지 않는다', () => {
+    mockBatch = batchWith([
+      { ...picking, scanRejection: null },
+      workItem({ id: 'item-2', shipmentId: 'ship-2' }),
+    ]);
+    renderDrawer();
+
+    expect(
+      screen.queryByRole('region', { name: '물류앱에서 막힘' })
+    ).toBeNull();
   });
 });

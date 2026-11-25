@@ -741,6 +741,8 @@ export function setup(infra: SharedInfra) {
       HANJIN_PAY_TYPE: 'CD',
       UGC_SERVICE_URL: url('ugc'),
       UGC_INTERNAL_KEY: ugcInternalKey.value,
+      // 고객이 올린 인쇄 파일이 그 고객의 것인지 file-service 내부 조회로 확인한다
+      FILE_SERVICE_INTERNAL_KEY: fileServiceInternalKey.value,
       // 켜기 전엔 print_orders 행만 쌓이고 와우프레스로 보내지 않는다. 첫 품목 검증 뒤 'true'.
       PRINT_ORDER_SUBMIT_ENABLED: 'true',
     },

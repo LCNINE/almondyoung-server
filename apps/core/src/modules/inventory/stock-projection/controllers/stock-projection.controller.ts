@@ -18,7 +18,7 @@ import { CurrentStockDto } from '../dto/current-stock.dto';
 import { GetStockQueryDto } from '../dto/get-stock-query.dto';
 import { GetStockSummaryListQueryDto, StockSummaryListItemDto } from '../dto/stock-summary-list.dto';
 import { SkuStockSummaryDto } from '../dto/sku-stock-summary.dto';
-import { LocationContentsDto } from '../dto/location-contents.dto';
+import { LocationContentsDto, ReturnZoneGoodsDto } from '../dto/location-contents.dto';
 import { InboundPipelineResponseDto } from '../dto/inbound-pipeline.dto';
 import { ExpectedArrivalsResponseDto } from '../dto/expected-arrivals.dto';
 import { StockProjectionService } from '../services/stock-projection.service';
@@ -146,6 +146,18 @@ export class StockProjectionController {
   @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async getLocationContents(@Param('locationId') locationId: string): Promise<LocationContentsDto> {
     return this.stockProjection.getLocationContents(locationId);
+  }
+
+  @RequirePermission('inventory.stock.read')
+  @Get('/stocks/return-zone')
+  @ApiOperation({ summary: '반품 기본존에 남은 양품 (선반으로 옮길 것)' })
+  @ApiQuery({ name: 'warehouseId', required: true })
+  @ApiResponse({ status: 200, type: ReturnZoneGoodsDto })
+  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
+  async getReturnZoneGoods(
+    @Query('warehouseId', new ParseUUIDPipe()) warehouseId: string,
+  ): Promise<ReturnZoneGoodsDto> {
+    return this.stockProjection.getReturnZoneGoods(warehouseId);
   }
 
   @RequirePermission('inventory.stock.read')

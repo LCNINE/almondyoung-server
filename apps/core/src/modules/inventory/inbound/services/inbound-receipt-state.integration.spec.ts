@@ -15,10 +15,10 @@ import { DbTx, wmsSchema, wmsTables } from '../../schema/inventory.schema';
 import { InboundReceiptStateReader } from './inbound-receipt-state.reader';
 import {
   Database,
-  dbServiceFor,
   inRollbackTx,
   makeInboundService,
   makeInboundReceiptKernel,
+  makeInboundReceiptStateReader,
   makeInboundPutawayReader,
 } from './__fixtures__/inbound-harness';
 
@@ -31,7 +31,7 @@ describeIfDb('InboundReceiptStateReader (PostgreSQL)', () => {
   beforeAll(() => {
     client = postgres(process.env.DATABASE_URL!, { max: 3 });
     db = drizzle(client, { schema: wmsSchema, logger: { logQuery: (query) => queries.push(query) } });
-    reader = new InboundReceiptStateReader(dbServiceFor(db));
+    reader = makeInboundReceiptStateReader(db);
   });
   afterAll(async () => {
     await client.end();
@@ -206,6 +206,10 @@ describeIfDb('InboundReceiptStateReader (PostgreSQL)', () => {
             'putawayBlockReason',
             'canCancel',
             'cancelBlockReason',
+            'usualLocationId',
+            'usualLocationCode',
+            'canRememberUsual',
+            'cancelReservations',
           ].sort(),
         );
         await request(http)

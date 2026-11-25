@@ -51,6 +51,15 @@ import { v7 as uuidv7 } from 'uuid';
 import { deleteEntitiesIfUnmapped } from '../../version-isolation/delete-if-unmapped';
 import { diffFields, recordProductAudit } from './product-audit-log';
 import { lockProductMasters } from './product-master-lock';
+import {
+  SkuLinkFilter,
+  SkuLinkRow,
+  SkuLinkState,
+  buildSkuLinkFilterCondition,
+  hasSkuBarcodeCondition,
+  skuLinkRowsSql,
+  summarizeSkuLinks,
+} from './product-masters-sku-link';
 import { ProductVersionDto } from '../dto/entities/master-version.entity';
 import { MasterProductWithPrimaryVersionDto } from '../dto/products/product-response.dto';
 import { ProductMasterVersionEntity } from '../../../schema/catalog.schema.types';
@@ -75,6 +84,8 @@ export type VariantPreview = {
   membershipPrice: number | null;
   status: string;
 };
+
+export type VariantPreviewWithSkuLink = VariantPreview & { skuLinkState: SkuLinkState; skuCount: number };
 
 type VersionOptionValueDisplay = {
   optionValueId: string;
@@ -118,6 +129,7 @@ export type MasterListFilters = {
   // 품절 상태 필터. soldOutState 는 후처리 계산이라 SQL 페이징과 함께 걸 수 없어
   // 별도 경로로 처리한다. all=필터 없음.
   stock?: 'all' | 'in_stock' | 'partial' | 'sold_out';
+  skuLink?: SkuLinkFilter;
 };
 
 /** 필터에 걸린 상품 1건. 목록의 집계는 없고, 일괄 작업에 필요한 id + 정책 플래그만 담는다. */
@@ -351,10 +363,11 @@ export class ProductMastersService {
       aggregate: {
         optionGroupNames: string[];
         variantCount: number;
-        variantPreviews: VariantPreview[];
+        variantPreviews: VariantPreviewWithSkuLink[];
         thumbnail: string | null;
         priceSummary: PriceSummary | null;
         soldOutState: SoldOutState;
+        unlinkedVariantCount: number;
       };
     }[];
     total: number;
@@ -487,6 +500,8 @@ export class ProductMastersService {
       // 한 번에 모든 품절 상태 집계 (현재 페이지 기준 상수 쿼리 1회).
       const soldOutStateMap = await this.productSellableQuantity.getSoldOutStateByVersionIds(versionIds, trx);
 
+      const skuLinks = summarizeSkuLinks(await trx.execute<SkuLinkRow>(skuLinkRowsSql(versionIds)));
+
       // Map으로 변환 (O(1) 조회)
       const optionGroupNamesMap = new Map(optionGroupNamesResult.map((item) => [item.versionId, item.names]));
       const variantCountMap = new Map(variantCounts.map((item) => [item.versionId, item.count]));
@@ -506,10 +521,15 @@ export class ProductMastersService {
           aggregate: {
             optionGroupNames: optionGroupNamesMap.get(version.id) ?? [],
             variantCount: variantCountMap.get(version.id) ?? 0,
-            variantPreviews: variantPreviewMap.get(version.id) ?? [],
+            variantPreviews: (variantPreviewMap.get(version.id) ?? []).map((preview) => ({
+              ...preview,
+              skuLinkState: skuLinks.byVariant.get(preview.variantId)?.state ?? 'unlinked',
+              skuCount: skuLinks.byVariant.get(preview.variantId)?.skuCount ?? 0,
+            })),
             thumbnail: thumbnailMap.get(version.id) ?? null,
             priceSummary: priceSummaryMap.get(version.id) ?? null,
             soldOutState: soldOutStateMap.get(version.id) ?? 'none',
+            unlinkedVariantCount: skuLinks.unlinkedCountByVersion.get(version.id) ?? 0,
           },
         };
       });
@@ -699,10 +719,10 @@ export class ProductMastersService {
       whereConditions.push(ilike(productMasterVersions.brand, `%${filters.brand}%`));
     }
 
-    // 키워드 검색: 상품명 + 품번코드 부분 일치 (대소문자·공백 무시, 토큰 AND)
+    // 키워드 검색: 상품명 + 품번코드 부분 일치 (대소문자·공백 무시, 토큰 AND), 또는 연결된 SKU 바코드 완전 일치
     if (filters.name) {
       const match = keywordMatch(filters.name, [productMasterVersions.name, productMasterVersions.productCode]);
-      if (match) whereConditions.push(match);
+      if (match) whereConditions.push(or(match, hasSkuBarcodeCondition(filters.name.trim())));
     }
 
     // ids 필터 (배치 조회용)
@@ -751,6 +771,10 @@ export class ProductMastersService {
     // DB count/limit/offset도 무력화된다.
     if (stockFilter) {
       whereConditions.push(this.buildStockFilterCondition(stockFilter));
+    }
+
+    if (filters.skuLink && filters.skuLink !== 'all') {
+      whereConditions.push(buildSkuLinkFilterCondition(filters.skuLink));
     }
 
     // 모드별 버전 필터: active는 productMasterVersions 컬럼으로, 다른 모드는 ranked subquery의 rn=1로.

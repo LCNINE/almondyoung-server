@@ -1,6 +1,8 @@
 import { planCode128 } from './code128';
 import {
+  barcodeWidthMm,
   createBitmap,
+  DOTS_PER_MM,
   getBit,
   mmToDots,
   PRINTER_MAX_WIDTH_MM,
@@ -28,6 +30,13 @@ export interface ZplOptions {
   rotation: LabelRotation;
   /** 같은 라벨 장수(`^PQ`). 기본 1. */
   copies?: number;
+  /** 프린터 해상도(dot/mm). 기본 8(203dpi). 템플릿의 mm·moduleDots 는 8 dot/mm 기준이라 여기서 옮긴다. */
+  dotsPerMm?: number;
+  /**
+   * `^PQn,n,0,Y` — 커터 프린터가 n장을 이어 내고 마지막 장 뒤에서 한 번만 자른다. 프린터의 커팅 설정은
+   * 덮어쓰지 않는다. `^MMT` 로 막았더니 한 장도, 마지막 장도 안 잘렸다(2026-11-25).
+   */
+  cutAfterCopies?: boolean;
 }
 
 export function rotateClockwise(src: MonoBitmap): MonoBitmap {
@@ -99,10 +108,23 @@ export function compressAcs(hexRowsIn: readonly string[]): string {
   return out;
 }
 
-function barcodeField(b: BarcodePlacement, drawnW: number, drawnH: number, rotation: LabelRotation): string {
-  const x = mmToDots(b.xMm);
-  const y = mmToDots(b.yMm);
-  const h = mmToDots(b.heightMm);
+function barcodeField(
+  placed: BarcodePlacement,
+  drawnW: number,
+  drawnH: number,
+  rotation: LabelRotation,
+  dotsPerMm: number,
+): string {
+  // 모듈은 내림해 템플릿 폭을 넘지 않되 2 dot 아래로는 안 간다(1→2, 2→3, 3→4 @12). 폭이 바뀐 만큼 가운데를 지켜 옮긴다.
+  const moduleDots =
+    dotsPerMm === DOTS_PER_MM
+      ? placed.moduleDots
+      : Math.max(2, Math.floor((placed.moduleDots * dotsPerMm) / DOTS_PER_MM));
+  const scaled = { ...placed, moduleDots };
+  const b = { ...scaled, xMm: placed.xMm + (barcodeWidthMm(placed) - barcodeWidthMm(scaled, dotsPerMm)) / 2 };
+  const x = mmToDots(b.xMm, dotsPerMm);
+  const y = mmToDots(b.yMm, dotsPerMm);
+  const h = mmToDots(b.heightMm, dotsPerMm);
   if (x < 0 || y < 0 || x >= drawnW || y + h > drawnH) {
     throw new Error(`barcode ${b.kind} is outside the label: x=${x} y=${y} h=${h} on ${drawnW}×${drawnH}`);
   }
@@ -126,9 +148,14 @@ function barcodeField(b: BarcodePlacement, drawnW: number, drawnH: number, rotat
   return `${fo}^BY${b.moduleDots}^BC${orientation},${h},N,N,N^FD${b.data}^FS`;
 }
 
+function pq(copies: number, cutAfterCopies: boolean): string {
+  return cutAfterCopies ? `^PQ${copies},${copies},0,Y` : `^PQ${copies}`;
+}
+
 export function encodeZpl(drawn: MonoBitmap, barcodes: readonly BarcodePlacement[], opts: ZplOptions): string {
+  const dotsPerMm = opts.dotsPerMm ?? DOTS_PER_MM;
   const printed = opts.rotation === 0 ? drawn : rotateClockwise(drawn);
-  const maxDots = mmToDots(PRINTER_MAX_WIDTH_MM);
+  const maxDots = mmToDots(PRINTER_MAX_WIDTH_MM, dotsPerMm);
   if (printed.widthDots > maxDots) {
     throw new Error(
       `label is ${printed.widthDots} dots wide as fed (rotation ${opts.rotation}), printer max is ${maxDots}`,
@@ -144,8 +171,8 @@ export function encodeZpl(drawn: MonoBitmap, barcodes: readonly BarcodePlacement
     `^LL${printed.heightDots}`,
     '^LH0,0',
     `^FO0,0^GFA,${total},${total},${printed.bytesPerRow},${gfData}^FS`,
-    ...barcodes.map((b) => barcodeField(b, drawn.widthDots, drawn.heightDots, opts.rotation)),
-    `^PQ${opts.copies ?? 1}`,
+    ...barcodes.map((b) => barcodeField(b, drawn.widthDots, drawn.heightDots, opts.rotation, dotsPerMm)),
+    pq(opts.copies ?? 1, opts.cutAfterCopies ?? false),
     '^XZ',
   ];
   return lines.join('\n');

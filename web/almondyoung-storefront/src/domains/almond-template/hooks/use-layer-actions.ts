@@ -1,6 +1,12 @@
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { PRINT_PRODUCTS, PRINT_SPECS } from "../lib/catalog"
-import { newDesign, type Design, type Layer } from "../lib/document"
+import {
+  layerImageDpi,
+  newDesign,
+  parseDesign,
+  type Design,
+  type Layer,
+} from "../lib/document"
 import {
   isAutoTextName,
   makeLayer,
@@ -11,6 +17,14 @@ import {
 } from "../lib/layer"
 import { unionBounds } from "../lib/canvas-math"
 import { stretchText, textBoxFor } from "../components/graphic"
+import {
+  groupMergedLayers,
+  isVectorMerge,
+  mergeDownReason as mergeReason,
+  rasterMergedLayer,
+  replaceMergedLayers,
+} from "../lib/merge-layers"
+import { reportFailure } from "./use-auth-retry"
 
 // 바뀌면 글자 덩치가 달라지는 속성. 이때 상자를 글자에 다시 맞춘다
 const TEXT_SHAPE_KEYS = new Set([
@@ -23,6 +37,17 @@ const TEXT_SHAPE_KEYS = new Set([
   "widthScale",
 ])
 import type { EditorMode } from "./use-template-storage"
+
+// 복사해 둔 레이어를 다른 탭의 편집기에서도 붙여 넣을 수 있게 브라우저 저장소에 둔다
+const COPIED_KEY = "almond-template:copied"
+
+const readCopied = (): Layer[] => {
+  try {
+    return JSON.parse(localStorage.getItem(COPIED_KEY) ?? "[]")
+  } catch {
+    return []
+  }
+}
 
 type Params = {
   design: Design
@@ -53,7 +78,105 @@ export function useLayerActions({
   group,
   setGroupIds,
 }: Params) {
-  const [copied, setCopied] = useState<Layer[]>([])
+  const [copied, setCopiedState] = useState<Layer[]>([])
+  const [merging, setMerging] = useState(false)
+  const mergePending = useRef(false)
+  const current = useRef({ design, side, mode })
+  current.current = { design, side, mode }
+
+  const mergeDownReason = (id: string) =>
+    mergeReason(layers, id, mode) ||
+    (merging ? "레이어를 병합하고 있습니다" : "")
+
+  const mergeDown = async (id: string) => {
+    const reason = mergeDownReason(id)
+
+    if (reason || mergePending.current) {
+      return
+    }
+
+    const index = layers.findIndex((layer) => layer.id === id)
+
+    if (isVectorMerge(layers[index - 1], layers[index])) {
+      change({ ...design, [side]: groupMergedLayers(layers, id) })
+      setMessage(
+        "도형은 그림으로 바꾸지 않고 그룹으로 묶었습니다. 그룹을 풀면 따로 고칠 수 있습니다."
+      )
+
+      return
+    }
+
+    mergePending.current = true
+    setMerging(true)
+
+    try {
+      const merged = await rasterMergedLayer(
+        design,
+        layers[index - 1],
+        layers[index]
+      )
+
+      if (
+        current.current.design !== design ||
+        current.current.side !== side ||
+        current.current.mode !== mode
+      ) {
+        setMessage(
+          "편집 내용이 바뀌어 병합을 취소했습니다. 다시 시도해 주세요."
+        )
+
+        return
+      }
+
+      const next = {
+        ...design,
+        [side]: replaceMergedLayers(layers, id, merged),
+      }
+
+      parseDesign(next)
+      change(next)
+      setSelectedId(merged.id)
+      setMessage(
+        layerImageDpi(design.kind, merged) <
+          PRINT_SPECS[design.kind].minImageDpi
+          ? "레이어를 병합했습니다. 이미지 크기 제한으로 해상도가 낮아졌으니 인쇄 전에 확인해 주세요."
+          : "아래 레이어와 병합했습니다."
+      )
+    } catch (error) {
+      reportFailure(error, "layer_merge")
+      setMessage(
+        "레이어를 병합하지 못했습니다. 이미지 용량(4MB), 레이어 크기와 연결 상태를 확인해 주세요."
+      )
+    } finally {
+      mergePending.current = false
+      setMerging(false)
+    }
+  }
+
+  useEffect(() => {
+    setCopiedState(readCopied())
+    const sync = (event: StorageEvent) => {
+      if (event.key === COPIED_KEY) setCopiedState(readCopied())
+    }
+    window.addEventListener("storage", sync)
+
+    return () => window.removeEventListener("storage", sync)
+  }, [])
+
+  const setCopied = (items: Layer[]) => {
+    setCopiedState(items)
+    try {
+      localStorage.setItem(COPIED_KEY, JSON.stringify(items))
+    } catch {
+      // 저장 전 큰 사진은 저장소 한도를 넘는다. 다른 탭에 옛 복사본이 붙지 않게 비운다
+      try {
+        localStorage.removeItem(COPIED_KEY)
+      } catch {}
+      setMessage(
+        "사진이 커서 이 탭에서만 붙여 넣을 수 있어요. 시안을 저장한 뒤 복사하면 다른 탭에도 붙여 넣을 수 있어요."
+      )
+    }
+  }
 
   const fitText = (layer: Layer): Layer =>
     layer.type === "text"
@@ -266,6 +389,8 @@ export function useLayerActions({
   }
 
   return {
+    mergeDown,
+    mergeDownReason,
     copied,
     patch,
     patchLayers,

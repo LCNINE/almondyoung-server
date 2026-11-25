@@ -1,5 +1,5 @@
 import { ConflictError } from '@app/shared';
-import { AdminMembersReader } from './admin-members.reader';
+import { AdminMembersReader, walletIntentIdOf } from './admin-members.reader';
 
 // updateAutoRenewal 분기만 검증. drizzle 체인은 터미널(limit/returning) 반환값으로 시나리오 제어.
 function makeReader(opts: {
@@ -198,5 +198,12 @@ describe('AdminMembersReader.findDunningList', () => {
       lastErrorMessage: '잔액 부족',
       createdAt: '2026-07-01T00:00:00.000Z',
     });
+  });
+});
+
+describe('walletIntentIdOf', () => {
+  it('인보이스 경로의 키는 결제 ID 로 내보내지 않는다', () => {
+    expect(walletIntentIdOf('inv-1', 'INVOICE')).toBeNull();
+    expect(walletIntentIdOf('pi-1', 'CHARGE')).toBe('pi-1');
   });
 });

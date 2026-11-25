@@ -1,0 +1,2 @@
+ALTER TABLE "product_sellable_quantity_projections" ADD COLUMN "discontinuing" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+ALTER TABLE "sales_variant_policies" ADD COLUMN "discontinuing" boolean DEFAULT false NOT NULL;

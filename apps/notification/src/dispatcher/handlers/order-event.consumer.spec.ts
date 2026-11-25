@@ -12,6 +12,7 @@ import { NotificationDispatcherService } from '../services/notification-dispatch
 import { UserNotificationHistoryReader } from '../services/user-notification-history.reader';
 import type { EventMappingService } from '../../shared/services/event-mapping.service';
 import { OrderEventConsumer } from './order-event.consumer';
+import { findKakaoAutoNotice } from './kakao-auto-notices';
 
 const envelope = {
   correlationId: 'demo-correlation-1',
@@ -276,6 +277,69 @@ describe('OrderEventConsumer 발송 완료 알림', () => {
     await consumer.onShipmentDispatched(coreEnvelope, { ...shipment, isPartial: false });
 
     expect(dispatcher.send).not.toHaveBeenCalled();
+  });
+});
+
+describe('OrderEventConsumer 인쇄 파일 다시 올리기 알림', () => {
+  const rejected = {
+    orderId: 'so-1',
+    salesOrderLineId: 'line-1',
+    channelOrderId: 'order_01',
+    customerId: 'user-1',
+    productName: '소량 청첩장 · 엽서형',
+    jobstat: 123,
+    rejectedAt: '2026-11-24T01:00:00.000Z',
+  };
+  const coreEnvelope = { correlationId: 'c-1', messageId: 'm-1' } as EnvelopeOf<
+    typeof CORE_ORDER_STREAM,
+    'PrintFileRejected'
+  >;
+  const mapping = {
+    eventKey: 'PRINT_FILE_REJECTED',
+    isActive: true,
+    defaultChannels: ['KAKAO'],
+    category: 'TRANSACTIONAL',
+    templateKey: 'PRINT_FILE_REJECTED',
+    priority: 'HIGH',
+  };
+  const withPhone = (consumerParts: ReturnType<typeof makeConsumer>) => {
+    consumerParts.contacts.findContacts.mockResolvedValue(
+      new Map([['user-1', { userId: 'user-1', email: 'a@example.com', username: '홍길동', phoneNumber: '01012345678' }]]),
+    );
+    return consumerParts;
+  };
+
+  it('알림톡으로 이름과 쉬운 말로 옮긴 사유를 보낸다', async () => {
+    const { consumer, dispatcher } = withPhone(makeConsumer({}, mapping));
+
+    await consumer.onPrintFileRejected(coreEnvelope, rejected);
+
+    expect(dispatcher.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: 'user-1',
+        eventKey: 'PRINT_FILE_REJECTED',
+        payload: { name: '홍길동', phoneNumber: '01012345678' },
+        variables: { name: '홍길동', reason: '글자 윤곽선 미처리' },
+        metadata: expect.objectContaining({ smsFallback: true }),
+      }),
+    );
+  });
+
+  it('전화번호가 없으면 보내지 않는다', async () => {
+    const { consumer, dispatcher } = makeConsumer({}, mapping);
+
+    await consumer.onPrintFileRejected(coreEnvelope, rejected);
+
+    expect(dispatcher.send).not.toHaveBeenCalled();
+  });
+
+  it('보내는 변수는 알림톡 자동 알림 목록에 있는 것뿐이다', async () => {
+    const { consumer, dispatcher } = withPhone(makeConsumer({}, mapping));
+
+    await consumer.onPrintFileRejected(coreEnvelope, rejected);
+
+    const allowed = findKakaoAutoNotice('PRINT_FILE_REJECTED')?.variables ?? [];
+    expect(Object.keys(dispatcher.send.mock.calls[0][0].variables ?? {}).filter((v) => !allowed.includes(v))).toEqual([]);
   });
 });
 

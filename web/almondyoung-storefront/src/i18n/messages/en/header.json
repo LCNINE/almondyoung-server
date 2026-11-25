@@ -40,5 +40,26 @@
   "topNotice": {
     "more": "Learn more",
     "ariaLabel": "Announcements"
+  },
+  "printFileBell": {
+    "label": "Alerts",
+    "title": "Alerts",
+    "empty": "No new alerts",
+    "itemTitle": "Please upload {product} again",
+    "itemBody": "The printer sent the file back. Reason: {reason}",
+    "itemAction": "Upload again in order details",
+    "reasons": {
+      "121": "Objects are not grouped",
+      "122": "Border or guide lines remain",
+      "123": "Text is not outlined",
+      "124": "Unsupported program version",
+      "125": "Die-cut line is missing",
+      "126": "Some file content is missing",
+      "127": "The size does not match",
+      "129": "Front and back pages do not match",
+      "130": "Images are missing",
+      "other": "The file could not be opened"
+    },
+    "labelWithCount": "{count} alerts"
   }
 }

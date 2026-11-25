@@ -15,6 +15,8 @@ import { InboundShipmentReceivingManager } from './inbound-shipment-receiving.ma
 import { ListCell } from './inbound-shipment-list.parser';
 import { BadRequestException } from '@nestjs/common';
 import { AddInboundShipmentBoxDto, CancelBoxReceiptDto, ReceiveBoxDto } from '../dto/receive.dto';
+import { InboundArrivalFollowUp } from '../../inbound/services/inbound-arrival-follow-up';
+import { DeferredArrivalReservations } from '../../inbound/kernel/inbound-arrival-reservations.port';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -54,9 +56,12 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
         recalculateAndPublishForSkus: draftRecalc,
       } as never),
       reader: new InboundShipmentReader(dbService, matcher),
-      receiving: new InboundShipmentReceivingManager(kernel, new InventoryIdempotencyService(dbService), {
-        recalculateAndPublishForSkus,
-      } as never),
+      receiving: new InboundShipmentReceivingManager(
+        kernel,
+        new InventoryIdempotencyService(dbService),
+        { recalculateAndPublishForSkus } as never,
+        new InboundArrivalFollowUp(new DeferredArrivalReservations()),
+      ),
       recalculateAndPublishForSkus,
     };
   }

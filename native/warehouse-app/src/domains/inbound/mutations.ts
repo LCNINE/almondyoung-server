@@ -1,6 +1,8 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { QueryClient } from '@tanstack/react-query';
 import { useApiClient } from '../../core/data/ApiClientProvider';
+import { WAITING_ORDERS_KEY } from './waitingOrders';
+import { READY_SHIPMENTS_KEY } from './readyShipments';
 import type {
   CancelInboundInput,
   CancelPurchaseOrderReceiptInput,
@@ -25,6 +27,8 @@ function invalidateAfterLedgerWrite(qc: QueryClient) {
   // 적치를 건너뛴 라인은 큐에 나타나야 하고, 큐에서 적치한 라인은 사라져야 한다.
   // 한쪽만 갱신하면 두 화면이 서로 다른 사실을 말한다.
   void qc.invalidateQueries({ queryKey: ['putaway-pending'] });
+  void qc.invalidateQueries({ queryKey: [WAITING_ORDERS_KEY] });
+  void qc.invalidateQueries({ queryKey: [READY_SHIPMENTS_KEY] });
 }
 
 /**
@@ -91,7 +95,7 @@ export function usePutaway() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: PutawayInput) =>
-      api.request<{ success: boolean }>({
+      api.request<{ success: boolean; usualShelfSet?: boolean }>({
         method: 'POST',
         path: '/inbound/putaway',
         body: input,
@@ -103,8 +107,7 @@ export function usePutaway() {
 
 /**
  * POST /inbound/cancel — 직전 입고 되돌리기.
- * 서버 제약: 전량만·적치 전에만·당일(Asia/Seoul)만. 화면은 이 셋을 만족하는
- * 순간에만 버튼을 노출한다.
+ * 서버 제약: 전량만·적치 전에만. 화면은 상태 조회가 허락할 때만 버튼을 켠다.
  */
 export function useCancelInbound() {
   const api = useApiClient();

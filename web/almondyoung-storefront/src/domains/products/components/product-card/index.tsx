@@ -17,6 +17,7 @@ import { TimeSaleBadge } from "./time-sale-badge"
 import QuantityDiscountBadge from "./quantity-discount-badge"
 import { calculateStockStatus } from "./quantity/stock-status"
 import { SoldOutOverlay } from "@/components/products/sold-out-overlay"
+import { pickDiscontinuing } from "@/domains/products/product-details/components/product-actions/discontinuing"
 import { OverseasBadge } from "@/components/shared/badges/overseas-badge"
 import {
   getIsOverseas,
@@ -141,6 +142,10 @@ export default function ProductCard({
     () => calculateStockStatus(product).kind === "soldOut",
     [product]
   )
+  const discontinuing = useMemo(
+    () => pickDiscontinuing(product.variants),
+    [product.variants]
+  )
   const membersOnlyPurchase =
     !isMembership && getRequiresMembershipToPurchase(product)
   const productReviewId =
@@ -218,7 +223,7 @@ export default function ProductCard({
           )}
 
           {/* 좌측 위도 한 줄에 쌓는다. 우측 위는 멤버십·사진 장수, 우측 아래는 찜·장바구니가 쓴다 */}
-          {(timeSale?.endsAt || isDigital) && (
+          {(timeSale?.endsAt || isDigital || discontinuing) && (
             <div className="absolute top-2 left-2 z-10 flex flex-col items-start gap-1">
               {timeSale?.endsAt && (
                 <TimeSaleBadge
@@ -229,6 +234,15 @@ export default function ProductCard({
               {isDigital && (
                 <span className="bg-primary/90 rounded px-2 py-0.5 text-[11px] font-medium text-white">
                   {tCard("digitalBadge")}
+                </span>
+              )}
+              {discontinuing && (
+                <span className="rounded bg-red-600 px-2 py-0.5 text-[11px] font-bold text-white">
+                  {tCard(
+                    discontinuing === "all"
+                      ? "discontinuingBadge"
+                      : "partialDiscontinuingBadge"
+                  )}
                 </span>
               )}
             </div>
@@ -247,6 +261,11 @@ export default function ProductCard({
             countryCode={countryCode}
             isWishlisted={isWishlisted}
             membersOnlyPurchase={membersOnlyPurchase}
+            printMasterId={
+              typeof product.metadata?.pimMasterId === "string"
+                ? product.metadata.pimMasterId
+                : undefined
+            }
           />
         </div>
 

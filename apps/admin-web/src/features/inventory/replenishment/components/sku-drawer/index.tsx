@@ -23,6 +23,7 @@ import {
   formatOptionalNumber,
   formatSegment,
   formatSourced,
+  httpStatusOf,
   summarizeActions,
 } from '../../suggestion-model';
 
@@ -132,7 +133,7 @@ function ParametersBlock({ p }: { p: EffectiveParametersDto }) {
 }
 
 export function ReplenishmentSkuDrawer({ skuId, onOpenChange }: Props) {
-  const { data, isLoading } = useReplenishmentSku(skuId);
+  const { data, isLoading, isError, error } = useReplenishmentSku(skuId);
   return (
     <Sheet open={!!skuId} onOpenChange={onOpenChange}>
       <SheetContent className="w-[480px] overflow-y-auto">
@@ -141,7 +142,13 @@ export function ReplenishmentSkuDrawer({ skuId, onOpenChange }: Props) {
             {data ? `${data.skuName} (${data.skuCode})` : '보충 판정'}
           </SheetTitle>
         </SheetHeader>
-        {isLoading || !data ? (
+        {isError ? (
+          <p className="text-sm text-destructive">
+            {httpStatusOf(error) === 409
+              ? '판정을 불러오지 못했습니다. 판매 창고가 하나인지 확인하세요.'
+              : '판정을 불러오지 못했습니다.'}
+          </p>
+        ) : isLoading || !data ? (
           <p className="text-sm text-muted-foreground">로딩 중...</p>
         ) : (
           <div className="space-y-4">

@@ -35,12 +35,14 @@ function StatusCard({
   paymentStatusLabel,
   collapsible,
   hideDigitalDownload,
+  renderItemExtra,
   children,
 }: {
   group: OrderStatusGroup
   paymentStatusLabel?: string
   collapsible?: boolean
   hideDigitalDownload?: boolean
+  renderItemExtra?: (itemId: string) => ReactNode
   children?: ReactNode
 }) {
   const t = useTranslations("mypage.order")
@@ -141,6 +143,7 @@ function StatusCard({
                     />
                   ) : null}
                 </div>
+                {renderItemExtra?.(item.id)}
               </div>
             </div>
           ))}
@@ -198,6 +201,7 @@ export default function OrderStatusCards({
   paymentStatusLabel,
   collapsible,
   hideDigitalDownload,
+  renderItemExtra,
   children,
 }: {
   status: string
@@ -206,6 +210,8 @@ export default function OrderStatusCards({
   paymentStatusLabel?: string
   collapsible?: boolean
   hideDigitalDownload?: boolean
+  // 줄 아래에 덧붙일 내용(파일 문제로 멈춘 인쇄 줄의 다시 올리기 등)
+  renderItemExtra?: (itemId: string) => ReactNode
   children?: ReactNode
 }) {
   const groups = groupOrderItems(items, status, deliveryInfo)
@@ -219,6 +225,7 @@ export default function OrderStatusCards({
           paymentStatusLabel={paymentStatusLabel}
           collapsible={collapsible}
           hideDigitalDownload={hideDigitalDownload}
+          renderItemExtra={renderItemExtra}
         >
           {group.isOrderStatus ? children : null}
         </StatusCard>

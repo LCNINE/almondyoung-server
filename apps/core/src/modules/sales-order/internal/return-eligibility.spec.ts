@@ -55,7 +55,7 @@ describe('toReturnEligibilityLines', () => {
         [
           {
             channelOrderItemId: 'ordli_1',
-            almondDesignId: null,
+            isPrintLine: false,
             quantities: line('L1', [{ sku: 'S1', qtyPerUnit: 1, delivered: 2 }]),
           },
         ],
@@ -76,7 +76,7 @@ describe('toReturnEligibilityLines', () => {
       [
         {
           channelOrderItemId: 'ordli_1',
-          almondDesignId: null,
+          isPrintLine: false,
           quantities: line('L1', [
             { sku: 'S1', qtyPerUnit: 1, delivered: 1 },
             { sku: 'S2', qtyPerUnit: 2, delivered: 0 },
@@ -93,7 +93,7 @@ describe('toReturnEligibilityLines', () => {
       [
         {
           channelOrderItemId: 'ordli_1',
-          almondDesignId: null,
+          isPrintLine: false,
           quantities: line('L1', [{ sku: 'S1', qtyPerUnit: null, delivered: 3 }]),
         },
       ],
@@ -108,12 +108,12 @@ describe('toReturnEligibilityLines', () => {
         [
           {
             channelOrderItemId: null,
-            almondDesignId: null,
+            isPrintLine: false,
             quantities: line('L1', [{ sku: 'S1', qtyPerUnit: 1, delivered: 1 }]),
           },
           {
             channelOrderItemId: 'ordli_2',
-            almondDesignId: null,
+            isPrintLine: false,
             quantities: line('L2', [{ sku: 'S1', qtyPerUnit: 1, delivered: 1 }]),
           },
         ],
@@ -127,7 +127,7 @@ describe('toReturnEligibilityLines', () => {
       [
         {
           channelOrderItemId: 'ordli_1',
-          almondDesignId: null,
+          isPrintLine: false,
           quantities: line('L1', [{ sku: 'S1', qtyPerUnit: 1, delivered: 0 }]),
         },
       ],
@@ -146,7 +146,7 @@ describe('toReturnEligibilityLines', () => {
       [
         {
           channelOrderItemId: 'ordli_1',
-          almondDesignId: 'design-1',
+          isPrintLine: true,
           quantities: line('L1', [{ sku: 'S1', qtyPerUnit: 1, delivered: 2 }]),
         },
       ],
@@ -165,7 +165,7 @@ describe('toReturnEligibilityLines', () => {
       [
         {
           channelOrderItemId: 'ordli_1',
-          almondDesignId: null,
+          isPrintLine: false,
           quantities: line('L1', [{ sku: 'S1', qtyPerUnit: 1, delivered: 1 }]),
         },
       ],

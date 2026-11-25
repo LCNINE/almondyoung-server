@@ -138,6 +138,8 @@ export type CustomerReturnReceivingItem = {
   id: string;
   orderNo: string;
   customerMasked: string;
+  /** 반품인지 교환인지 — 창고가 도착을 받을 때 무엇이 이어지는지(환불·교환품 출고) 미리 보게 */
+  kind: CustomerReturnKind;
   reason: string;
   productSummary: string;
   /** SKU 항목 기대 수량의 합 */
@@ -319,6 +321,7 @@ export class CustomerReturnReader {
           id: r.id,
           salesOrderId: r.salesOrderId,
           status: r.status,
+          kind: r.kind,
           reason: r.reason,
           requestedAt: r.requestedAt,
           csResolution: r.csResolution,
@@ -364,6 +367,7 @@ export class CustomerReturnReader {
             id: row.id,
             orderNo: row.displayOrderNo ?? row.channelOrderId,
             customerMasked: maskName(row.customerName ?? ''),
+            kind: row.kind,
             reason: row.reason,
             productSummary: summary?.productSummary ?? '',
             expectedQty,

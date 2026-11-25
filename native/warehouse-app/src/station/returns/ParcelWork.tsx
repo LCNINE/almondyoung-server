@@ -3,7 +3,10 @@ import { useApiClient } from '../../core/data/ApiClientProvider';
 import { errorMessage } from '../../core/data/errorMessage';
 import { cn } from '../../core/design/cn';
 import { useHumanKeys, useScanner } from '../../core/hardware/scan/useScanner';
-import { isUncertainWrite, recordArrival } from '../../domains/customer-returns/api';
+import { isUncertainWrite, recordArrival, recordInspection } from '../../domains/customer-returns/api';
+import { inspectionItems } from '../../domains/customer-returns/inspection';
+import { confirmOutcome, putawayHint } from '../../domains/customer-returns/outcome';
+import { receivingStageOf } from '../../domains/customer-returns/stage';
 import {
   arrivalItems,
   hasPriorArrival,
@@ -22,9 +25,14 @@ import { RETURNS_ACTIONS } from './returnsActions';
 import type { ReturnsNotice } from './returnsTypes';
 
 type ArrivalBody = Parameters<typeof recordArrival>[2];
+/** 도착 뒤에 할 일 — 도착만(검수 화면 또는 목록) 또는 모두 양품 검수까지 */
+type Then = 'arrive' | 'inspect';
 
-/** «한 번 더 눌러 확정» 대기 — F10 이미 받은 소포가 있는 반품, Esc 센 수량 버리기 */
-type Armed = 'send' | 'discard' | null;
+/**
+ * «한 번 더 눌러 확정» 대기 — send: 이미 받은 소포가 있는 반품의 도착만(F10, 다 오는 소포면 F11),
+ * allGood: 이번 소포로 다 와서 도착·검수(모두 양품)를 한 번에(F10), discard: Esc 센 수량 버리기
+ */
+type Armed = { kind: 'send'; key: 'F10' | 'F11' } | { kind: 'allGood' } | { kind: 'discard' } | null;
 
 // 바코드가 안 찍히는 상품은 이 키로 센다
 const KEY_HINTS: readonly KeyHint[] = [
@@ -34,6 +42,7 @@ const KEY_HINTS: readonly KeyHint[] = [
 ];
 
 const UNCERTAIN_MESSAGE = '결과를 확인하지 못했어요 — F10 다시 보내기';
+const INSPECTION_UNCERTAIN = '검수 결과를 확인하지 못했어요 — 다시 열어 확인하세요';
 const CARD = 'rounded-[10px] border border-[#D5D8DE] bg-white';
 const TH = 'border-b border-[#D5D8DE] bg-[#F6F7F8] px-4 py-2.5 text-left text-[13px] font-semibold text-[#535968]';
 
@@ -41,9 +50,12 @@ const TH = 'border-b border-[#D5D8DE] bg-[#F6F7F8] px-4 py-2.5 text-left text-[1
  * 소포 세기(N5·N6) — 소포 하나를 세어 F10 으로 도착을 확정한다. 반품을 열 때마다 새로 마운트되고(부모의 key),
  * 소포 키는 그때 한 번 만든다. 결과를 모르는 도착(응답 없음·5xx)은 수량을 잠그고 F10 이 같은 키·같은 본문을 다시 보낸다 —
  * 수량을 바꾸면 같은 키·다른 수량이라 서버가 409 로 거절한다. 거절(4xx)은 상세를 다시 읽어 그 단계로 간다(N10).
+ * 이번 소포로 기대 수량이 다 차면 F10 두 번이 도착과 검수(모두 양품)를 이어 보내고, 불량·보류가 있으면 F11 로 도착만 보내 검수 화면으로 간다.
+ * 검수가 실패하면 상세를 다시 읽어 그 단계(검수 화면)로 간다 — 도착은 이미 반영됐다.
  */
 export function ParcelWork({
   view,
+  firstScan,
   warehouseId,
   open,
   onArrived,
@@ -51,37 +63,58 @@ export function ParcelWork({
   onActivity,
 }: {
   view: ReturnView;
+  /** 목록에서 스캐너로 연 그 상품 바코드 — 이 소포의 첫 한 개로 센다 */
+  firstScan?: string;
   warehouseId: string;
   /** 상세를 다시 읽어 단계대로 연다 — notice 는 다음 화면 위 한 줄 */
   open(id: string, notice?: ReturnsNotice): Promise<void>;
   /** 도착이 반영됐다 — 부모가 응답 뷰로 단계를 다시 판정한다(N8) */
   onArrived(view: ReturnView): void;
-  toList(): void;
+  toList(notice?: ReturnsNotice | null): void;
   /** 작업자가 새로 무언가 했다 — 위 안내를 지운다 */
   onActivity(): void;
 }) {
   const api = useApiClient();
   const { signal } = useFeedback();
   const [idempotencyKey] = useState(() => crypto.randomUUID());
-  const [counts, setCounts] = useState<ParcelCounts>(() => new Map());
+  const rows = view.lines.flatMap((line) => line.items.map((item) => ({ line, item })));
+  const [opening] = useState(() => {
+    const result = firstScan === undefined ? null : scanIntoParcel(view, new Map(), firstScan);
+    return result?.kind === 'counted' ? result : null;
+  });
+  const [counts, setCounts] = useState<ParcelCounts>(() => opening?.counts ?? new Map());
   // 한 렌더 안에 스캔이 둘 와도 앞 스캔이 센 것을 보게 — 판정은 늘 이 값으로
   const countsRef = useRef(counts);
-  const [selected, setSelected] = useState(0);
+  const [selected, setSelected] = useState(() =>
+    opening ? Math.max(0, rows.findIndex((row) => row.item.id === opening.itemId)) : 0
+  );
+  const openingSignaled = useRef(false);
+  useEffect(() => {
+    if (!opening || openingSignaled.current) return;
+    openingSignaled.current = true;
+    signal('success');
+  }, [opening, signal]);
   // 줄을 고른(찍은) 뒤 첫 숫자는 덮어쓴다, 그다음부터 이어 친다
   const [fresh, setFresh] = useState(true);
   const [armed, setArmed] = useState<Armed>(null);
-  // 결과를 모르는 도착 — 다음 F10 이 이것을 그대로 다시 보낸다
-  const [pending, setPending] = useState<ArrivalBody | null>(null);
+  // 결과를 모르는 도착 — 다음 F10 이 이것을 그대로 다시 보내고, 하려던 다음 일(검수까지 또는 도착만)도 그대로 잇는다
+  const [pending, setPending] = useState<{ body: ArrivalBody; then: Then } | null>(null);
   const [busy, setBusy] = useState(false);
   // 보내는 중 — 렌더 전에 F10 이 두 번 와도(같은 낡은 run) 한 번만 보내게. busy 는 다음 렌더에야 보인다
   const inFlight = useRef(false);
   const [alert, setAlert] = useState<{ message: string; detail?: string } | null>(null);
 
-  const rows = view.lines.flatMap((line) => line.items.map((item) => ({ line, item })));
   const cursor = Math.min(selected, Math.max(rows.length - 1, 0));
   const total = [...counts.values()].reduce((sum, q) => sum + q, 0);
   const prior = hasPriorArrival(view);
   const locked = busy || pending !== null;
+  // 이번 소포로 기대 수량이 다 찬다 — 미도착으로 닫힌 반품은 도착을 더 받지 않는다
+  const completes =
+    pending === null &&
+    total > 0 &&
+    view.csResolution?.missing == null &&
+    rows.every(({ item }) => item.arrivedQty + (counts.get(item.id) ?? 0) === item.expectedQty);
+  const outcome = confirmOutcome(view);
 
   const commit = (next: ParcelCounts) => {
     countsRef.current = next;
@@ -144,17 +177,38 @@ export function ParcelWork({
     }
   });
 
-  const send = async (body: ArrivalBody) => {
+  /** 다 온 반품을 모두 양품으로 검수한다 — 실패하면 상세를 다시 읽어 그 단계로(검수 화면 또는 끝난 반품) */
+  const inspectAllGood = async (arrivedView: ReturnView) => {
+    const items = inspectionItems(arrivedView, new Map());
+    try {
+      await recordInspection(api, arrivedView.id, { items });
+    } catch (error) {
+      const text = isUncertainWrite(error) ? INSPECTION_UNCERTAIN : errorMessage(error);
+      await open(arrivedView.id, { text, tone: 'error' });
+      return;
+    }
+    signal('complete');
+    const hint = putawayHint(items);
+    toList({
+      text: `${arrivedView.order.orderNo} 검수까지 끝냈어요 — ${outcome.done}${hint ? `. ${hint}` : ''}`,
+      tone: 'info',
+    });
+  };
+
+  const send = async (body: ArrivalBody, then: Then = 'arrive') => {
     if (inFlight.current) return;
     inFlight.current = true;
     setBusy(true);
     try {
       const arrivedView = await recordArrival(api, view.id, body);
-      signal('complete');
-      onArrived(arrivedView);
+      if (then === 'inspect' && receivingStageOf(arrivedView).kind === 'inspect') await inspectAllGood(arrivedView);
+      else {
+        signal('complete');
+        onArrived(arrivedView);
+      }
     } catch (error) {
       if (isUncertainWrite(error)) {
-        setPending(body);
+        setPending({ body, then });
         signal('error');
       } else {
         setPending(null);
@@ -172,12 +226,35 @@ export function ParcelWork({
     if (pending) {
       // Esc 의 «버리기» 대기가 다시 보내기를 넘어 살아남지 않게
       setArmed(null);
-      void send(pending);
+      void send(pending.body, pending.then);
+      return;
+    }
+    const body = { warehouseId, items: arrivalItems(countsRef.current), idempotencyKey };
+    // 다 오는 소포 — 두 번째 F10 이 도착·검수(모두 양품)를 잇는다. 이미 받은 소포가 있는 반품도 이 두 번 누름이 N6 을 대신한다
+    if (completes) {
+      if (armed?.kind !== 'allGood') {
+        setArmed({ kind: 'allGood' });
+        return;
+      }
+      setArmed(null);
+      void send(body, 'inspect');
       return;
     }
     // N6 — 결과를 모른 채 다시 켠 작업자가 같은 소포를 두 번 세지 않게
-    if (prior && armed !== 'send') {
-      setArmed('send');
+    if (prior && !(armed?.kind === 'send' && armed.key === 'F10')) {
+      setArmed({ kind: 'send', key: 'F10' });
+      return;
+    }
+    setArmed(null);
+    void send(body);
+  };
+
+  /** F11 — 다 오는 소포를 도착만 보내고 검수 화면으로(불량·보류를 나눌 때) */
+  const arriveOnly = () => {
+    onActivity();
+    if (inFlight.current || !completes) return;
+    if (prior && !(armed?.kind === 'send' && armed.key === 'F11')) {
+      setArmed({ kind: 'send', key: 'F11' });
       return;
     }
     setArmed(null);
@@ -185,21 +262,22 @@ export function ParcelWork({
   };
 
   const back = () => {
-    if (armed === 'send') setArmed(null);
-    else if (armed === 'discard' || (total === 0 && pending === null)) toList();
-    else setArmed('discard');
+    if (armed?.kind === 'send' || armed?.kind === 'allGood') setArmed(null);
+    else if (armed?.kind === 'discard' || (total === 0 && pending === null)) toList();
+    else setArmed({ kind: 'discard' });
   };
 
   const actions: StationAction[] = [
     {
       ...RETURNS_ACTIONS.confirmArrival,
-      label: pending ? '다시 보내기' : RETURNS_ACTIONS.confirmArrival.label,
+      label: pending ? '다시 보내기' : completes ? '모두 양품 확정' : RETURNS_ACTIONS.confirmArrival.label,
       enabled: !busy && (pending !== null || total > 0),
       run: confirm,
     },
+    { ...RETURNS_ACTIONS.inspectAfterArrival, enabled: !busy && completes, run: arriveOnly },
     {
       ...RETURNS_ACTIONS.back,
-      label: armed === 'send' ? '취소' : RETURNS_ACTIONS.back.label,
+      label: armed?.kind === 'send' || armed?.kind === 'allGood' ? '취소' : RETURNS_ACTIONS.back.label,
       enabled: !busy,
       run: back,
     },
@@ -208,9 +286,15 @@ export function ParcelWork({
   useStationKeyHints(KEY_HINTS);
 
   const big: BigPanelContent | null =
-    armed === 'send'
-      ? { kind: 'notice', title: '새 소포면 F10 한 번 더' }
-      : armed === 'discard'
+    armed?.kind === 'send'
+      ? { kind: 'notice', title: `새 소포면 ${armed.key} 한 번 더` }
+      : armed?.kind === 'allGood'
+        ? {
+          kind: 'notice',
+          title: prior ? '새 소포이고 모두 양품이면 F10 한 번 더' : '모두 양품이면 F10 한 번 더',
+          message: `${outcome.next} · 불량·보류가 있으면 F11 검수`,
+        }
+        : armed?.kind === 'discard'
         ? {
           kind: 'notice',
           title: pending ? '한 번 더 누르면 목록으로 — 보낸 소포는 다시 열어 확인하세요' : '한 번 더 누르면 센 수량을 버려요',

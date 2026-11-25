@@ -8,6 +8,8 @@ import {
 } from '../../../apps/core/src/modules/fulfillment/services/__support__/logistics-wiring';
 import { InboundService } from '../../../apps/core/src/modules/inventory/inbound/services/inbound.service';
 import { InboundReceiptKernel } from '../../../apps/core/src/modules/inventory/inbound/kernel/inbound-receipt.kernel';
+import { BatchControlledStockGuard } from '../../../apps/core/src/modules/inventory/core/services/batch-controlled-stock.guard';
+import { StockRemovalReservations } from '../../../apps/core/src/modules/fulfillment/stock-removal/stock-removal-reservations';
 import { SkuCatalogService } from '../../../apps/core/src/modules/inventory/sku-catalog/services/sku-catalog.service';
 import { SkuCatalogReader } from '../../../apps/core/src/modules/inventory/sku-catalog/services/sku-catalog.reader';
 import { SkuCatalogManager } from '../../../apps/core/src/modules/inventory/sku-catalog/services/sku-catalog.manager';
@@ -31,6 +33,8 @@ import { seedOutboundReady } from './outbound';
 import { seedOutboundScenarios } from './outbound-scenarios';
 import { seedReturnScenarios } from './return-scenarios';
 import { seedBulk } from './bulk';
+import { InboundArrivalFollowUp } from '../../../apps/core/src/modules/inventory/inbound/services/inbound-arrival-follow-up';
+import { DeferredArrivalReservations } from '../../../apps/core/src/modules/inventory/inbound/kernel/inbound-arrival-reservations.port';
 
 /**
  * 이 스크립트의 유일한 의도된 대상은 DEFAULT_SEED_URL(localhost:5432/dev_core) 이다.
@@ -103,22 +107,31 @@ async function main(): Promise<void> {
     const skuCatalogManager = new SkuCatalogManager(dbService, skuCatalogReader);
     const skuCatalogService = new SkuCatalogService(skuCatalogReader, skuCatalogManager);
     const idempotency = new InventoryIdempotencyService(dbService);
+    const receiptKernel = new InboundReceiptKernel(
+      wired.command,
+      wired.location,
+      wired.eventStore,
+      new BatchControlledStockGuard(),
+      new StockRemovalReservations(wired.shipmentReservations),
+    );
     const inboundService = new InboundService(
       dbService,
       skuCatalogService,
       wired.eventStore,
       idempotency,
-      new InboundReceiptKernel(wired.command, wired.location, wired.eventStore),
+      receiptKernel,
+      new InboundArrivalFollowUp(new DeferredArrivalReservations()),
     );
     const headerDeriver = new PurchaseOrderHeaderDeriver();
     const poReader = new PurchaseOrderReader(dbService);
     const receiving = new PurchaseOrderReceivingManager(
       dbService,
-      new InboundReceiptKernel(wired.command, wired.location, wired.eventStore),
+      receiptKernel,
       idempotency,
       headerDeriver,
       poReader,
       wired.sellable,
+      new InboundArrivalFollowUp(new DeferredArrivalReservations()),
     );
     void inboundService;
     // 반품 예정 기록은 실제 Manager 가 만든다. 발행자는 outbox 에 적재만 한다 — 시드가 Kafka 를 부르지 않는다.

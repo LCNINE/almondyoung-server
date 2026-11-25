@@ -4,7 +4,7 @@
 import { randomUUID } from 'node:crypto';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { rememberPending } from './shipment-action-pending';
 import type { PermissionedAction } from '@/lib/auth/mutation-permission';
@@ -12,6 +12,7 @@ import type {
   ConsolidationProgressResponse,
   ConsolidationProgressSource,
   FulfillmentOrderDetail,
+  ScanRejection,
   ShipmentAdminDetail,
   ShipmentAdminSummary,
 } from '@/lib/types/dto/fulfillment';
@@ -1107,6 +1108,156 @@ describe('출고 준비 전에 고칠 것', () => {
 
     expect(
       screen.queryByRole('region', { name: '출고 준비 전에 고칠 것' })
+    ).toBeNull();
+  });
+});
+
+describe('물류앱에서 막힌 상자', () => {
+  const rejection = (over: Partial<ScanRejection> = {}): ScanRejection => ({
+    shipmentId: 'box',
+    workItemId: 'wi-1',
+    code: 'SHIPMENT_TOTE_NOT_RELEASED',
+    reasonCode: null,
+    message: '바구니 배정이 남아 있어 출고하지 못했어요.',
+    action: 'release_tote',
+    route: 'simple_force',
+    barcode: '880000000001',
+    skuName: null,
+    quantity: null,
+    actorId: 'user-1',
+    rejectedAt: '2026-01-02T03:04:05.000Z',
+    ...over,
+  });
+  const show = (scanRejection: ScanRejection | null | undefined) => {
+    mockShipments.mockReturnValue(loaded([summary('box', 'planned')]));
+    mockDetail.mockReturnValue(
+      loaded({
+        ...detail('box', 'planned'),
+        workItems: [{ id: 'wi-1', status: 'picking', batchId: 'batch-1' }],
+        scanRejection,
+      })
+    );
+    renderTab();
+  };
+
+  it('사유 문장·찍은 것·작업자를 보이고, 바구니면 그 배치 상세로 잇는다', () => {
+    show(rejection());
+    const notice = screen.getByRole('region', { name: '물류앱에서 막힘' });
+
+    expect(notice.textContent).toContain(
+      '물류앱에서 막힘 — 바구니 배정이 남아 있어 출고하지 못했어요.'
+    );
+    expect(notice.textContent).toMatch(/강제출고 · 880000000001 · .* · 김관리/);
+    expect(
+      within(notice)
+        .getByRole('link', { name: '배치 상세 열기' })
+        .getAttribute('href')
+    ).toBe('/order/outbound-batches?batchId=batch-1');
+    expect(notice.textContent).not.toContain('이 표시는 사라져요');
+  });
+
+  it('송장 때문이면 이 화면의 송장 칸을 가리키고, 상자 확인이면 덧붙이지 않는다', () => {
+    show(rejection({ action: 'check_waybill' }));
+    let notice = screen.getByRole('region', { name: '물류앱에서 막힘' });
+    expect(notice.textContent).toContain(
+      '아래 송장 칸에서 상태를 확인해 주세요'
+    );
+    expect(within(notice).queryByRole('link')).toBeNull();
+    expect(notice.textContent).toContain(
+      '다시 찍어 반영되거나 상자를 배치에서 빼면 이 표시는 사라져요'
+    );
+    cleanup();
+
+    show(rejection({ action: 'review_box' }));
+    notice = screen.getByRole('region', { name: '물류앱에서 막힘' });
+    expect(within(notice).queryByRole('link')).toBeNull();
+    expect(notice.textContent).not.toContain('송장 칸');
+  });
+
+  it('거절 뒤 담당을 넘겼으면 다시 찍기를 기다린다고 보이고 배치 상세로 보내지 않는다', () => {
+    const handedOffAt = '2026-01-02T04:00:00.000Z';
+    show(
+      rejection({
+        action: 'handoff_worker',
+        message: '다른 작업자가 맡은 상자라 반영하지 못했어요.',
+        handedOff: { at: handedOffAt, workerId: 'user-1' },
+      })
+    );
+    const notice = screen.getByRole('region', {
+      name: '작업자가 다시 찍기를 기다림',
+    });
+
+    expect(notice.textContent).toContain(
+      `${new Date(handedOffAt).toLocaleString('ko-KR')}에 김관리에게 넘겼어요`
+    );
+    expect(within(notice).queryByRole('link')).toBeNull();
+    expect(notice.textContent).not.toContain('담당을 넘기거나 풀어 주세요');
+    expect(
+      screen.queryByRole('region', { name: '물류앱에서 막힘' })
+    ).toBeNull();
+  });
+
+  it('송장 때문에 막힌 뒤 새 송장이 발급됐으면 다시 찍기를 기다린다고 보이고 송장 칸을 가리키지 않는다', () => {
+    const issuedAt = '2026-01-02T05:00:00.000Z';
+    show(
+      rejection({
+        action: 'check_waybill',
+        message: '송장이 출고할 수 있는 상태가 아니라 반영하지 못했어요.',
+        newWaybill: { issuedAt, trackingNo: '123456789012' },
+      })
+    );
+    const notice = screen.getByRole('region', {
+      name: '작업자가 다시 찍기를 기다림',
+    });
+
+    expect(notice.textContent).toContain(
+      `작업자가 다시 찍기를 기다려요 — ${new Date(issuedAt).toLocaleString('ko-KR')}에 새 송장을 발급했어요 · 123456789012`
+    );
+    expect(notice.textContent).toContain(
+      '작업자가 물류앱에서 새 송장으로 다시 찍어 반영되면 이 표시는 사라져요.'
+    );
+    expect(notice.textContent).not.toContain('송장 칸');
+    expect(
+      screen.queryByRole('region', { name: '물류앱에서 막힘' })
+    ).toBeNull();
+  });
+
+  it('받은 작업자 이름을 모르면 넘긴 시각만 보인다', () => {
+    const handedOffAt = '2026-01-02T04:00:00.000Z';
+    show(
+      rejection({
+        action: 'handoff_worker',
+        handedOff: { at: handedOffAt, workerId: 'someone-else' },
+      })
+    );
+
+    expect(
+      screen.getByRole('region', { name: '작업자가 다시 찍기를 기다림' })
+        .textContent
+    ).toContain(
+      `${new Date(handedOffAt).toLocaleString('ko-KR')}에 담당을 넘겼어요`
+    );
+  });
+
+  it('배치 작업 항목 없이 남은 거절이면 배치에서 빼라고 하지 않는다', () => {
+    show(rejection({ action: 'review_box', workItemId: null }));
+    const notice = screen.getByRole('region', { name: '물류앱에서 막힘' });
+
+    expect(notice.textContent).toContain(
+      '다시 찍어 반영되면 이 표시는 사라져요'
+    );
+    expect(notice.textContent).not.toContain('배치에서 빼면');
+  });
+
+  it('풀렸거나 옛 응답이면 그리지 않는다', () => {
+    show(null);
+    expect(
+      screen.queryByRole('region', { name: '물류앱에서 막힘' })
+    ).toBeNull();
+    cleanup();
+    show(undefined);
+    expect(
+      screen.queryByRole('region', { name: '물류앱에서 막힘' })
     ).toBeNull();
   });
 });

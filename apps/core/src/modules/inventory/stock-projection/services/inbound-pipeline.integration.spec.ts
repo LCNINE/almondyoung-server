@@ -301,6 +301,43 @@ describeIfDb('공급 파이프라인 판독 (DB integration)', () => {
     });
   });
 
+  it('판매 창고행 발주의 예정일은 판매 창고로 들어오는 발주끼리만 따져 가장 이른 날을 낸다', async () => {
+    await inRollback(async (trx) => {
+      const { source, dest, skuId } = await seedTwoWarehouses(trx);
+      const read = async () =>
+        (await buildReader(trx).read(trx, { skuIds: [skuId], toWarehouseId: dest.warehouseId }))[0];
+
+      // 더 이른 해외 발주만 있으면 판매 창고행 예정일은 없다
+      await seedPendingSourcePlan(trx, {
+        skuId,
+        warehouseId: source.warehouseId,
+        qty: 300,
+        expectedDate: new Date('2026-08-01'),
+      });
+      expect((await read()).onOrderToSellableEta).toBeNull();
+
+      await seedPendingSourcePlan(trx, {
+        skuId,
+        warehouseId: dest.warehouseId,
+        qty: 4,
+        expectedDate: new Date('2026-08-20'),
+      });
+      await seedPendingSourcePlan(trx, {
+        skuId,
+        warehouseId: dest.warehouseId,
+        qty: 2,
+        expectedDate: new Date('2026-08-15'),
+      });
+      await seedPendingSourcePlan(trx, { skuId, warehouseId: dest.warehouseId, qty: 1 });
+
+      const row = await read();
+      expect(row.onOrderToSellableEta).toBe('2026-08-15');
+      expect(row.onOrderTotalQty - row.onOrderQty).toBe(7);
+      // 비판매 창고행 예정일은 그대로다
+      expect(row.onOrderEta).toEqual(new Date('2026-08-01'));
+    });
+  });
+
   it('라인 예정일이 없으면 ETA 도 없다', async () => {
     await inRollback(async (trx) => {
       const fx = await seedNonSellablePurchaseOrderWorld(trx);

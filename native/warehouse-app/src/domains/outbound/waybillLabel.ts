@@ -195,7 +195,8 @@ export interface BatchPrintResult {
 }
 
 /**
- * 배치 일괄 인쇄. 순차로 돈다 — 프린터는 한 줄로 받고, core 의 래스터화도 가볍지 않다.
+ * 배치 일괄 인쇄. 순차로 찍는다 — 프린터는 한 줄로 받고, core 의 래스터화도 가볍지 않아 받기도 한 번에 하나다.
+ * 다만 앞 건을 찍고 확인하는 동안 다음 건을 미리 받아 둔다.
  * API 거절은 건 단위(건너뛰고 계속), 프린터 실패는 실행 단위(즉시 중단): 프린터가 죽었는데
  * 남은 라벨을 서버에서 계속 렌더링할 이유가 없다.
  * 사람이 멈추면(shouldStop) 그 건부터 notAttempted 로 남긴다 — 「실패·미인쇄만 다시」가 이어 찍는다.
@@ -209,14 +210,31 @@ export async function runBatchLabelPrint(
 ): Promise<BatchPrintResult> {
   const result: BatchPrintResult = { printed: [], skipped: [], notAttempted: [], sheets: 0 };
   const total = o.shipmentIds.length;
+  // 앞 건을 찍고 확인하는 동안 다음 건을 받아 둔다. 받기는 여전히 한 번에 하나다.
+  const fetchAt = (i: number): Promise<WaybillLabel> | undefined => {
+    if (i >= total) return undefined;
+    const pending = o.fetchLabel(o.shipmentIds[i]);
+    pending.catch(() => undefined);
+
+    return pending;
+  };
+  let next = fetchAt(0);
   for (let i = 0; i < total; i++) {
     if (o.shouldStop?.()) {
       result.notAttempted = o.shipmentIds.slice(i);
       return result;
     }
     const shipmentId = o.shipmentIds[i];
+    const current = next ?? o.fetchLabel(shipmentId);
+    const fetchLabel = async (): Promise<WaybillLabel> => {
+      try {
+        return await current;
+      } finally {
+        next = fetchAt(i + 1);
+      }
+    };
     try {
-      const label = await printOneLabel(o, shipmentId);
+      const label = await printOneLabel({ ...o, fetchLabel }, shipmentId);
       result.printed.push(shipmentId);
       result.sheets += label.pages ?? 1;
     } catch (error) {

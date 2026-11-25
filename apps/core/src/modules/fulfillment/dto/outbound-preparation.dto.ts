@@ -1,3 +1,4 @@
+import { StockGivenDto } from './stock-given.dto';
 import { Transform, Type } from 'class-transformer';
 import { ArrayMaxSize, ArrayMinSize, IsArray, IsIn, IsInt, IsOptional, IsUUID, Matches, Min } from 'class-validator';
 import { PREPARATION_BUCKETS, PreparationBucket } from '../outbound-preparation/outbound-preparation-classify';
@@ -40,8 +41,9 @@ export class PreparationIncomingDto {
   // 이 창고로 오는 이동 지시 잔량과 가장 이른 도착 예정일(YYYY-MM-DD)
   inTransit: number;
   inTransitEta: string | null;
-  // 이 창고로 바로 들어오는 발주 잔량
+  // 이 창고로 바로 들어오는 발주 잔량과 가장 이른 입고 예정일
   ordered: number;
+  orderedEta: string | null;
   // 이 창고로 오는 선적 잔량과 가장 이른 도착 예정일
   inboundShipment: number;
   inboundShipmentEta: string | null;
@@ -56,9 +58,15 @@ export class PreparationElsewhereDto {
 }
 
 export class PreparationLineStockDto {
+  // 이 줄의 SKU. 보충 제안의 그 상품으로 잇는다
+  skuId: string;
   // 이 창고 재고(ON_HAND)와 그중 다른 상자가 잡은 수량
   onHand: number;
   reservedByOthers: number;
+  // 아직 어느 상자도 잡지 않은 수량. 곧 자동 예약된다
+  available: number;
+  // 이 창고에서 이 상품 재고를 아직 못 잡은 수량의 합(이 상자 포함). 들어오는 재고는 이 수량에 오래 기다린 순서로 나뉜다
+  waiting: number;
   // 판매 창고가 이 창고 하나일 때만 안다. 모르면 null
   incoming: PreparationIncomingDto | null;
   elsewhere: PreparationElsewhereDto | null;
@@ -69,7 +77,7 @@ export class PreparationLineDto {
   qty: number;
   // 이 줄에 잡힌 예약 수량(주문 수량을 넘지 않는다). 주문 수량과의 차이가 «있는 것만 먼저 보내기»에서 기다릴 몫이다.
   reservedQty: number;
-  // 출고불가 상자만: 재고가 어디에 얼마나 있고 언제 들어오는지
+  // 출고불가·부분출고 상자의 모자란 줄만: 재고가 어디에 얼마나 있고 언제 들어오는지
   stock?: PreparationLineStockDto;
 }
 
@@ -125,9 +133,21 @@ export class PreparationBatchReturnDto {
   needsNewWaybill: boolean;
 }
 
+// 받는 분. 접속기록이 이 칸을 받은 상자만 대상으로 남기게 상자 id 를 함께 싣는다
+export class PreparationRecipientDto {
+  shipmentId: string;
+  name: string;
+}
+
 export class PreparationShipmentDto {
   shipmentId: string;
   orderNos: string[];
+  // 상자에 든 판매 주문 수. 둘 이상이면 합포장이라 «있는 것만 먼저 보내기»를 거절한다
+  orderCount: number;
+  // 상자에 든 주문 중 가장 이른 주문일. 판매 주문이 없는 상자(위탁 출고 등)는 null
+  orderedAt: string | null;
+  // 완전출고 상자만
+  recipient?: PreparationRecipientDto;
   itemSummary: string;
   totalQty: number;
   single: boolean;
@@ -140,6 +160,10 @@ export class PreparationShipmentDto {
   batchReturn: PreparationBatchReturnDto | null;
   // 위탁 업체(3pl) 상자면 그 화주. 자사 상자는 null
   owner: PreparationOwnerDto | null;
+  // 우선할당한 상자 — 재고를 먼저 받는다. 합포장이면 담긴 주문이 모두 우선할당일 때만 true
+  stockPriority: boolean;
+  // 다른 주문을 우선할당하면서 재고를 내줬고 아직 모자란 상자면 그 기록
+  stockGiven: StockGivenDto | null;
   // 정보 부족 상자만: 고쳐야 할 것 전부(첫 항목이 사유)
   needsInfo?: NeedsInfoIssueDto[];
   // 배송 프로필이 섞인 정보 부족 상자만: 그 자리에서 프로필별로 나누는 데 쓰는 줄(받는 분 정보 없음)
@@ -167,6 +191,22 @@ export class PreparationBucketDto {
   // 결품 상자를 뺀, 배치에서 빠져 돌아온 상자 수
   batchReturnCount: number;
   shipments: PreparationShipmentDto[];
+}
+
+export class OutboundPreparationCountsQueryDto {
+  @IsUUID()
+  warehouseId: string;
+}
+
+export class PreparationBucketCountDto {
+  bucket: PreparationBucket;
+  count: number;
+}
+
+// 메뉴 배지처럼 숫자만 쓰는 곳에 준다. 분류는 내역과 같다
+export class OutboundPreparationCountsDto {
+  warehouseId: string;
+  buckets: PreparationBucketCountDto[];
 }
 
 export class OutboundPreparationSummaryDto {

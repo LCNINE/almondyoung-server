@@ -4,6 +4,7 @@ import { errorMessage } from '../../core/data/errorMessage';
 import { cn } from '../../core/design/cn';
 import { useHumanKeys, useScanner } from '../../core/hardware/scan/useScanner';
 import { isUncertainWrite, recordInspection } from '../../domains/customer-returns/api';
+import { confirmOutcome, putawayHint } from '../../domains/customer-returns/outcome';
 import {
   acceptedOf,
   heldTotal,
@@ -33,7 +34,7 @@ const CARD = 'rounded-[10px] border border-[#D5D8DE] bg-white';
 const TH = 'border-b border-[#D5D8DE] bg-[#F6F7F8] px-4 py-2.5 text-left text-[13px] font-semibold text-[#535968]';
 
 /**
- * 검수(N7) — 도착한 것을 불량·보류로 나누고 F10 두 번으로 확정한다(되돌릴 수 없다: 원장 이동 + 환불 요청 또는 CS 확인).
+ * 검수(N7) — 도착한 것을 불량·보류로 나누고 F10 두 번으로 확정한다(되돌릴 수 없다: 원장 이동 + 환불 요청·교환품 출고 지시 또는 CS 확인).
  * 양품은 도착 − 불량 − 보류로 따라 바뀐다(입력 칸이 아니다). 반품을 열 때마다 새로 마운트된다(부모의 key).
  * 결과를 모르는 검수(응답 없음·5xx)는 칸을 잠그고 F10 이 같은 본문을 다시 보낸다 — 같은 결과면 서버가 그대로 돌려준다.
  * 거절(4xx)은 상세를 다시 읽어 그 단계로 간다(N10) — 취소·이미 검수된 반품이면 목록으로.
@@ -47,7 +48,7 @@ export function InspectReturn({
   view: ReturnView;
   /** 상세를 다시 읽어 단계대로 연다 — notice 는 다음 화면 위 한 줄 */
   open(id: string, notice?: ReturnsNotice): Promise<void>;
-  toList(): void;
+  toList(next?: ReturnsNotice | null): void;
   /** 작업자가 새로 무언가 했다 — 위 안내를 지운다 */
   onActivity(): void;
 }) {
@@ -151,7 +152,8 @@ export function InspectReturn({
     try {
       await recordInspection(api, view.id, body);
       signal('complete');
-      toList();
+      const hint = putawayHint(body.items);
+      toList(hint ? { text: `${view.order.orderNo} 검수를 확정했어요. ${hint}`, tone: 'info' } : null);
     } catch (error) {
       if (isUncertainWrite(error)) {
         setPending(body);
@@ -211,7 +213,7 @@ export function InspectReturn({
     armed === 'confirm'
       ? {
           kind: 'notice',
-          title: heldTotal(draft) > 0 ? '한 번 더 누르면 CS 확인으로 넘겨요' : '한 번 더 누르면 환불을 요청해요',
+          title: `한 번 더 누르면 ${heldTotal(draft) > 0 ? 'CS 확인으로 넘겨요' : confirmOutcome(view).next}`,
         }
       : armed === 'discard'
         ? { kind: 'notice', title: '한 번 더 누르면 입력을 버려요' }

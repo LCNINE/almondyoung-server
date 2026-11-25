@@ -704,6 +704,10 @@ export interface ShipmentAdminSummary {
   reservedQty: number;
   inspectedQty: number;
   recoveryCode: string | null;
+  // 우선할당한 상자. 옛 core 응답엔 없다
+  stockPriority?: boolean;
+  // 다른 주문을 우선할당하면서 재고를 내준 기록. 옛 core 응답엔 없다
+  stockGiven?: StockGiven | null;
 }
 
 export interface ShipmentLineOrigin {
@@ -798,6 +802,8 @@ export interface ShipmentOperationHistory {
   lastError?: string | null;
   createdAt: string;
   completedAt: string | null;
+  // 이 작업에서 이 상자의 역할. 옛 core 응답엔 없다
+  role?: 'source' | 'target';
 }
 
 export interface ShipmentWorkItemHistory {
@@ -805,6 +811,27 @@ export interface ShipmentWorkItemHistory {
   status: string;
   batchId?: string;
   leaseVersion?: number;
+}
+
+/** 물류앱 출고 저장이 관리자 손이 필요한 사유로 거절된 뒤 아직 풀리지 않은 것 */
+export interface ScanRejection {
+  shipmentId: string;
+  workItemId: string | null;
+  code: string;
+  reasonCode: string | null;
+  /** 서버가 정한 관리자용 사유 문장 */
+  message: string;
+  action: 'release_tote' | 'check_waybill' | 'handoff_worker' | 'review_box';
+  route: 'simple_scan' | 'simple_force' | 'location_scan' | 'location_force';
+  barcode: string | null;
+  skuName: string | null;
+  quantity: number | null;
+  actorId: string;
+  rejectedAt: string;
+  /** 거절 뒤 담당을 넘겼으면 그 시각과 받은 작업자 — 옛 응답에는 없다 */
+  handedOff?: { at: string; workerId: string | null } | null;
+  /** 송장 때문에 막힌 뒤 출고할 수 있는 새 송장이 발급됐으면 그 시각과 번호 — 옛 응답에는 없다 */
+  newWaybill?: { issuedAt: string; trackingNo: string } | null;
 }
 
 /** 상자가 현장에서 빠지기를 기다리는 취소 */
@@ -842,6 +869,8 @@ export interface ShipmentAdminDetail {
   pendingCancellation?: PendingCancellation | null;
   /** 준비 전 상자가 상자 확정에서 거절될 정보 부족 문제. 옛 core 응답엔 없다 */
   needsInfo?: NeedsInfoIssue[];
+  /** 물류앱에서 막힌 출고 저장. 옛 core 응답엔 없다 */
+  scanRejection?: ScanRejection | null;
 }
 
 /** 응답을 받지 못한 요청이 서버에서 처리됐는지(요청 키 기준) */
@@ -885,6 +914,66 @@ export interface SplitShipmentRequest extends ShipmentCommandReason {
 
 export interface SplitUnreservedShipmentRequest extends ShipmentCommandReason {
   expectedManifestVersion: number;
+}
+
+export interface StockGiven {
+  at: string;
+  orderNos: string[];
+}
+
+export interface StockPriorityHeld {
+  reason: 'priority' | 'ready' | 'in_progress' | 'other';
+  orderNos: string[];
+  qty: number;
+}
+
+export interface StockPriorityTake {
+  shipmentId: string;
+  orderNos: string[];
+  skuName: string;
+  qty: number;
+  // 가져오기 전에 나갈 수 있던 상자인가
+  ready: boolean;
+  // 가져온 뒤 이 상자에 잡힌 재고가 하나도 없는가
+  emptied: boolean;
+}
+
+export interface StockPriorityPlan {
+  freeQty: number;
+  takes: StockPriorityTake[];
+  missingQty: number;
+  token: string;
+}
+
+export interface StockPriorityPreview {
+  shipmentId: string;
+  orderNos: string[];
+  stockAllocation: 'normal' | 'priority';
+  blocked: string | null;
+  lines: {
+    skuId: string;
+    skuName: string;
+    qty: number;
+    reservedQty: number;
+    missingQty: number;
+  }[];
+  plan: StockPriorityPlan | null;
+  planWithReady: StockPriorityPlan | null;
+  // 옛 core 응답엔 없다
+  held?: StockPriorityHeld[];
+}
+
+export interface SetStockPriorityRequest extends ShipmentCommandReason {
+  planToken: string;
+  includeReady?: boolean;
+}
+
+export interface StockPriorityResult {
+  shipmentId: string;
+  movedQty: number;
+  freeQty: number;
+  missingQty: number;
+  operationId: string;
 }
 
 export interface ReviseShipmentRecipientRequest extends ShipmentCommandReason {
@@ -989,6 +1078,9 @@ export interface ShipmentSplitShare {
   orderQty: number;
   boxNo: number;
   boxCount: number;
+  // 이 상자를 나눈 이유. 서버가 주기 전 응답과 코드 없이 남은 옛 기록은 없다.
+  reasonCode?: string | null;
+  reason?: string | null;
 }
 
 // 상자에 담긴 상품별 수량. 서버가 주기 전 응답에는 없다.
@@ -1057,6 +1149,8 @@ export interface PreparationIncoming {
   inTransit: number;
   inTransitEta: string | null;
   ordered: number;
+  // 바로 오는 발주의 예정일. 옛 응답에는 없다
+  orderedEta?: string | null;
   inboundShipment: number;
   inboundShipmentEta: string | null;
 }
@@ -1069,8 +1163,14 @@ export interface PreparationElsewhere {
 }
 
 export interface PreparationLineStock {
+  // 옛 응답에는 없다
+  skuId?: string;
   onHand: number;
   reservedByOthers: number;
+  // 아직 어느 상자도 잡지 않은 수량. 옛 응답에는 없다
+  available?: number;
+  // 이 창고에서 재고를 아직 못 잡은 수량의 합. 옛 응답에는 없다
+  waiting?: number;
   // 판매 창고가 이 창고 하나일 때만 안다
   incoming: PreparationIncoming | null;
   elsewhere: PreparationElsewhere | null;
@@ -1080,7 +1180,7 @@ export interface PreparationLineDto {
   name: string;
   qty: number;
   reservedQty: number;
-  // 출고불가 상자만. 서버가 주기 전 응답에는 없다
+  // 출고불가·부분출고 상자의 모자란 줄만. 서버가 주기 전 응답에는 없다
   stock?: PreparationLineStock;
 }
 
@@ -1101,6 +1201,12 @@ export interface NeedsInfoSku {
 export interface PreparationShipmentDto {
   shipmentId: string;
   orderNos: string[];
+  // 상자에 든 판매 주문 수. 옛 core 응답엔 없다
+  orderCount?: number;
+  // 상자에 든 주문 중 가장 이른 주문일. 판매 주문이 없는 상자는 null, 옛 core 응답엔 없다
+  orderedAt?: string | null;
+  // 완전출고 상자만. 받는 분 정보 권한이 없으면 가린 이름이 온다
+  recipient?: { shipmentId: string; name: string };
   itemSummary: string;
   totalQty: number;
   single: boolean;
@@ -1114,6 +1220,10 @@ export interface PreparationShipmentDto {
   batchReturn?: PreparationBatchReturn | null;
   // 위탁 업체(3pl) 상자면 그 화주. 자사 상자는 null
   owner?: { id: string; name: string } | null;
+  // 우선할당한 상자. 옛 core 응답엔 없다
+  stockPriority?: boolean;
+  // 다른 주문을 우선할당하면서 재고를 내준 기록. 옛 core 응답엔 없다
+  stockGiven?: StockGiven | null;
   // 정보 부족 상자만: 고쳐야 할 것 전부. 서버가 주기 전 응답에는 없다
   needsInfo?: NeedsInfoIssue[];
   /** 배송 프로필이 섞인 정보 부족 상자만 — 그 자리에서 나누는 데 쓰는 줄. 옛 core 응답엔 없다 */
@@ -1174,6 +1284,12 @@ export interface OutboundPreparationSummary {
   holders?: PreparationHolder[];
 }
 
+// 메뉴 배지용 — 분류는 내역과 같고 상자 목록은 없다
+export interface OutboundPreparationCounts {
+  warehouseId: string;
+  buckets: { bucket: PreparationBucket; count: number }[];
+}
+
 export interface BulkShipmentFailure {
   shipmentId: string;
   code: string;
@@ -1199,6 +1315,10 @@ export interface PlannedShipment {
 
 export interface ConsolidationBoardResponse {
   groups: ConsolidationBoardGroup[];
+}
+
+export interface ConsolidationBoardCount {
+  groupCount: number;
 }
 
 export interface ConsolidationOptionsResponse {
@@ -1356,6 +1476,8 @@ export interface OutboundBatchWorkItemV2 {
   itemSummary?: string;
   /** 현장에서 빠지기를 기다리는 취소. 배치 상세에만 있고 옛 core 응답엔 없다 */
   pendingCancellation?: PendingCancellation | null;
+  /** 물류앱에서 막힌 출고 저장 — 이 작업 항목 것만. 옛 core 응답엔 없다 */
+  scanRejection?: ScanRejection | null;
 }
 
 export interface EligibleShipmentV2 {

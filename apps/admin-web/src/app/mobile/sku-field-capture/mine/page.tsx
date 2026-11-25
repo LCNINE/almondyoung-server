@@ -3,7 +3,7 @@
 import { Suspense, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Loader2, Search, X } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -93,11 +93,16 @@ function CaptureHistory() {
   const canOperate = useCan(['inventory.stock.operate']);
   const writeBlocked = blockedReason(canOperate, [{ permission: ['inventory.stock.operate'] }]);
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, hasNextPage, fetchNextPage, isFetchingNextPage } = useInfiniteQuery({
     queryKey: fieldCaptureKeys.itemsOf(who, from ?? '', to ?? '', q),
-    queryFn: () => skuFieldCaptureClient.getItems({ who, from, to, q: q || undefined }),
+    queryFn: ({ pageParam }) =>
+      skuFieldCaptureClient.getItems({ who, from, to, q: q || undefined, offset: pageParam }),
+    initialPageParam: 0,
+    getNextPageParam: (last) => last.nextOffset ?? undefined,
     staleTime: 0, // 작업 화면에서 막 끝내고 돌아와도 바로 보이게
   });
+  const items = uniqueBySku(data?.pages.flatMap((p) => p.items) ?? []);
+  const total = data?.pages[0]?.total ?? 0;
 
   const cancel = useMutation({
     mutationFn: (item: MyCaptureItemDto) => skuFieldCaptureClient.cancel(item.skuId),
@@ -118,7 +123,7 @@ function CaptureHistory() {
   });
 
   // 하루만 보는 중이면 날짜로 묶지 않는다
-  const groups = groupByDate(data?.items ?? [], !(from && from === to));
+  const groups = groupByDate(items, !(from && from === to));
 
   return (
     <>
@@ -210,10 +215,15 @@ function CaptureHistory() {
           )}
         </div>
 
-        {data && <p className="text-sm text-gray-600">{data.items.length}개</p>}
+        {data && (
+          <p className="text-sm text-gray-600">
+            {total.toLocaleString('ko-KR')}개
+            {hasNextPage && ` 중 ${items.length.toLocaleString('ko-KR')}개`}
+          </p>
+        )}
         {isLoading && <Loader2 className="mx-auto h-6 w-6 animate-spin text-gray-400" />}
         {error && <p className="text-sm text-red-600">{errorMessageOf(error, '목록을 불러오지 못했어요')}</p>}
-        {data && data.items.length === 0 && (
+        {data && items.length === 0 && (
           <p className="py-8 text-center text-sm text-gray-500">
             {q ? `'${q}'에 맞는 기록이 없어요` : '이 기간에 끝낸 상품이 없어요'}
           </p>
@@ -266,6 +276,17 @@ function CaptureHistory() {
           </section>
         ))}
 
+        {hasNextPage && (
+          <button
+            type="button"
+            onClick={() => fetchNextPage()}
+            disabled={isFetchingNextPage}
+            className="h-11 w-full rounded-lg border border-gray-300 text-sm font-medium text-gray-800 disabled:opacity-50"
+          >
+            {isFetchingNextPage ? '불러오는 중…' : '더 보기'}
+          </button>
+        )}
+
         <AlertDialog open={target !== null} onOpenChange={(open) => !open && setTarget(null)}>
           <AlertDialogContent>
             <AlertDialogHeader>
@@ -291,6 +312,18 @@ function CaptureHistory() {
       </div>
     </>
   );
+}
+
+// 페이지를 넘기는 사이 새로 끝낸 상품이 생기면 다음 페이지에 같은 상품이 한 번 더 온다
+function uniqueBySku(items: MyCaptureItemDto[]): MyCaptureItemDto[] {
+  const seen = new Set<string>();
+
+  return items.filter((i) => {
+    if (seen.has(i.skuId)) return false;
+    seen.add(i.skuId);
+
+    return true;
+  });
 }
 
 function chipClass(active: boolean): string {

@@ -10,6 +10,7 @@ import { and, eq } from 'drizzle-orm';
 import { destinationIssue } from '../../shared/policies/location-work-policy';
 import { lockWorkLocations } from '../../shared/locks/location-work-lock';
 import { acquireStockAvailabilityLocks } from '../../shared/locks/stock-availability-lock';
+import { rememberUsualShelf } from '../../core/services/usual-shelf';
 
 @Injectable()
 export class MovementService {
@@ -26,7 +27,7 @@ export class MovementService {
   async moveImmediately(
     dto: MoveBatchDto,
     authenticatedActorId?: string,
-  ): Promise<{ job: MovementJob; lines: MovementJobLine[] }> {
+  ): Promise<{ job: MovementJob; lines: MovementJobLine[]; usualShelfSkuIds?: string[] }> {
     const { warehouseId, memo } = dto;
     const actorId = dto.contractVersion === 2 ? authenticatedActorId : dto.actorId;
 
@@ -122,6 +123,7 @@ export class MovementService {
           .returning();
 
         const lineOutputs: MovementJobLine[] = [];
+        const usualShelfSkuIds: string[] = [];
 
         for (const [i, line] of dto.lines.entries()) {
           // 음수 방지: from 그레인 수량 확인(간단 체크)
@@ -184,11 +186,17 @@ export class MovementService {
           });
 
           lineOutputs.push(jobLine);
+          if (
+            line.rememberAsUsual === true &&
+            (await rememberUsualShelf(tx, line.skuId, line.toLocationId, warehouseId))
+          )
+            usualShelfSkuIds.push(line.skuId);
         }
 
         return {
           job,
           lines: lineOutputs,
+          usualShelfSkuIds,
         };
       },
     );

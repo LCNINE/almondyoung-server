@@ -466,6 +466,18 @@ describeIfDb('CustomerReturnReader — 상세 뷰 (K8 PR7)', () => {
     const setReturn = (tx: DbTx, id: string, set: Partial<typeof wmsTables.customerReturns.$inferInsert>) =>
       tx.update(wmsTables.customerReturns).set(set).where(eq(wmsTables.customerReturns.id, id));
 
+    it('교환이면 목록 행의 kind 가 exchange 다', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const wired = wire();
+        const w = await seedWorld(tx);
+        const mine = await seed(tx, w, wired);
+        await setReturn(tx, mine.customerReturnId, { kind: 'exchange' });
+
+        const page = await wired.reader.listForReceiving(receivingQuery(w.warehouseId), tx);
+        expect(page.items.map((item) => [item.id, item.kind])).toEqual([[mine.customerReturnId, 'exchange']]);
+      });
+    });
+
     it('W 가 배송완료한 expected 반품만 awaiting 으로 싣고, 다른 창고가 배송한 주문은 뺀다', async () => {
       await inRollbackTx(db, async (tx) => {
         const wired = wire();
@@ -488,6 +500,7 @@ describeIfDb('CustomerReturnReader — 상세 뷰 (K8 PR7)', () => {
             id: mine.customerReturnId,
             orderNo: '7100',
             customerMasked: '홍길*',
+            kind: 'return',
             reason: 'defective',
             productSummary: line.productName,
             expectedQty: 2,

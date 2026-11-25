@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { ConflictError, NotFoundError } from '@app/shared';
+import { and, asc, eq, inArray, isNull, notInArray, sql } from 'drizzle-orm';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import {
   acquireStockAvailabilityLock,
@@ -14,6 +15,7 @@ import {
   reprojectFulfillmentOrders,
 } from '../fulfillment-order/fulfillment-order-projection';
 import { shortPickOperationIntentOf, ShortPickOperationIntentProof } from './batch-inventory-session.service';
+import { hasStockPrioritySql } from './reservation-queue-key';
 import { warehouseIdOf } from '../shipment/shipment-owner';
 
 type LineContext = {
@@ -27,6 +29,7 @@ type LineContext = {
   demandRequestedAt: Date | null;
   warehouseId: string;
   shipmentStatus: string;
+  hasStockPriority: boolean;
 };
 
 type ConfirmedReservation = typeof wmsTables.stockReservations.$inferSelect;
@@ -47,6 +50,22 @@ export type PartialReservationResult = {
   shortageQty: number;
   mutated: boolean;
   reservationIds: string[];
+  reservationVersion: number;
+};
+
+export type ReservationTransferResult = {
+  sourceLineId: string;
+  targetLineId: string;
+  transferredQty: number;
+  affectedReservationIds: string[];
+  sourceReservationVersion: number;
+  targetReservationVersion: number;
+};
+
+export type ReservationRowReleaseResult = {
+  reservationId: string;
+  shipmentLineId: string;
+  releasedQty: number;
   reservationVersion: number;
 };
 
@@ -170,6 +189,49 @@ export function assertExactRecallReservationEvidence(
       );
     }
   }
+}
+
+/** 우선할당한 출고주문의 draft 상자 줄이 아직 예약받지 못한 수량. 부르는 쪽이 (sku, 창고) 재고 잠금을 쥐고 있다. */
+export async function loadPriorityOutstanding(
+  tx: DbTx,
+  skuId: string,
+  warehouseId: string,
+  exceptFulfillmentOrderIds: readonly string[] = [],
+): Promise<number> {
+  const reserved = sql`COALESCE((
+    SELECT SUM(reservation.quantity)
+      FROM stock_reservations reservation
+     WHERE reservation.target_type = 'SHIPMENT_LINE'
+       AND reservation.shipment_line_id = ${wmsTables.shipmentLines.id}
+       AND reservation.status = 'confirmed'
+  ), 0)`;
+  const [row] = await tx
+    .select({
+      qty: sql<number>`COALESCE(SUM(GREATEST(${wmsTables.shipmentLines.qty} - ${reserved}, 0)), 0)::int`,
+    })
+    .from(wmsTables.fulfillmentOrders)
+    .innerJoin(
+      wmsTables.fulfillmentOrderItems,
+      eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, wmsTables.fulfillmentOrders.id),
+    )
+    .innerJoin(
+      wmsTables.shipmentLines,
+      eq(wmsTables.shipmentLines.fulfillmentOrderItemId, wmsTables.fulfillmentOrderItems.id),
+    )
+    .innerJoin(wmsTables.shipments, eq(wmsTables.shipments.id, wmsTables.shipmentLines.shipmentId))
+    .where(
+      and(
+        eq(wmsTables.fulfillmentOrders.stockAllocation, 'priority'),
+        hasStockPrioritySql(sql`fulfillment_orders`),
+        eq(wmsTables.shipmentLines.skuId, skuId),
+        eq(wmsTables.shipments.warehouseId, warehouseId),
+        eq(wmsTables.shipments.status, 'draft'),
+        exceptFulfillmentOrderIds.length > 0
+          ? notInArray(wmsTables.fulfillmentOrders.id, [...exceptFulfillmentOrderIds])
+          : undefined,
+      ),
+    );
+  return row.qty;
 }
 
 function assertPositiveInteger(name: string, value: number): void {
@@ -339,6 +401,23 @@ export class ShipmentReservationService {
     await this.lockConnectedComponents(contexts, tx);
   }
 
+  /** 여러 줄의 예약을 한 트랜잭션에서 옮기기 전에, 그 줄들의 상자 그래프와 재고를 한 번에 정해진 순서로 잠근다. */
+  async lockLinesForReservation(
+    shipmentLineIds: readonly string[],
+    skuIds: readonly string[],
+    warehouseId: string,
+    tx: DbTx,
+  ): Promise<void> {
+    const contexts: LineContext[] = [];
+    for (const id of [...new Set(shipmentLineIds)].sort()) contexts.push(await this.loadLineContext(id, tx));
+    await this.lockConnectedComponents(contexts, tx);
+    for (const before of contexts) this.assertStableContext(before, await this.loadLineContext(before.id, tx));
+    await acquireStockAvailabilityLocks(
+      tx,
+      skuIds.map((skuId) => ({ skuId, warehouseId })),
+    );
+  }
+
   async reservePartial(shipmentLineId: string, requestedQty: number, tx?: DbTx): Promise<PartialReservationResult> {
     assertPositiveInteger('requestedQty', requestedQty);
     return this.db.run(async (trx) => {
@@ -374,7 +453,11 @@ export class ShipmentReservationService {
       );
       const confirmedQty = reservations.reduce((total, row) => total + row.quantity, 0);
       const outstandingQty = Math.max(0, line.qty - confirmedQty);
-      const availableQty = await this.unifiedReservation.getAvailableQuantity(line.skuId, line.warehouseId, trx);
+      const unreservedQty = await this.unifiedReservation.getAvailableQuantity(line.skuId, line.warehouseId, trx);
+      // 우선할당한 줄이 아직 못 받은 몫은 남겨 둔다 — 방금 들어온 주문이 재시도 워커보다 먼저 가져가지 않게
+      const availableQty = line.hasStockPriority
+        ? unreservedQty
+        : Math.max(0, unreservedQty - (await loadPriorityOutstanding(trx, line.skuId, line.warehouseId)));
       const quantity = computePartialReservationQuantity({ requestedQty, outstandingQty, availableQty });
 
       if (quantity === 0) {
@@ -523,6 +606,56 @@ export class ShipmentReservationService {
     }, tx);
   }
 
+  /**
+   * 상자 줄에 걸린 확정 예약 «한 행»을 풀고 같은 트랜잭션에서 상자·출고주문을 다시 계산한다.
+   * 잠금 순서는 releasePartial 과 같다: 상자 묶음(출고주문·상자·줄·확정 예약 행) → 재고 advisory lock
+   * → 잠근 확정 행 중에서 그 행을 찾는다.
+   */
+  async releaseReservation(reservationId: string, reason: string, tx?: DbTx): Promise<ReservationRowReleaseResult> {
+    return this.db.run(async (trx) => {
+      const [found] = await trx
+        .select({
+          id: wmsTables.stockReservations.id,
+          targetType: wmsTables.stockReservations.targetType,
+          shipmentLineId: wmsTables.stockReservations.shipmentLineId,
+        })
+        .from(wmsTables.stockReservations)
+        .where(eq(wmsTables.stockReservations.id, reservationId))
+        .limit(1);
+      if (!found) throw new NotFoundError('예약을 찾을 수 없습니다');
+      if (found.targetType !== 'SHIPMENT_LINE') {
+        throw new Error(`releaseReservation: reservation ${reservationId} is not a shipment-line reservation`);
+      }
+
+      const initial = await this.loadLineContext(found.shipmentLineId, trx);
+      await this.lockConnectedComponents([initial], trx);
+      const line = await this.loadLineContext(found.shipmentLineId, trx);
+      this.assertStableContext(initial, line);
+      if (line.shipmentStatus !== 'draft') throw new ConflictError('작업이 시작된 상자의 예약은 풀 수 없습니다');
+      await acquireStockAvailabilityLock(trx, line.skuId, line.warehouseId);
+
+      const reservations = await this.loadConfirmedReservations(line.id, trx);
+      const row = reservations.find((candidate) => candidate.id === reservationId);
+      if (!row) throw new ConflictError('이미 풀린 예약입니다');
+
+      const now = new Date();
+      await trx
+        .update(wmsTables.stockReservations)
+        .set({ status: 'released', stateReason: reason, invalidatedAt: now, updatedAt: now })
+        .where(eq(wmsTables.stockReservations.id, row.id));
+
+      await this.unifiedReservation.recalculateSellableForSku(line.skuId, trx);
+      await this.bumpReservationVersions([line.shipmentId], trx);
+      await this.recompute(line.shipmentId, trx);
+      return {
+        reservationId,
+        shipmentLineId: line.id,
+        releasedQty: row.quantity,
+        reservationVersion: await this.loadReservationVersion(line.shipmentId, trx),
+      };
+    }, tx);
+  }
+
   async invalidateForShortPick(
     shipmentLineId: string,
     qty: number,
@@ -662,19 +795,33 @@ export class ShipmentReservationService {
     }, tx);
   }
 
+  /** 예약을 옮긴다. 옮긴 예약은 원래 요청 시각을 들고 간다 — 같은 주문을 나눌 때 쓴다. */
   async transfer(
     sourceLineId: string,
     targetLineId: string,
     qty: number,
     tx?: DbTx,
-  ): Promise<{
-    sourceLineId: string;
-    targetLineId: string;
-    transferredQty: number;
-    affectedReservationIds: string[];
-    sourceReservationVersion: number;
-    targetReservationVersion: number;
-  }> {
+  ): Promise<ReservationTransferResult> {
+    return this.moveConfirmed(sourceLineId, targetLineId, qty, false, tx);
+  }
+
+  /** 다른 주문의 예약을 가져온다. 요청 시각은 받는 줄의 것으로 바꾼다 — 남의 이른 순번을 물려받으면 안 된다. */
+  async takeFrom(
+    sourceLineId: string,
+    targetLineId: string,
+    qty: number,
+    tx?: DbTx,
+  ): Promise<ReservationTransferResult> {
+    return this.moveConfirmed(sourceLineId, targetLineId, qty, true, tx);
+  }
+
+  private async moveConfirmed(
+    sourceLineId: string,
+    targetLineId: string,
+    qty: number,
+    ownDemand: boolean,
+    tx?: DbTx,
+  ): Promise<ReservationTransferResult> {
     assertPositiveInteger('qty', qty);
     if (sourceLineId === targetLineId) throw new BadRequestException('Source and target shipment lines must differ');
 
@@ -712,14 +859,21 @@ export class ShipmentReservationService {
 
       let remaining = qty;
       const now = new Date();
+      const targetDemandAt = target.demandRequestedAt ?? target.createdAt;
       const affectedReservationIds: string[] = [];
       for (const reservation of sourceReservations) {
         if (remaining === 0) break;
         const moved = Math.min(remaining, reservation.quantity);
+        const requestedAt = ownDemand ? targetDemandAt : (reservation.requestedAt ?? reservation.createdAt);
         if (moved === reservation.quantity) {
           await trx
             .update(wmsTables.stockReservations)
-            .set({ targetId: target.id, shipmentLineId: target.id, updatedAt: now })
+            .set({
+              targetId: target.id,
+              shipmentLineId: target.id,
+              updatedAt: now,
+              ...(ownDemand ? { requestedAt } : {}),
+            })
             .where(eq(wmsTables.stockReservations.id, reservation.id));
           affectedReservationIds.push(reservation.id);
         } else {
@@ -739,7 +893,7 @@ export class ShipmentReservationService {
               status: 'confirmed',
               timeoutAt: reservation.timeoutAt,
               reason: reservation.reason,
-              requestedAt: reservation.requestedAt ?? reservation.createdAt,
+              requestedAt,
             })
             .returning({ id: wmsTables.stockReservations.id });
           affectedReservationIds.push(reservation.id, split.id);
@@ -1087,11 +1241,16 @@ export class ShipmentReservationService {
         demandRequestedAt: wmsTables.shipmentLines.demandRequestedAt,
         warehouseId: wmsTables.shipments.warehouseId,
         shipmentStatus: wmsTables.shipments.status,
+        hasStockPriority: hasStockPrioritySql(sql`fulfillment_orders`),
       })
       .from(wmsTables.shipmentLines)
       .innerJoin(
         wmsTables.fulfillmentOrderItems,
         eq(wmsTables.fulfillmentOrderItems.id, wmsTables.shipmentLines.fulfillmentOrderItemId),
+      )
+      .innerJoin(
+        wmsTables.fulfillmentOrders,
+        eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId),
       )
       .innerJoin(wmsTables.shipments, eq(wmsTables.shipments.id, wmsTables.shipmentLines.shipmentId))
       .where(eq(wmsTables.shipmentLines.id, shipmentLineId))

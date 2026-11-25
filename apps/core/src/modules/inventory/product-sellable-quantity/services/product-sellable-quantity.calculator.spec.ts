@@ -329,6 +329,7 @@ describe('calculateProductSellableQuantity', () => {
       reason: 'SELLABLE',
       availabilityOverride: null,
       comingSoonDate: null,
+      discontinuing: false,
       inboundDate: null,
       inboundApproximate: false,
       preStockSellable: false,
@@ -484,5 +485,24 @@ describe('calculateProductSellableQuantity', () => {
         }),
       ).toBe(true);
     });
+  });
+
+  it('단종 예정만 바뀌어도 변경으로 잡는다 — 재고·사유가 그대로라 이게 없으면 전파되지 않는다', () => {
+    const current = calculateProductSellableQuantity(makeInput({ discontinuing: true }), { now });
+
+    expect(current.discontinuing).toBe(true);
+    expect(
+      hasProductSellableQuantityProjectionChanged(current, {
+        masterId: current.masterId,
+        versionId: current.versionId,
+        matchingId: current.matchingId,
+        sellableQuantity: current.sellableQuantity,
+        stockBoundQuantity: current.stockBoundQuantity,
+        isSellable: current.isSellable,
+        reason: current.reason,
+        comingSoonDate: current.comingSoonDate,
+        discontinuing: false,
+      }),
+    ).toBe(true);
   });
 });

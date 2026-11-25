@@ -36,4 +36,12 @@ export class UpdateSalesOrderDto {
   @IsString()
   @IsOptional()
   memo?: string;
+
+  @ApiProperty({
+    description: '화면이 보고 있던 메모. 보내면 그 사이 메모가 바뀌었을 때 덮어쓰지 않고 409 로 거절한다',
+    required: false,
+  })
+  @IsString()
+  @IsOptional()
+  expectedMemo?: string;
 }

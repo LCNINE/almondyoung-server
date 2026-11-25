@@ -50,7 +50,12 @@ describe('outbound preparation hooks', () => {
 
   it.each(['warehouse-1', 'warehouse-2', ''])(
     'scopes summary to warehouse %s and disables empty IDs',
-    (warehouseId) => {
+    async (warehouseId) => {
+      jest.mocked(orders.outboundPreparation.summary).mockResolvedValue({
+        warehouseId,
+        buckets: [],
+        awaitingMatchingCount: 0,
+      });
       useOutboundPreparationSummary(warehouseId);
 
       const options = jest.mocked(useQuery).mock.calls[0][0];
@@ -61,7 +66,7 @@ describe('outbound preparation hooks', () => {
         throw new Error('Missing query function');
       }
 
-      options.queryFn({
+      await options.queryFn({
         client: useQueryClient(),
         queryKey: options.queryKey,
         signal: new AbortController().signal,

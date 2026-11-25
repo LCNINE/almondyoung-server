@@ -38,6 +38,9 @@ export const orderQueryKeys = {
     holders.length > 0
       ? (['outbound-preparation', warehouseId, holders.join(',')] as const)
       : (['outbound-preparation', warehouseId] as const),
+  // 창고 키 아래에 둬서 출고 준비 무효화가 배지 숫자도 다시 읽게 한다
+  outboundPreparationCounts: (warehouseId: string) =>
+    ['outbound-preparation', warehouseId, { counts: true }] as const,
 
   // 이행 관련
   fulfillments: ['fulfillments'] as const,
@@ -47,6 +50,7 @@ export const orderQueryKeys = {
   fulfillmentShipments: (id: string) =>
     ['fulfillments', id, 'shipments'] as const,
   shipment: (id: string) => ['shipments', id] as const,
+  stockPriority: (id: string) => ['stock-priority', id] as const,
   fulfillmentOperation: (id: string) => ['fulfillment-operations', id] as const,
   fulfillmentRequestOutcome: (commandType: string, idempotencyKey: string) =>
     [
@@ -116,6 +120,8 @@ export const orderQueryKeys = {
     ['shipments', 'consolidation-candidates', params] as const,
   consolidationBoard: (warehouseId: string) =>
     ['shipments', 'consolidation-board', warehouseId] as const,
+  consolidationBoardCount: (warehouseId: string) =>
+    ['shipments', 'consolidation-board', warehouseId, 'count'] as const,
   plannedShipments: (warehouseId: string) =>
     ['shipments', 'planned', warehouseId] as const,
   consolidationLive: (warehouseId: string) =>
@@ -147,6 +153,7 @@ export const orderQueryKeys = {
     stage: string;
     state: string;
     stuck: boolean;
+    followUpDue: boolean;
     channel: string;
     sort: string;
   }) => ['order-progress', 'orders', params] as const,

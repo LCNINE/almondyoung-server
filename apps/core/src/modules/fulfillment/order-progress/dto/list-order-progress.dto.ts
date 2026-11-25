@@ -20,6 +20,12 @@ export class ListOrderProgressQueryDto {
   @IsBoolean()
   stuck?: boolean;
 
+  @ApiPropertyOptional({ description: '다시 연락할 날이 오늘이거나 지난 주문만(가장 최근 연락 기록 기준)' })
+  @IsOptional()
+  @Transform(({ value }) => (value === 'true' ? true : value === 'false' ? false : value))
+  @IsBoolean()
+  followUpDue?: boolean;
+
   @ApiPropertyOptional({ enum: salesChannelEnum.enumValues })
   @IsOptional()
   @IsIn(salesChannelEnum.enumValues)

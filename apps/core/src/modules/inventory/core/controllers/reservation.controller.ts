@@ -1,20 +1,8 @@
-import {
-  Controller,
-  Post,
-  Get,
-  Delete,
-  Body,
-  Param,
-  Query,
-  HttpCode,
-  HttpStatus,
-  NotFoundException,
-} from '@nestjs/common';
+import { Controller, Post, Get, Param, Query, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { RequirePermission } from '@app/authorization';
 import { UnifiedReservationService } from '../../shared/services/unified-reservation.service';
 import { FulfillmentReservationReconciliationService } from '../services/fulfillment-reservation-reconciliation.service';
-import { ReleaseReservationDto } from '../dto/reservation/reserve-stock.dto';
 import { ReservationDto, ReservationSummaryDto } from '../dto/reservation/reservation-response.dto';
 
 @ApiTags('Inventory - Reservations')
@@ -24,41 +12,6 @@ export class ReservationController {
     private readonly unifiedReservation: UnifiedReservationService,
     private readonly reconciliation: FulfillmentReservationReconciliationService,
   ) {}
-
-  /**
-   * 예약 해제
-   */
-  @RequirePermission('inventory.stock.adjust')
-  @Delete(':id')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({
-    summary: '예약 해제',
-    description: '특정 예약을 해제하여 재고를 다시 할당 가능하게 만듭니다.',
-  })
-  @ApiParam({
-    name: 'id',
-    description: '예약 ID',
-    example: '550e8400-e29b-41d4-a716-446655440000',
-  })
-  @ApiResponse({
-    status: 204,
-    description: '예약 해제 성공',
-  })
-  @ApiResponse({
-    status: 404,
-    description: '예약을 찾을 수 없음',
-  })
-  @ApiResponse({ status: 403, description: '재고 원장 조정 권한이 없습니다.' })
-  async releaseReservation(@Param('id') id: string, @Body() dto?: ReleaseReservationDto): Promise<void> {
-    try {
-      await this.unifiedReservation.releaseReservation(id);
-    } catch (error) {
-      if (error.message?.includes('not found')) {
-        throw new NotFoundException(error.message);
-      }
-      throw error;
-    }
-  }
 
   /**
    * 특정 Target의 예약 조회

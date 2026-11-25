@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { eq } from 'drizzle-orm';
+import { eq, sql as fragment } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { BarcodeService } from '../../inventory/shared/services/barcode.service';
 import { OutboundScanRejectionManager } from '../scan-rejections/outbound-scan-rejection.manager';
@@ -88,6 +88,232 @@ describeIfDb('물류앱에서 막힌 상자', () => {
       const byShipment = new Map(batch.workItems.map((item) => [item.shipmentId, item]));
       expect(byShipment.get(first.shipmentId)?.scanRejection?.code).toBe('SIMPLE_OUTBOUND_CLAIMED_BY_OTHER');
       expect(byShipment.get(second.shipmentId)?.scanRejection).toBeNull();
+    });
+  });
+
+  const leaseOf = async (tx: DbTx, workItemId: string) =>
+    (
+      await tx
+        .select({ leaseVersion: wmsTables.outboundBatchWorkItems.leaseVersion })
+        .from(wmsTables.outboundBatchWorkItems)
+        .where(eq(wmsTables.outboundBatchWorkItems.id, workItemId))
+    )[0].leaseVersion;
+  const supervisor = { id: randomUUID(), roles: ['logistics_manager'] };
+
+  it('거절 뒤 담당을 넘기면 남은 채로 받은 작업자와 시각을 싣고, 그 작업자가 찍어 반영되면 사라진다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { first, wiring, other } = await blocked(tx);
+      expect((await open(tx, first))?.handedOff).toBeNull();
+
+      await wiring.batches.handoff(
+        first.workItemId,
+        {
+          claimType: 'picker',
+          targetWorkerId: other,
+          expectedLeaseVersion: await leaseOf(tx, first.workItemId),
+          reason: 'handoff after rejection',
+        },
+        `handoff-${randomUUID()}`,
+        supervisor,
+        tx,
+      );
+
+      expect(await open(tx, first)).toMatchObject({
+        code: 'SIMPLE_OUTBOUND_CLAIMED_BY_OTHER',
+        actorId: other,
+        handedOff: { at: expect.any(Date), workerId: other },
+      });
+      const batch = await wiring.batches.getBatch(first.batchId, tx);
+      expect(batch.workItems.find((item) => item.shipmentId === first.shipmentId)?.scanRejection?.handedOff).toEqual({
+        at: expect.any(Date),
+        workerId: other,
+      });
+
+      await wiring.simple.scan(
+        first.shipmentId,
+        {
+          barcode: first.barcode,
+          quantity: 1,
+          actor: { id: other, roles: ['logistics_worker'] },
+          idempotencyKey: randomUUID(),
+        },
+        tx,
+      );
+      expect(await open(tx, first)).toBeNull();
+    });
+  });
+
+  it('넘긴 뒤 담당이 또 바뀌었으면 넘긴 시각만 싣고 받은 작업자는 모른다고 둔다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { first, wiring, other } = await blocked(tx);
+      await wiring.batches.handoff(
+        first.workItemId,
+        {
+          claimType: 'picker',
+          targetWorkerId: other,
+          expectedLeaseVersion: await leaseOf(tx, first.workItemId),
+          reason: 'handoff after rejection',
+        },
+        `handoff-${randomUUID()}`,
+        supervisor,
+        tx,
+      );
+      await tx
+        .update(wmsTables.outboundBatchWorkItems)
+        .set({ pickerId: randomUUID(), pickerClaimedAt: fragment`CURRENT_TIMESTAMP + interval '5 minutes'` })
+        .where(eq(wmsTables.outboundBatchWorkItems.id, first.workItemId));
+
+      expect((await open(tx, first))?.handedOff).toEqual({ at: expect.any(Date), workerId: null });
+    });
+  });
+
+  it('넘긴 뒤에 다시 거절되면 넘긴 것으로 보지 않는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { first, wiring, other, manager, input } = await blocked(tx);
+      const third = randomUUID();
+      await wiring.batches.handoff(
+        first.workItemId,
+        {
+          claimType: 'picker',
+          targetWorkerId: third,
+          expectedLeaseVersion: await leaseOf(tx, first.workItemId),
+          reason: 'handoff to someone else',
+        },
+        `handoff-${randomUUID()}`,
+        supervisor,
+        tx,
+      );
+      expect((await open(tx, first))?.handedOff).toMatchObject({ workerId: third });
+
+      expect(
+        await manager.record({ ...input, idempotencyKey: randomUUID(), rejectedAt: new Date(Date.now() + 60_000) }, tx),
+      ).toBe(true);
+      expect(await open(tx, first)).toMatchObject({ actorId: other, handedOff: null });
+    });
+  });
+
+  /** 송장 사유로 막힌 기록을 남기고, 그 상자 송장을 무효로 한 뒤 수기 송장을 새로 등록한다 */
+  async function waybillBlocked(tx: DbTx) {
+    const ctx = await blocked(tx);
+    const { first, manager, input } = ctx;
+    const waybillInput = {
+      ...input,
+      idempotencyKey: randomUUID(),
+      rejection: { code: 'SHIPMENT_INVOICE_NOT_READY', reasonCode: null },
+      rejectedAt: new Date(),
+    };
+    expect(await manager.record(waybillInput, tx)).toBe(true);
+    return { ...ctx, waybillInput };
+  }
+  async function reissueManually(tx: DbTx, wiring: ReturnType<typeof assembleOutbound>, box: PickableShipmentFixture) {
+    await wiring.waybills.void(box.waybillId, { reason: 'reissue' }, `void-${randomUUID()}`, supervisor, tx);
+    const [shipment] = await tx
+      .select({ manifestVersion: wmsTables.shipments.manifestVersion })
+      .from(wmsTables.shipments)
+      .where(eq(wmsTables.shipments.id, box.shipmentId));
+    const trackingNo = `NEW-${randomUUID().slice(0, 8)}`;
+    await wiring.waybills.registerManual(
+      box.shipmentId,
+      { carrier: 'HANJIN', trackingNo, expectedManifestVersion: shipment.manifestVersion },
+      `manual-${randomUUID()}`,
+      supervisor,
+      tx,
+    );
+    return trackingNo;
+  }
+
+  it('송장 때문에 막힌 상자에 거절 뒤 출고할 수 있는 새 송장이 생기면 남은 채로 발급 시각과 번호를 싣는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { first, wiring } = await waybillBlocked(tx);
+      expect(await open(tx, first)).toMatchObject({ action: 'check_waybill', newWaybill: null });
+
+      const trackingNo = await reissueManually(tx, wiring, first);
+
+      expect(await open(tx, first)).toMatchObject({
+        code: 'SHIPMENT_INVOICE_NOT_READY',
+        action: 'check_waybill',
+        handedOff: null,
+        newWaybill: { issuedAt: expect.any(Date), trackingNo },
+      });
+      const batch = await wiring.batches.getBatch(first.batchId, tx);
+      expect(batch.workItems.find((item) => item.shipmentId === first.shipmentId)?.scanRejection?.newWaybill).toEqual({
+        issuedAt: expect.any(Date),
+        trackingNo,
+      });
+      expect((await wiring.planning.getShipmentDetail(first.shipmentId, tx)).scanRejection?.newWaybill).toEqual({
+        issuedAt: expect.any(Date),
+        trackingNo,
+      });
+    });
+  });
+
+  it('새 송장 뒤에 다시 거절되면 새 송장으로 보지 않는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { first, wiring, manager, waybillInput } = await waybillBlocked(tx);
+      await reissueManually(tx, wiring, first);
+
+      expect(
+        await manager.record(
+          { ...waybillInput, idempotencyKey: randomUUID(), rejectedAt: new Date(Date.now() + 60_000) },
+          tx,
+        ),
+      ).toBe(true);
+      expect(await open(tx, first)).toMatchObject({ action: 'check_waybill', newWaybill: null });
+    });
+  });
+
+  it('새 송장이 지금 상자 구성이나 받는 분과 맞지 않으면 새 송장으로 보지 않는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { first, wiring } = await waybillBlocked(tx);
+      await reissueManually(tx, wiring, first);
+      const [shipment] = await tx
+        .select({
+          manifestVersion: wmsTables.shipments.manifestVersion,
+          recipientSnapshot: wmsTables.shipments.recipientSnapshot,
+        })
+        .from(wmsTables.shipments)
+        .where(eq(wmsTables.shipments.id, first.shipmentId));
+
+      await tx
+        .update(wmsTables.shipments)
+        .set({ recipientSnapshot: { ...(shipment.recipientSnapshot as Record<string, unknown>), name: 'changed' } })
+        .where(eq(wmsTables.shipments.id, first.shipmentId));
+      expect((await open(tx, first))?.newWaybill).toBeNull();
+
+      await tx
+        .update(wmsTables.shipments)
+        .set({ recipientSnapshot: shipment.recipientSnapshot, manifestVersion: shipment.manifestVersion + 1 })
+        .where(eq(wmsTables.shipments.id, first.shipmentId));
+      expect((await open(tx, first))?.newWaybill).toBeNull();
+    });
+  });
+
+  it('라벨 할당 때문에 막힌 상자는 새 송장이 생겨도 그대로 둔다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { first, wiring, manager, input } = await blocked(tx);
+      expect(
+        await manager.record(
+          {
+            ...input,
+            idempotencyKey: randomUUID(),
+            rejection: { code: 'WAYBILL_LABEL_NOT_ALLOCATED', reasonCode: null },
+            rejectedAt: new Date(),
+          },
+          tx,
+        ),
+      ).toBe(true);
+      await reissueManually(tx, wiring, first);
+
+      expect(await open(tx, first)).toMatchObject({ action: 'check_waybill', newWaybill: null });
+    });
+  });
+
+  it('송장이 아닌 사유로 막힌 상자는 새 송장이 생겨도 그대로 둔다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { first, wiring } = await blocked(tx);
+      await reissueManually(tx, wiring, first);
+
+      expect(await open(tx, first)).toMatchObject({ action: 'handoff_worker', newWaybill: null });
     });
   });
 

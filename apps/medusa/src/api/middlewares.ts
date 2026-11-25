@@ -8,6 +8,7 @@ import { defaultReturnWriteMiddlewares } from './reject-default-return-writes';
 import { listTransformQueryConfig as ordersListQueryConfig } from './store/orders-list/query-config';
 import { StoreGetOrdersListParams } from './store/orders-list/validators';
 import { perCustomerLimitMiddleware } from './store/carts/middlewares/per-customer-limit';
+import { customerCreationIdentityMiddleware } from './store/customers/identity-metadata';
 import { rejectAwaitingDepositCompleteMiddleware } from './store/carts/middlewares/reject-awaiting-deposit-complete';
 import { membershipPriceVisibilityMiddleware } from './store/products/middlewares/membership-price-visibility';
 import {
@@ -91,6 +92,15 @@ export default defineMiddlewares({
     // 기본 Medusa 의 POST /store/carts(create) 와 POST /store/carts/:id(update) 도
     // body.promo_codes 를 updateCartPromotionsWorkflow 로 적용하므로, /promotions 만
     // 막으면 카트 생성/수정 시점에 미할당 쿠폰을 붙여 게이트를 우회할 수 있다.
+    // 가입 때 신원 키(almond_user_id 등)를 본문이 아니라 로그인 신원에서 채운다
+    {
+      matcher: '/store/customers',
+      method: 'POST',
+      middlewares: [
+        authenticate('customer', ['session', 'bearer'], { allowUnregistered: true }),
+        customerCreationIdentityMiddleware,
+      ],
+    },
     {
       matcher: '/store/carts',
       method: 'POST',

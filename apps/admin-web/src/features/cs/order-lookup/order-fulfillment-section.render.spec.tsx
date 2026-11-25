@@ -12,6 +12,22 @@ jest.mock('@/lib/services/orders/queries', () => ({
   useFulfillmentShipments: (...args: unknown[]) => mockShipments(...args),
 }));
 
+jest.mock('@/lib/services/orders/mutations', () => ({
+  useCancelStockPriority: jest.fn(),
+  useSetStockPriority: jest.fn(),
+}));
+jest.mock('@/components/auth/can', () => ({
+  Can: ({ children }: { children: React.ReactNode }) => children,
+}));
+jest.mock('@/features/order/stock-priority/stock-priority-dialog', () => ({
+  StockPriorityDialog: ({ orderText }: { orderText: string }) => (
+    <div role="dialog">{`${orderText} 우선할당 창`}</div>
+  ),
+  StockPriorityCancelDialog: ({ orderText }: { orderText: string }) => (
+    <div role="dialog">{`${orderText} 우선할당 취소 창`}</div>
+  ),
+}));
+
 let mockGateStatus: 'ready' | 'loading' | 'error' = 'ready';
 
 jest.mock('@/features/main/read-gate', () => ({
@@ -262,4 +278,44 @@ it('권한을 확인하는 중이거나 확인하지 못하면 권한이 없다�
   );
   expect(screen.queryByText('출고주문을 볼 권한이 없어요.')).toBeNull();
   expect(screen.getByText(/권한을 확인하지 못해/)).toBeTruthy();
+});
+
+const draft = (over: Record<string, unknown>) => ({
+  id: 'cccccccc-3333',
+  status: 'draft',
+  supplierId: null,
+  totalQty: 3,
+  reservedQty: 1,
+  stockPriority: false,
+  ...over,
+});
+
+it.each([
+  ['재고가 모자란 준비 전 상자', draft({}), '우선할당'],
+  ['우선할당한 상자', draft({ stockPriority: true }), '우선할당 취소'],
+  ['재고를 다 잡은 상자', draft({ reservedQty: 3 }), null],
+  ['입점사 상자', draft({ supplierId: 'sup' }), null],
+  ['계획을 확정한 상자', draft({ status: 'planned' }), null],
+  ['표시를 모르는 옛 응답', draft({ stockPriority: undefined }), null],
+])('%s', (_name, box, button) => {
+  mockShipments.mockReturnValue({
+    data: [box],
+    isPending: false,
+    isError: false,
+    refetch: jest.fn(),
+  });
+  render(
+    <OrderFulfillmentSection
+      orderId="so-1"
+      orderNo="AY-1"
+      fulfillmentOrder={fo}
+    />
+  );
+
+  const found = screen.queryByRole('button', { name: /우선할당/ });
+  expect(found?.textContent ?? null).toBe(button);
+  if (found) {
+    fireEvent.click(found);
+    expect(screen.getByRole('dialog').textContent).toBe(`#AY-1 ${button} 창`);
+  }
 });

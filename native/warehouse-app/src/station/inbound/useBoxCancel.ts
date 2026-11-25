@@ -15,7 +15,8 @@ import { useKeyedWrite } from './useKeyedWrite';
 export const CANCEL_ARMED = '한 번 더 누르면 취소';
 export const CANCEL_UNCERTAIN = '결과를 확인하지 못했어요 — F11 다시 보내기';
 const STILL_RECEIVED = '상자가 아직 확정돼 있어요 — 확정 내용을 다시 확인해 주세요';
-const CANCEL_CONFLICT = '확정을 취소할 수 없는 상자예요';
+const CANCEL_CONFLICT =
+  '확정을 취소할 수 없는 상자예요. 이 상자의 상품을 잡은 주문이 이미 출고 준비 중일 수 있어요 — 관리자에게 확인해 주세요';
 
 /**
  * 확정 취소 키의 초안 이름 — 그 확정이 만든 집계 id 중 가장 작은 것(스펙 §6).
@@ -30,7 +31,7 @@ export function cancelDraftKey(boxId: string, countIds: readonly string[]): stri
 }
 
 /**
- * 확정 취소(F11 두 번) — 확정된 상자 화면과 «끝» 이 같이 쓴다. 당일·전량·적치 전 같은 규칙은 서버가 판정한다.
+ * 확정 취소(F11 두 번) — 확정된 상자 화면과 «끝» 이 같이 쓴다. 전량·적치 전 같은 규칙은 서버가 판정한다.
  * 성공하면 상자를 다시 읽어 열려 있으면 그 상자로 `onCanceled`(작업 화면이 빈칸에서 다시 시작한다 —
  * 그 상자의 옛 작업 초안도 버린다), 아직 확정돼 있으면 `onStillReceived`.
  */
@@ -87,7 +88,7 @@ export function useBoxCancel({
         }
         setAlert(CANCEL_CONFLICT);
       } else {
-        // 당일 아님·적치 시작은 서버가 400 으로 낸다(러너는 서버 본문을 들고 오지 않는다) — 입고 취소 문맥 문구
+        // 적치 시작·이미 취소는 서버가 400 으로 낸다(러너는 서버 본문을 들고 오지 않는다) — 입고 취소 문맥 문구
         setAlert(errorMessage(error, 'inbound-cancel'));
       }
       signal('error');

@@ -993,6 +993,20 @@
         "discountIncluded": "상품금액에 반영됐어요",
         "total": "총 환불 금액"
       }
+    },
+    "printFileReupload": {
+      "stopped": "인쇄 보류 · 인쇄소에서 파일 문제로 돌려보냈어요",
+      "reason": "사유: {reason}",
+      "button": "파일 다시 올리기",
+      "done": "새 파일을 인쇄소에 보냈어요",
+      "notYours": "이 파일은 쓸 수 없어요. 내 파일로 다시 올려 주세요",
+      "wrongType": "이 상품이 받지 않는 파일 형식이에요",
+      "sameFile": "인쇄소가 돌려보낸 파일이에요. 고친 파일을 올려 주세요",
+      "alreadySent": "이미 새 파일을 보냈어요. 새로고침해 주세요",
+      "failed": "인쇄소에 파일을 보내지 못했어요. 잠시 뒤 다시 시도해 주세요",
+      "dialogTitle": "새 인쇄 파일을 올려 주세요",
+      "dialogSubtitle": "고친 파일 하나를 올리면 같은 주문으로 인쇄가 이어져요",
+      "submit": "이 파일로 다시 보내기"
     }
   },
   "membership": {

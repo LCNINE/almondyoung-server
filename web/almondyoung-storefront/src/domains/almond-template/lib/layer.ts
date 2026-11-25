@@ -132,3 +132,18 @@ export function replaceEverywhere(
     })
   return { ...design, front: side(design.front), back: side(design.back) }
 }
+
+export function toggleLayerSelection(selection: string[], id: string) {
+  return selection.includes(id)
+    ? selection.filter((item) => item !== id)
+    : [...selection, id]
+}
+
+export function nextGroupName(layers: Layer[]) {
+  const used = new Set(layers.map((layer) => layer.groupName))
+  let n = 1
+
+  while (used.has(`그룹 ${n}`)) n++
+
+  return `그룹 ${n}`
+}

@@ -1,0 +1,2 @@
+ALTER TABLE "subscription_contracts" ADD COLUMN "refund_resolution_submitted_at" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "subscription_contracts" ADD COLUMN "refund_resolution_submitted_by" varchar;

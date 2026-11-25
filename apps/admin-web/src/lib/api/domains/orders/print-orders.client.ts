@@ -60,7 +60,10 @@ export interface PrintOrder {
   id: string;
   salesOrderId: string;
   salesOrderLineId: string;
-  almondDesignId: string;
+  almondDesignId: string | null;
+  printFileId: string | null;
+  // 와우프레스가 고객 파일을 돌려보내 고객이 다시 올려야 하는 동안의 시각
+  fileRejectedAt: string | null;
   vendor: string;
   status: PrintOrderStatus;
   testMemo: boolean;
@@ -155,6 +158,14 @@ export const printOrdersClient = {
     const res = await client.post(`${BASE}/${id}/retry`, {
       confirmNoWowpressOrder,
     });
+    return res.data;
+  },
+
+  // 내 파일로 주문한 줄의 고객 파일 내려받기 링크(5분짜리)
+  customerFileLink: async (
+    id: string
+  ): Promise<{ url: string }> => {
+    const res = await client.get(`${BASE}/${id}/customer-file`);
     return res.data;
   },
 

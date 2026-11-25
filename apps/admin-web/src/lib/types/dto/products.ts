@@ -154,6 +154,8 @@ export interface MastersQuery {
   order?: 'asc' | 'desc';
   /** 품절 상태 필터. in_stock=판매가능, partial=부분품절, sold_out=전체품절. all/미지정=필터 없음. */
   stock?: 'all' | 'in_stock' | 'partial' | 'sold_out';
+  /** SKU 연결 필터. unlinked=연결 안 된 품목이 있음, linked=모두 연결됨, void=전부 재고 안 씀. */
+  skuLink?: SkuLinkFilter;
   limit?: number;
   page?: number;
 }
@@ -200,7 +202,14 @@ export interface VariantPreviewDto {
   basePrice: number | null;
   membershipPrice: number | null;
   status: string;
+  /** linked=재고 연결됨, unlinked=연결 안 됨(주문이 매칭 대기로 남는다), void=재고를 쓰지 않음 */
+  skuLinkState: SkuLinkState;
+  /** 연결된 SKU 종류 수. linked 가 아니면 0 */
+  skuCount: number;
 }
+
+export type SkuLinkState = 'linked' | 'unlinked' | 'void';
+export type SkuLinkFilter = 'all' | SkuLinkState;
 
 export interface MasterSummaryDto {
   masterId: string;
@@ -234,6 +243,8 @@ export interface MasterSummaryDto {
   priceSummary: PriceSummaryDto | null;
   /** active 버전 품목 기준 품절 집계. none=판매가능, partial=부분품절, all=전체품절. */
   soldOutState: 'none' | 'partial' | 'all';
+  /** SKU 가 연결 안 된 품목 수 (미리보기 상한과 무관하게 전 품목 기준) */
+  unlinkedVariantCount: number;
 }
 
 export interface MasterSummaryListResponseDto {

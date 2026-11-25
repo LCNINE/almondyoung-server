@@ -36,7 +36,7 @@ export function MemoModal({ order, open, onOpenChange }: Props) {
     const handleSave = () => {
         if (!order) return;
         updateMutation.mutate(
-            { id: order.orderId, memo },
+            { id: order.orderId, memo, expectedMemo: order.memo ?? '' },
             {
                 onSuccess: () => {
                     toast.success('메모가 저장되었습니다.');
