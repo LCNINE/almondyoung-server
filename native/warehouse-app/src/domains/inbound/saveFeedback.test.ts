@@ -1,5 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createInboundSaveSound } from './saveFeedback';
+
+const play = vi.hoisted(() => vi.fn());
+
+vi.mock('../../station/feedback/soundPlayer', () => ({
+  createSoundPlayer: vi.fn(() => ({ play })),
+  defaultToneSink: vi.fn(() => null),
+}));
+
+import { createInboundSaveSound, playInboundSaveFailed } from './saveFeedback';
 
 function setup(prefs: { volume: number; muted: boolean }, play: () => Promise<void> | void = () => undefined) {
   const audio = { volume: 1, play: vi.fn(play) };
@@ -46,5 +54,10 @@ describe('createInboundSaveSound', () => {
     const { errorPlayer, sound } = setup({ volume: 80, muted: false });
     sound.failed();
     expect(errorPlayer).toHaveBeenCalledTimes(1);
+  });
+
+  it('playInboundSaveFailed 는 스테이션 error 톤을 낸다', () => {
+    playInboundSaveFailed();
+    expect(play).toHaveBeenCalledWith('error');
   });
 });

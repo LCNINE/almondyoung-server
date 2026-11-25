@@ -18,7 +18,9 @@ export function useSaveToast() {
 }
 
 export function SaveToast({ message }: { message: string | null }) {
-  if (!message) return null;
+  if (!message) {
+    return null;
+  }
 
   return (
     <div

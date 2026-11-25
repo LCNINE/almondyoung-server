@@ -17,10 +17,19 @@ export function createInboundSaveSound(deps: {
     saved(): void {
       try {
         const { volume, muted } = deps.readPrefs();
-        if (muted || volume <= 0) return;
+
+        if (muted || volume <= 0) {
+          return;
+        }
+
         const audio = deps.createAudio(savedChimeUrl);
-        if (!audio) return;
+
+        if (!audio) {
+          return;
+        }
+
         audio.volume = volume / 100;
+
         // play() 거절(자동재생 정책)은 저장 흐름과 무관하다.
         void Promise.resolve(audio.play()).catch(() => undefined);
       } catch {

@@ -30,6 +30,12 @@ describe('SaveToast', () => {
     act(() => result.current.show('둘째'));
     act(() => vi.advanceTimersByTime(1500));
     expect(result.current.message).toBe('둘째');
+
+    act(() => vi.advanceTimersByTime(499));
+    expect(result.current.message).toBe('둘째');
+
+    act(() => vi.advanceTimersByTime(1));
+    expect(result.current.message).toBeNull();
   });
 
   it('언마운트하면 타이머를 정리한다', () => {
