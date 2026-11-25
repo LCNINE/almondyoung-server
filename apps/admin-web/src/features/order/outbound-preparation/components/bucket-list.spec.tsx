@@ -786,7 +786,7 @@ it('부분출고는 모자란 상품 줄만 빨갛게 수량과 함께, 다 있�
   const items = screen.getAllByRole('listitem');
 
   expect(items[0].textContent).toBe('상품 B3개 중 1개 있음 · 2개 모자람');
-  expect(items[0].className).toContain('bg-red-50');
+  expect(items[0].className).toContain('text-red-600');
   expect(items[1].textContent).toBe('상품 A1개 있음');
   expect(screen.getByText('1개 있음').className).toContain(
     'text-muted-foreground'

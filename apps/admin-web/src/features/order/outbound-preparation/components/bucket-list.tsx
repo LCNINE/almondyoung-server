@@ -471,7 +471,7 @@ function PartialLines({
         {short.map((line, index) => (
           <li
             key={`short-${index}`}
-            className="flex items-baseline justify-between gap-3 rounded-md bg-red-50 px-2.5 py-1.5 ring-1 ring-inset ring-red-200 dark:bg-red-950/40 dark:ring-red-900"
+            className="flex items-baseline justify-between gap-3 px-2.5 py-1 text-red-600"
           >
             <LineName line={line} />
             <span className="shrink-0 whitespace-nowrap text-xs font-semibold tabular-nums text-red-600">
