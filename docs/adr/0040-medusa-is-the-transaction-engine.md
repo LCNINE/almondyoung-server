@@ -1,7 +1,13 @@
 # Medusa 는 거래 엔진이다 — 표시는 Core, 거래는 Medusa
 
 > **부분 대체됨:** §5.5 의 채널 주문 취소·환불(누가 시작하는가, Core → Medusa 취소 역투영)은
-> [[0042-channel-order-cancel-is-initiated-by-the-channel]] 이 대체했다. 나머지 결정은 그대로다.
+> [[0042-channel-order-cancel-is-initiated-by-the-channel]] 이 대체했다.
+> §5.1 «타임세일은 Core 의 가격 정책»도 대체됐다 — 2026-10-09 사고 뒤 타임세일은 Medusa 안의 모듈
+> (`apps/medusa/src/modules/time-sale` + `src/links/time-sale-price-list.ts` + `src/workflows/time-sale`,
+> PR #1037, 스펙 `docs/superpowers/specs/2026-10-09-time-sale-module-design.md`)이 정본이다. 그 결정은 이 ADR 과
+> 대조하지 않고 내려졌으므로, §5.2 의 전제(「타임세일이 Core 로 가고 … 카드 표시가는 Core 계산으로 완결」)와
+> §1·§3 표의 타임세일 칸도 함께 낡았다. 표시가가 타임세일을 어디서 읽는지는 2단계(#905)를 다시 시작할 때 정한다.
+> 나머지 결정은 그대로다.
 
 ## Status
 Accepted (2026-09-21). 트래킹 이슈 **#904**. ADR-0037 이 마지막 항에서 「결정하지 않는다」로
@@ -93,7 +99,7 @@ Medusa admin API 로 상품 **1건씩** 동기화한다 (`apps/channel-adapter/s
 통합 테스트로 검증된다, (d) 라우트가 Core 스냅샷을 받으면 Medusa 가 Core 스키마의 소비자가 된다.
 
 ### 5. 개별 결정
-**5.1 타임세일은 Core 의 가격 정책이다.** 지금은 Medusa 커스텀이다 — `apps/medusa/src/api/admin/time-sales`,
+**5.1 타임세일은 Core 의 가격 정책이다.** _(대체됨 — 머리말 참조. 아래와 §8 «제거 대상»의 타임세일 경로는 10-09 이전 기록이다.)_ 지금은 Medusa 커스텀이다 — `apps/medusa/src/api/admin/time-sales`,
 `api/store/time-sale`, `jobs/time-sale-cache-boundary.ts`, `utils/time-sale.ts`, admin-web 의
 `lib/api/domains/medusa/time-sales.ts`. 타임세일은 쿠폰이 아니라 **한시 가격 정책**이고(ADR-0033 이 이미 둘을
 구분), 가격 정책은 채널 독립 사실이다. 옮긴다: Core 에 타임세일 도메인(휴면 `promotions`·`promotion_products`,
