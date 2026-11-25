@@ -727,7 +727,7 @@ describe('OutboundPreparationTemplate', () => {
     );
 
     expect(row('#AY-partial-1').getByRole('listitem').textContent).toBe(
-      '상품1개 모자람 · 주문 3 · 지금 보낼 2'
+      '상품3개 중 2개 있음 · 1개 모자람'
     );
 
     await userEvent.click(

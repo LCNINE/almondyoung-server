@@ -4,6 +4,7 @@ import {
   isShortLine,
   isSplittableUnreserved,
   lineSplitText,
+  splitOptionName,
   locatePreparationTarget,
   orderAgeOf,
   plannedOrderText,
@@ -300,8 +301,24 @@ describe('isShortLine', () => {
   });
 });
 
-it('lineSplitText 는 모자란 개수를 앞에 둔다', () => {
+it('lineSplitText 는 있는 수와 모자란 수를, 하나도 없으면 모자란 수만 보인다', () => {
   expect(lineSplitText({ qty: 5, reservedQty: 2 })).toBe(
-    '3개 모자람 · 주문 5 · 지금 보낼 2'
+    '5개 중 2개 있음 · 3개 모자람'
   );
+  expect(lineSplitText({ qty: 1, reservedQty: 0 })).toBe('1개 모자람');
+});
+
+it('splitOptionName 은 끝의 옵션 [...] 만 떼어 낸다', () => {
+  expect(splitOptionName('미곤 색소 [이클립스 블랙 (남자 눈썹)]')).toEqual({
+    base: '미곤 색소',
+    option: '[이클립스 블랙 (남자 눈썹)]',
+  });
+  expect(splitOptionName('클리닉 패드 150ml')).toEqual({
+    base: '클리닉 패드 150ml',
+    option: null,
+  });
+  expect(splitOptionName('[세트] 브러쉬')).toEqual({
+    base: '[세트] 브러쉬',
+    option: null,
+  });
 });

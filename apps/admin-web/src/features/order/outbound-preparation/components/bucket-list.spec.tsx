@@ -266,10 +266,9 @@ it('출고불가 내역은 고를 칸 없이 상품별 재고·모자람과 들�
   expect(
     screen.getByText('이 창고로 올 것: 이동 중 3개(1월 5일 도착 예정)')
   ).toBeTruthy();
+  expect(screen.getByText('들어올 예정이 없어요')).toBeTruthy();
   expect(
-    screen.getByText(
-      '들어올 예정이 없어요 — 발주하거나 다른 창고에서 옮겨 와야 해요'
-    )
+    screen.getByText('발주하거나 다른 창고에서 옮겨 와야 해요')
   ).toBeTruthy();
   expect(
     screen.getByRole('link', { name: '입고 화면' }).getAttribute('href')
@@ -468,8 +467,9 @@ it('부분출고는 모자란 상품이 언제 들어오는지 사유 칸에 상
   );
 
   expect(
-    screen.getByText(/다른 창고에 6개 — 옮겨 와야 해요/).textContent
-  ).toMatch(/^상품 B: /);
+    screen.getByText(/다른 창고에 6개 — 옮겨 와야 해요/).parentElement
+      ?.textContent
+  ).toMatch(/^상품 B/);
   expect(
     screen
       .getByRole('link', { name: '보충 제안에서 보기' })
@@ -783,14 +783,81 @@ it('부분출고는 모자란 상품 줄만 빨갛게 수량과 함께, 다 있�
     })
   );
 
-  expect(screen.getByText('상품 A').className).toContain(
+  const items = screen.getAllByRole('listitem');
+
+  expect(items[0].textContent).toBe('상품 B3개 중 1개 있음 · 2개 모자람');
+  expect(items[0].className).toContain('bg-red-50');
+  expect(items[1].textContent).toBe('상품 A1개 있음');
+  expect(screen.getByText('1개 있음').className).toContain(
     'text-muted-foreground'
   );
-  expect(screen.getByText('상품 B').className).toContain('text-red-600');
+  expect(screen.getByText('1종 모자람 · 2개')).toBeTruthy();
+  expect(screen.getByText('1종 다 있음')).toBeTruthy();
+});
+
+it('부분출고 수량 칸은 지금 보낼 수와 전체를 함께 보인다', () => {
+  render(
+    list({
+      bucket: 'partial',
+      count: 1,
+      singleCount: 0,
+      multiCount: 1,
+      shipments: [
+        {
+          ...shipment('s1', null),
+          totalQty: 4,
+          lines: [
+            { name: '상품 A', qty: 1, reservedQty: 1 },
+            { name: '상품 B', qty: 3, reservedQty: 1 },
+          ],
+        },
+      ],
+    })
+  );
+
+  expect(screen.getByText('전체 4').previousElementSibling?.textContent).toBe(
+    '2'
+  );
+});
+
+it('부분출고 사유 칸은 사유가 같은 상품을 옵션 이름으로 묶고 상태와 할 일을 나눈다', () => {
+  const none = {
+    onHand: 0,
+    reservedByOthers: 0,
+    waiting: 1,
+    incoming: {
+      inTransit: 0,
+      inTransitEta: null,
+      ordered: 0,
+      inboundShipment: 0,
+      inboundShipmentEta: null,
+    },
+    elsewhere: { onHand: 0, ordered: 0, orderedEta: null },
+  };
+
+  render(
+    list({
+      bucket: 'partial',
+      count: 1,
+      singleCount: 0,
+      multiCount: 1,
+      shipments: [
+        {
+          ...shipment('s1', null),
+          lines: [
+            { name: '펌제 [리뉴얼 2제]', qty: 2, reservedQty: 1, stock: none },
+            { name: '클리닉 패드', qty: 2, reservedQty: 1, stock: none },
+          ],
+        },
+      ],
+    })
+  );
+
+  expect(screen.getByText('리뉴얼 2제 · 클리닉 패드')).toBeTruthy();
+  expect(screen.getAllByText('들어올 예정이 없어요')).toHaveLength(1);
   expect(
-    screen.getByText('2개 모자람 · 주문 3 · 지금 보낼 1').className
-  ).toContain('text-red-600');
-  expect(screen.queryByText(/주문 1 ·/)).toBeNull();
+    screen.getByText('기다리는 1개만큼 발주하거나 다른 창고에서 옮겨 와야 해요')
+  ).toBeTruthy();
 });
 
 it('부분출고에 모자란 줄이 없으면 이름만 흐리게 보인다', () => {
@@ -839,7 +906,7 @@ it('출고불가에서 stock 없는 모자란 줄은 이름만 빨갛게 보인�
     })
   );
 
-  expect(screen.getByText('상품 A').className).toContain('text-red-600');
+  expect(screen.getAllByText('상품 A')[0].className).toContain('text-red-600');
   expect(screen.getByText('상품 B').className).toContain('text-red-600');
   expect(screen.getAllByText(/개 모자람 ·/)).toHaveLength(1);
 });
