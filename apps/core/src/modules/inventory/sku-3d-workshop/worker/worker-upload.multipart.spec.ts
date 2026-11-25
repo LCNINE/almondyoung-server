@@ -62,6 +62,22 @@ describe('readWorkerUpload', () => {
     expect((await post(form)).statusCode).toBe(200);
   });
 
+  it('answers 413 for an oversize file or a second file', async () => {
+    const big = new FormData();
+
+    big.append('leaseToken', leaseToken);
+    big.append('file', new Blob([new Uint8Array(50 * 1024 * 1024 + 1)]), 'model.blend');
+
+    const two = new FormData();
+
+    two.append('leaseToken', leaseToken);
+    two.append('file', new Blob([new Uint8Array(1)]), 'a.png');
+    two.append('file', new Blob([new Uint8Array(1)]), 'b.png');
+
+    expect((await post(big)).statusCode).toBe(413);
+    expect((await post(two)).statusCode).toBe(413);
+  });
+
   it('rejects a missing lease token', async () => {
     const form = new FormData();
 

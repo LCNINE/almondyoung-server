@@ -33,8 +33,11 @@ export async function readWorkerUpload(request: FastifyRequest): Promise<WorkerU
       }
     }
   } catch (error) {
-    if (error instanceof Error && error.name === 'RequestFileTooLargeError') {
-      throw new PayloadTooLargeException(`파일은 ${WORKER_UPLOAD_MAX_BYTES} 바이트까지예요`);
+    // @fastify/multipart 는 이름이 아니라 code 로 구분된다
+    const code = typeof error === 'object' && error !== null && 'code' in error ? error.code : undefined;
+
+    if (code === 'FST_REQ_FILE_TOO_LARGE' || code === 'FST_FILES_LIMIT' || code === 'FST_PARTS_LIMIT') {
+      throw new PayloadTooLargeException(`파일은 하나, ${WORKER_UPLOAD_MAX_BYTES} 바이트까지예요`);
     }
 
     throw error;

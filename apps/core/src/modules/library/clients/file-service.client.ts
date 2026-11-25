@@ -3,6 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import { OutboundTenant } from '@app/tenancy';
 import { signFileServiceDelegation } from '../../../platform/auth/file-service-delegation';
 
+const METADATA_TIMEOUT_MS = 15_000;
+
 /**
  * Core → file-service 의 service-to-service client.
  *
@@ -157,9 +159,11 @@ export class FileServiceClient {
     isPublic: boolean;
   }> {
     const token = this.delegationToken(onBehalfOf);
+    // 공개 처리처럼 DB 잠금을 쥔 채 부르는 곳이 있다 — 응답이 멈추면 잠금이 무한정 묶이지 않게 끊는다
     const res = await fetch(`${this.baseUrl()}/files/${fileId}/metadata`, {
       method: 'GET',
       headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(METADATA_TIMEOUT_MS),
     });
     if (!res.ok) {
       const body = await res.text().catch(() => '');
