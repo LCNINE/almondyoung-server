@@ -24,7 +24,7 @@ import {
 } from '../../domains/inbound/__fixtures__/workRuntime';
 import { SessionProvider } from '../session-context';
 import { useWorkerIdentity } from '../useWorkerIdentity';
-import { WarehouseProvider } from '../warehouse-context';
+import { WarehouseProvider, useWarehouse } from '../warehouse-context';
 import { SettingsRoute } from './SettingsRoute';
 
 vi.mock('@tauri-apps/plugin-os', () => ({ platform: () => 'android' }));
@@ -53,12 +53,23 @@ function HeaderProbe() {
   );
 }
 
+function WarehouseProbe() {
+  const { warehouseId, warehouseName } = useWarehouse();
+  return <p data-testid="current-warehouse">{`${warehouseId ?? '-'}:${warehouseName ?? '-'}`}</p>;
+}
+
 function renderSettings(
   session: Session,
   api: ApiClient,
-  options: { getScope?: () => Promise<string>; header?: boolean } = {}
+  options: {
+    getScope?: () => Promise<string>;
+    header?: boolean;
+    initialWarehouse?: { id: string; name: string };
+  } = {}
 ) {
-  const { getScope, header = false } = options;
+  const { getScope, header = false, initialWarehouse } = options;
+  const prefs = createMemoryPrefs();
+  if (initialWarehouse) prefs.set('almondwms.warehouse', JSON.stringify(initialWarehouse));
   const base = createTestWorkRuntime(api);
   const runtime = getScope ? { ...base, getScope } : base;
   const root = createRootRoute();
@@ -84,9 +95,10 @@ function renderSettings(
           new QueryClient({ defaultOptions: { queries: { retry: false } } })
         }
       >
-        <WarehouseProvider prefs={createMemoryPrefs()}>
+        <WarehouseProvider prefs={prefs}>
           <TestWorkProvider runtime={runtime}>
             {header && <HeaderProbe />}
+            <WarehouseProbe />
             <RouterProvider router={router} />
           </TestWorkProvider>
         </WarehouseProvider>
@@ -270,5 +282,33 @@ describe('SettingsRoute account', () => {
       expect(screen.getByTestId('header')).toHaveTextContent('김작업')
     );
     expect(fetchIdentity).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('SettingsRoute warehouse', () => {
+  const warehouses: ApiClient = {
+    request: async <T,>() =>
+      [
+        { id: 'w1', name: '본창고' },
+        { id: 'w2', name: '보조창고' },
+      ] as T,
+  };
+
+  it('changes the warehouse only after pressing apply', async () => {
+    const { session } = makeSession(async () => ({ id: 'u1', name: '김작업' }));
+    renderSettings(session, warehouses, {
+      initialWarehouse: { id: 'w1', name: '본창고' },
+    });
+    const select = await screen.findByRole('combobox', { name: '이 기기의 창고' });
+    const apply = screen.getByRole('button', { name: '적용' });
+    expect(apply).toBeDisabled();
+
+    fireEvent.change(select, { target: { value: 'w2' } });
+    expect(screen.getByTestId('current-warehouse')).toHaveTextContent('w1:본창고');
+    expect(apply).toBeEnabled();
+
+    fireEvent.click(apply);
+    expect(screen.getByTestId('current-warehouse')).toHaveTextContent('w2:보조창고');
+    expect(apply).toBeDisabled();
   });
 });

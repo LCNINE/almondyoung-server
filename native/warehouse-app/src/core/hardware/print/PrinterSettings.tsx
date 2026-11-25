@@ -29,7 +29,7 @@ const EMPTY_MESSAGE: Record<PrinterSlot, string> = {
   label: NO_LABEL_PRINTER_MESSAGE,
 };
 
-/** 칸(송장·라벨)마다 이 PC 에 물린 프린터의 Windows 이름을 받는다. */
+/** 설정 화면의 프린터 절. 칸(송장·라벨)마다 이 PC 에 물린 프린터의 Windows 이름을 받는다. */
 export function PrinterSettings({
   slot,
   prefs = localStoragePrefs,
@@ -88,6 +88,9 @@ export function PrinterSettings({
       <div>
         <h3 className="text-[13px] font-semibold text-[#27272a]">{title}</h3>
         <p className="mt-1 text-xs text-[#71717a]">{HELP[slot]}</p>
+        <p className="mt-1 text-xs text-[#71717a]">
+          Windows 설정 → 프린터 및 스캐너에 보이는 이름 그대로 적어 주세요.
+        </p>
       </div>
       <form
         className="flex w-full shrink-0 flex-wrap items-center gap-2 min-[1331px]:w-[280px] [@media(min-width:901px)_and_(max-height:850px)]:w-[280px]"
