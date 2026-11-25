@@ -51,7 +51,13 @@ describe('sku-3d-workshop file context', () => {
   it.each([
     ['blend', Buffer.concat([Buffer.from('BLENDER-v405REND'), Buffer.alloc(4096)])],
     ['glb', glbHeader()],
-    ['png', Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c63000100000500010d0a2db40000000049454e44ae426082', 'hex')],
+    [
+      'png',
+      Buffer.from(
+        '89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c63000100000500010d0a2db40000000049454e44ae426082',
+        'hex',
+      ),
+    ],
   ])('accepts detected %s', (_name, buffer) => {
     const detected = detect(buffer);
 
