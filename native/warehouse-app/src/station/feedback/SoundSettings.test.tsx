@@ -26,7 +26,7 @@ describe('SoundSettings', () => {
     expect(beeps).toHaveLength(1);
     expect(beeps[0].gain).toBeCloseTo(0.4 * 0.3);
 
-    fireEvent.click(screen.getByRole('checkbox', { name: '끄기' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: '음소거' }));
     expect(prefs.get(SOUND_MUTED_KEY)).toBe('1');
     expect(slider).toBeDisabled();
   });

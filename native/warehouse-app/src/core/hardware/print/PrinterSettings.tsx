@@ -1,5 +1,7 @@
 import { useRef, useState } from 'react';
+import { ArrowRight } from 'lucide-react';
 import { Button } from '../../design/Button';
+import { cn } from '../../design/cn';
 import { localStoragePrefs, type DevicePrefs } from '../../data/devicePrefs';
 import { renderTestLabel, renderTestLabel50x30 } from './zpl';
 import {
@@ -20,15 +22,15 @@ type Status = { kind: 'ok' | 'error'; text: string; detail?: string };
 
 const TITLE: Record<PrinterSlot, string> = { waybill: '송장 프린터', label: '라벨 프린터' };
 const HELP: Record<PrinterSlot, string> = {
-  waybill: '이 PC 에 연결된 송장 프린터의 이름을 적어 주세요.',
-  label: '이 PC 에 연결된 라벨(바코드 스티커) 프린터의 이름을 적어 주세요.',
+  waybill: '택배 송장을 출력합니다.',
+  label: '상품·로케이션 바코드를 출력합니다.',
 };
 const EMPTY_MESSAGE: Record<PrinterSlot, string> = {
   waybill: NO_PRINTER_MESSAGE,
   label: NO_LABEL_PRINTER_MESSAGE,
 };
 
-/** 설정 화면의 프린터 절. 칸(송장·라벨)마다 이 PC 에 물린 프린터의 Windows 이름을 받는다(#913·#1281). */
+/** 설정 화면 프린터 카드 안의 한 줄. 칸(송장·라벨)마다 이 PC 에 물린 프린터의 Windows 이름을 받는다(#913·#1281). */
 export function PrinterSettings({
   slot,
   prefs = localStoragePrefs,
@@ -83,13 +85,15 @@ export function PrinterSettings({
   };
 
   return (
-    <section className="space-y-2">
-      <h2 className="text-sm font-semibold text-gray-700">{title}</h2>
-      <p className="text-xs text-gray-500">
-        {HELP[slot]} Windows 설정 → 프린터 및 스캐너에 보이는 이름 그대로예요.
-      </p>
+    <div className="flex flex-col gap-2 border-t border-[#e4e4e7] py-[18px] first:border-t-0 first:pt-0 last:pb-0">
+      <div>
+        <h3 className="text-[13px] font-semibold text-[#27272a]">{title}</h3>
+        <p className="mt-1 text-xs text-[#71717a]">
+          {HELP[slot]} Windows 설정 → 프린터 및 스캐너에 보이는 이름 그대로 적어 주세요.
+        </p>
+      </div>
       <form
-        className="flex gap-2"
+        className="flex flex-wrap items-center gap-2"
         onSubmit={(e) => {
           e.preventDefault();
           const saved = save();
@@ -97,30 +101,34 @@ export function PrinterSettings({
         }}
       >
         <input
-          className="flex-1 rounded border px-3 py-2"
+          className="w-[210px] max-w-full rounded-lg border border-[#e4e4e7] bg-white px-[11px] py-[9px] text-[13px] text-[#27272a] placeholder:text-[#a1a1aa]"
           aria-label={`${title} 이름`}
           placeholder={slot === 'label' ? '예: TX400' : '예: XP-DT108B'}
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
-        <Button type="submit" aria-label={`${title} 저장`}>
+        <Button type="submit" aria-label={`${title} 저장`} className="px-3.5 py-2 text-xs">
           저장
         </Button>
+        <button
+          type="button"
+          className="inline-flex items-center gap-1.5 px-1 py-[7px] text-xs font-medium text-[#2563eb] disabled:pointer-events-none disabled:opacity-40"
+          disabled={busy}
+          onClick={() => void testPrint()}
+        >
+          {title} 테스트 인쇄
+          <ArrowRight className="h-[13px] w-[13px]" aria-hidden />
+        </button>
       </form>
-      <Button
-        type="button"
-        className="border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
-        disabled={busy}
-        onClick={() => void testPrint()}
-      >
-        {title} 테스트 인쇄
-      </Button>
       {status && (
-        <p role={status.kind === 'error' ? 'alert' : 'status'} className="text-sm">
+        <p
+          role={status.kind === 'error' ? 'alert' : 'status'}
+          className={cn('text-sm', status.kind === 'error' ? 'text-[#aa4037]' : 'text-[#27272a]')}
+        >
           {status.text}
-          {status.detail && <span className="block text-xs text-gray-500">{status.detail}</span>}
+          {status.detail && <span className="block text-xs text-[#71717a]">{status.detail}</span>}
         </p>
       )}
-    </section>
+    </div>
   );
 }
