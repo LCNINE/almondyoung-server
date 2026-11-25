@@ -4,7 +4,8 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { CircleHelp } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
-import { getBatchBlockerGroups, type ParsedServerError } from '@/lib/api/server-error';
+import { type ParsedServerError } from '@/lib/api/server-error';
+import { BatchBlockerPanel } from '../batch-blocker-panel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -168,7 +169,10 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
     const handlesBlockers = action.startsWith('add:');
     if (handlesBlockers && addingRef.current) return false;
 
+    const batchLabel = batch?.name || batch?.batchNumber || batchId;
+    const requestedBatchId = batchId;
     const request = handlesBlockers ? ++noticeRequest.current : null;
+    const excludeRequest = action.startsWith('exclude:') ? noticeRequest.current : null;
 
     if (handlesBlockers) {
       addingRef.current = true;
@@ -178,17 +182,21 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
     try {
       await retry.execute(action, payload, run);
 
-      if (request === noticeRequest.current) setBlockerError(null);
+      if (request === noticeRequest.current || excludeRequest === noticeRequest.current) {
+        setBlockerError(null);
+      }
 
       if (handlesBlockers) {
         const { data: refreshedBatch } = await refetch();
-        if (request !== noticeRequest.current) return false;
+        const stale = request !== noticeRequest.current;
+        const started =
+          (refreshedBatch?.id === requestedBatchId && refreshedBatch.startedAt) ||
+          batch?.startedAt;
+        const message = started
+          ? '배치에 넣었어요. 송장 출력이 필요한 박스는 창고 담당자에게 프린터가 있는 창고 앱에서 송장을 출력한 뒤 피킹하도록 안내해 주세요.'
+          : successMessage;
 
-        toast.success(
-          refreshedBatch?.startedAt || batch?.startedAt
-            ? '배치에 넣었어요. 송장 출력이 필요한 박스는 창고 담당자에게 프린터가 있는 창고 앱에서 송장을 출력한 뒤 피킹하도록 안내해 주세요.'
-            : successMessage
-        );
+        toast.success(stale ? `요청 배치 ${batchLabel}: ${message}` : message);
       } else {
         toast.success(successMessage);
         await refetch();
@@ -200,7 +208,7 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
 
       const parsed = parseServerError(error);
       const { code, status } = parsed;
-      const showBlockedToast = () => toast.error(`요청 배치 ${batchId}: ${getServerDenyMessage(error)}`, {
+      const showBlockedToast = () => toast.error(`요청 배치 ${batchLabel}: ${getServerDenyMessage(error)}`, {
           duration: Infinity,
           closeButton: true,
           style: {
@@ -248,10 +256,6 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
       }
     }
   };
-
-  const blockerGroups = blockerError
-    ? getBatchBlockerGroups(blockerError)
-    : null;
 
   const handOff = async (target: HandoffTarget, reason: string) => {
     if (!handingOff || !handoffItem) return;
@@ -390,29 +394,8 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                 <Separator />
                 <section className="space-y-3">
                   <h3 className="font-medium">추가할 수 있는 상자</h3>
-                  {blockerGroups && (
-                    <section
-                      role="alert"
-                      className="space-y-3 rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm"
-                    >
-                      <p className="font-semibold">
-                        넣지 못했어요 — 아래 사유를 먼저 처리해 주세요
-                      </p>
-                      {blockerGroups.groups.map((group) => (
-                        <div key={group.reason} className="space-y-1">
-                          <h4 className="font-semibold">{group.title}</h4>
-                          <ul className="list-disc space-y-1 pl-5">
-                            {group.rows.map((row, index) => (
-                              <li key={`${index}-${row}`}>{row}</li>
-                            ))}
-                          </ul>
-                          <p>{group.guidance}</p>
-                        </div>
-                      ))}
-                      {blockerGroups.incomplete && (
-                        <p>일부 박스의 상세 사유를 확인하지 못했어요. 배치와 해당 박스의 출고 상태를 확인해 주세요.</p>
-                      )}
-                    </section>
+                  {blockerError && (
+                    <BatchBlockerPanel error={blockerError} title="넣지 못했어요" />
                   )}
                   {joinBlocked ? (
                     <p className="text-sm text-muted-foreground">{joinBlocked}</p>

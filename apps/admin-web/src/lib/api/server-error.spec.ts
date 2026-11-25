@@ -1,5 +1,6 @@
 import {
   getBatchBlockerGroups,
+  type BatchBlockerRow,
   getServerDenyMessage,
   knownConflictMessage,
   parseServerError,
@@ -293,6 +294,8 @@ describe('batch blocker toast fallback', () => {
     expect(message).toContain('SKU-A');
     expect(message).toContain('3개 중 ?개 부족');
     expect(message).toContain('NEW_REASON');
+    expect(message).toContain('일부 박스의 상세 사유를 확인하지 못했어요.');
+    expect(message).toContain('서버 상세: Shipment shipment-full-id cannot join: 1 blocker(s)');
   });
 
   it('shows Korean guidance for a core waybill blocker', () => {
@@ -518,6 +521,9 @@ describe('preparation reason message priority', () => {
 });
 
 describe('batch blocker groups', () => {
+  const flatRow = (row: BatchBlockerRow) =>
+    [row.orderNo, row.trackingNo, row.detail].filter(Boolean).join(' · ');
+
   function group(errors: unknown, code = 'BATCH_START_BLOCKED') {
     return getBatchBlockerGroups(
       parseServerError({ response: { status: 409, data: { code, errors } } })
@@ -541,8 +547,8 @@ describe('batch blocker groups', () => {
         errors: [blocker],
       },
     });
-    expect(panelRow).toContain('주문번호 확인 필요');
-    expect(panelRow).not.toContain('box-uuid');
+    expect(panelRow.orderNo).toBe('확인 필요');
+    expect(flatRow(panelRow)).not.toContain('box-uuid');
     expect(toastMessage).toContain('주문번호 확인 필요');
     expect(toastMessage).not.toContain('box-uuid');
   });
@@ -588,19 +594,22 @@ describe('batch blocker groups', () => {
     ]);
     expect(
       result.groups
-        .map((g) => [g.title, ...g.rows, g.guidance].join(' '))
+        .map((g) => [g.title, ...g.rows.map(flatRow), g.guidance].join(' '))
         .join(' ')
-    ).toContain('주문번호 ORDER-1, ORDER-1B · 송장 1234-5678-9012 · 상품 A 3개 중 1개 부족');
+    ).toContain('ORDER-1, ORDER-1B · 1234-5678-9012 · 상품 A 3개 중 1개 부족');
     expect(
       result.groups
-        .map((g) => [g.title, ...g.rows, g.guidance].join(' '))
+        .map((g) => [g.title, ...g.rows.map(flatRow), g.guidance].join(' '))
         .join(' ')
-    ).toContain('주문번호 ORDER-2 · SKU-B 2개 중 2개 부족');
+    ).toContain('ORDER-2 · SKU-B 2개 중 2개 부족');
     expect(
       result.groups
-        .map((g) => [g.title, ...g.rows, g.guidance].join(' '))
+        .map((g) => [g.title, ...g.rows.map(flatRow), g.guidance].join(' '))
         .join(' ')
-    ).toContain('주문번호 ORDER-3 · 송장 재발급 필요');
+    ).toContain('ORDER-3 · 송장 재발급 필요');
+    expect(result.groups[1].rows[0]).toEqual(
+      expect.objectContaining({ shipmentId: 'box-1', orderNos: ['ORDER-1', 'ORDER-1B'] })
+    );
     expect(result.groups.map((g) => g.reason)).toEqual([
       'INBOUND_PENDING',
       'STOCK_SHORT',
@@ -608,7 +617,7 @@ describe('batch blocker groups', () => {
     ]);
     expect(
       result.groups
-        .map((g) => [g.title, ...g.rows, g.guidance].join(' '))
+        .map((g) => [g.title, ...g.rows.map(flatRow), g.guidance].join(' '))
         .join(' ')
     ).toContain('배치 상세에서 이 박스를 빼고 시작하세요.');
   });
@@ -628,14 +637,14 @@ describe('batch blocker groups', () => {
 
     expect(
       result.groups
-        .map((g) => [g.title, ...g.rows, g.guidance].join(' '))
+        .map((g) => [g.title, ...g.rows.map(flatRow), g.guidance].join(' '))
         .join(' ')
     ).toContain(
       '재고가 모자라 이 배치에 넣을 수 없어요. 재고를 확인해 주세요.'
     );
     expect(
       result.groups
-        .map((g) => [g.title, ...g.rows, g.guidance].join(' '))
+        .map((g) => [g.title, ...g.rows.map(flatRow), g.guidance].join(' '))
         .join(' ')
     ).not.toContain('빼고 시작하세요');
   });
@@ -658,7 +667,7 @@ describe('batch blocker groups', () => {
       expect(result.incomplete).toBe(true);
       expect(
         result.groups
-          .map((g) => [g.title, ...g.rows, g.guidance].join(' '))
+          .map((g) => [g.title, ...g.rows.map(flatRow), g.guidance].join(' '))
           .join(' ')
       ).not.toContain('private english detail');
     }

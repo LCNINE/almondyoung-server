@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { parseServerError, getBatchBlockerGroups, type ParsedServerError } from '@/lib/api/server-error';
+import { parseServerError, type ParsedServerError } from '@/lib/api/server-error';
+import { BatchBlockerPanel } from '@/features/order/outbound-batches/components/batch-blocker-panel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -141,7 +142,8 @@ export function V2PickingWorkspace() {
     payload: T,
     run: (payload: T, key: string) => Promise<unknown>
   ) => {
-    const handlesBlockers = action === 'start';
+    const handlesBlockers = action.startsWith('start:');
+    const batchLabel = batch?.name || batch?.batchNumber || batchId;
     const request = handlesBlockers ? ++noticeRequest.current : null;
 
     try {
@@ -154,7 +156,14 @@ export function V2PickingWorkspace() {
       await refetch();
     } catch (error) {
       if (handlesBlockers) {
-        if (request !== noticeRequest.current) return;
+        if (request !== noticeRequest.current) {
+          toast.error(`요청 배치 ${batchLabel}: ${getServerDenyMessage(error)}`, {
+            duration: Infinity,
+            closeButton: true,
+            style: { maxHeight: '70vh', overflowY: 'auto', whiteSpace: 'pre-line' },
+          });
+          return;
+        }
 
         const parsed = parseServerError(error);
         const blocked = parsed.code === 'BATCH_START_BLOCKED';
@@ -172,8 +181,6 @@ export function V2PickingWorkspace() {
       }
     }
   };
-
-  const blockerGroups = blockerError ? getBatchBlockerGroups(blockerError) : null;
 
   const context =
     session && workItem
@@ -229,39 +236,18 @@ export function V2PickingWorkspace() {
               <Button
                 disabled={start.isPending}
                 onClick={() =>
-                  command('start', { batchId }, (data, idempotencyKey) =>
+                  command(`start:${batchId}`, { batchId }, (data, idempotencyKey) =>
                     start.mutateAsync({ data, idempotencyKey })
                   )
                 }
               >
-                {retry.hasPending('start')
+                {retry.hasPending(`start:${batchId}`)
                   ? '원래 키로 시작 재시도'
                   : '피킹 시작'}
               </Button>
             )}
-            {blockerGroups && (
-              <section
-                role="alert"
-                className="space-y-3 rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm"
-              >
-                <p className="font-semibold">
-                  시작하지 못했어요 — 아래 박스를 먼저 처리해 주세요
-                </p>
-                {blockerGroups.groups.map((group) => (
-                  <div key={group.reason} className="space-y-1">
-                    <h4 className="font-semibold">{group.title}</h4>
-                    <ul className="list-disc space-y-1 pl-5">
-                      {group.rows.map((row, index) => (
-                        <li key={`${index}-${row}`}>{row}</li>
-                      ))}
-                    </ul>
-                    <p>{group.guidance}</p>
-                  </div>
-                ))}
-                {blockerGroups.incomplete && (
-                  <p>일부 박스의 상세 사유를 확인하지 못했어요. 배치와 해당 박스의 출고 상태를 확인해 주세요.</p>
-                )}
-              </section>
+            {blockerError && (
+              <BatchBlockerPanel error={blockerError} title="시작하지 못했어요" />
             )}
           </Card>
 

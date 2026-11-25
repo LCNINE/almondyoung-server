@@ -191,8 +191,8 @@ describe('피킹 시작 오류 안내', () => {
     {
       name: '재고 부족 상세 목록',
       error: blockedError,
-      summary: '시작하지 못했어요 — 아래 박스를 먼저 처리해 주세요',
-      details: ['재고 부족', '주문번호 ORDER-START', '재고가 부족한 상품', '3개 중 1개 부족'],
+      summary: '시작하지 못했어요아래 박스를 먼저 처리해 주세요.',
+      details: ['재고 부족', 'ORDER-START', '재고가 부족한 상품', '3개 중 1개 부족'],
     },
   ])(
     '$name 안내는 재시도 중 유지하고 성공하면 없애며 토스트를 띄우지 않는다',
@@ -268,7 +268,7 @@ describe('피킹 시작 오류 안내', () => {
   });
 
   it.each([blockedError])(
-    '다른 배치를 조회하면 이전 안내를 지우고 늦은 응답으로 되살리지 않는다: %p',
+    '다른 배치를 조회하면 이전 안내를 지우고 늦은 응답은 패널 대신 요청 배치 토스트로 알린다: %p',
     async (error) => {
       await loadBatch('batch-1');
       await start();
@@ -281,7 +281,12 @@ describe('피킹 시작 오류 안내', () => {
       expect(alertText()).toBe('');
       await act(async () => request.reject(error));
       expect(alertText()).toBe('');
-      expect(toast.getToasts()).toHaveLength(0);
+      expect(toast.getToasts()).toEqual([
+        expect.objectContaining({
+          type: 'error',
+          title: expect.stringContaining('요청 배치 batch-1:'),
+        }),
+      ]);
 
       await loadBatch('batch-1');
       expect(alertText()).toBe('');

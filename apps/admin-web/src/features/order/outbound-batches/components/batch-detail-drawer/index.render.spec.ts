@@ -38,6 +38,7 @@ const mockAddShipment = jest.fn<
 >();
 
 const mockClaimPicker = jest.fn();
+const mockExcludeShipment = jest.fn();
 
 jest.mock('@/hooks/use-permission', () => ({
   usePermissionCheck: () => ({ canRun: () => true }),
@@ -53,7 +54,7 @@ jest.mock('@/lib/services/orders', () => ({
   useAddShipmentToBatch: () => ({ mutateAsync: mockAddShipment }),
   useOutboundBatchEligibleShipments: (id: string) => mockEligibleQuery(id),
   useOutboundBatchV2: (id: string) => mockBatchQuery(id),
-  useExcludeShipmentFromBatch: () => ({ mutateAsync: jest.fn() }),
+  useExcludeShipmentFromBatch: () => ({ mutateAsync: mockExcludeShipment }),
   useClaimBatchPacker: () => ({ mutateAsync: jest.fn() }),
   useClaimBatchPicker: () => ({ mutateAsync: mockClaimPicker }),
   useHandoffBatchWorkItem: () => ({ mutateAsync: jest.fn() }),
@@ -327,7 +328,12 @@ describe('배치 상세에 남는 상자 추가 결과', () => {
         first.resolve({ operationId: 'op-A', workItem: workItem('box-A') })
       );
       expect(addButton('box-A').disabled).toBe(true);
-      expect(toast.getToasts()).toHaveLength(0);
+      expect(toast.getToasts()).toEqual([
+        expect.objectContaining({
+          type: 'success',
+          title: expect.stringContaining('요청 배치 batch-1:'),
+        }),
+      ]);
 
       await act(async () =>
         second.resolve({ operationId: 'op-B', workItem: workItem('box-B') })
@@ -441,7 +447,7 @@ describe('배치 상세에 남는 상자 추가 결과', () => {
   });
 
   it.each(['close', 'switch'])(
-    '%s 후 늦게 도착한 합류 성공 안내는 표시하지 않는다',
+    '%s 후 늦게 도착한 합류 성공도 요청한 배치를 밝혀 알린다',
     async (change) => {
       await render();
       await add('box-A');
@@ -453,7 +459,13 @@ describe('배치 상세에 남는 상자 추가 결과', () => {
         first.resolve({ operationId: 'op', workItem: workItem('box-A') })
       );
 
-      expect(toast.getToasts()).toHaveLength(0);
+      expect(toast.getToasts()).toEqual([
+        expect.objectContaining({
+          type: 'success',
+          title: expect.stringContaining('요청 배치 batch-1:'),
+        }),
+      ]);
+      expect(noticeTexts('alert').join('')).toBe('');
     }
   );
 
@@ -461,7 +473,15 @@ describe('배치 상세에 남는 상자 추가 결과', () => {
     await render();
     await add('box-A');
     await act(async () => first.reject(blocked));
-    expect(noticeTexts('alert').join('')).toContain('주문번호 ORDER-JOIN');
+    expect(noticeTexts('alert').join('')).toContain('ORDER-JOIN');
+    expect(
+      Array.from(document.querySelectorAll('[role="alert"] a')).map((link) =>
+        link.getAttribute('href')
+      )
+    ).toEqual([
+      '/order/history?orderNo=ORDER-JOIN',
+      '/order/fulfillments?shipmentId=box-A',
+    ]);
     expect(noticeTexts('alert').join('')).toContain('상품 A 3개 중 1개 부족');
     expect(toast.getToasts()).toHaveLength(0);
     expect(
@@ -477,6 +497,37 @@ describe('배치 상세에 남는 상자 추가 결과', () => {
     expect(noticeTexts('alert')).toEqual([]);
   });
 
+  it('합류 차단 안내가 떠 있을 때 상자를 배치에서 빼면 안내를 지운다', async () => {
+    mockBatchQuery.mockImplementation((id) => ({
+      data: { ...batch(id), workItems: [workItem('box-B')] },
+      isLoading: false,
+      refetch: mockRefetch,
+    }));
+    mockExcludeShipment.mockResolvedValue({ operationId: 'op-exclude' });
+    await render();
+    await add('box-A');
+    await act(async () => first.reject(blocked));
+    expect(noticeTexts('alert').join('')).toContain('상품 A 3개 중 1개 부족');
+
+    const excludeButton = Array.from(document.querySelectorAll('button')).find(
+      (button) => button.textContent === '배치에서 빼기'
+    );
+    if (!excludeButton) throw new Error('배치에서 빼기 버튼이 없습니다.');
+
+    await act(async () => excludeButton.click());
+    const confirmButton = Array.from(document.querySelectorAll('button')).find(
+      (button) => button.textContent === '빼기'
+    );
+    if (!confirmButton) throw new Error('빼기 확인 버튼이 없습니다.');
+
+    await act(async () => confirmButton.click());
+
+    expect(mockExcludeShipment).toHaveBeenCalledWith(
+      expect.objectContaining({ batchId: 'batch-1', shipmentId: 'box-B' })
+    );
+    expect(noticeTexts('alert')).toEqual([]);
+  });
+
   it('합류 차단의 상세 사유가 없으면 관리자가 확인할 화면을 안내한다', async () => {
     await render();
     await add('box-A');
@@ -488,6 +539,7 @@ describe('배치 상세에 남는 상자 추가 결과', () => {
     );
 
     expect(noticeTexts('alert').join('')).toContain('배치와 해당 박스의 출고 상태를 확인해 주세요.');
+    expect(noticeTexts('alert').join('')).toContain('서버 상세: Shipment box-A cannot join the running batch');
     expect(noticeTexts('alert').join('')).not.toContain('관리자에게 문의해 주세요.');
   });
 

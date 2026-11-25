@@ -223,10 +223,14 @@ const quantity = (value: unknown) =>
     ? value
     : '?';
 
-function blockerOrderNos(blocker: Record<string, unknown>): string {
-  const orderNos = Array.isArray(blocker.orderNos)
+function orderNosOf(blocker: Record<string, unknown>): string[] {
+  return Array.isArray(blocker.orderNos)
     ? blocker.orderNos.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
     : [];
+}
+
+function blockerOrderNos(blocker: Record<string, unknown>): string {
+  const orderNos = orderNosOf(blocker);
   return orderNos.length ? `주문번호 ${orderNos.join(', ')}` : '주문번호 확인 필요';
 }
 
@@ -263,7 +267,7 @@ function batchBlockedToastMessage(error: ParsedServerError): string {
       row.push(`사유: ${wording?.title ?? reason ?? '확인 필요'}`);
       lines.push(row.join(' · '));
       if (wording) guidance.add(joining ? wording.join : wording.start);
-      if (shipmentId && reason) readableCount++;
+      if (shipmentId && wording) readableCount++;
     }
   }
 
@@ -275,17 +279,28 @@ function batchBlockedToastMessage(error: ParsedServerError): string {
   return lines.join('\n');
 }
 
-function batchBlockerRow(blocker: Record<string, unknown>): string {
+export interface BatchBlockerRow {
+  shipmentId: string;
+  orderNos: string[];
+  orderNo: string;
+  trackingNo: string | null;
+  detail: string;
+}
+
+function batchBlockerRow(blocker: Record<string, unknown>): BatchBlockerRow {
   const trackingNo = text(blocker.trackingNo);
-  const orderLabel = blockerOrderNos(blocker);
-  const tracking = trackingNo
-    ? ` · 송장 ${trackingNo.replace(/^(\d{4})(\d{4})(\d{4})$/, '$1-$2-$3')}`
-    : '';
+  const orderNos = orderNosOf(blocker);
 
-  if (blocker.reason === 'WAYBILL_NOT_READY')
-    return `${orderLabel}${tracking} · 송장 재발급 필요`;
-
-  return `${orderLabel}${tracking} · ${text(blocker.skuName) ?? text(blocker.skuCode) ?? '상품'} ${quantity(blocker.requiredQty)}개 중 ${quantity(blocker.shortQty)}개 부족`;
+  return {
+    shipmentId: String(blocker.shipmentId),
+    orderNos,
+    orderNo: orderNos.length ? orderNos.join(', ') : '확인 필요',
+    trackingNo: trackingNo ? trackingNo.replace(/^(\d{4})(\d{4})(\d{4})$/, '$1-$2-$3') : null,
+    detail:
+      blocker.reason === 'WAYBILL_NOT_READY'
+        ? '송장 재발급 필요'
+        : `${text(blocker.skuName) ?? text(blocker.skuCode) ?? '상품'} ${quantity(blocker.requiredQty)}개 중 ${quantity(blocker.shortQty)}개 부족`,
+  };
 }
 
 export function getBatchBlockerGroups(error: ParsedServerError) {
@@ -296,7 +311,7 @@ export function getBatchBlockerGroups(error: ParsedServerError) {
     .filter(
       (entry): entry is Record<string, unknown> =>
         entry !== null &&
-        typeof entry.shipmentId === 'string' &&
+        text(entry.shipmentId) !== null &&
         typeof entry.reason === 'string' &&
         Object.hasOwn(BATCH_BLOCKER_TEXT, entry.reason)
     );
