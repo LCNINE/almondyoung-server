@@ -18,6 +18,8 @@ import {
 import { unionBounds } from "../lib/canvas-math"
 import { stretchText, textBoxFor } from "../components/graphic"
 import {
+  groupMergedLayers,
+  isVectorMerge,
   mergeDownReason as mergeReason,
   rasterMergedLayer,
   replaceMergedLayers,
@@ -93,11 +95,21 @@ export function useLayerActions({
       return
     }
 
+    const index = layers.findIndex((layer) => layer.id === id)
+
+    if (isVectorMerge(layers[index - 1], layers[index])) {
+      change({ ...design, [side]: groupMergedLayers(layers, id) })
+      setMessage(
+        "도형은 그림으로 바꾸지 않고 그룹으로 묶었습니다. 그룹을 풀면 따로 고칠 수 있습니다."
+      )
+
+      return
+    }
+
     mergePending.current = true
     setMerging(true)
 
     try {
-      const index = layers.findIndex((layer) => layer.id === id)
       const merged = await rasterMergedLayer(
         design,
         layers[index - 1],

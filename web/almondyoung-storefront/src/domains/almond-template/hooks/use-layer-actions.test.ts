@@ -19,10 +19,15 @@ let history: ReturnType<typeof useDesignHistory>
 let actions: ReturnType<typeof useLayerActions>
 let finish: (layer: Layer) => void
 let side: "front" | "back"
+let front: Layer[]
 const setSelectedId = vi.fn()
 const setMessage = vi.fn()
 const design = newDesign("card")
-const lower = { ...makeLayer("rect", design), name: "아래" }
+const lower = {
+  ...makeLayer("image", design),
+  name: "아래",
+  image: "data:image/png;base64,AA==",
+}
 const upper = { ...makeLayer("rect", design), name: "위" }
 const merged = {
   ...makeLayer("image", design),
@@ -32,7 +37,7 @@ const merged = {
 }
 
 function Harness() {
-  history = useDesignHistory(() => ({ ...design, front: [lower, upper] }))
+  history = useDesignHistory(() => ({ ...design, front }))
   actions = useLayerActions({
     design: history.design,
     change: history.change,
@@ -55,6 +60,7 @@ beforeEach(async () => {
   vi.clearAllMocks()
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true)
   side = "front"
+  front = [lower, upper]
   vi.mocked(rasterMergedLayer).mockImplementation(
     () =>
       new Promise((resolve) => {
@@ -132,4 +138,20 @@ it("연속 클릭을 무시하고 실패하면 히스토리와 레이어를 보�
   expect(history.design.front).toEqual([lower, upper])
   expect(history.history).toHaveLength(0)
   expect(actions.mergeDownReason(upper.id)).toBe("")
+})
+
+it("도형끼리는 그림으로 굽지 않고 그룹으로 묶는다", async () => {
+  const shape = { ...makeLayer("ellipse", design), name: "원" }
+  front = [shape, upper]
+  await act(async () => root.unmount())
+  root = createRoot(document.createElement("div"))
+  await act(async () => root.render(createElement(Harness)))
+  await act(async () => actions.mergeDown(upper.id))
+
+  const [a, b] = history.design.front
+  expect(rasterMergedLayer).not.toHaveBeenCalled()
+  expect(a).toMatchObject({ id: shape.id, type: "ellipse" })
+  expect(b).toMatchObject({ id: upper.id, type: "rect" })
+  expect(a.groupId).toBeTruthy()
+  expect(b.groupId).toBe(a.groupId)
 })
