@@ -282,6 +282,16 @@ export const PERMISSION_CATALOG = [
     owners: ['core'],
     grant: ['admin', ...LOGISTICS_MANAGER],
   }),
+  permission('inventory.model_workshop.use', '3D 작업실 사용', '내 3D 작업실에서 모델 제작을 요청하고 고치고 승인한다', {
+    owners: ['core'],
+    grant: ADMIN_LOGISTICS,
+    requires: ['inventory.stock.read'],
+  }),
+  permission('inventory.model_workshop.manage', '3D 작업실 전체 보기', '다른 작업자의 3D 작업실을 본다', {
+    owners: ['core'],
+    grant: ADMIN,
+    requires: ['inventory.stock.read'],
+  }),
   permission('inventory.inbound_shipment.write', '선적 입고리스트 관리', '중국 선적 입고리스트를 올리고 정리·확정·종결한다', {
     owners: ['core'],
     grant: ADMIN,

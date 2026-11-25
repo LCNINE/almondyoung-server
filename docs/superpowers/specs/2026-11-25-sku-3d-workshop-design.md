@@ -31,9 +31,9 @@
 | `sku_3d_workers` | key_hash(sha256), max_concurrency(기본 1), last_seen_at, revoked_at |
 
 ## 권한
-- `inventory.3d_workshop.use`: 내 작업실 열기·치수 확인·채팅·버전 열람. 부여: admin + 현장 작업자(LOGISTICS).
-- `inventory.3d_workshop.manage`: 남의 작업실 열람. 부여: admin.
-- 승인·공개: `inventory.3d_workshop.use` + `inventory.master.write`(기존 publish 와 같은 문).
+- `inventory.model_workshop.use`: 내 작업실 열기·치수 확인·채팅·버전 열람. 부여: admin + 현장 작업자(LOGISTICS).
+- `inventory.model_workshop.manage`: 남의 작업실 열람. 부여: admin.
+- 승인·공개: `inventory.model_workshop.use` + `inventory.master.write`(기존 publish 와 같은 문).
 - userId·tenantId 는 토큰에서만 읽는다. 작업실 접근 = owner 본인 또는 manage 보유자. 파일 서명 URL 도 이 검사를 거친 core 만 발급한다.
 - 워커 키는 자기 테넌트 DB 의 대기열·작업 입력·결과 업로드만 한다. 승인·공개 불가.
 
