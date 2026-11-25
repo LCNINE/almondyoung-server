@@ -210,7 +210,7 @@ describe('runBatchLabelPrint', () => {
     expect(result.printed).toEqual(['a']);
     expect(result.notAttempted).toEqual(['b', 'c', 'd']);
     expect(result.printerError).toBe('OpenPrinterW failed');
-    expect(fetched).toEqual(['a', 'b']);
+    expect(fetched).toEqual(['a', 'b', 'c']);
   });
 
   it('중지하면 그 건부터 나머지를 notAttempted 로 두고 프린터 오류 없이 끝난다', async () => {
@@ -230,7 +230,7 @@ describe('runBatchLabelPrint', () => {
       shouldStop: () => printed.length >= 1,
     });
     expect(result).toEqual({ printed: ['a'], skipped: [], notAttempted: ['b', 'c'], sheets: 1 });
-    expect(fetched).toEqual(['a']);
+    expect(fetched).toEqual(['a', 'b']);
   });
 
   it('동시에 두 건을 부르지 않는다', async () => {
@@ -250,6 +250,24 @@ describe('runBatchLabelPrint', () => {
       confirm: async () => {},
     });
     expect(maxInFlight).toBe(1);
+  });
+
+  it('앞 건을 찍는 동안 다음 건을 받아 둔다', async () => {
+    const order: string[] = [];
+    await runBatchLabelPrint({
+      shipmentIds: ['a', 'b'],
+      target: 't',
+      fetchLabel: async (id) => {
+        order.push(`fetch:${id}`);
+        return label(id);
+      },
+      print: async (_t, text) => {
+        await new Promise((r) => setTimeout(r, 1));
+        order.push(`print:${text}`);
+      },
+      confirm: async () => {},
+    });
+    expect(order).toEqual(['fetch:a', 'fetch:b', 'print:^XAa^XZ', 'print:^XAb^XZ']);
   });
 });
 
