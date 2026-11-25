@@ -279,8 +279,10 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
         idempotencyKey: submission.key,
       });
       received = true;
+
       playInboundSaved();
       toast.show('입고를 저장했어요');
+
       // The runtime reconciles the original key. The runtime-free embedding uses the mutation result.
       if (!runtime) {
         await draft.update((prev) => ({
@@ -301,7 +303,10 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
       }
     } catch {
       // 요청이 성공한 뒤 초안 정리가 실패한 경우는 저장 실패가 아니다.
-      if (!received) playInboundSaveFailed();
+      if (!received) {
+        playInboundSaveFailed();
+      }
+
       if (!requestSaved) setSubmissionSaveFailed(true);
       // The mutation and draft hooks expose recoverable failures in the open sheet.
     } finally {

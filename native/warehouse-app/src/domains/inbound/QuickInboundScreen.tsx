@@ -820,6 +820,7 @@ function QuickInboundScreenContent() {
                   onSuccess: async (result) => {
                     playInboundSaved();
                     toast.show('입고를 저장했어요');
+
                     // 응답 lines[] 를 카트 행과 skuId 로 맞춰 이름을 되살린다.
                     await draft.update((prev) => ({
                       ...prev,
