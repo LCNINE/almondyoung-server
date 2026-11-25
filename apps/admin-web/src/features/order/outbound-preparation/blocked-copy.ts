@@ -105,6 +105,16 @@ export function incomingText(
   stock: PreparationLineStock,
   today: string
 ): string {
+  const { state, action } = incomingCopy(stock, today);
+
+  return action ? `${state} — ${action}` : state;
+}
+
+/** incomingText 를 상태와 할 일로 나눈 것. 들어올 예정이 없을 때만 할 일이 따로 있다 */
+export function incomingCopy(
+  stock: PreparationLineStock,
+  today: string
+): { state: string; action: string | null } {
   const { incoming, elsewhere } = stock;
   // 재고가 막 들어와 아직 확보 전이면 발주·이동을 권하지 않는다(확보는 주기적으로 오래 기다린 주문부터 한다)
   const free = freeStock(stock);
@@ -154,12 +164,15 @@ export function incomingText(
     coming.length === 0 &&
     away.length === 0
   ) {
-    return stock.waiting
-      ? `들어올 예정이 없어요 — 기다리는 ${stock.waiting}개만큼 발주하거나 다른 창고에서 옮겨 와야 해요`
-      : '들어올 예정이 없어요 — 발주하거나 다른 창고에서 옮겨 와야 해요';
+    return {
+      state: '들어올 예정이 없어요',
+      action: stock.waiting
+        ? `기다리는 ${stock.waiting}개만큼 발주하거나 다른 창고에서 옮겨 와야 해요`
+        : '발주하거나 다른 창고에서 옮겨 와야 해요',
+    };
   }
 
-  return [
+  const state = [
     free > 0 && `이 창고에 남는 재고 ${free}개 — 곧 자동으로 확보돼요`,
     incoming
       ? coming.length > 0
@@ -171,6 +184,8 @@ export function incomingText(
   ]
     .filter((part): part is string => typeof part === 'string')
     .join(' · ');
+
+  return { state, action: null };
 }
 
 export interface NeedsInfoCopy {

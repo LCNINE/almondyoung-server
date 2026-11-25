@@ -184,7 +184,21 @@ export function isShortLine(line: LineQuantity): boolean {
 export function lineSplitText(line: LineQuantity): string {
   const { now, wait } = splitQuantities([line]);
 
-  return `${wait}개 모자람 · 주문 ${line.qty} · 지금 보낼 ${now}`;
+  return now > 0
+    ? `${line.qty}개 중 ${now}개 있음 · ${wait}개 모자람`
+    : `${wait}개 모자람`;
+}
+
+// 상품명 끝의 옵션 [...] 을 떼어 화면에서 통째로 줄을 넘기게 한다
+export function splitOptionName(name: string): {
+  base: string;
+  option: string | null;
+} {
+  const match = /^(.*\S)\s*(\[[^\]]*\])$/.exec(name);
+
+  return match
+    ? { base: match[1], option: match[2] }
+    : { base: name, option: null };
 }
 
 // 합포장한 상자(주문이 여럿)는 서버가 «있는 것만 먼저 보내기»를 거절한다

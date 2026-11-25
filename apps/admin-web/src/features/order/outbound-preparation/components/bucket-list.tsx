@@ -44,9 +44,11 @@ import {
   shipmentGroupOf,
   shortPickText,
   showsShipmentDetailLink,
+  splitOptionName,
+  splitQuantities,
 } from '../preparation-model';
 import { kstToday } from '@/features/order/matching/lib/date-key';
-import { incomingText, shortageLineText } from '../blocked-copy';
+import { incomingCopy, shortageLineText } from '../blocked-copy';
 import { BUCKET_LABELS } from './bucket-table';
 import { NeedsInfoList } from './needs-info-list';
 import { ProfileSplitDialog } from './profile-split-dialog';
@@ -248,18 +250,7 @@ export function BucketList({
                   )}
                   <TableCell>
                     {bucket.bucket === 'partial' && shipment.lines?.length ? (
-                      <ul role="list" className="space-y-1 whitespace-normal">
-                        {shipment.lines.map((line, index) => (
-                          <li key={index}>
-                            <LineName line={line} />
-                            {isShortLine(line) && (
-                              <span className="block whitespace-nowrap text-xs font-semibold tabular-nums text-red-600">
-                                {lineSplitText(line)}
-                              </span>
-                            )}
-                          </li>
-                        ))}
-                      </ul>
+                      <PartialLines lines={shipment.lines} />
                     ) : bucket.bucket === 'unavailable' &&
                       shipment.lines?.some((line) => line.stock) ? (
                       <ul role="list" className="space-y-1 whitespace-normal">
@@ -282,7 +273,18 @@ export function BucketList({
                     )}
                   </TableCell>
                   <TableCell className="tabular-nums">
-                    {shipment.totalQty}
+                    {bucket.bucket === 'partial' && shipment.lines?.length ? (
+                      <>
+                        <span className="block font-semibold">
+                          {splitQuantities(shipment.lines).now}
+                        </span>
+                        <span className="block whitespace-nowrap text-xs text-muted-foreground">
+                          전체 {shipment.totalQty}
+                        </span>
+                      </>
+                    ) : (
+                      shipment.totalQty
+                    )}
                   </TableCell>
                   <TableCell className="min-w-72 whitespace-normal text-sm text-muted-foreground">
                     <ReasonCell
@@ -419,16 +421,77 @@ function LineName({
 }: {
   line: { name: string; qty: number; reservedQty: number };
 }) {
+  const { base, option } = splitOptionName(line.name);
+
   return (
     <span
       className={
         isShortLine(line)
-          ? 'block font-semibold text-red-600'
-          : 'block text-muted-foreground'
+          ? 'block min-w-0 break-keep font-semibold text-red-600'
+          : 'block min-w-0 break-keep text-muted-foreground'
       }
     >
-      {line.name}
+      {base}
+      {option && (
+        <>
+          {' '}
+          <span className="inline-block max-w-full truncate align-bottom">
+            {option}
+          </span>
+        </>
+      )}
     </span>
+  );
+}
+
+// 부분출고 상자: 모자란 줄을 위로 모아 빨갛게, 다 있는 줄은 흐리게
+function PartialLines({
+  lines,
+}: {
+  lines: { name: string; qty: number; reservedQty: number }[];
+}) {
+  const short = lines.filter(isShortLine);
+  const full = lines.filter((line) => !isShortLine(line));
+
+  return (
+    <div className="space-y-2 whitespace-normal">
+      <div className="flex flex-wrap gap-1.5">
+        {short.length > 0 && (
+          <span className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-600 dark:bg-red-950/40">
+            {short.length}종 모자람 · {splitQuantities(short).wait}개
+          </span>
+        )}
+        {full.length > 0 && (
+          <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-semibold text-muted-foreground">
+            {full.length}종 다 있음
+          </span>
+        )}
+      </div>
+      <ul role="list" className="space-y-1">
+        {short.map((line, index) => (
+          <li
+            key={`short-${index}`}
+            className="flex items-baseline justify-between gap-3 rounded-md bg-red-50 px-2.5 py-1.5 ring-1 ring-inset ring-red-200 dark:bg-red-950/40 dark:ring-red-900"
+          >
+            <LineName line={line} />
+            <span className="shrink-0 whitespace-nowrap text-xs font-semibold tabular-nums text-red-600">
+              {lineSplitText(line)}
+            </span>
+          </li>
+        ))}
+        {full.map((line, index) => (
+          <li
+            key={`full-${index}`}
+            className="flex items-baseline justify-between gap-3 px-2.5 py-1"
+          >
+            <LineName line={line} />
+            <span className="shrink-0 whitespace-nowrap text-xs tabular-nums text-muted-foreground">
+              {line.qty}개 있음
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -521,31 +584,65 @@ function blockedReason(
     return null;
   }
 
+  // 사유가 같은 상품은 한 덩어리로 묶는다
+  const groups = new Map<
+    string,
+    { state: string; action: string | null; lines: typeof lines }
+  >();
+
+  for (const line of lines) {
+    if (!line.stock) continue;
+
+    const { state, action } = incomingCopy(line.stock, today);
+    const key = `${state}\n${action ?? ''}`;
+    const group = groups.get(key) ?? { state, action, lines: [] };
+
+    group.lines.push(line);
+    groups.set(key, group);
+  }
+
+  const named = (shipment.lines?.length ?? 0) > 1;
+
   return (
-    <ul role="list" className="space-y-1">
-      {lines.map((line, index) => (
+    <ul role="list" className="space-y-2">
+      {[...groups.values()].map((group, index) => (
         <li key={index} className="break-keep">
-          {(shipment.lines?.length ?? 0) > 1 && (
-            <span className="font-medium text-foreground">{line.name}: </span>
+          {named && (
+            <span className="block text-xs font-semibold text-red-600">
+              {group.lines.map(shortLineName).join(' · ')}
+            </span>
           )}
-          {line.stock && incomingText(line.stock, today)}
+          <span className="block font-semibold text-foreground">
+            {group.state}
+          </span>
+          {group.action && (
+            <span className="block text-xs">{group.action}</span>
+          )}
           {canOpenReplenishment &&
-            line.stock?.skuId &&
-            (line.stock.elsewhere?.onHand ?? 0) > 0 && (
-              <>
-                {' '}
-                <Link
-                  href={replenishmentSkuHref(line.stock.skuId)}
-                  className="whitespace-nowrap text-primary underline underline-offset-2"
-                >
-                  보충 제안에서 보기
-                </Link>
-              </>
+            group.lines.map(
+              (line) =>
+                line.stock?.skuId &&
+                (line.stock.elsewhere?.onHand ?? 0) > 0 && (
+                  <Link
+                    key={line.stock.skuId}
+                    href={replenishmentSkuHref(line.stock.skuId)}
+                    className="block w-fit whitespace-nowrap text-xs text-primary underline underline-offset-2"
+                  >
+                    보충 제안에서 보기
+                  </Link>
+                )
             )}
         </li>
       ))}
     </ul>
   );
+}
+
+// 사유 칸에선 상품 칸에 이미 있는 상품명 대신 옵션만 짧게. 옵션이 없으면 이름 그대로
+function shortLineName(line: { name: string }): string {
+  const { option } = splitOptionName(line.name);
+
+  return option ? option.slice(1, -1) : line.name;
 }
 
 // 경과 시간이 화면을 열어 둔 동안에도 흐르게 한다
