@@ -6,6 +6,7 @@ import { UsersController as AdminUsersController } from 'apps/user-service/src/a
 import { PaymentIntentAdminController } from 'apps/wallet/src/admin/payment-intent-admin.controller';
 import { AdminOperationsController } from 'apps/membership/src/controllers/admin-operations.controller';
 import { SmsConversationsController } from 'apps/notification/src/sms-gate/controllers/sms-conversations.controller';
+import { BusinessLicensesController } from 'apps/user-service/src/api/admin/business-licenses/business-licenses.controller';
 
 /**
  * 선언이 «실제로 올 수 있는 응답 모양»을 덮는지. 경로가 어긋나면 아무것도 가리지 않고 조용히 지나가므로,
@@ -63,6 +64,23 @@ describe('개인정보 선언이 실제 응답 모양을 덮는다', () => {
       const out = JSON.stringify(maskPaths(body, specOf(handler).fields).body);
       expect(out).not.toContain('010-1234-5678');
       expect(out).not.toContain('110123456789');
+    }
+  });
+
+  it('hides the license image url kept in the auto review record on every business license response', () => {
+    const fileUrl = 'https://files.example/license.png';
+    const row = { userId: 'u1', fileUrl, metadata: { autoReview: { decision: 'manual', fileUrl } } };
+    const cases: [Parameters<Reflector['get']>[1], unknown][] = [
+      [BusinessLicensesController.prototype.getBusinessLicenses, { data: [row], total: 1 }],
+      [BusinessLicensesController.prototype.getBusinessLicenseById, row],
+      [BusinessLicensesController.prototype.getBusinessLicensesByUserId, row],
+      [BusinessLicensesController.prototype.upsertBusinessLicenseByUserId, row],
+    ];
+
+    for (const [handler, body] of cases) {
+      const out = JSON.stringify(maskPaths(body, specOf(handler).fields).body);
+      expect(out).not.toContain(fileUrl);
+      expect(out).toContain('manual');
     }
   });
 

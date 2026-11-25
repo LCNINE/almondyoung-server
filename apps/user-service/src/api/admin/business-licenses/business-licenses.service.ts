@@ -3,9 +3,10 @@ import { InjectPublisher, PublisherFor } from '@app/events';
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { USER_STREAM } from '@packages/event-contracts';
 import { userServiceSchema, type UserServiceSchema } from 'apps/user-service/database/drizzle/schema';
-import { and, asc, count, desc, eq, getTableColumns, gte, inArray, isNotNull, lte, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, getTableColumns, gte, inArray, isNotNull, isNull, lte, ne, sql } from 'drizzle-orm';
 import { buildDailyCountSeries, type DailyCountPoint, kstDayRangeCondition, kstDaySql } from '../../../commons/utils/daily-count';
 import * as schema from '../../../../database/drizzle/schema';
+import type { BusinessMetadata } from '../../business-licenses/dto/business-license.dto';
 import { BusinessLicenseResponseDto } from '../../business-licenses/dto/business-license.response.dto';
 import { UsersService } from '../../users/users.service';
 import { accountTenantOf } from '../../../tenancy/account-owned-row-tenant';
@@ -13,6 +14,15 @@ import { SERVED_TENANT_ID } from '../../../tenancy/served-tenant';
 import { BusinessAdminUpdateDto } from './dto/business-updeta.dto';
 import { BusinessAdminUpsertDto } from './dto/business-upsert.dto';
 import { BusinessLicenseQueryDto } from './dto/pagination-query-dto';
+
+type BusinessLicenseWithUserName = schema.BusinessLicense & { userName: string | null };
+
+export interface DuplicateLicenseOwner {
+  userId: string;
+  userName: string | null;
+  email: string | null;
+  verifiedAt: Date | null;
+}
 
 @Injectable()
 export class BusinessLicensesService {
@@ -190,7 +200,49 @@ export class BusinessLicensesService {
     }
   }
 
-  async getBusinessLicenseByBusinessLicenseId(id: string): Promise<BusinessLicenseResponseDto | null> {
+  async getBusinessLicenseDetail(
+    id: string,
+  ): Promise<(BusinessLicenseWithUserName & { duplicateOf: DuplicateLicenseOwner | null }) | null> {
+    const license = await this.getBusinessLicenseByBusinessLicenseId(id);
+
+    if (!license) return license;
+
+    return { ...license, duplicateOf: await this.findDuplicateOwner(license) };
+  }
+
+  private async findDuplicateOwner(license: schema.BusinessLicense): Promise<DuplicateLicenseOwner | null> {
+    const autoReview = (license.metadata as BusinessMetadata | null)?.autoReview;
+    const businessNumber = autoReview?.reading?.businessNumber;
+
+    if (autoReview?.reason !== 'duplicate_number' || !businessNumber) return null;
+
+    const [owner] = await this.dbService.db
+      .select({
+        userId: schema.businessLicenses.userId,
+        userName: schema.users.username,
+        email: schema.users.email,
+        verifiedAt: schema.businessLicenses.verifiedAt,
+      })
+      .from(schema.businessLicenses)
+      .leftJoin(schema.users, eq(schema.businessLicenses.userId, schema.users.id))
+      .where(
+        and(
+          eq(schema.businessLicenses.tenantId, license.tenantId),
+          eq(schema.businessLicenses.businessNumber, businessNumber),
+          isNull(schema.businessLicenses.deletedAt),
+          ne(schema.businessLicenses.id, license.id),
+        ),
+      )
+      .orderBy(
+        sql`case when ${schema.businessLicenses.status} = 'approved' then 0 else 1 end`,
+        sql`${schema.businessLicenses.verifiedAt} desc nulls last`,
+      )
+      .limit(1);
+
+    return owner ?? null;
+  }
+
+  async getBusinessLicenseByBusinessLicenseId(id: string): Promise<BusinessLicenseWithUserName | null> {
     try {
       const [query] = await this.dbService.db
         .select({
@@ -199,7 +251,7 @@ export class BusinessLicensesService {
         })
         .from(schema.businessLicenses)
         .leftJoin(schema.users, eq(schema.businessLicenses.userId, schema.users.id))
-        .where(eq(schema.businessLicenses.id, id));
+        .where(and(eq(schema.businessLicenses.id, id), eq(schema.businessLicenses.tenantId, this.servedTenantId)));
 
       return query;
     } catch (error) {
