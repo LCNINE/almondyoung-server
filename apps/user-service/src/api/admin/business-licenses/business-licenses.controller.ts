@@ -42,7 +42,13 @@ export class BusinessLicensesController {
   }
 
   @PiiResponse({
-    fields: { representativeName: 'name', fileUrl: 'redact', 'metadata.ntsValidate.requested': 'redact' },
+    fields: {
+      representativeName: 'name',
+      fileUrl: 'redact',
+      'metadata.ntsValidate.requested': 'redact',
+      'metadata.autoReview.reading.representativeName': 'name',
+      'metadata.autoReview.reading.startDate': 'redact',
+    },
     subjects: [{ param: 'userId', type: 'user' }],
   })
   @PiiWrite({ fields: ['representativeName'] })
