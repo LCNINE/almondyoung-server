@@ -142,6 +142,14 @@ export class SkuResponseDto {
   })
   images?: SkuImageDto[];
 
+  @ApiProperty({
+    description:
+      'Public file-service file IDs to show, primary first. SKU images when present, otherwise the matched active mall product images. Load via <file-service>/files/public/<fileId>.',
+    type: [String],
+    required: false,
+  })
+  imageFileIds?: string[];
+
   @ApiProperty({ required: false, default: 0 })
   currentStock?: number | null;
 

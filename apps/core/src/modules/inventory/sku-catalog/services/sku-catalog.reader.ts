@@ -4,6 +4,7 @@ import { NotFoundError } from '@app/shared';
 import { InjectTypedDb, DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
 import { skuNameLikePatterns } from './sku-name-search';
+import { readSkuImageFileIds } from './sku-image-files';
 import { SkuResponseDto } from '../dto/sku-response.dto';
 import { AdvancedInventoryFiltersDto, StockDisplayMode } from '../dto/advanced-filters.dto';
 
@@ -19,6 +20,15 @@ export class SkuCatalogReader {
   }
 
   async getById(skuId: string, tx?: DbTx, warehouseId?: string): Promise<SkuResponseDto> {
+    return this.dbService.run(async (trx) => {
+      const sku = await this.loadById(skuId, trx, warehouseId);
+      const imageFileIds = await readSkuImageFileIds(trx, [skuId]);
+
+      return { ...sku, imageFileIds: imageFileIds.get(skuId) ?? [] };
+    }, tx);
+  }
+
+  private async loadById(skuId: string, tx: DbTx, warehouseId?: string): Promise<SkuResponseDto> {
     const result = await this.dbService.run(async (trx) => {
       const [r] = await trx
         .select()
@@ -373,7 +383,9 @@ export class SkuCatalogReader {
 
       const total = Number(countResult?.count ?? 0);
 
-      const items = await Promise.all(uniqueSkuIds.map((skuId) => this.getById(skuId, trx, filters.warehouseId)));
+      const skus = await Promise.all(uniqueSkuIds.map((skuId) => this.loadById(skuId, trx, filters.warehouseId)));
+      const imageFileIds = await readSkuImageFileIds(trx, uniqueSkuIds);
+      const items = skus.map((sku) => ({ ...sku, imageFileIds: imageFileIds.get(sku.id) ?? [] }));
 
       return {
         items,
