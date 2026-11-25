@@ -126,7 +126,7 @@ describe('SettingsRoute account', () => {
     renderSettings(session, warehousesOnly);
 
     expect(await screen.findByText('김작업')).toBeInTheDocument();
-    expect(screen.getByText('(worker01)')).toBeInTheDocument();
+    expect(screen.queryByText(/worker01/)).toBeNull();
   });
 
   it('offers a retry when the worker cannot be read', async () => {

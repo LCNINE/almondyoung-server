@@ -1,6 +1,5 @@
 import { useRef, useState } from 'react';
 import { ArrowRight } from 'lucide-react';
-import { Button } from '../../design/Button';
 import { cn } from '../../design/cn';
 import { localStoragePrefs, type DevicePrefs } from '../../data/devicePrefs';
 import { renderTestLabel, renderTestLabel50x30 } from './zpl';
@@ -30,7 +29,7 @@ const EMPTY_MESSAGE: Record<PrinterSlot, string> = {
   label: NO_LABEL_PRINTER_MESSAGE,
 };
 
-/** 설정 화면 프린터 카드 안의 한 줄. 칸(송장·라벨)마다 이 PC 에 물린 프린터의 Windows 이름을 받는다(#913·#1281). */
+/** 칸(송장·라벨)마다 이 PC 에 물린 프린터의 Windows 이름을 받는다. */
 export function PrinterSettings({
   slot,
   prefs = localStoragePrefs,
@@ -85,15 +84,13 @@ export function PrinterSettings({
   };
 
   return (
-    <div className="flex flex-col gap-2 border-t border-[#e4e4e7] py-[18px] first:border-t-0 first:pt-0 last:pb-0">
+    <div className="flex flex-col items-start gap-2 border-t border-[#e4e4e7] py-[18px] first:border-t-0 first:pt-0 last:pb-0 min-[1331px]:flex-row min-[1331px]:items-center min-[1331px]:justify-between min-[1331px]:gap-4 [@media(min-width:901px)_and_(max-height:850px)]:flex-row [@media(min-width:901px)_and_(max-height:850px)]:items-center [@media(min-width:901px)_and_(max-height:850px)]:justify-between [@media(min-width:901px)_and_(max-height:850px)]:gap-4 [@media(min-width:901px)_and_(max-height:850px)]:py-3">
       <div>
         <h3 className="text-[13px] font-semibold text-[#27272a]">{title}</h3>
-        <p className="mt-1 text-xs text-[#71717a]">
-          {HELP[slot]} Windows 설정 → 프린터 및 스캐너에 보이는 이름 그대로 적어 주세요.
-        </p>
+        <p className="mt-1 text-xs text-[#71717a]">{HELP[slot]}</p>
       </div>
       <form
-        className="flex flex-wrap items-center gap-2"
+        className="flex w-full shrink-0 flex-wrap items-center gap-2 min-[1331px]:w-[280px] [@media(min-width:901px)_and_(max-height:850px)]:w-[280px]"
         onSubmit={(e) => {
           e.preventDefault();
           const saved = save();
@@ -107,16 +104,21 @@ export function PrinterSettings({
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
-        <Button type="submit" aria-label={`${title} 저장`} className="px-3.5 py-2 text-xs">
+        <button
+          type="submit"
+          aria-label={`${title} 저장`}
+          className="rounded-lg border border-[#e4e4e7] bg-white px-3.5 py-2 text-xs font-semibold text-[#27272a] hover:bg-[#f4f4f5]"
+        >
           저장
-        </Button>
+        </button>
         <button
           type="button"
           className="inline-flex items-center gap-1.5 px-1 py-[7px] text-xs font-medium text-[#2563eb] disabled:pointer-events-none disabled:opacity-40"
+          aria-label={`${title} 테스트 인쇄`}
           disabled={busy}
           onClick={() => void testPrint()}
         >
-          {title} 테스트 인쇄
+          테스트 인쇄
           <ArrowRight className="h-[13px] w-[13px]" aria-hidden />
         </button>
       </form>

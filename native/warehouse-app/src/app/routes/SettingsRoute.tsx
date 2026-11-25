@@ -5,7 +5,8 @@ import { Button } from '../../core/design/Button';
 import { cn } from '../../core/design/cn';
 import { Link } from '@tanstack/react-router';
 import { ScreenHeader } from '../../core/design/ScreenHeader';
-import { WarehousePicker } from '../../domains/warehouse/WarehousePicker';
+import { useWarehouses } from '../../domains/warehouse/useWarehouses';
+import { errorMessage } from '../../core/data/errorMessage';
 import { PrinterSettings } from '../../core/hardware/print/PrinterSettings';
 import { isStationDevice } from '../station';
 import { useSession } from '../session-context';
@@ -38,6 +39,71 @@ function SettingsCard({
       </div>
       {children}
     </section>
+  );
+}
+
+function WarehouseSetting() {
+  const { warehouseId, setWarehouse } = useWarehouse();
+  const { data, isLoading, isError, error } = useWarehouses();
+  const [choice, setChoice] = useState<string | null>(null);
+  const warehouses = data ?? [];
+  const selected = choice ?? warehouseId ?? '';
+  const target = warehouses.find((w) => w.id === selected);
+
+  let control: ReactNode;
+  if (isError) {
+    control = (
+      <p role="alert" className="text-sm text-[#aa4037]">
+        {errorMessage(error)}
+      </p>
+    );
+  } else if (isLoading) {
+    control = <p className="text-sm text-[#71717a]">불러오는 중…</p>;
+  } else if (warehouses.length === 0) {
+    control = <p className="text-sm text-[#71717a]">등록된 창고가 없어요.</p>;
+  } else {
+    control = (
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          id="warehouse-choice"
+          value={selected}
+          onChange={(e) => setChoice(e.target.value)}
+          className="w-[150px] rounded-lg border border-[#e4e4e7] bg-white px-[11px] py-[9px] text-[13px] text-[#27272a]"
+        >
+          {warehouseId === null && (
+            <option value="" disabled>
+              창고 선택
+            </option>
+          )}
+          {warehouses.map((w) => (
+            <option key={w.id} value={w.id}>
+              {w.name}
+            </option>
+          ))}
+        </select>
+        <Button
+          className="px-3.5 py-2 text-xs"
+          disabled={!target || target.id === warehouseId}
+          onClick={() => {
+            if (target) setWarehouse({ id: target.id, name: target.name });
+          }}
+        >
+          적용
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col items-start gap-3 border-t border-[#e4e4e7] pt-[18px] min-[901px]:flex-row min-[901px]:items-center min-[901px]:justify-between min-[901px]:gap-5">
+      <div>
+        <label htmlFor="warehouse-choice" className="text-[13px] font-semibold text-[#27272a]">
+          이 기기의 창고
+        </label>
+        <p className="mt-[5px] text-xs text-[#71717a]">입고·적치·이동·조정·실사에 적용됩니다.</p>
+      </div>
+      {control}
+    </div>
   );
 }
 
@@ -84,22 +150,14 @@ export function SettingsRoute() {
         description="이 스테이션에서 사용하는 창고와 작업 환경을 관리하세요."
       />
 
-      <div className="grid grid-cols-1 items-start gap-[22px] lg:grid-cols-[minmax(0,1fr)_290px]">
+      <div className="grid grid-cols-1 items-start gap-4 min-[701px]:grid-cols-[minmax(0,1fr)_240px] min-[901px]:grid-cols-[minmax(0,1fr)_290px] min-[901px]:gap-[22px]">
         <div className="flex flex-col gap-[18px]">
           <SettingsCard
             icon={Warehouse}
             title="작업 창고"
             description="이 기기의 재고 작업이 기록되는 창고입니다."
           >
-            <div className="space-y-3 border-t border-[#e4e4e7] pt-[18px]">
-              <div>
-                <h3 className="text-[13px] font-semibold text-[#27272a]">이 기기의 창고</h3>
-                <p className="mt-[5px] text-xs text-[#71717a]">
-                  입고·적치·이동·조정·실사에 적용됩니다.
-                </p>
-              </div>
-              <WarehousePicker />
-            </div>
+            <WarehouseSetting />
           </SettingsCard>
 
           {isStationDevice() && (
@@ -128,11 +186,6 @@ export function SettingsRoute() {
             {worker.status === 'ready' && (
               <h2 className="mb-6 text-xl font-bold text-[#27272a]">
                 {worker.identity.name}
-                {worker.identity.loginId && (
-                  <span className="ml-1 text-xs font-normal text-[#71717a]">
-                    ({worker.identity.loginId})
-                  </span>
-                )}
               </h2>
             )}
             {worker.status === 'loading' && (

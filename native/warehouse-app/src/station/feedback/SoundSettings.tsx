@@ -3,7 +3,7 @@ import { localStoragePrefs, type DevicePrefs } from '../../core/data/devicePrefs
 import { useFeedback } from './FeedbackProvider';
 import { readSoundPrefs, writeSoundPrefs, type SoundPrefs } from './soundPrefs';
 
-/** 설정 화면 소리 카드 안의 음량 조절(스테이션 전용). 음량을 바꾸고 손을 떼면 그 음량으로 한 번 들려준다. */
+/** 음량을 바꾸고 손을 떼면 그 음량으로 한 번 들려준다. */
 export function SoundSettings({ prefs = localStoragePrefs }: { prefs?: DevicePrefs }) {
   const [sound, setSound] = useState<SoundPrefs>(() => readSoundPrefs(prefs));
   const { signal } = useFeedback();
