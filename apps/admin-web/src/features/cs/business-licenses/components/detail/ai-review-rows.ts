@@ -79,7 +79,7 @@ function stopReason(
 }
 
 export function deriveAutoReviewRows(
-  autoReview: Pick<BusinessLicenseAutoReview, 'decision' | 'reason'>
+  autoReview: Pick<BusinessLicenseAutoReview, 'decision' | 'reason' | 'dryRun'>
 ): Record<AutoReviewRowKey, AutoReviewRowResult> {
   const results: Record<AutoReviewRowKey, AutoReviewRowResult> = {
     documentType: SKIP,
@@ -106,6 +106,11 @@ export function deriveAutoReviewRows(
     for (const row of stage.passes) {
       results[row] = { kind: 'pass' };
     }
+  }
+
+  // 번호 중복은 승인 UPDATE 가 막혀야 알 수 있는데, 판정만 기록하면 그 UPDATE 를 건너뛴다.
+  if (autoReview.decision === 'approve' && autoReview.dryRun) {
+    results.businessNumber = SKIP;
   }
 
   return results;

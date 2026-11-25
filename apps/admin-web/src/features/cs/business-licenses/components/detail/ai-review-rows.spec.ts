@@ -6,7 +6,7 @@ const fail = (label: string) => ({ kind: 'fail', label });
 
 describe('deriveAutoReviewRows', () => {
   it('자동 승인이면 모든 행이 맞음이다', () => {
-    expect(deriveAutoReviewRows({ decision: 'approve' })).toEqual({
+    expect(deriveAutoReviewRows({ decision: 'approve', dryRun: false })).toEqual({
       documentType: pass,
       representative: pass,
       businessNumber: pass,
@@ -16,9 +16,20 @@ describe('deriveAutoReviewRows', () => {
     });
   });
 
+  it('판정만 기록한 자동 승인이면 번호 중복은 확인하지 않았다', () => {
+    expect(deriveAutoReviewRows({ decision: 'approve', dryRun: true })).toEqual({
+      documentType: pass,
+      representative: pass,
+      businessNumber: skip,
+      startDate: pass,
+      businessType: pass,
+      nts: pass,
+    });
+  });
+
   it('등록증이 아니면 서류 종류만 다름이고 나머지는 확인하지 않았다', () => {
     expect(
-      deriveAutoReviewRows({ decision: 'manual', reason: 'not_license' })
+      deriveAutoReviewRows({ decision: 'manual', dryRun: false, reason: 'not_license' })
     ).toEqual({
       documentType: fail('다름'),
       representative: skip,
@@ -31,7 +42,7 @@ describe('deriveAutoReviewRows', () => {
 
   it('글자를 못 읽었으면 서류 종류만 맞음이다', () => {
     expect(
-      deriveAutoReviewRows({ decision: 'manual', reason: 'unreadable' })
+      deriveAutoReviewRows({ decision: 'manual', dryRun: false, reason: 'unreadable' })
     ).toEqual({
       documentType: pass,
       representative: skip,
@@ -44,7 +55,7 @@ describe('deriveAutoReviewRows', () => {
 
   it('법인이면 사업자 구분이 다름이다', () => {
     expect(
-      deriveAutoReviewRows({ decision: 'manual', reason: 'corporation' })
+      deriveAutoReviewRows({ decision: 'manual', dryRun: false, reason: 'corporation' })
     ).toEqual({
       documentType: pass,
       representative: skip,
@@ -57,7 +68,7 @@ describe('deriveAutoReviewRows', () => {
 
   it('대표자 이름이 다르면 국세청 조회 전에 멈춘다', () => {
     expect(
-      deriveAutoReviewRows({ decision: 'manual', reason: 'name_mismatch' })
+      deriveAutoReviewRows({ decision: 'manual', dryRun: false, reason: 'name_mismatch' })
     ).toEqual({
       documentType: pass,
       representative: fail('다름'),
@@ -70,7 +81,7 @@ describe('deriveAutoReviewRows', () => {
 
   it('국세청 진위확인이 틀리면 국세청 행이 불일치다', () => {
     expect(
-      deriveAutoReviewRows({ decision: 'manual', reason: 'nts_mismatch' })
+      deriveAutoReviewRows({ decision: 'manual', dryRun: false, reason: 'nts_mismatch' })
     ).toEqual({
       documentType: pass,
       representative: pass,
@@ -83,7 +94,7 @@ describe('deriveAutoReviewRows', () => {
 
   it('계속사업자가 아니면 개업일자는 맞고 국세청 행이 불일치다', () => {
     expect(
-      deriveAutoReviewRows({ decision: 'manual', reason: 'not_active' })
+      deriveAutoReviewRows({ decision: 'manual', dryRun: false, reason: 'not_active' })
     ).toEqual({
       documentType: pass,
       representative: pass,
@@ -96,7 +107,7 @@ describe('deriveAutoReviewRows', () => {
 
   it('번호가 중복이면 국세청까지 통과하고 번호 행이 중복이다', () => {
     expect(
-      deriveAutoReviewRows({ decision: 'manual', reason: 'duplicate_number' })
+      deriveAutoReviewRows({ decision: 'manual', dryRun: false, reason: 'duplicate_number' })
     ).toEqual({
       documentType: pass,
       representative: pass,
@@ -108,7 +119,7 @@ describe('deriveAutoReviewRows', () => {
   });
 
   it('재시도 대기면 국세청 조회 전 단계까지만 맞음이다', () => {
-    expect(deriveAutoReviewRows({ decision: 'retry' })).toEqual({
+    expect(deriveAutoReviewRows({ decision: 'retry', dryRun: false })).toEqual({
       documentType: pass,
       representative: pass,
       businessNumber: skip,
@@ -121,6 +132,7 @@ describe('deriveAutoReviewRows', () => {
   it('이미지를 못 열었으면 아무 행도 확인하지 않았다', () => {
     const rows = deriveAutoReviewRows({
       decision: 'manual',
+      dryRun: false,
       reason: 'image_unavailable',
     });
 
