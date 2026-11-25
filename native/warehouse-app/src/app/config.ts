@@ -1,5 +1,6 @@
 import { validateDemoConfig } from './demo-config';
 import type { OidcConfig } from '../core/auth/oidc';
+import { filePublicBase } from '../core/data/publicFileUrl';
 
 // These come from build-time env (VITE_*) in Phase 0. A settings screen can
 // override them at runtime in a later phase (spec §9).
@@ -12,6 +13,8 @@ export const oidcConfig: OidcConfig = {
 };
 
 export const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? '';
+
+export const filePublicBaseUrl = filePublicBase(import.meta.env.VITE_FILE_PUBLIC_URL, apiBaseUrl);
 
 // 백엔드 토큰 수용 방식(§13.1 확정). core JWT strategy 는 Bearer 헤더와 cookie(accessToken)
 // 둘 다 추출하지만, 네이티브 plugin-http(Fetch 모방)는 `Cookie` 를 Fetch **금지 요청 헤더**로

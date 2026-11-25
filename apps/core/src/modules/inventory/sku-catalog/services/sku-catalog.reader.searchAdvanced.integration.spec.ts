@@ -151,4 +151,24 @@ describeIfDb('SkuCatalogReader.searchAdvanced (DB integration, rollback-only)', 
       });
     });
   });
+  it('검색 결과마다 SKU 사진 파일 id 를 대표 사진부터 싣는다', async () => {
+    await inRollbackTx(async (tx) => {
+      const token = randomUUID().slice(0, 8);
+      const [withImages, without] = await seedSkus(tx, token, 2);
+      const main = randomUUID();
+      const extra = randomUUID();
+      await tx.insert(wmsTables.skuImages).values([
+        { skuId: withImages, uploadId: extra, isPrimary: false, sortOrder: 1 },
+        { skuId: withImages, uploadId: main, isPrimary: true, sortOrder: 2 },
+      ]);
+
+      const result = await reader.searchAdvanced({ search: `it-${token}`, limit: 20, offset: 0 }, tx);
+      const detail = await reader.getById(withImages, tx);
+      const byId = new Map(result.items.map((item) => [item.id, item.imageFileIds]));
+
+      expect(byId.get(withImages)).toEqual([main, extra]);
+      expect(byId.get(without)).toEqual([]);
+      expect(detail.imageFileIds).toEqual([main, extra]);
+    });
+  });
 });

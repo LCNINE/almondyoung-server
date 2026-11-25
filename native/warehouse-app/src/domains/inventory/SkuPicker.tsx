@@ -1,8 +1,10 @@
-import { useId } from 'react';
+import { useId, useState } from 'react';
 import { Button } from '../../core/design/Button';
 import { remembered, useRememberedState, type Remembered } from '../../core/design/rememberedState';
+import { SkuInfoSheet, SkuThumbnail } from './SkuInfoSheet';
 import { useSkuSearch } from './useSkuSearch';
 import type { SkuSearchItem } from './types';
+
 export type SelectedSku = Pick<
   SkuSearchItem,
   'id' | 'code' | 'name' | 'optionKey'
@@ -31,6 +33,7 @@ export function SkuPicker({
   const [term, setTerm] = useRememberedState(memory?.term, '');
   const [search, setSearch] = useRememberedState(memory?.search, '');
   const [offset, setOffset] = useRememberedState(memory?.offset, 0);
+  const [viewing, setViewing] = useState<SkuSearchItem | null>(null);
   const result = useSkuSearch({
     search,
     limit: 20,
@@ -45,6 +48,7 @@ export function SkuPicker({
     result.isFetching ||
     result.isPlaceholderData ||
     result.isError;
+
   return (
     <section className="space-y-2 rounded border p-3">
       <form
@@ -90,23 +94,42 @@ export function SkuPicker({
         {result.data?.items.map((sku) => (
           <li
             key={sku.id}
-            className="flex items-center justify-between gap-2 border-b py-2"
+            className={
+              disabled
+                ? 'flex items-center justify-between gap-2 border-b py-2'
+                : 'flex cursor-pointer items-center justify-between gap-2 border-b px-1 py-2 hover:bg-gray-50'
+            }
+            onClick={() => {
+              if (!disabled) {
+                setViewing(sku);
+              }
+            }}
           >
-            <span>
-              {sku.name}
-              <span className="block text-xs text-gray-500">
-                {sku.code}
-                {sku.optionKey ? ` · ${sku.optionKey}` : ''}
-              </span>
-            </span>
-            <Button
+            <button
               type="button"
-              aria-label={`${sku.name} 선택`}
-              disabled={!!blocked}
-              onClick={() => onSelect(sku)}
+              disabled={disabled}
+              aria-label={`${sku.name} 상품 정보`}
+              className="flex min-w-0 flex-1 items-center gap-3 text-left disabled:cursor-default"
             >
-              선택
-            </Button>
+              <SkuThumbnail fileIds={sku.imageFileIds} className="size-12 flex-none" />
+              <span className="min-w-0">
+                {sku.name}
+                <span className="block text-xs text-gray-500">
+                  {sku.code}
+                  {sku.optionKey ? ` · ${sku.optionKey}` : ''}
+                </span>
+              </span>
+            </button>
+            <span className="flex-none" onClick={(event) => event.stopPropagation()}>
+              <Button
+                type="button"
+                aria-label={`${sku.name} 선택`}
+                disabled={!!blocked}
+                onClick={() => onSelect(sku)}
+              >
+                선택
+              </Button>
+            </span>
           </li>
         ))}
       </ul>
@@ -127,6 +150,17 @@ export function SkuPicker({
             다음
           </Button>
         </div>
+      )}
+      {viewing && (
+        <SkuInfoSheet
+          sku={viewing}
+          canSelect={!blocked}
+          onSelect={() => {
+            onSelect(viewing);
+            setViewing(null);
+          }}
+          onClose={() => setViewing(null)}
+        />
       )}
     </section>
   );

@@ -22,6 +22,8 @@ export interface SkuSearchItem {
    * 입고 화면이 "스캔한 바코드의 포장단위"를 고르는 데 쓴다.
    */
   barcodes?: SkuBarcodeItem[];
+  /** 보여 줄 사진의 공개 파일 id. 대표 사진이 먼저 온다. 옛 core 는 내려주지 않는다. */
+  imageFileIds?: string[];
 }
 
 /** GET /inventory/skus/:id — SkuResponseDto 중 현장에서 쓰는 필드만. */
@@ -32,6 +34,10 @@ export interface SkuDetail {
   optionKey?: string | null;
   safetyStock: number;
   barcodes: Array<{ id: string; barcode: string; isPrimary: boolean }>;
+  /** 전 창고 합산 현재고. */
+  currentStock?: number | null;
+  /** 보여 줄 사진의 공개 파일 id. 대표 사진이 먼저 온다. 옛 core 는 내려주지 않는다. */
+  imageFileIds?: string[];
 }
 
 /** GET /inventory/skus/:id/stock-summary — 창고 단위 집계. */
