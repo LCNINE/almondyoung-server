@@ -31,8 +31,12 @@ export function SaveToast({
   return (
     <div
       role="status"
-      className={`pointer-events-none fixed ${station ? 'top-16' : 'top-4'} left-1/2 z-50 -translate-x-1/2 rounded-xl border border-gray-200 bg-gray-800 px-4 py-2 text-sm font-medium text-white shadow-lg`}
+      className={`pointer-events-none fixed ${station ? 'top-16' : 'top-4'} left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-xl border border-gray-200 bg-gray-800 px-4 py-2 text-sm font-medium text-white shadow-lg`}
     >
+      <span
+        aria-hidden
+        className="h-2 w-2 shrink-0 rounded-full bg-green-400"
+      />
       {message}
     </div>
   );
