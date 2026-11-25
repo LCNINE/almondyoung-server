@@ -112,6 +112,7 @@ export const FILE_CONTEXTS: FileContextSeed[] = [
       'text/plain',
       'text/markdown',
       'application/json',
+      'application/x-blender',
       'application/octet-stream',
     ],
     maxFileSize: SKU_3D_WORKSHOP_MAX_SIZE_BYTES,

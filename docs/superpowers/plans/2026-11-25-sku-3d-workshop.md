@@ -58,10 +58,10 @@
 - Test: 기존 `apps/file-service/src/database/*.spec.ts`, `libs/authorization/src/permissions/*.spec.ts` (permission-dependencies 등)
 
 **Interfaces:**
-- Produces: `SKU_3D_WORKSHOP_CONTEXT_ID = 'sku-3d-workshop'` (file-service), 권한 `'inventory.model_workshop.use'`, `'inventory.model_workshop.manage'`.
+- Produces: `SKU_3D_WORKSHOP_CONTEXT_ID = 'sku-3d-workshop'` (file-service), 권한 `'inventory.model_workshop.write'`, `'inventory.model_workshop.manage'`.
 
 - [ ] **Step 1:** 시드 추가: `allowPublic: false, allowPrivate: true`, mime `['model/gltf-binary','image/png','image/jpeg','image/webp','text/plain','text/markdown','application/json','application/octet-stream']`, `maxFileSize: 50 * 1024 * 1024`(blend 파일), `pathPrefix: 'inventory/sku-3d-workshop'`. `STAFF_CONTEXT_PERMISSIONS` 에는 넣지 않는다(열람은 core 만).
-- [ ] **Step 2:** 권한 두 개 추가. `use`: 이름 `3D 작업실 사용`, grant `['admin', ...LOGISTICS]`, `requires: ['inventory.stock.read']`. `manage`: 이름 `3D 작업실 전체 보기`, grant `ADMIN`, `requires: ['inventory.model_workshop.use']`.
+- [ ] **Step 2:** 권한 두 개 추가. `use`: 이름 `3D 작업실 사용`, grant `['admin', ...LOGISTICS]`, `requires: ['inventory.stock.read']`. `manage`: 이름 `3D 작업실 전체 보기`, grant `ADMIN`, `requires: ['inventory.model_workshop.write']`.
 - [ ] **Step 3:** `npx jest libs/authorization apps/file-service/src/database --runInBand` → PASS.
 - [ ] **Step 4:** 라이브 `file_contexts` 행은 시드가 아니라 배포 때 SQL 로 넣는다 — 배포 노트에 INSERT 문을 적는다(Task 8).
 - [ ] **Step 5:** 커밋 `[file-service·authorization] 3D 작업실 비공개 파일 컨텍스트와 권한을 추가한다`.
@@ -88,9 +88,9 @@
   - `Sku3dWorkshopReader.revisionFile(workshopId, revisionId, actor, kind: 'glb' | `render-${number}`) → stream` (`FileServiceClient.fetchFile(fileId, ownerId)`)
   - 접근 규칙: owner 이거나 canManage. 아니면 `NotFoundError`(존재 숨김).
 - Routes (`@Controller('inventory/sku-3d-workshops')`):
-  - `POST skus/:skuId` open — `inventory.model_workshop.use`
-  - `GET :id` detail, `GET :id/events?afterSeq=` , `GET :id/revisions/:revisionId/files/:kind` — `inventory.model_workshop.use`
-  - `PUT :id/dimensions` {basis}, `POST :id/messages` {body ≤ 2000자} — `inventory.model_workshop.use`
+  - `POST skus/:skuId` open — `inventory.model_workshop.write`
+  - `GET :id` detail, `GET :id/events?afterSeq=` , `GET :id/revisions/:revisionId/files/:kind` — `inventory.model_workshop.read`
+  - `PUT :id/dimensions` {basis}, `POST :id/messages` {body ≤ 2000자} — `inventory.model_workshop.write`
 
 - [ ] **Step 1: 통합 스펙 작성(실패 확인)** — Testcontainers, 최소 `skus`·`sku_reference_photos`·`sku_3d_models` 테이블 + 이 마이그 SQL 적용. 테스트:
   - `open is idempotent` — 같은 (sku, user) 로 open 3번 병렬 → 작업실 1행, 같은 id.
@@ -162,7 +162,7 @@ WHERE id = (SELECT id FROM sku_3d_workshop_jobs
 - Test: `sku-3d-workshop.integration.spec.ts` 에 추가, 기존 `sku-3d-models.manager.spec.ts`
 
 **Interfaces:**
-- Produces: `POST /inventory/sku-3d-workshops/:id/revisions/:revisionId/approve { glbSha256 }` — `inventory.model_workshop.use` + 본문에서 `inventory.master.write` 확인(`PermissionCheckpoints.check`). owner 만. → `{ revisionId, sku3dModelId, version, publishedAt }`.
+- Produces: `POST /inventory/sku-3d-workshops/:id/revisions/:revisionId/approve { glbSha256 }` — `inventory.model_workshop.write` + 본문에서 `inventory.master.write` 확인(`PermissionCheckpoints.check`). owner 만. → `{ revisionId, sku3dModelId, version, publishedAt }`.
 - `Sku3dWorkshopManager.approve(workshopId, revisionId, glbSha256, actor)`:
   1. revision select, sha 불일치 → `ConflictError('보고 있는 버전이 바뀌었어요')`.
   2. publishedAt 있으면 그대로 반환.
