@@ -58,10 +58,10 @@
 - Test: 기존 `apps/file-service/src/database/*.spec.ts`, `libs/authorization/src/permissions/*.spec.ts` (permission-dependencies 등)
 
 **Interfaces:**
-- Produces: `SKU_3D_WORKSHOP_CONTEXT_ID = 'sku-3d-workshop'` (file-service), 권한 `'inventory.model_workshop.write'`, `'inventory.model_workshop.manage'`.
+- Produces: `SKU_3D_WORKSHOP_CONTEXT_ID = 'sku-3d-workshop'` (file-service), 권한 `'inventory.model_workshop.read'`, `'inventory.model_workshop.write'`, `'inventory.model_workshop.manage'`.
 
 - [ ] **Step 1:** 시드 추가: `allowPublic: false, allowPrivate: true`, mime `['model/gltf-binary','image/png','image/jpeg','image/webp','text/plain','text/markdown','application/json','application/octet-stream']`, `maxFileSize: 50 * 1024 * 1024`(blend 파일), `pathPrefix: 'inventory/sku-3d-workshop'`. `STAFF_CONTEXT_PERMISSIONS` 에는 넣지 않는다(열람은 core 만).
-- [ ] **Step 2:** 권한 두 개 추가. `use`: 이름 `3D 작업실 사용`, grant `['admin', ...LOGISTICS]`, `requires: ['inventory.stock.read']`. `manage`: 이름 `3D 작업실 전체 보기`, grant `ADMIN`, `requires: ['inventory.model_workshop.write']`.
+- [ ] **Step 2:** 권한 세 개 추가(완료 — 리뷰로 read·write·manage 로 나눔). read: grant ADMIN_LOGISTICS. write·manage: `requires: ['inventory.model_workshop.read']`, grant 각각 ADMIN_LOGISTICS·ADMIN.
 - [ ] **Step 3:** `npx jest libs/authorization apps/file-service/src/database --runInBand` → PASS.
 - [ ] **Step 4:** 라이브 `file_contexts` 행은 시드가 아니라 배포 때 SQL 로 넣는다 — 배포 노트에 INSERT 문을 적는다(Task 8).
 - [ ] **Step 5:** 커밋 `[file-service·authorization] 3D 작업실 비공개 파일 컨텍스트와 권한을 추가한다`.

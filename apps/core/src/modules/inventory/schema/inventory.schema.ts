@@ -974,7 +974,10 @@ export const sku3dWorkshops = pgTable(
     ownerId: uuid('owner_id').notNull(),
     ownerLabel: varchar('owner_label', { length: 255 }).notNull(),
     codexSessionId: varchar('codex_session_id', { length: 128 }),
-    dimensionBasis: varchar('dimension_basis', { length: 16 }).$type<Sku3dDimensionBasis>().notNull().default('unknown'),
+    dimensionBasis: varchar('dimension_basis', { length: 16 })
+      .$type<Sku3dDimensionBasis>()
+      .notNull()
+      .default('unknown'),
     dimensionConfirmedAt: timestamp('dimension_confirmed_at', { withTimezone: true }),
     dimensionConfirmedById: uuid('dimension_confirmed_by_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -1052,8 +1055,11 @@ export const sku3dWorkshopEvents = pgTable(
   }),
 );
 
+export type Sku3dReviewVerdict = 'ready_for_review' | 'needs_revision' | 'needs_photos';
+
 export type Sku3dRevisionReview = {
   summary: string;
+  verdict: Sku3dReviewVerdict;
   issues: { where: string; observed: string; expected: string; severity: 'error' | 'minor' }[];
   proposals: string[];
   autoFixes: string[];
