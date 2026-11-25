@@ -44,6 +44,7 @@ import {
 import { toast } from 'sonner';
 import { Can } from '@/components/auth/can';
 import { usePermissionCheck } from '@/hooks/use-permission';
+import { AiReviewSection } from './ai-review-section';
 
 // 개업일자는 yyyyMMdd 로만 남는다.
 function formatStartDate(startDate?: string): string {
@@ -65,6 +66,7 @@ function BusinessLicenseDetailContent({ id }: { id: string }) {
   const { canRun } = usePermissionCheck();
   const canReview = canRun(useUpdateBusinessLicense);
   const ntsValidate = data.metadata?.ntsValidate;
+  const autoReview = data.metadata?.autoReview;
 
   const [rejectComment, setRejectComment] = useState(data.reviewComment ?? '');
   const [fileModalOpen, setFileModalOpen] = useState(false);
@@ -162,6 +164,15 @@ function BusinessLicenseDetailContent({ id }: { id: string }) {
 
   return (
     <div className="divide-y">
+      {autoReview && (
+        <AiReviewSection
+          autoReview={autoReview}
+          userName={data.userName}
+          ntsValidate={ntsValidate}
+          duplicateOf={data.duplicateOf}
+        />
+      )}
+
       <dl>
         {rows.map(({ key, value }) => (
           <div key={key} className="grid grid-cols-3 p-3">

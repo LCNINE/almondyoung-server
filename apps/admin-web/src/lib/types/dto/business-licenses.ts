@@ -14,8 +14,43 @@ export interface BusinessLicenseNtsValidate {
   };
 }
 
+export type BusinessLicenseAutoReviewReason =
+  | 'not_license'
+  | 'unreadable'
+  | 'corporation'
+  | 'name_mismatch'
+  | 'nts_mismatch'
+  | 'not_active'
+  | 'duplicate_number'
+  | 'image_unavailable';
+
+export interface BusinessLicenseAutoReview {
+  decision: 'approve' | 'manual' | 'retry';
+  reason?: BusinessLicenseAutoReviewReason;
+  dryRun: boolean;
+  fileUrl?: string;
+  model: string;
+  reviewedAt: string;
+  reading?: {
+    isBusinessRegistration: boolean;
+    businessNumber: string | null;
+    representativeName: string | null;
+    startDate: string | null;
+    isCorporation: boolean;
+    readable: boolean;
+  };
+}
+
 export interface BusinessLicenseMetadata {
   ntsValidate?: BusinessLicenseNtsValidate;
+  autoReview?: BusinessLicenseAutoReview;
+}
+
+export interface BusinessLicenseDuplicateOwner {
+  userId: string;
+  userName: string | null;
+  email: string | null;
+  verifiedAt: string | null;
 }
 
 export interface BusinessLicenseDto {
@@ -31,6 +66,7 @@ export interface BusinessLicenseDto {
   verifiedAt?: string | null;
   fileUrl?: string | null;
   metadata?: BusinessLicenseMetadata | null;
+  duplicateOf?: BusinessLicenseDuplicateOwner | null;
   createdAt: string;
   updatedAt: string;
 }
