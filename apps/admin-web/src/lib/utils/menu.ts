@@ -218,11 +218,6 @@ const allMenus: MainMenu[] = [
             path: '/order/regional-invoice',
           },
           {
-            id: 'shipment-round',
-            title: '송장 출력 / 출고 회차별 조회',
-            path: '/order/shipment-round',
-          },
-          {
             id: 'picking-list',
             title: '피킹리스트',
             path: '/order/picking-list',
