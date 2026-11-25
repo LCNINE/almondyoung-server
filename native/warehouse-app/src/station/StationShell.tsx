@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo } from 'react';
 import { Link, Outlet, useNavigate, useRouterState } from '@tanstack/react-router';
-import { Wrench } from 'lucide-react';
+import { ArrowLeftRight, ChevronDown, Download, LayoutGrid, ListChecks, ScanBarcode, Search, Undo2, Warehouse, Wrench, type LucideIcon } from 'lucide-react';
 import { useWarehouse } from '../app/warehouse-context';
 import { useWorkerIdentity } from '../app/useWorkerIdentity';
 import { cn } from '../core/design/cn';
@@ -17,13 +17,24 @@ import { FunctionKeyBar } from './FunctionKeyBar';
 import { Kbd } from './Kbd';
 import { BatchProgressProvider } from './status/batchProgress';
 import { StatusBar } from './status/StatusBar';
+import type { TabKey } from './keys';
 import { STATION_TABS, activeSectionOf, activeTabOf } from './tabs';
 import { modalOpen, useStationKeyCapture } from './useStationKeys';
 
 const STATION_CHROME = { hidesHomeBack: true };
 
+const TAB_ICONS: Record<TabKey, LucideIcon> = {
+  F1: ScanBarcode,
+  F2: LayoutGrid,
+  F3: Download,
+  F4: ArrowLeftRight,
+  F5: ListChecks,
+  F6: Search,
+  F7: Undo2,
+};
+
 /**
- * 스테이션 셸(스펙 §5) — 탭 바 52px · (하위 탭) · 작업 영역 · 기능키 바 56px · 상태바 28px.
+ * 스테이션 셸(스펙 §5) — 탭 바 70px · (하위 탭) · 작업 영역 · 기능키 바 56px · 상태바 28px.
  * 라우트 레이아웃이다: 작업 화면은 <Outlet/> 으로 그 안에 그려진다.
  */
 export function StationShell({ sink }: { sink?: ToneSink | null }) {
@@ -104,53 +115,65 @@ function ShellFrame() {
   );
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-[#EDEEF0] text-[#15171C] print:h-auto print:overflow-visible print:bg-white">
-      <header className="flex h-[52px] shrink-0 items-stretch gap-0.5 bg-[#161A22] pl-5 pr-4 text-[#E6E8EC] print:hidden">
-        <div className="flex items-center pr-5 text-[15px] font-bold">
+    <div className="flex h-screen flex-col overflow-hidden bg-[#f5f5f5] text-[#27272a] print:h-auto print:overflow-visible print:bg-white">
+      <header className="flex h-[70px] shrink-0 items-center gap-6 border-b border-[#e4e4e7] bg-white px-7 print:hidden">
+        <div className="mr-4 text-[21px] font-extrabold tracking-[-1px]">
           {import.meta.env.VITE_APP_STAGE === 'demo' ? 'LCNINE 물류 · DEMO' : 'LCNINE 물류'}
         </div>
-        <nav aria-label="탭" className="flex items-end gap-0.5">
+        <nav aria-label="탭" className="flex gap-1 self-stretch">
           {STATION_TABS.map((t) => {
             const active = tab?.key === t.key;
+            const Icon = TAB_ICONS[t.key];
             return (
               <Link
                 key={t.key}
                 to={t.to}
                 data-active={String(active)}
                 className={cn(
-                  'flex h-11 items-center gap-2 pl-2.5 pr-4 text-sm',
+                  'relative flex items-center gap-2 px-3 text-[13px] font-semibold whitespace-nowrap hover:bg-[#eff6ff]',
                   active
-                    ? 'rounded-t-lg bg-[#EDEEF0] font-semibold text-[#15171C]'
-                    : 'font-medium text-[#C3C8D2] hover:text-white'
+                    ? 'text-[#2563eb] after:absolute after:inset-x-3 after:bottom-0 after:h-[3px] after:rounded-t after:bg-[#2563eb]'
+                    : 'text-[#71717a]'
                 )}
               >
-                <Kbd tone={active ? 'dark' : 'muted'}>{t.key}</Kbd>
+                <Icon className="h-[17px] w-[17px]" strokeWidth={1.65} aria-hidden />
                 {t.label}
+                <Kbd tone="outline">{t.key}</Kbd>
               </Link>
             );
           })}
         </nav>
-        <div className="ml-auto flex items-center gap-4 text-[13px] text-[#A9AFBB]">
+        <div className="ml-auto flex items-center gap-2.5 text-xs whitespace-nowrap text-[#71717a]">
           <NewBatchNotice />
           {developer.enabled && (
-            <Link to="/diagnostics" aria-label="개발자 진단" className="hover:text-white">
+            <Link to="/diagnostics" aria-label="개발자 진단" className="hover:text-[#27272a]">
               <Wrench className="h-4 w-4" aria-hidden />
             </Link>
           )}
           {worker.status === 'ready' && (
-            <Link to="/settings" aria-label={`로그인한 작업자 ${worker.identity.name}`} className="font-semibold text-[#E2E4E8] hover:text-white">
+            <Link
+              to="/settings"
+              aria-label={`로그인한 작업자 ${worker.identity.name}`}
+              className="flex items-center gap-2 hover:text-[#27272a]"
+            >
+              <span aria-hidden className="grid h-[31px] w-[31px] place-items-center rounded-full bg-[#f4f4f5] text-xs text-[#52525b]">
+                {worker.identity.name.slice(0, 1)}
+              </span>
               {worker.identity.name}
             </Link>
           )}
-          <Link to="/settings" className="hover:text-white">
+          <span aria-hidden className="h-5 w-px bg-[#e4e4e7]" />
+          <Link to="/settings" className="flex items-center gap-1.5 hover:text-[#27272a]">
+            <Warehouse className="h-[17px] w-[17px]" strokeWidth={1.65} aria-hidden />
             {warehouseName ?? '창고 미설정'}
+            <ChevronDown className="h-3.5 w-3.5" aria-hidden />
           </Link>
         </div>
       </header>
       {tab !== null && tab.sections.length > 0 && (
         <nav
           aria-label="하위 탭"
-          className="flex h-10 shrink-0 items-center gap-1 border-b border-[#D5D8DE] bg-white px-3 print:hidden"
+          className="mx-[30px] mt-[18px] flex shrink-0 items-center gap-[5px] border-b border-[#e4e4e7] pb-2.5 print:hidden"
         >
           {tab.sections.map((s) => {
             const active = section?.to === s.to;
@@ -160,8 +183,8 @@ function ShellFrame() {
                 to={s.to}
                 data-active={String(active)}
                 className={cn(
-                  'rounded-md px-3 py-1.5 text-sm',
-                  active ? 'bg-[#15171C] font-semibold text-white' : 'text-[#3F4450] hover:bg-[#EDEEF0]'
+                  'rounded-[5px] px-[13px] py-2 text-xs whitespace-nowrap hover:text-[#27272a]',
+                  active ? 'bg-white font-semibold text-[#27272a] shadow-[0_0_0_1px_#d4d4d8]' : 'font-medium text-[#71717a]'
                 )}
               >
                 {s.label}
@@ -170,7 +193,7 @@ function ShellFrame() {
           })}
         </nav>
       )}
-      <main className="min-h-0 flex-1 overflow-y-auto p-3 print:overflow-visible print:p-0">
+      <main className="min-h-0 flex-1 overflow-y-auto px-[30px] py-[26px] print:overflow-visible print:p-0">
         <Outlet />
       </main>
       <FunctionKeyBar />

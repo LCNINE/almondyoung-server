@@ -61,7 +61,7 @@ export function StatusBar({ tab, prefs = localStoragePrefs }: { tab: TabKey | nu
   return (
     <footer
       aria-label="상태"
-      className="flex h-7 shrink-0 items-center gap-[18px] bg-[#E2E4E8] px-4 text-[13px] text-[#3F4450] print:hidden"
+      className="flex h-7 shrink-0 items-center gap-[18px] border-t border-[#e4e4e7] bg-white px-[27px] text-[10px] text-[#71717a] print:hidden"
     >
       {items.map((item) =>
         item.id === 'batch' ? (
@@ -69,7 +69,7 @@ export function StatusBar({ tab, prefs = localStoragePrefs }: { tab: TabKey | nu
             {item.label}
           </span>
         ) : item.id === 'unsent' ? (
-          <span key={item.id} data-tone={item.tone} className="rounded bg-[#FFF1C7] px-2 font-semibold text-[#5E3B00]">
+          <span key={item.id} data-tone={item.tone} className="rounded bg-[#fff1d9] px-2 font-semibold text-[#9a681c]">
             {item.label}
           </span>
         ) : (
