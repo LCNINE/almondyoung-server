@@ -45,6 +45,8 @@ import {
 } from './CancelReceiptDialog';
 import { ReadyShipmentsSection } from './ReadyShipmentsSection';
 import { QuickQuantitySheet } from './QuickQuantitySheet';
+import { useStationActions } from '../../station/ActionRegistry';
+import type { StationAction } from '../../station/actions';
 import { WaitingOrdersFailed, WaitingOrdersNote } from './WaitingOrdersNote';
 import type { FreshLine, PutawayTarget } from './types';
 
@@ -58,6 +60,8 @@ function failureText(error: unknown, fallback: string) {
   return fallback;
 }
 
+const NO_ACTIONS: readonly StationAction[] = [];
+
 interface CartRow {
   skuId: string;
   skuCode: string;
@@ -65,12 +69,13 @@ interface CartRow {
   quantity: number;
 }
 
-function QuickInboundScreenContent() {
+function QuickInboundScreenContent({ station }: { station: boolean }) {
   const { warehouseId, isSet } = useWarehouse();
   const lookup = useSkuByBarcode();
   const api = useApiClient();
   const submit = useSimpleInbound();
   const toast = useSaveToast();
+  const cartRef = useRef<HTMLElement>(null);
 
   const initialDraft = useRef({
     receiptId: null as string | null,
@@ -424,6 +429,97 @@ function QuickInboundScreenContent() {
     }
   }
 
+  const cartTotal = cart.reduce((sum, row) => sum + row.quantity, 0);
+  const canRegister = !(
+    !reconciled ||
+    !!editing ||
+    saving ||
+    !draft.ready ||
+    !!draft.error ||
+    scanQueue.blocked() ||
+    cart.length === 0 ||
+    cart.some((r) => r.quantity < 1) ||
+    submit.isPending
+  );
+
+  function register() {
+    if (!canRegister || !warehouseId) return;
+
+    primeInboundSaveSound();
+    submit.mutate(
+      {
+        warehouseId,
+        items: cart.map((r) => ({
+          skuId: r.skuId,
+          quantity: r.quantity,
+        })),
+        idempotencyKey,
+      },
+      {
+        onError: () => playInboundSaveFailed(),
+        onSuccess: async (result) => {
+          playInboundSaved();
+          toast.show({
+            kind: 'saved',
+            detail: inboundToastDetail(
+              cart.map((r) => ({ name: r.skuName, quantity: r.quantity }))
+            ),
+          });
+
+          // 응답 lines[] 를 카트 행과 skuId 로 맞춰 이름을 되살린다.
+          await draft.update((prev) => ({
+            ...prev,
+            receiptId: result.id,
+            staged: result.lines.map((line) => {
+              const row = cart.find((r) => r.skuId === line.skuId);
+              return {
+                lineId: line.id,
+                skuId: line.skuId,
+                skuCode: row?.skuCode ?? '',
+                skuName: row?.skuName ?? '',
+                quantity: line.quantity,
+                putawayDoneQty: 0,
+              };
+            }),
+          }));
+        },
+      }
+    );
+  }
+
+  useStationActions(
+    stagedMode
+      ? NO_ACTIONS
+      : [
+          {
+            id: 'quick-inbound-register',
+            key: 'F10',
+            label: '입고 등록',
+            enabled: canRegister,
+            run: register,
+          },
+        ]
+  );
+
+  const registerError = submit.isError ? (
+    <p role="alert" className="text-sm text-red-600">
+      {errorMessage(submit.error, 'inbound')}
+    </p>
+  ) : null;
+
+  const registerButton = (
+    <Button
+      type="button"
+      className={station ? 'w-full py-3 text-base' : 'shrink-0'}
+      disabled={!canRegister}
+      onClick={register}
+    >
+      {cart.length > 0
+        ? `${cart.length}종 ${cartTotal}개 입고 등록`
+        : '입고 등록'}
+    </Button>
+  );
+
   if (!isSet) {
     return (
       <div className="space-y-4">
@@ -648,180 +744,177 @@ function QuickInboundScreenContent() {
           </Button>
         </section>
       ) : (
-        <section className="space-y-2">
-          <h2 className="text-sm font-semibold text-gray-700">입고할 품목</h2>
-          <p className="text-xs text-gray-500">
-            발주 상품은 예정 입고에서 등록해 주세요. 수량은 낱개 기준이에요.
-          </p>
-          <SkuPicker
-            disabled={
-              !draft.ready ||
-              !reconciled ||
-              saving ||
-              !!editing ||
-              scanQueue.blocked() ||
-              submit.isPending
-            }
-            onSelect={(sku) => void chooseSku(sku)}
-          />
-          <BarcodeInput
-            disabled={
-              !draft.ready ||
-              !reconciled ||
-              saving ||
-              !!editing ||
-              submit.isPending
-            }
-            onSubmit={(code) => scanQueue.enqueue(code)}
-          />
-          <WaitingOrdersFailed failed={waiting.failed} />
-          {!draft.ready ? null : cart.length === 0 ? (
-            <p className="text-sm text-gray-500">
-              상품을 검색해서 선택하거나 바코드를 입력해 주세요.
+        <section
+          className={
+            station
+              ? 'grid grid-cols-[minmax(0,1fr)_360px] items-start gap-4'
+              : 'space-y-3'
+          }
+        >
+          <div className="min-w-0 space-y-2">
+            <h2 className="text-sm font-semibold text-gray-700">입고할 품목</h2>
+            <p className="text-xs text-gray-500">
+              발주 상품은 예정 입고에서 등록해 주세요. 수량은 낱개 기준이에요.
             </p>
-          ) : (
-            <ul className="space-y-2">
-              {cart.map((row) => (
-                <li
-                  key={row.skuId}
-                  className="rounded-lg border border-gray-200 bg-white p-3"
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate font-medium text-gray-800">
-                        {row.skuName}
-                      </span>
-                      <span className="block font-mono text-xs text-gray-500">
-                        {row.skuCode}
-                      </span>
-                      <WaitingOrdersNote waiting={waiting.of(row.skuId)} />
-                    </span>
-                    <button
-                      type="button"
-                      aria-label={`${row.skuName} 수량`}
-                      className="text-lg font-semibold text-gray-900 underline disabled:opacity-40"
-                      disabled={
-                        !reconciled ||
-                        !draft.ready ||
-                        scanQueue.blocked() ||
-                        submit.isPending ||
-                        saving ||
-                        !!editing
-                      }
-                      onClick={() => {
-                        if (!reconciled) return;
-                        setNotice(null);
-                        setQuantityText(String(row.quantity));
-                        setEditing(row.skuId);
-                      }}
-                    >
-                      {row.quantity}
-                    </button>
-                    <button
-                      type="button"
-                      aria-label={`${row.skuName} 삭제`}
-                      className="shrink-0 rounded p-1 text-gray-400 active:bg-gray-100 disabled:opacity-40"
-                      disabled={
-                        !reconciled ||
-                        !draft.ready ||
-                        scanQueue.blocked() ||
-                        submit.isPending ||
-                        saving
-                      }
-                      onClick={async () => {
-                        if (!reconciled || savingRef.current) return;
-                        savingRef.current = true;
-                        setSaving(true);
-                        try {
-                          await setCart((prev) =>
-                            prev.filter((r) => r.skuId !== row.skuId)
-                          );
-                          // 지운 줄을 고치던 중이었으면 수정도 닫는다 — 다른 줄의 수정은 그대로 둔다.
-                          setEditing((cur) => (cur === row.skuId ? null : cur));
-                        } catch {
-                          setNotice(
-                            '삭제를 저장하지 못했어요. 다시 시도해 주세요.'
-                          );
-                        } finally {
-                          savingRef.current = false;
-                          setSaving(false);
-                        }
-                      }}
-                    >
-                      <Trash2 className="h-4 w-4" aria-hidden />
-                    </button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
+            <BarcodeInput
+              disabled={
+                !draft.ready ||
+                !reconciled ||
+                saving ||
+                !!editing ||
+                submit.isPending
+              }
+              onSubmit={(code) => scanQueue.enqueue(code)}
+            />
+            <SkuPicker
+              disabled={
+                !draft.ready ||
+                !reconciled ||
+                saving ||
+                !!editing ||
+                scanQueue.blocked() ||
+                submit.isPending
+              }
+              onSelect={(sku) => void chooseSku(sku)}
+            />
+            <WaitingOrdersFailed failed={waiting.failed} />
+          </div>
 
-          {submit.isError ? (
-            <p role="alert" className="text-sm text-red-600">
-              {errorMessage(submit.error, 'inbound')}
-            </p>
-          ) : null}
-
-          <Button
-            type="button"
-            className="w-full"
-            disabled={
-              !reconciled ||
-              !!editing ||
-              saving ||
-              !draft.ready ||
-              !!draft.error ||
-              scanQueue.blocked() ||
-              cart.length === 0 ||
-              cart.some((r) => r.quantity < 1) ||
-              submit.isPending
+          <aside
+            ref={cartRef}
+            aria-label="담은 상품"
+            className={
+              station
+                ? 'sticky top-0 flex max-h-[calc(100vh-11rem)] flex-col overflow-hidden rounded-lg border border-gray-200 bg-white'
+                : 'scroll-mb-28 space-y-2'
             }
-            onClick={() => {
-              if (!warehouseId) return;
-              primeInboundSaveSound();
-              submit.mutate(
-                {
-                  warehouseId,
-                  items: cart.map((r) => ({
-                    skuId: r.skuId,
-                    quantity: r.quantity,
-                  })),
-                  idempotencyKey,
-                },
-                {
-                  onError: () => playInboundSaveFailed(),
-                  onSuccess: async (result) => {
-                    playInboundSaved();
-                    toast.show({
-                      kind: 'saved',
-                      detail: inboundToastDetail(
-                        cart.map((r) => ({ name: r.skuName, quantity: r.quantity }))
-                      ),
-                    });
-
-                    // 응답 lines[] 를 카트 행과 skuId 로 맞춰 이름을 되살린다.
-                    await draft.update((prev) => ({
-                      ...prev,
-                      receiptId: result.id,
-                      staged: result.lines.map((line) => {
-                        const row = cart.find((r) => r.skuId === line.skuId);
-                        return {
-                          lineId: line.id,
-                          skuId: line.skuId,
-                          skuCode: row?.skuCode ?? '',
-                          skuName: row?.skuName ?? '',
-                          quantity: line.quantity,
-                          putawayDoneQty: 0,
-                        };
-                      }),
-                    }));
-                  },
-                }
-              );
-            }}
           >
-            등록
-          </Button>
+            <div
+              className={
+                station
+                  ? 'flex items-baseline gap-2 border-b border-gray-200 px-3 py-2'
+                  : 'flex items-baseline gap-2'
+              }
+            >
+              <h2 className="text-sm font-semibold text-gray-700">담은 상품</h2>
+              <span className="text-xs text-gray-500">아직 등록 전</span>
+            </div>
+            <div
+              className={station ? 'min-h-0 flex-1 overflow-y-auto p-2' : ''}
+            >
+              {!draft.ready ? null : cart.length === 0 ? (
+                <p className="text-sm text-gray-500">
+                  상품을 검색해서 선택하거나 바코드를 입력해 주세요.
+                </p>
+              ) : (
+                <ul className="space-y-2">
+                  {[...cart].reverse().map((row) => (
+                    <li
+                      key={row.skuId}
+                      className="rounded-lg border border-gray-200 bg-white p-3"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate font-medium text-gray-800">
+                            {row.skuName}
+                          </span>
+                          <span className="block font-mono text-xs text-gray-500">
+                            {row.skuCode}
+                          </span>
+                          <WaitingOrdersNote waiting={waiting.of(row.skuId)} />
+                        </span>
+                        <button
+                          type="button"
+                          aria-label={`${row.skuName} 수량`}
+                          className="text-lg font-semibold text-gray-900 underline disabled:opacity-40"
+                          disabled={
+                            !reconciled ||
+                            !draft.ready ||
+                            scanQueue.blocked() ||
+                            submit.isPending ||
+                            saving ||
+                            !!editing
+                          }
+                          onClick={() => {
+                            if (!reconciled) return;
+                            setNotice(null);
+                            setQuantityText(String(row.quantity));
+                            setEditing(row.skuId);
+                          }}
+                        >
+                          {row.quantity}
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`${row.skuName} 삭제`}
+                          className="shrink-0 rounded p-1 text-gray-400 active:bg-gray-100 disabled:opacity-40"
+                          disabled={
+                            !reconciled ||
+                            !draft.ready ||
+                            scanQueue.blocked() ||
+                            submit.isPending ||
+                            saving
+                          }
+                          onClick={async () => {
+                            if (!reconciled || savingRef.current) return;
+                            savingRef.current = true;
+                            setSaving(true);
+                            try {
+                              await setCart((prev) =>
+                                prev.filter((r) => r.skuId !== row.skuId)
+                              );
+                              // 지운 줄을 고치던 중이었으면 수정도 닫는다 — 다른 줄의 수정은 그대로 둔다.
+                              setEditing((cur) =>
+                                cur === row.skuId ? null : cur
+                              );
+                            } catch {
+                              setNotice(
+                                '삭제를 저장하지 못했어요. 다시 시도해 주세요.'
+                              );
+                            } finally {
+                              savingRef.current = false;
+                              setSaving(false);
+                            }
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4" aria-hidden />
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            {station ? (
+              <div className="space-y-2 border-t border-gray-200 p-2">
+                {registerError}
+                {registerButton}
+              </div>
+            ) : null}
+          </aside>
+
+          {station ? null : (
+            <div className="sticky bottom-0 space-y-2 rounded-lg border border-gray-200 bg-white p-3 shadow-lg">
+              {registerError}
+              <div className="flex items-center gap-3">
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold text-gray-800">
+                    담은 상품 {cart.length}종 · {cartTotal}개
+                  </span>
+                  <button
+                    type="button"
+                    className="text-xs text-blue-700 underline"
+                    onClick={() =>
+                      cartRef.current?.scrollIntoView?.({ block: 'start' })
+                    }
+                  >
+                    목록 보기
+                  </button>
+                </span>
+                {registerButton}
+              </div>
+            </div>
+          )}
         </section>
       )}
 
@@ -836,9 +929,7 @@ function QuickInboundScreenContent() {
           notice={notice}
           onSave={() => void saveQuantity()}
           onCancel={() => setEditing(null)}
-          onScanBlocked={() =>
-            setNotice('수량 창을 닫은 뒤 다시 찍어 주세요.')
-          }
+          onScanBlocked={() => setNotice('수량 창을 닫은 뒤 다시 찍어 주세요.')}
         />
       ) : null}
 
@@ -849,7 +940,8 @@ function QuickInboundScreenContent() {
           onClose={() => setCancelFor(null)}
           onFinished={(outcome) => {
             setCancelFor(null);
-            if (outcome.ok) toast.show({ kind: 'cancelled', detail: outcome.detail });
+            if (outcome.ok)
+              toast.show({ kind: 'cancelled', detail: outcome.detail });
             else setNotice(outcome.notice);
             void reconcileRef.current?.().catch(() => {});
           }}
@@ -874,10 +966,10 @@ function QuickInboundScreenContent() {
   );
 }
 
-export function QuickInboundScreen() {
+export function QuickInboundScreen({ station = false }: { station?: boolean }) {
   return (
     <WorkArea kind="inbound">
-      <QuickInboundScreenContent />
+      <QuickInboundScreenContent station={station} />
     </WorkArea>
   );
 }
