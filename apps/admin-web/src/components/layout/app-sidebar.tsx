@@ -220,7 +220,7 @@ export function AppSidebar({
         >
           LCNINE
         </Link>
-        <SidebarTrigger className="text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground" />
+        <SidebarTrigger className="text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground group-data-[peek=open]:hidden group-data-[peek=closing]:hidden" />
       </SidebarHeader>
 
       <SidebarContent>

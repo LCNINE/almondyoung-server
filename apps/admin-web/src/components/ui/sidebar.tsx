@@ -172,8 +172,24 @@ function Sidebar({
 }) {
   const { isMobile, state, openMobile, setOpenMobile, peek, setPeeking } = useSidebar();
   const peekCloseTimer = React.useRef<ReturnType<typeof setTimeout>>(undefined);
+  const [peekClosing, setPeekClosing] = React.useState(false);
 
   React.useEffect(() => () => clearTimeout(peekCloseTimer.current), []);
+
+  // 접히는 0.3초 동안도 펼친 모양을 유지해, 폭이 줄면서 내용이 가려지게 한다(글자가 접혔다 펴지지 않게)
+  React.useEffect(() => {
+    if (peek) {
+      setPeekClosing(true);
+
+      return;
+    }
+
+    const timer = setTimeout(() => setPeekClosing(false), 300);
+
+    return () => clearTimeout(timer);
+  }, [peek]);
+
+  const peekPhase = state !== 'collapsed' ? undefined : peek ? 'open' : peekClosing ? 'closing' : undefined;
 
   if (collapsible === 'none') {
     return (
@@ -219,8 +235,8 @@ function Sidebar({
     <div
       className="group peer text-sidebar-foreground hidden md:block"
       data-state={state}
-      data-collapsible={state === 'collapsed' && !peek ? collapsible : ''}
-      data-peek={peek}
+      data-collapsible={state === 'collapsed' && !peekPhase ? collapsible : ''}
+      data-peek={peekPhase}
       data-variant={variant}
       data-side={side}
       data-slot="sidebar"
@@ -234,7 +250,7 @@ function Sidebar({
           'group-data-[side=right]:rotate-180',
           variant === 'floating' || variant === 'inset'
             ? 'group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4)))]'
-            : 'group-data-[collapsible=icon]:w-(--sidebar-width-icon) group-data-[peek=true]:w-(--sidebar-width-icon)'
+            : 'group-data-[collapsible=icon]:w-(--sidebar-width-icon) group-data-[peek=open]:w-(--sidebar-width-icon) group-data-[peek=closing]:w-(--sidebar-width-icon)'
         )}
       />
       <div
@@ -249,7 +265,9 @@ function Sidebar({
             ? 'p-2 group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4))+2px)]'
             : 'group-data-[collapsible=icon]:w-(--sidebar-width-icon) group-data-[side=left]:border-r group-data-[side=right]:border-l',
           // 펼쳐 보일 땐 1단계 메뉴만 있어 고정 너비보다 좁게 둔다
-          'group-data-[peek=true]:z-40 group-data-[peek=true]:w-52 group-data-[peek=true]:shadow-[0_16px_32px_rgba(0,0,0,0.25)]',
+          'group-data-[peek=open]:w-52 group-data-[peek=closing]:w-(--sidebar-width-icon)',
+          'group-data-[peek=open]:z-40 group-data-[peek=closing]:z-40 group-data-[peek=open]:overflow-hidden group-data-[peek=closing]:overflow-hidden',
+          'group-data-[peek=open]:shadow-[0_16px_32px_rgba(0,0,0,0.25)]',
           className
         )}
         onMouseEnter={() => {
@@ -265,7 +283,7 @@ function Sidebar({
         <div
           data-sidebar="sidebar"
           data-slot="sidebar-inner"
-          className="bg-sidebar group-data-[variant=floating]:border-sidebar-border flex h-full w-full flex-col group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border group-data-[variant=floating]:shadow-sm"
+          className="bg-sidebar group-data-[variant=floating]:border-sidebar-border flex h-full w-full flex-col group-data-[peek=open]:w-52 group-data-[peek=open]:shrink-0 group-data-[peek=closing]:w-52 group-data-[peek=closing]:shrink-0 group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border group-data-[variant=floating]:shadow-sm"
         >
           {children}
         </div>
