@@ -2,14 +2,14 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { ApiError, createApi, isLeaseLost } from './api.mjs';
 import { codexArgs, readCodexEvent, runCodex } from './codex-run.mjs';
 import { childEnv, loadConfig, PRODUCTION_SERVER_URL } from './env.mjs';
 import { externalUris, GLB_MAX_BYTES, glbJson, judgeOutputs, reviewProblem } from './judge.mjs';
 import { viewerHtml, viewerShotOf, viewerStateOf } from './viewer-check.mjs';
 import { buildPrompt, changeLines, DONE_MARKER, finishedFor, hasSharp, imageExtOf, runJob } from './worker.mjs';
-import { denyPathsFor, probeScript, probeVerdict, sandboxConfigToml } from './isolation.mjs';
+import { denyPathsFor, probeScript, probeVerdict, profilePath, sandboxConfigToml } from './isolation.mjs';
 
 function glb(json, padTo = 0) {
   const text = Buffer.from(JSON.stringify(json));
@@ -437,9 +437,10 @@ test('sandbox config writes only the workshop, denies secrets and turns the netw
 
   assert.match(toml, /default_permissions = "sku3d-job"/);
   assert.match(toml, /sandbox = "mxc"/);
-  assert.match(toml, /'C:\\jobs\\w1' = "write"/);
-  assert.match(toml, /'C:\\cfg' = "deny"/);
-  assert.match(toml, /'C:\\jobs\\w2' = "deny"/);
+  assert.match(toml, /'C:\/jobs\/w1' = "write"/);
+  assert.match(toml, /'C:\/cfg' = "deny"/);
+  assert.match(toml, /'C:\/jobs\/w2' = "deny"/);
+  assert.ok(!toml.includes('\\'));
   assert.match(toml, /\[permissions\.sku3d-job\.network\]\nenabled = false/);
   assert.doesNotMatch(toml, /sandbox_mode/);
   assert.throws(() => sandboxConfigToml({ writeDir: "C:\\it's", denyPaths: [], windowsSandbox: 'mxc' }));
@@ -454,9 +455,10 @@ test('deny list covers other workshops, secrets and Codex homes but not the curr
 
   const deny = denyPathsFor({ workRoot: root, workshopDir: join(root, 'w1'), denyRead: ['/cfg'], codexHome: '/h', userCodexHome: '/u/.codex' });
 
-  assert.ok(!deny.includes(join(root, 'w1')));
-  assert.ok(deny.includes(join(root, 'w2')) && deny.includes(join(root, 'w3')));
-  assert.ok(deny.includes('/cfg') && deny.includes('/h') && deny.includes('/u/.codex'));
+  // Windows 에서는 /cfg 가 C:\\cfg 로 정규화된다 — 같은 resolve 로 비교한다
+  assert.ok(!deny.includes(resolve(root, 'w1')));
+  assert.ok(deny.includes(resolve(root, 'w2')) && deny.includes(resolve(root, 'w3')));
+  assert.ok(deny.includes(resolve('/cfg')) && deny.includes(resolve('/h')) && deny.includes(resolve('/u/.codex')));
 });
 
 test('probes print only a verdict, never file contents', () => {
@@ -468,4 +470,9 @@ test('probes print only a verdict, never file contents', () => {
   assert.equal(probeVerdict('PROBE_DENIED'), 'denied');
   assert.equal(probeVerdict('noise PROBE_ALLOWED'), 'allowed');
   assert.equal(probeVerdict(''), 'denied');
+});
+
+test('profile paths use forward slashes even for Windows paths', () => {
+  assert.equal(profilePath('C:\\Users\\hello\\jobs\\w1'), 'C:/Users/hello/jobs/w1');
+  assert.equal(profilePath('/already/posix'), '/already/posix');
 });

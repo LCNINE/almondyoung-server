@@ -7,13 +7,17 @@ import { dirname, join, resolve } from 'node:path';
 
 export const PROFILE = 'sku3d-job';
 
+// 권한 프로필은 C:/... 슬래시 경로로 쓴다 — 역슬래시 경로 규칙은 Windows 실측에서 적용되지 않았다
+export function profilePath(path) {
+  return path.replace(/\\/g, '/');
+}
+
 function tomlKey(path) {
   if (path.includes("'")) {
     throw new Error(`경로에 작은따옴표가 있으면 쓸 수 없어요: ${path}`);
   }
 
-  // 작은따옴표 키는 TOML 리터럴이라 Windows 역슬래시를 그대로 둔다
-  return `'${path}'`;
+  return `'${profilePath(path)}'`;
 }
 
 export function sandboxConfigToml({ writeDir, denyPaths, windowsSandbox }) {
@@ -78,7 +82,13 @@ export function probeScript(kind, target, platform = process.platform) {
       network: `Invoke-WebRequest -Uri '${quoted}' -UseBasicParsing -TimeoutSec 8 | Out-Null`,
     }[kind];
 
-    return ['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', `try { ${body}; 'PROBE_ALLOWED' } catch { 'PROBE_DENIED' }`];
+    return [
+      'powershell.exe',
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      `try { ${body}; 'PROBE_ALLOWED' } catch { 'PROBE_DENIED ' + $_.Exception.GetType().Name }`,
+    ];
   }
 
   const body = {
@@ -136,9 +146,12 @@ function runInSandbox({ codexBin, codexHome, cwd, env, command }) {
 export async function isolationCheck({ codexBin, codexHome, workRoot, denyRead, userCodexHome, windowsSandbox, env }) {
   const probeDir = join(workRoot, '_isolation-check');
   const neighborDir = join(workRoot, '_isolation-neighbor');
+  const neighborCanary = join(neighborDir, 'canary.txt');
 
   mkdirSync(probeDir, { recursive: true });
   mkdirSync(neighborDir, { recursive: true });
+  // 다른 작업실 읽기 차단이 규칙으로 먹는지 보려고 둔다 — 기본 읽기 전용으로는 읽기가 막히지 않는다
+  writeFileSync(neighborCanary, 'canary');
 
   const denyPaths = denyPathsFor({ workRoot, workshopDir: probeDir, denyRead, codexHome, userCodexHome });
 
@@ -146,7 +159,8 @@ export async function isolationCheck({ codexBin, codexHome, workRoot, denyRead, 
 
   const probes = [
     ...denyRead.map((path) => ({ name: `읽기 차단: ${path}`, kind: 'read', target: readProbeTarget(path), want: 'denied' })),
-    { name: `쓰기 차단: ${neighborDir}`, kind: 'write', target: join(neighborDir, 'probe.txt'), want: 'denied' },
+    { name: `다른 작업실 읽기 차단: ${neighborDir}`, kind: 'read', target: neighborCanary, want: 'denied' },
+    { name: `다른 작업실 쓰기 차단: ${neighborDir}`, kind: 'write', target: join(neighborDir, 'probe.txt'), want: 'denied' },
     { name: '인터넷 차단', kind: 'network', target: 'https://example.com', want: 'denied' },
     { name: `작업 폴더 쓰기 허용: ${probeDir}`, kind: 'write', target: join(probeDir, 'probe.txt'), want: 'allowed' },
   ];
@@ -167,8 +181,10 @@ export async function isolationCheck({ codexBin, codexHome, workRoot, denyRead, 
       command: probeScript(probe.kind, probe.target),
     });
     const got = run.failedToRun ? 'error' : probeVerdict(run.output);
+    const ok = got === probe.want;
 
-    results.push({ ...probe, got, ok: got === probe.want, note: run.failedToRun ? run.output : '' });
+    // 기대와 다르면 샌드박스 출력을 남겨 원인을 바로 본다(probe 는 파일 내용을 출력하지 않는다)
+    results.push({ ...probe, got, ok, note: ok ? '' : run.output.trim().slice(-400) });
   }
 
   return { ok: results.every((r) => r.ok), results, configPath: join(codexHome, 'config.toml'), denyPaths, probeParent: dirname(probeDir) };
