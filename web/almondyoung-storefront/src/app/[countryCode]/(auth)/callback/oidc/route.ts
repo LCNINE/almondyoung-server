@@ -5,6 +5,7 @@ import accountEn from "@/i18n/messages/en/account.json"
 import accountJa from "@/i18n/messages/ja/account.json"
 import accountKo from "@/i18n/messages/ko/account.json"
 import { oidcCallback } from "@/lib/api/medusa/sso"
+import { settleSmsRef } from "@/lib/sms-ref/sms-ref"
 import { countryCodeToLocale } from "@/lib/utils/locale-path"
 
 // OIDC 콜백 처리. Route Handler 로 두는 이유:
@@ -61,8 +62,11 @@ export async function GET(
   // Next.js의 req.url은 LAN으로 접속해도 localhost로 정규화될 수 있다.
   // 검증된 상대 경로를 그대로 사용해 로그인한 브라우저의 실제 접속 호스트를 유지한다.
   const target = result.redirectTo
-  return new NextResponse(
+  const response = new NextResponse(
     `<!doctype html><meta charset="utf-8"><script>location.replace(${JSON.stringify(target).replace(/</g, "\\u003c")})</script>`,
     { status: 200, headers: { "content-type": "text/html; charset=utf-8" } },
   )
+  // 추적 링크를 누른 뒤 로그인·가입했으면 그 계정을 잇는다. 쇼핑몰 고객을 이 콜백에서 새로 만들었으면 가입으로 본다.
+  await settleSmsRef(req, response, result.accessToken, result.createdCustomer ? "signup" : "login")
+  return response
 }

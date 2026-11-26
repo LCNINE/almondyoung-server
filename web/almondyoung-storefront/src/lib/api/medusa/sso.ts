@@ -103,7 +103,11 @@ export async function oidcCallback(args: {
   state: string
   countryCode: string
   redirectTo?: string
-}): Promise<{ success: true; redirectTo: string } | { success: false; error: string }> {
+}): Promise<
+  // accessToken·createdCustomer 는 추적 링크 연결(가입/로그인 구분)이 쓴다. createdCustomer = 이 콜백이 쇼핑몰 고객을 새로 만들었다.
+  | { success: true; redirectTo: string; accessToken: string; createdCustomer: boolean }
+  | { success: false; error: string }
+> {
   const { code, state, countryCode } = args
 
   const callbackRes = await medusaFetch(
@@ -140,7 +144,8 @@ export async function oidcCallback(args: {
   // 신규 사용자: customer 레코드가 없으므로 생성 후 토큰 재발급.
   // Medusa POST /store/customers 는 body.email 을 필수로 요구 (validate-customer-account-creation step).
   // user-service SSO provider 가 user_metadata 에 email/name 을 채워 두므로, JWT 에서 꺼내 그대로 전달한다.
-  if (!decoded.actor_id && !decoded.app_metadata?.customer_id) {
+  const createdCustomer = !decoded.actor_id && !decoded.app_metadata?.customer_id
+  if (createdCustomer) {
     const email = decoded.user_metadata?.email
     if (!email) {
       return {
@@ -210,7 +215,7 @@ export async function oidcCallback(args: {
   // Medusa state의 redirect_to 우선, 없으면 URL 파라미터, 없으면 홈. 외부 URL은 toLocalizedPath가 차단.
   const redirectTo = toLocalizedPath(countryCode, oidcRedirectTo ?? args.redirectTo)
 
-  return { success: true, redirectTo }
+  return { success: true, redirectTo, accessToken: idp_tokens.access_token, createdCustomer }
 }
 
 /**
