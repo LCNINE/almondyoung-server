@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SKU 3D review",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["summary", "verdict", "issues", "proposals", "autoFixes", "unseenFaces", "assumptions", "needsPhotos", "dimensionsUsed"],
+  "properties": {
+    "summary": { "type": "string", "description": "작업자에게 보낼 2~4문장. 잘 맞은 점, 다른 점, 제안을 질문으로 끝낸다" },
+    "verdict": { "type": "string", "enum": ["ready_for_review", "needs_revision", "needs_photos"] },
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["where", "observed", "expected", "severity"],
+        "properties": {
+          "where": { "type": "string" },
+          "observed": { "type": "string" },
+          "expected": { "type": "string" },
+          "severity": { "type": "string", "enum": ["error", "minor"] }
+        }
+      }
+    },
+    "proposals": { "type": "array", "items": { "type": "string" } },
+    "autoFixes": { "type": "array", "items": { "type": "string" } },
+    "unseenFaces": { "type": "array", "items": { "type": "string" } },
+    "assumptions": { "type": "array", "items": { "type": "string" } },
+    "needsPhotos": { "type": "array", "items": { "type": "string" } },
+    "dimensionsUsed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["widthMm", "lengthMm", "heightMm", "basis"],
+      "properties": {
+        "widthMm": { "type": "number" },
+        "lengthMm": { "type": "number" },
+        "heightMm": { "type": "number" },
+        "basis": { "type": "string", "enum": ["body", "package", "ratio-estimate"] }
+      }
+    }
+  }
+}

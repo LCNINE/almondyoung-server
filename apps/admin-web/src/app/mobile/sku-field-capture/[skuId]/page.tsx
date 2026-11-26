@@ -1,6 +1,7 @@
 'use client';
 
 import { Suspense, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Loader2 } from 'lucide-react';
@@ -169,7 +170,8 @@ function CaptureForm({ detail }: { detail: FieldCaptureDetailDto }) {
   // 작업 기록에서 «수정»으로 왔으면 그 목록으로, 아니면 선반으로. 실측 화면 안의 주소만 받는다
   const back = useSearchParams().get('back');
   const shelfHref = detail.positionCode ? `${BASE}?position=${encodeURIComponent(detail.positionCode)}` : BASE;
-  const backHref = back?.startsWith(`${BASE}/`) ? back : shelfHref;
+  // 실측 화면 안이나 그 상품의 3D 작업실에서 온 주소만 돌아갈 곳으로 받는다
+  const backHref = back?.startsWith(`${BASE}/`) || back === `/mobile/sku-3d-workshop/${skuId}` ? back : shelfHref;
 
   return (
     <>
@@ -181,6 +183,12 @@ function CaptureForm({ detail }: { detail: FieldCaptureDetailDto }) {
           {detail.completion && (
             <p className="mt-1 text-sm font-semibold text-green-700">{completedByText(detail.completion)}</p>
           )}
+          <Link
+            href={`/mobile/sku-3d-workshop/${encodeURIComponent(skuId)}?back=${encodeURIComponent(`${BASE}/${skuId}`)}`}
+            className="mt-2 inline-flex h-10 items-center rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-800"
+          >
+            3D 작업실
+          </Link>
         </div>
 
         <section className="space-y-2 rounded-xl border border-gray-200 bg-white p-4">

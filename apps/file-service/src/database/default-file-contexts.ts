@@ -23,6 +23,10 @@ export type FileContextSeedRow = {
 export const SKU_3D_MODEL_CONTEXT_ID = 'sku-3d-model';
 export const SKU_3D_MODEL_MAX_SIZE_BYTES = 20 * 1024 * 1024;
 
+/** 3D 작업실 검토 파일(GLB·렌더·Python·blend). 비공개 — 열람은 작업실 권한을 본 core 만 위임 토큰으로 연다. */
+export const SKU_3D_WORKSHOP_CONTEXT_ID = 'sku-3d-workshop';
+export const SKU_3D_WORKSHOP_MAX_SIZE_BYTES = 50 * 1024 * 1024;
+
 /** 중국 선적 입고리스트 원본(xlsx). 비공개 — 열람은 STAFF_CONTEXT_PERMISSIONS 로 연다. */
 export const INBOUND_SHIPMENT_LIST_CONTEXT_ID = 'inbound-shipment-list';
 export const INBOUND_SHIPMENT_LIST_MAX_SIZE_BYTES = 50 * 1024 * 1024;
@@ -92,6 +96,29 @@ export const FILE_CONTEXTS: FileContextSeed[] = [
     allowedMimeTypes: ['model/gltf-binary'],
     maxFileSize: SKU_3D_MODEL_MAX_SIZE_BYTES,
     pathPrefix: 'inventory/sku-3d-models',
+    isActive: true,
+  },
+  {
+    id: SKU_3D_WORKSHOP_CONTEXT_ID,
+    name: 'SKU 3D Workshop',
+    description: '3D 작업실 승인 전 검토 파일',
+    allowPublic: false,
+    allowPrivate: true,
+    allowedMimeTypes: [
+      'model/gltf-binary',
+      'image/png',
+      'image/jpeg',
+      'image/webp',
+      'text/plain',
+      'text/markdown',
+      'application/json',
+      'application/x-blender',
+      // Blender 4.2 이상은 .blend 를 zstd 로 압축해 저장한다
+      'application/zstd',
+      'application/octet-stream',
+    ],
+    maxFileSize: SKU_3D_WORKSHOP_MAX_SIZE_BYTES,
+    pathPrefix: 'inventory/sku-3d-workshop',
     isActive: true,
   },
   {

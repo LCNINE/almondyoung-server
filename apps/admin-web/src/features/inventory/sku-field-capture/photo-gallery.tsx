@@ -185,7 +185,6 @@ export function FieldCapturePhotoGallery() {
                     skuId={head.skuId}
                     code={head.code}
                     name={head.name}
-                    dims={head}
                   />
                 </div>
               </div>

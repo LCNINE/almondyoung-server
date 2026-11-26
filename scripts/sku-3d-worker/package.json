@@ -1,0 +1,12 @@
+{
+  "name": "sku-3d-worker",
+  "private": true,
+  "type": "module",
+  "description": "아몬드영 3D 작업실 홈 PC 워커 — 의존성 없이 Node 22 로 돈다",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test"
+  }
+}

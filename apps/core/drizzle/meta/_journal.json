@@ -1212,6 +1212,13 @@
       "when": 1795655515964,
       "tag": "20261126011155_add-direct-delivery-operation-types",
       "breakpoints": true
+    },
+    {
+      "idx": 173,
+      "version": "7",
+      "when": 1795661425108,
+      "tag": "20261126025025_add-sku-3d-workshop",
+      "breakpoints": true
     }
   ]
 }

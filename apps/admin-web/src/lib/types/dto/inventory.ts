@@ -2118,3 +2118,97 @@ export type Sku3dModelUploadListDto = {
   items: Sku3dModelUploadDto[];
   total: number;
 };
+
+export type Sku3dDimensionBasis = 'body' | 'package' | 'unknown';
+export type Sku3dJobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
+export type Sku3dReviewVerdict = 'ready_for_review' | 'needs_revision' | 'needs_photos';
+
+export type Sku3dWorkshopDto = {
+  id: string;
+  skuId: string;
+  ownerId: string;
+  ownerLabel: string;
+  codexSessionId: string | null;
+  dimensionBasis: Sku3dDimensionBasis;
+  dimensionConfirmedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type Sku3dWorkshopJobDto = {
+  id: string;
+  workshopId: string;
+  kind: 'create' | 'revise';
+  status: Sku3dJobStatus;
+  attempts: number;
+  createdAt: string;
+  startedAt: string | null;
+};
+
+export type Sku3dWorkshopReviewDto = {
+  summary: string;
+  verdict: Sku3dReviewVerdict;
+  issues: { where: string; observed: string; expected: string; severity: 'error' | 'minor' }[];
+  proposals: string[];
+  autoFixes: string[];
+  unseenFaces: string[];
+  assumptions: string[];
+  needsPhotos: string[];
+  dimensionsUsed: { widthMm: number; lengthMm: number; heightMm: number; basis: string };
+};
+
+export type Sku3dWorkshopRevisionDto = {
+  id: string;
+  number: number;
+  glbSha256: string;
+  glbBytes: number;
+  files: { renders: string[]; python: string | null; blend: string | null; plan: string | null };
+  review: Sku3dWorkshopReviewDto;
+  createdAt: string;
+  publishedAt: string | null;
+};
+
+export type Sku3dWorkshopDetailDto = {
+  workshop: Sku3dWorkshopDto;
+  sku: {
+    id: string;
+    code: string;
+    name: string;
+    packageWidthMm: number | null;
+    packageLengthMm: number | null;
+    packageHeightMm: number | null;
+    packageWeightG: number | null;
+    photos: { fileId: string; sortOrder: number }[];
+  };
+  activeJob: Sku3dWorkshopJobDto | null;
+  revisions: Sku3dWorkshopRevisionDto[];
+  worker: { online: boolean; lastSeenAt: string | null };
+  materialChanges: Sku3dMaterialChangesDto | null;
+};
+
+export type Sku3dMaterialChangesDto = {
+  addedPhotos: string[];
+  removedPhotos: string[];
+  dimensions: {
+    before: Sku3dMaterialDimensionsDto;
+    after: Sku3dMaterialDimensionsDto;
+  } | null;
+};
+
+export type Sku3dMaterialDimensionsDto = {
+  packageWidthMm: number | null;
+  packageLengthMm: number | null;
+  packageHeightMm: number | null;
+  packageWeightG: number | null;
+  dimensionBasis: string;
+};
+
+export type Sku3dWorkshopEventDto = {
+  seq: number;
+  jobId: string | null;
+  revisionId: string | null;
+  type: 'user_message' | 'assistant_message' | 'progress' | 'status';
+  authorLabel: string | null;
+  body: string;
+  createdAt: string;
+};
