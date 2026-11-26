@@ -213,14 +213,15 @@ export function AppSidebar({
 
   return (
     <Sidebar collapsible="icon" className="border-r">
-      <SidebarHeader className="flex-row items-center justify-between p-4 group-data-[collapsible=icon]:px-2">
+      {/* 펼쳐 보이는 동안엔 펼치기 버튼을 접혔을 때 자리에 두고 로고를 그 옆에 둔다(버튼이 튀지 않게) */}
+      <SidebarHeader className="flex-row items-center justify-between p-4 group-data-[collapsible=icon]:px-2 group-data-[peek=open]:flex-row-reverse group-data-[peek=open]:justify-end group-data-[peek=open]:gap-2 group-data-[peek=open]:px-2 group-data-[peek=closing]:flex-row-reverse group-data-[peek=closing]:justify-end group-data-[peek=closing]:gap-2 group-data-[peek=closing]:px-2">
         <Link
           href="/"
           className="text-lg font-bold tracking-tight text-sidebar-primary-foreground group-data-[collapsible=icon]:hidden"
         >
           LCNINE
         </Link>
-        <SidebarTrigger className="text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground group-data-[peek=open]:hidden group-data-[peek=closing]:hidden" />
+        <SidebarTrigger className="text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground shrink-0" />
       </SidebarHeader>
 
       <SidebarContent>

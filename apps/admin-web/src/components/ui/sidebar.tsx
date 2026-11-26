@@ -176,7 +176,7 @@ function Sidebar({
 
   React.useEffect(() => () => clearTimeout(peekCloseTimer.current), []);
 
-  // 접히는 0.3초 동안도 펼친 모양을 유지해, 폭이 줄면서 내용이 가려지게 한다(글자가 접혔다 펴지지 않게)
+  // 접히는 0.2초 동안도 펼친 모양을 유지해, 폭이 줄면서 내용이 가려지게 한다(글자가 접혔다 펴지지 않게)
   React.useEffect(() => {
     if (peek) {
       setPeekClosing(true);
@@ -184,7 +184,7 @@ function Sidebar({
       return;
     }
 
-    const timer = setTimeout(() => setPeekClosing(false), 300);
+    const timer = setTimeout(() => setPeekClosing(false), 200);
 
     return () => clearTimeout(timer);
   }, [peek]);
@@ -245,7 +245,7 @@ function Sidebar({
       <div
         data-slot="sidebar-gap"
         className={cn(
-          'relative w-(--sidebar-width) bg-transparent transition-[width] duration-300 ease-[ease]',
+          'relative w-(--sidebar-width) bg-transparent transition-[width] duration-200 ease-out',
           'group-data-[collapsible=offcanvas]:w-0',
           'group-data-[side=right]:rotate-180',
           variant === 'floating' || variant === 'inset'
@@ -256,7 +256,7 @@ function Sidebar({
       <div
         data-slot="sidebar-container"
         className={cn(
-          'fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) transition-[left,right,width] duration-300 ease-[ease] md:flex',
+          'fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) transition-[left,right,width] duration-200 ease-out md:flex',
           side === 'left'
             ? 'left-0 group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)]'
             : 'right-0 group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)]',
