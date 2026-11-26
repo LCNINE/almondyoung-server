@@ -4,5 +4,7 @@
  * 써도 개인정보를 그리지 않는 것으로 본다. `pii-screens.gate.spec.ts` 가 읽고, 사유 없는 예외·죽은 예외를 막는다. 여러 화면이 같이 쓰는 부품(메뉴 배지 등)에 쓴다.
  */
 export const PII_SCREEN_EXCEPTIONS: Readonly<Record<string, string>> = {
-  // 현재 없음 — 화면 하나를 통째로 빼는 것은 `PII_SCREEN_NOT_SHOWN` 에 적는다.
+  // 화면 하나를 통째로 빼는 것은 `PII_SCREEN_NOT_SHOWN` 에 적는다.
+  'lib/api/domains/orders/direct-delivery.client.ts :: /shipments':
+    '이 파일의 «shipments/…» 는 직배송 경로(/direct-delivery/shipments/:id)의 일부다 — 상자 상세(/shipments/:id)를 부르지 않는다',
 };

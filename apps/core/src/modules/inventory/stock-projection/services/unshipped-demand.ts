@@ -1,8 +1,17 @@
 import { and, gt, ne, notInArray, sql } from 'drizzle-orm';
 import { fulfillmentOrderItems, fulfillmentOrders, skus } from '../../schema/inventory.schema';
 
+// 공급처 상자에 든 몫은 공급처가 보낸다 — 창고 미발송에서 뺀다(창고 상품을 그 주문만 공급처에 맡긴 경우).
+const supplierBoxedQuantity = sql`coalesce((
+  select sum(usd_l.qty) from shipment_lines usd_l
+    join shipments usd_s on usd_s.id = usd_l.shipment_id
+   where usd_l.fulfillment_order_item_id = ${fulfillmentOrderItems.id}
+     and usd_s.supplier_id is not null
+     and usd_s.status in ('draft', 'planned', 'recovery_required')
+), 0)`;
+
 export const remainingUnshippedQuantity =
-  sql<number>`greatest(${fulfillmentOrderItems.qty} - ${fulfillmentOrderItems.shippedQty} - ${fulfillmentOrderItems.canceledQty}, 0)`.mapWith(
+  sql<number>`greatest(${fulfillmentOrderItems.qty} - ${fulfillmentOrderItems.shippedQty} - ${fulfillmentOrderItems.canceledQty} - ${supplierBoxedQuantity}, 0)`.mapWith(
     Number,
   );
 

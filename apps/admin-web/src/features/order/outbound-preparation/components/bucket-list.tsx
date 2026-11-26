@@ -16,6 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { DirectDeliveryButton } from '@/features/order/one-order-direct/direct-delivery-button';
 import { StockPriorityBadge } from '@/features/order/stock-priority/stock-priority-badge';
 import { stockGivenText } from '@/features/order/stock-priority/stock-priority-copy';
 import {
@@ -361,6 +362,14 @@ export function BucketList({
                             우선할당 취소
                           </Button>
                         </Can>
+                      )}
+                      {(bucket.bucket === 'unavailable' ||
+                        bucket.bucket === 'partial') && (
+                        <DirectDeliveryButton
+                          shipmentId={shipment.shipmentId}
+                          orderText={plannedOrderText(shipment)}
+                          disabled={busy}
+                        />
                       )}
                       {bucket.bucket === 'unavailable' && (
                         <Button size="sm" variant="outline" asChild>

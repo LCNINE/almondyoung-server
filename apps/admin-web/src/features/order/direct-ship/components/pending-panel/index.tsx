@@ -1,5 +1,6 @@
 'use client';
 
+import { DirectDeliveryButton } from '@/features/order/one-order-direct/direct-delivery-button';
 import { useState } from 'react';
 import { Download } from 'lucide-react';
 import { toast } from 'sonner';
@@ -74,6 +75,7 @@ export function PendingPanel({ supplierId }: { supplierId: string }) {
               <TableHead>상품</TableHead>
               <TableHead className="text-right">수량</TableHead>
               <TableHead>열린 시각</TableHead>
+              <TableHead>기능</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -91,6 +93,9 @@ export function PendingPanel({ supplierId }: { supplierId: string }) {
                   ))}
                 </TableCell>
                 <TableCell>{new Date(s.openedAt).toLocaleString('ko-KR')}</TableCell>
+                <TableCell>
+                  <DirectDeliveryButton shipmentId={s.shipmentId} orderText={`#${s.orderNo}`} label="송장 넣기" />
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>

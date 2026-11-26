@@ -290,6 +290,9 @@ export const shipmentOperationTypeEnum = pgEnum('shipment_operation_type', [
   // 재고를 이 상자에 먼저 배정하거나 그 표시를 거둔 기록. 재고를 내준 상자도 구성원(source)으로 남는다.
   'stock_priority',
   'stock_priority_cancel',
+  // 재고 없는 창고 상자를 그 주문만 공급처가 보내게 넘긴 기록과, 공급처 상자를 창고 출고로 되돌린 기록.
+  'direct_delivery',
+  'direct_delivery_return',
 ]);
 export const shipmentOperationStatusEnum = pgEnum('shipment_operation_status', [
   'pending',

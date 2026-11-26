@@ -118,6 +118,12 @@ jest.mock('@/hooks/use-permission', () => ({
   useCanOpen: () => ({ status: 'ready', allowed: true }),
 }));
 
+jest.mock(
+  '@/features/order/one-order-direct/direct-delivery-awaiting-line',
+  () => ({
+    DirectDeliveryAwaitingLine: () => null,
+  })
+);
 jest.mock('@/features/order/fulfillments/detail/consolidation-sheet', () => ({
   ConsolidationSheet: ({
     shipmentId,
