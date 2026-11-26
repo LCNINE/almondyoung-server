@@ -8,13 +8,14 @@ type UseStocktakingTableQueryProps = {
 export const useStocktakingTableQuery = ({
   pageSize = 20,
 }: UseStocktakingTableQueryProps = {}) => {
-  const queryObject = useQueryParams(['offset', 'warehouseId', 'status']);
+  // 표의 쪽 이동은 주소의 page 를 바꾼다(use-data-table)
+  const queryObject = useQueryParams(['page', 'warehouseId', 'status']);
 
-  const { offset, warehouseId, status } = queryObject;
+  const { page, warehouseId, status } = queryObject;
 
   const searchParams: StocktakingSessionQuery = {
     limit: pageSize,
-    offset: offset ? Number(offset) : 0,
+    offset: (Math.max(1, Math.floor(Number(page)) || 1) - 1) * pageSize,
     warehouseId: warehouseId || undefined,
     status: (status as StocktakingSessionQuery['status']) || undefined,
   };

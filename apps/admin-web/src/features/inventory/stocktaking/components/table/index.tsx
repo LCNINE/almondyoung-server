@@ -17,7 +17,7 @@ const PAGE_SIZE = 20;
 
 export function StocktakingTable() {
   const { searchParams: query } = useStocktakingTableQuery({ pageSize: PAGE_SIZE });
-  const { data, isLoading, isFetching } = useStocktakingSessions(query);
+  const { data, isLoading, isFetching, isError, refetch } = useStocktakingSessions(query);
   const filters = useStocktakingTableFilters();
 
   const [detailRow, setDetailRow] = useState<StocktakingSessionDto | null>(null);
@@ -46,6 +46,15 @@ export function StocktakingTable() {
         </Can>
       </div>
 
+      {isError && (
+        <div role="alert" className="mx-4 mt-3 flex items-center gap-2 text-sm text-destructive">
+          실사 목록을 불러오지 못했어요.
+          <Button size="sm" variant="outline" onClick={() => void refetch()}>
+            다시 시도
+          </Button>
+        </div>
+      )}
+
       <DataTable
         table={table}
         isLoading={isLoading}
@@ -53,7 +62,9 @@ export function StocktakingTable() {
         count={total}
         pageSize={PAGE_SIZE}
         filters={filters}
-        noRecords={{ message: '재고 실사 세션이 없습니다.' }}
+        noRecords={{
+          message: isError ? '목록을 불러오지 못했어요.' : '재고 실사 세션이 없습니다.',
+        }}
       />
 
       <SessionDetailDrawer

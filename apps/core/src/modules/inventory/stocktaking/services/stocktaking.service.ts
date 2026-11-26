@@ -20,6 +20,11 @@ import { StocktakingSessionDetailDto } from '../dto/session-detail.dto';
 import { InventoryCommandService } from '../../core/services/inventory-command.service';
 import { AdjustmentPreviewItem } from '../dto/adjustment-preview.dto';
 import { AddCountItemDto } from '../dto/add-count-item.dto';
+import {
+  InboundReservationRelease,
+  ReservationReleasePreview,
+  StockRemoval,
+} from '../../inbound/kernel/inbound-reservation-release.port';
 
 @Injectable()
 export class StocktakingService {
@@ -29,6 +34,7 @@ export class StocktakingService {
     @InjectTypedDb<typeof wmsSchema>()
     private readonly dbService: DbService<typeof wmsSchema>,
     private readonly commandService: InventoryCommandService,
+    private readonly reservations: InboundReservationRelease,
   ) {}
 
   async listSessions(query: ListStocktakingSessionsQueryDto, tx?: DbTx) {
@@ -431,6 +437,59 @@ export class StocktakingService {
     return { session, line, ledger };
   }
 
+  /** 완료가 재고를 잠글 상품 전부 — 예약을 놓으며 함께 잠가 뒤의 잠금이 순서를 뒤집지 않게 한다. */
+  private async sessionSkuIds(tx: DbTx, sessionId: string): Promise<string[]> {
+    const rows = await tx
+      .selectDistinct({ skuId: wmsTables.stocktakingLines.skuId })
+      .from(wmsTables.stocktakingLines)
+      .where(eq(wmsTables.stocktakingLines.sessionId, sessionId));
+    return rows.map((row) => row.skuId);
+  }
+
+  /** 완료가 적용할 차이를 잠그기 전에 읽어, 상품마다 순감소분을 낸다(다른 자리에서 늘면 상쇄). */
+  private async plannedRemovals(
+    tx: DbTx,
+    warehouseId: string,
+    sessionId: string,
+    allCounted: boolean,
+  ): Promise<StockRemoval[]> {
+    const { stocktakingLines } = wmsTables;
+    const lines = await tx
+      .select()
+      .from(stocktakingLines)
+      .where(
+        and(
+          eq(stocktakingLines.sessionId, sessionId),
+          sql`${stocktakingLines.countedQuantity} IS NOT NULL`,
+          allCounted ? undefined : sql`${stocktakingLines.variance} IS NOT NULL AND ${stocktakingLines.variance} != 0`,
+        ),
+      );
+    const reviewed: { lineId: string; currentOnHand: number }[] = [];
+    for (const line of lines)
+      reviewed.push({
+        lineId: line.id,
+        currentOnHand: (await this.readLedger(tx, line.skuId, warehouseId, line.locationId)).qty,
+      });
+    return this.removalsOf(warehouseId, reviewed, lines);
+  }
+
+  private removalsOf(
+    warehouseId: string,
+    reviewed: readonly { lineId: string; currentOnHand: number }[],
+    lines: readonly { id: string; skuId: string; countedQuantity: number | null }[],
+  ): StockRemoval[] {
+    const onHand = new Map(reviewed.map((row) => [row.lineId, row.currentOnHand]));
+    const net = new Map<string, number>();
+    for (const line of lines) {
+      const current = onHand.get(line.id);
+      if (current === undefined || line.countedQuantity === null) continue;
+      net.set(line.skuId, (net.get(line.skuId) ?? 0) + line.countedQuantity - current);
+    }
+    return [...net]
+      .filter(([, delta]) => delta < 0)
+      .map(([skuId, delta]) => ({ skuId, warehouseId, quantity: -delta }));
+  }
+
   private async readLedger(tx: DbTx, skuId: string, warehouseId: string, locationId: string | null) {
     const [ledger] = await tx
       .select({ qty: wmsTables.stockLedgers.qty, version: wmsTables.stockLedgers.version })
@@ -551,7 +610,13 @@ export class StocktakingService {
       if (dto.contractVersion === 2) {
         // V2 always reviews every registered line; a caller's variance filter is not completion scope.
         const review = await this.reviewCounts(tx, sessionId);
+        const reservationImpact: (ReservationReleasePreview & { skuId: string })[] = [];
+        for (const removal of this.removalsOf(review.session.warehouseId, review.reviewed, review.lines)) {
+          const impact = await this.reservations.preview(removal, tx);
+          if (impact.quantity > 0 || impact.missingQty > 0) reservationImpact.push({ skuId: removal.skuId, ...impact });
+        }
         return {
+          reservationImpact,
           adjustmentsCreated: review.preview.length,
           eventsPosted: 0,
           message: '수량을 확인했어요.',
@@ -623,6 +688,14 @@ export class StocktakingService {
       if (!session) throw new NotFoundException(`Session ${sessionId} not found`);
       if (session.status !== 'in_progress') throw new BadRequestException(`Session is not in progress`);
 
+      // 줄어드는 재고를 잡은 예약을 먼저 놓는다 — 출고와 같은 순서(상자 → 재고)로 잠그려고 재고 잠금보다 앞에 둔다.
+      // 그 사이 재고가 움직였으면 아래 검토가 다시 세라고 거절해 이 트랜잭션째 되돌린다.
+      const reservationImpact = await this.reservations.releaseAvailable(
+        await this.plannedRemovals(tx, session.warehouseId, sessionId, dto?.contractVersion === 2),
+        `stocktaking:${sessionId}`,
+        tx,
+        await this.sessionSkuIds(tx, sessionId),
+      );
       const review = dto?.contractVersion === 2 ? await this.reviewCounts(tx, sessionId) : undefined;
       if (review && (!dto?.previewToken || dto.previewToken !== review.previewToken))
         throw new StocktakingConflict('STOCKTAKING_PREVIEW_STALE');
@@ -649,6 +722,12 @@ export class StocktakingService {
             .from(stocktakingLines)
             .where(eq(stocktakingLines.sessionId, sessionId))
             .for('update');
+      }
+      // 재고를 잠근 뒤 다시 본다 — 앞에서 놓을 것이 없어 아무것도 잠그지 않았거나 그사이 재고가 움직였으면
+      // 다른 예약이 끼어들었을 수 있다. 재고를 쥔 채 상자를 잠그면 순서가 뒤집히므로 놓지 않고 되돌린다.
+      for (const removal of await this.plannedRemovals(tx, session.warehouseId, sessionId, !!review)) {
+        if ((await this.reservations.preview(removal, tx)).quantity > 0)
+          throw new StocktakingConflict('STOCKTAKING_PREVIEW_STALE');
       }
 
       const reviewedCounts = new Map(review?.reviewed.map((count) => [count.lineId, count]));
@@ -742,6 +821,7 @@ export class StocktakingService {
         sessionId,
         status: 'completed' as const,
         completedAt,
+        reservationImpact,
         summary: {
           totalLines: Number(lineStats?.total ?? 0),
           discrepanciesFound: Number(lineStats?.withVariances ?? 0),

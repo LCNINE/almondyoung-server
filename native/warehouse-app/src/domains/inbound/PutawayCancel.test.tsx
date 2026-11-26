@@ -278,7 +278,7 @@ describe('적치 대기에서 입고 취소', () => {
     [
       '적치함',
       { cancelBlockReason: 'ALREADY_PUTAWAY', putawayFromOriginQty: 2 },
-      '이미 2개를 선반에 넣어',
+      '이미 2개를 선반에 넣어 입고를 취소할 수 없어요. 나머지도 선반에 넣은 뒤 F5 실사에서 그 선반을 세어 실물에 맞추고',
     ],
     [
       '다른 기기에서 취소함',

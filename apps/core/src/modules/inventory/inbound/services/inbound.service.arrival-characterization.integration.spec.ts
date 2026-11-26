@@ -366,7 +366,7 @@ describeIfDb('InboundService 입고 경로 동작 기준선 (PostgreSQL integrat
 
         await expect(
           svc.putawayFromOrigin({ lineId, toLocationId: shelf.id, quantity: 2, idempotencyKey: key }, tx),
-        ).resolves.toEqual({ success: true });
+        ).resolves.toEqual({ success: true, usualShelfSet: false });
 
         expect((await lineRow(tx, lineId))?.putawayFromOriginQty).toBe(2);
         expect(await onHand(tx, skuA.id, warehouse.id, zoneId)).toBe(3);

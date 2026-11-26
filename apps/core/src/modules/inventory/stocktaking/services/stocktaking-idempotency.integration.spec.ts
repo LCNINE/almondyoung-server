@@ -1,4 +1,5 @@
 import { outboxPublisherFor } from '../../../fulfillment/outbox/__support__/outbox-publisher.factory';
+import { buildWiring } from '../../inbound/services/__fixtures__/inbound-harness';
 import { INVENTORY_STREAM } from '@packages/event-contracts/streams';
 import * as postgres from 'postgres';
 import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
@@ -38,7 +39,7 @@ describeIfDb('stocktaking v2 idempotency (DB integration, commit-type)', () => {
     const eventStore = new StockEventStore(dbService, sellable);
     const location = new LocationService(dbService);
     const command = new InventoryCommandService(dbService, eventStore, outbox, location);
-    svc = new StocktakingService(dbService, command);
+    svc = new StocktakingService(dbService, command, buildWiring(db).reservations);
     controller = new StocktakingController(svc, new InventoryIdempotencyService(dbService));
   });
 

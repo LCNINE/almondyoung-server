@@ -77,7 +77,12 @@ function detailWith(status: string) {
 
 function renderScreen(
   calls: Call[],
-  opts: { status?: string; variances?: unknown[]; failGenerate?: boolean } = {}
+  opts: {
+    status?: string;
+    variances?: unknown[];
+    failGenerate?: boolean;
+    preview?: unknown;
+  } = {}
 ) {
   const status = opts.status ?? 'in_progress';
   const variances = opts.variances ?? VARIANCES;
@@ -89,7 +94,7 @@ function renderScreen(
       if (o.path === '/stocktaking/sessions/s-1/variances') return variances;
       if (o.path === '/stocktaking/sessions/s-1/generate-adjustments') {
         if (failGenerate) throw new Error('요청 실패 → 500');
-        return PREVIEW;
+        return opts.preview ?? PREVIEW;
       }
       return {};
     }) as unknown as ApiClient['request'],
@@ -168,6 +173,52 @@ describe('VarianceReviewScreen', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: /실사 완료/ })).toBeEnabled()
     );
+  });
+
+  it('완료가 주문 예약을 놓으면 미리보기와 확인 창이 어느 주문이 다시 기다리는지 말한다', async () => {
+    renderScreen([], {
+      preview: {
+        ...PREVIEW,
+        preview: [{ ...PREVIEW.preview[0], skuName: '코튼셔츠' }],
+        reservationImpact: [
+          {
+            skuId: 'sku-1',
+            orderCount: 2,
+            quantity: 3,
+            missingQty: 1,
+            heldBy: [{ orderNo: 'AY-100', quantity: 1 }],
+          },
+        ],
+      },
+    });
+    await userEvent.click(
+      await screen.findByRole('button', { name: '조정 미리보기' })
+    );
+
+    const section = await screen.findByRole('region', {
+      name: '다시 재고를 기다리는 주문',
+    });
+    expect(section).toHaveTextContent(
+      '코튼셔츠: 주문 2건이 잡아 둔 3개를 놓아요.'
+    );
+    expect(section).toHaveTextContent('AY-100 1개');
+    await userEvent.click(
+      await screen.findByRole('button', { name: /실사 완료/ })
+    );
+    expect(await screen.findByRole('dialog')).toHaveTextContent(
+      '줄어든 재고를 잡고 있던 주문은 다시 재고를 기다려요.'
+    );
+  });
+
+  it('옛 서버처럼 영향이 없으면 그 구역을 그리지 않는다', async () => {
+    renderScreen([]);
+    await userEvent.click(
+      await screen.findByRole('button', { name: '조정 미리보기' })
+    );
+    await screen.findByTestId('preview-line-1');
+    expect(
+      screen.queryByRole('region', { name: '다시 재고를 기다리는 주문' })
+    ).toBeNull();
   });
 
   it('미리보기가 실패하면 완료 버튼은 계속 비활성이고 오류가 보인다', async () => {

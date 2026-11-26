@@ -16,6 +16,7 @@ import { ScreenHeader } from '../../core/design/ScreenHeader';
 import { WarehousePicker } from '../warehouse/WarehousePicker';
 import { SaveToast, useSaveToast } from './SaveToast';
 import { SkuPicker, type SelectedSku } from '../inventory/SkuPicker';
+import { PUTAWAY_FIX_BY_COUNT } from './cancelReceipt';
 import {
   ReceiptHistoryError,
   recentReceiptDates,
@@ -279,6 +280,11 @@ function HistoryContent({
                           <p className="text-sm text-gray-600">
                             {reasons[line.cancelBlockReason] ??
                               '취소 가능 상태 확인 필요'}
+                            {line.cancelBlockReason === 'PUTAWAY_EXISTS' && (
+                              <span className="block text-xs text-gray-500">
+                                수량이 틀렸다면 {PUTAWAY_FIX_BY_COUNT}
+                              </span>
+                            )}
                           </p>
                         ) : null}
                       </li>

@@ -434,3 +434,25 @@ describe('admin stocktaking reviewed contract', () => {
     expect(localStorage.length).toBe(1);
   });
 });
+
+describe('admin stocktaking session list', () => {
+  beforeEach(() => jest.resetAllMocks());
+
+  it('화면의 offset 을 서버의 쪽 번호로 바꿔 부르고 목록과 전체 수를 돌려준다', async () => {
+    const session = { id: 's-1', warehouseId: 'w-1', sessionName: '실사', status: 'in_progress' };
+    (client.get as jest.Mock).mockResolvedValue({ data: { data: [session], total: 41, page: 3, limit: 20 } });
+
+    await expect(stocktakingClient.listSessions({ warehouseId: 'w-1', limit: 20, offset: 40 })).resolves.toEqual({
+      sessions: [session],
+      total: 41,
+    });
+    expect(client.get).toHaveBeenCalledWith('http://test.invalid/stocktaking/sessions', {
+      params: { warehouseId: 'w-1', status: undefined, page: 3, limit: 20 },
+    });
+  });
+
+  it('응답 모양이 다르면 빈 목록이 아니라 실패로 올린다', async () => {
+    (client.get as jest.Mock).mockResolvedValue({ data: { sessions: [] } });
+    await expect(stocktakingClient.listSessions()).rejects.toThrow('실사 목록을 읽지 못했어요');
+  });
+});

@@ -356,6 +356,9 @@ export function errorMessage(error: unknown, context?: ErrorContext): string {
       if (specific) return specific;
     }
     if (context === 'inbound-cancel') return INBOUND_CANCEL_CONFLICT_MESSAGE;
+    // 주문이 잡아 둔 재고는 다시 해도 같다 — 서버가 실사로 맞추는 길까지 말한다.
+    if (context === 'adjust' && error.message.startsWith('주문이 잡아 둔 재고'))
+      return error.message;
     return '다른 작업자가 먼저 변경했어요. 새로고침 후 다시 시도해 주세요.';
   }
   if (error instanceof Error) {

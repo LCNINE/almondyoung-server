@@ -33,4 +33,16 @@ export abstract class InboundReservationRelease {
 
   /** 놓을 수 있는 예약으로 모자라면 409. 놓을 것이 없으면 아무것도 잠그지 않는다. */
   abstract release(removals: readonly StockRemoval[], reason: string, tx: DbTx): Promise<void>;
+
+  /**
+   * 실물이 이미 없는 경우(실사) — 막을 수 없으므로 놓을 수 있는 만큼만 놓고, 출고 준비에 들어가 못 놓은 몫을 돌려준다.
+   * 재고를 줄이기 «전»에, 재고 잠금보다 먼저 부른다(상자 → 재고 순). `lockAlso` 는 놓을 예약이 있을 때 함께 잠글
+   * 재고(같은 창고의 상품) — 부르는 쪽이 뒤에 더 잡을 재고를 여기서 한 번에 잡아 잠금 순서가 뒤집히지 않게 한다.
+   */
+  abstract releaseAvailable(
+    removals: readonly StockRemoval[],
+    reason: string,
+    tx: DbTx,
+    lockAlso?: readonly string[],
+  ): Promise<(ReservationReleasePreview & { skuId: string })[]>;
 }
