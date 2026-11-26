@@ -267,7 +267,10 @@ export async function runJob(job, { api, config, tools, signal }) {
       }).catch((error) => {
         assertLive();
 
-        return { ok: false, state: `확인 실패: ${String(error).slice(0, 200)}` };
+        // 검사 도구가 실패한 걸 모델 오류로 보고 Codex 에 고치라고 보내지 않는다
+        throw Object.assign(new Error(`웹 뷰어 검사를 실행하지 못했어요: ${String(error.message ?? error).slice(0, 300)}`), {
+          retryable: true,
+        });
       });
 
       return { judged, viewer };

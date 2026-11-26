@@ -1,10 +1,9 @@
-import { execFile } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { promisify } from 'node:util';
 
-const run = promisify(execFile);
 
 const MODEL_VIEWER = 'https://cdn.jsdelivr.net/npm/@google/model-viewer@4.0.0/dist/model-viewer.min.js';
 export const MIN_DRAWN_RATIO = 0.005;
@@ -48,7 +47,11 @@ export function viewerHtml(glbBytes) {
         drawn += 1;
       }
     }
-    done(drawn / (c.width * c.height) > ${MIN_DRAWN_RATIO} ? 'visible' : 'invisible', shot);
+    // 사람이 보는 캡처는 쇼핑몰 뷰어처럼 #c6c6c6 배경 위에 둔다(판정은 위의 투명 캔버스로 이미 끝났다)
+    ctx.globalCompositeOperation = 'destination-over';
+    ctx.fillStyle = '#c6c6c6';
+    ctx.fillRect(0, 0, c.width, c.height);
+    done(drawn / (c.width * c.height) > ${MIN_DRAWN_RATIO} ? 'visible' : 'invisible', c.toDataURL('image/png'));
   });
   v.src = '${src}';
 </script>
@@ -65,7 +68,95 @@ export function viewerShotOf(dom) {
   return base64 ? Buffer.from(base64, 'base64') : null;
 }
 
-const EDGE_FLAGS = ['--headless=new', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--window-size=800,800', '--virtual-time-budget=20000'];
+const EDGE_FLAGS = [
+  '--headless=new',
+  '--no-first-run',
+  '--no-default-browser-check',
+  '--disable-extensions',
+  '--use-angle=swiftshader',
+  '--enable-unsafe-swiftshader',
+  '--window-size=800,800',
+  '--remote-debugging-port=0',
+];
+const VIEWER_WAIT_MS = 60_000;
+
+// 가상 시간(--virtual-time-budget)에서는 model-viewer 가 마지막 렌더 단계에서 멈춘다 — 실제 시간으로 기다리며 디버깅 포트로 판정을 읽는다
+async function readViewerState(edgeBin, url, signal) {
+  const profile = mkdtempSync(join(tmpdir(), 'sku3d-edge-'));
+  const browser = spawn(edgeBin, [...EDGE_FLAGS, `--user-data-dir=${profile}`, url], {
+    windowsHide: true,
+    shell: false,
+    stdio: ['ignore', 'ignore', 'pipe'],
+  });
+  const stop = () => browser.kill();
+
+  signal?.addEventListener('abort', stop);
+
+  try {
+    const port = await new Promise((resolve, reject) => {
+      let text = '';
+      const timer = setTimeout(() => reject(new Error('브라우저 디버깅 포트를 열지 못했어요')), 30_000);
+
+      browser.stderr.on('data', (chunk) => {
+        text += chunk;
+
+        const found = /DevTools listening on ws:\/\/[^:]+:(\d+)\//.exec(text);
+
+        if (found) {
+          clearTimeout(timer);
+          resolve(Number(found[1]));
+        }
+      });
+      browser.on('exit', () => reject(new Error('브라우저가 바로 꺼졌어요')));
+    });
+    const pages = await (await fetch(`http://127.0.0.1:${port}/json`)).json();
+    const page = pages.find((p) => p.type === 'page');
+    const ws = new WebSocket(page.webSocketDebuggerUrl);
+    let id = 0;
+    const pending = new Map();
+
+    ws.onmessage = (event) => {
+      const message = JSON.parse(event.data);
+
+      pending.get(message.id)?.(message.result?.result?.value);
+      pending.delete(message.id);
+    };
+    await new Promise((resolve, reject) => {
+      ws.onopen = resolve;
+      ws.onerror = () => reject(new Error('디버깅 연결 실패'));
+    });
+
+    const evaluate = (expression) =>
+      new Promise((resolve) => {
+        id += 1;
+        pending.set(id, resolve);
+        ws.send(JSON.stringify({ id, method: 'Runtime.evaluate', params: { expression, returnByValue: true } }));
+      });
+    const deadline = Date.now() + VIEWER_WAIT_MS;
+    let state = 'pending';
+
+    while (Date.now() < deadline && !signal?.aborted) {
+      // 페이지가 아직 안 열렸으면 값이 없다 — 기다린다
+      state = (await evaluate('document.body && document.body.dataset.viewer')) || 'pending';
+
+      if (state !== 'pending') {
+        break;
+      }
+
+      await new Promise((r) => setTimeout(r, 500));
+    }
+
+    const shot = state === 'pending' ? '' : ((await evaluate('document.body.dataset.shot')) ?? '');
+
+    ws.close();
+
+    return { state, shot };
+  } finally {
+    signal?.removeEventListener('abort', stop);
+    stop();
+    rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  }
+}
 
 // 워커(Codex 아님)가 압축 GLB 를 실제 웹 뷰어에 띄워 본다. 판정과 캡처가 같은 실행의 같은 화면이다
 export async function viewerCheck({ edgeBin, glbPath, outDir, signal }) {
@@ -76,18 +167,19 @@ export async function viewerCheck({ edgeBin, glbPath, outDir, signal }) {
 
   writeFileSync(htmlPath, viewerHtml(readFileSync(glbPath)));
 
-  const { stdout } = await run(edgeBin, [...EDGE_FLAGS, '--dump-dom', pathToFileURL(htmlPath).href], {
-    windowsHide: true,
-    timeout: 90_000,
-    maxBuffer: 64 * 1024 * 1024,
-    signal,
-  });
-  const state = viewerStateOf(stdout);
-  const shot = viewerShotOf(stdout);
+  const { state, shot } = await readViewerState(edgeBin, pathToFileURL(htmlPath).href, signal);
+  const bytes = viewerShotOf(`data-shot="${shot}"`);
 
-  if (shot) {
-    writeFileSync(screenshot, shot);
+  // 판정 표시를 못 읽었으면 모델이 아니라 검사 도구가 실패한 것이다
+  if (!['visible', 'invisible', 'error'].includes(state)) {
+    throw Object.assign(new Error(`웹 뷰어 검사 페이지가 ${VIEWER_WAIT_MS / 1000}초 안에 끝나지 않았어요(상태 ${state})`), {
+      tooling: true,
+    });
   }
 
-  return { ok: state === 'visible' && shot !== null, state, screenshot };
+  if (bytes) {
+    writeFileSync(screenshot, bytes);
+  }
+
+  return { ok: state === 'visible' && bytes !== null, state, screenshot };
 }
