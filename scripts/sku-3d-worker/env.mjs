@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 
 export const PRODUCTION_SERVER_URL = 'https://core.almondyoung.com';
 
@@ -44,6 +45,8 @@ const REQUIRED = [
   'GLTF_TRANSFORM_CLI',
   'GLTF_VALIDATOR_MODULE',
   'EDGE_BIN',
+  'SKU3D_CODEX_HOME',
+  'SKU3D_DENY_READ',
 ];
 
 const PATHS = ['CODEX_BIN', 'BLENDER_PATH', 'GLTF_TRANSFORM_CLI', 'GLTF_VALIDATOR_MODULE', 'EDGE_BIN'];
@@ -80,6 +83,12 @@ export function loadConfig(env, exists = existsSync) {
     gltfTransformCli: env.GLTF_TRANSFORM_CLI,
     gltfValidatorModule: env.GLTF_VALIDATOR_MODULE,
     edgeBin: env.EDGE_BIN,
+    // 워커 전용 Codex 홈 — 평소 쓰는 Codex 설정과 섞지 않고, 작업마다 권한 프로필을 여기 쓴다
+    codexHome: env.SKU3D_CODEX_HOME,
+    // 읽기를 막을 경로(설정·키 폴더 등). ; 로 나눈다
+    denyRead: env.SKU3D_DENY_READ.split(';').map((p) => p.trim()).filter(Boolean),
+    userCodexHome: join(env.USERPROFILE ?? env.HOME ?? '', '.codex'),
+    windowsSandbox: env.SKU3D_WINDOWS_SANDBOX ?? 'mxc',
     concurrency: Number(env.SKU3D_CONCURRENCY ?? 1),
     pollMs: Number(env.SKU3D_POLL_MS ?? 5000),
     jobTimeoutMs: Number(env.SKU3D_JOB_TIMEOUT_MIN ?? 60) * 60_000,

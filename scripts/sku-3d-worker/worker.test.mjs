@@ -9,6 +9,7 @@ import { childEnv, loadConfig, PRODUCTION_SERVER_URL } from './env.mjs';
 import { externalUris, GLB_MAX_BYTES, glbJson, judgeOutputs, reviewProblem } from './judge.mjs';
 import { viewerHtml, viewerShotOf, viewerStateOf } from './viewer-check.mjs';
 import { buildPrompt, changeLines, DONE_MARKER, finishedFor, hasSharp, imageExtOf, runJob } from './worker.mjs';
+import { denyPathsFor, probeScript, probeVerdict, sandboxConfigToml } from './isolation.mjs';
 
 function glb(json, padTo = 0) {
   const text = Buffer.from(JSON.stringify(json));
@@ -36,6 +37,8 @@ const env = {
   GLTF_TRANSFORM_CLI: '/g',
   GLTF_VALIDATOR_MODULE: '/v',
   EDGE_BIN: '/e',
+  SKU3D_CODEX_HOME: '/h',
+  SKU3D_DENY_READ: '/cfg;/other',
 };
 
 test('childEnv drops worker key, server url and tenant, keeps Windows Path', () => {
@@ -406,4 +409,63 @@ test('a retry whose finished outputs fail validation stops without calling Codex
   assert.match(failed[1], /검증을 통과하지 못했어요/);
   assert.equal(failed[2], false);
   assert.deepEqual(readFileSync(join(s.iterDir, 'model.glb')), s.before);
+});
+
+test('loadConfig reads the dedicated Codex home and deny list', () => {
+  const config = loadConfig(env, () => true);
+
+  assert.equal(config.codexHome, '/h');
+  assert.deepEqual(config.denyRead, ['/cfg', '/other']);
+  assert.equal(config.windowsSandbox, 'mxc');
+  assert.throws(() => loadConfig({ ...env, SKU3D_DENY_READ: '' }, () => true), /SKU3D_DENY_READ/);
+});
+
+test('codexArgs leaves the sandbox to the permission profile (no sandbox_mode)', () => {
+  const base = { workdir: '/w', schemaPath: '/s', lastMessagePath: '/r', images: [] };
+
+  for (const args of [codexArgs({ ...base, sessionId: null }), codexArgs({ ...base, sessionId: 's-1' })]) {
+    assert.ok(!args.some((a) => a.includes('sandbox_mode')));
+  }
+});
+
+test('sandbox config writes only the workshop, denies secrets and turns the network off', () => {
+  const toml = sandboxConfigToml({
+    writeDir: 'C:\\jobs\\w1',
+    denyPaths: ['C:\\cfg', 'C:\\jobs\\w2'],
+    windowsSandbox: 'mxc',
+  });
+
+  assert.match(toml, /default_permissions = "sku3d-job"/);
+  assert.match(toml, /sandbox = "mxc"/);
+  assert.match(toml, /'C:\\jobs\\w1' = "write"/);
+  assert.match(toml, /'C:\\cfg' = "deny"/);
+  assert.match(toml, /'C:\\jobs\\w2' = "deny"/);
+  assert.match(toml, /\[permissions\.sku3d-job\.network\]\nenabled = false/);
+  assert.doesNotMatch(toml, /sandbox_mode/);
+  assert.throws(() => sandboxConfigToml({ writeDir: "C:\\it's", denyPaths: [], windowsSandbox: 'mxc' }));
+});
+
+test('deny list covers other workshops, secrets and Codex homes but not the current workshop', () => {
+  const root = mkdtempSync(join(tmpdir(), 'deny-'));
+
+  for (const name of ['w1', 'w2', 'w3']) {
+    mkdirSync(join(root, name));
+  }
+
+  const deny = denyPathsFor({ workRoot: root, workshopDir: join(root, 'w1'), denyRead: ['/cfg'], codexHome: '/h', userCodexHome: '/u/.codex' });
+
+  assert.ok(!deny.includes(join(root, 'w1')));
+  assert.ok(deny.includes(join(root, 'w2')) && deny.includes(join(root, 'w3')));
+  assert.ok(deny.includes('/cfg') && deny.includes('/h') && deny.includes('/u/.codex'));
+});
+
+test('probes print only a verdict, never file contents', () => {
+  const [bin, ...args] = probeScript('read', "C:\\cfg\\worker-key.env", 'win32');
+
+  assert.equal(bin, 'powershell.exe');
+  assert.match(args.at(-1), /OpenRead/);
+  assert.doesNotMatch(args.at(-1), /Get-Content|ReadAllText/);
+  assert.equal(probeVerdict('PROBE_DENIED'), 'denied');
+  assert.equal(probeVerdict('noise PROBE_ALLOWED'), 'allowed');
+  assert.equal(probeVerdict(''), 'denied');
 });

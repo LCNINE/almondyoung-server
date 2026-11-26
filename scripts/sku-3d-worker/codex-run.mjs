@@ -2,11 +2,10 @@ import { spawn, execFileSync } from 'node:child_process';
 import { createInterface } from 'node:readline';
 
 export function codexArgs({ sessionId, workdir, schemaPath, lastMessagePath, images }) {
-  // resume 은 -s·-C 를 받지 않는다 — 샌드박스는 설정값으로, 작업 폴더는 프로세스 cwd 로 준다
+  // 샌드박스는 워커 전용 CODEX_HOME 의 권한 프로필(isolation.mjs)이 정한다 — sandbox_mode 와 함께 쓰지 않는다.
+  // resume 은 -C 를 받지 않아 작업 폴더는 프로세스 cwd 로 준다
   const common = [
     '--json',
-    '-c',
-    'sandbox_mode="workspace-write"',
     '--skip-git-repo-check',
     '--output-schema',
     schemaPath,

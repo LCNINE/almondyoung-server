@@ -12,6 +12,7 @@ import { codexArgs, runCodex } from './codex-run.mjs';
 import { childEnv, loadConfig } from './env.mjs';
 import { judgeOutputs } from './judge.mjs';
 import { viewerCheck } from './viewer-check.mjs';
+import { denyPathsFor, isolationCheck, writeSandboxConfig } from './isolation.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const HEARTBEAT_MS = 30_000;
@@ -266,6 +267,18 @@ export async function runJob(job, { api, config, tools, signal }) {
 
     const turn = async (prompt, images) => {
       assertLive();
+      // 이번 작업실만 쓰고 다른 작업실·설정·키·로그인 정보는 읽지 못하게, 네트워크는 끄고
+      writeSandboxConfig(config.codexHome, {
+        writeDir: workshopDir,
+        denyPaths: denyPathsFor({
+          workRoot: config.workRoot,
+          workshopDir,
+          denyRead: config.denyRead,
+          codexHome: config.codexHome,
+          userCodexHome: config.userCodexHome,
+        }),
+        windowsSandbox: config.windowsSandbox,
+      });
 
       const result = await runCodex({
         bin: config.codexBin,
@@ -279,6 +292,7 @@ export async function runJob(job, { api, config, tools, signal }) {
         cwd: workshopDir,
         env: {
           ...childEnv(process.env),
+          CODEX_HOME: config.codexHome,
           BLENDER_PATH: config.blenderPath,
           NODE_BIN: config.nodeBin,
           GLTF_TRANSFORM_CLI: config.gltfTransformCli,
@@ -448,6 +462,16 @@ async function saveSession(api, job, sessionId) {
   }
 }
 
+function printIsolation(isolation) {
+  console.log(`격리 검사 (${isolation.configPath})`);
+
+  for (const r of isolation.results) {
+    console.log(`  ${r.ok ? '통과' : '실패'}  ${r.name} — 기대 ${r.want}, 결과 ${r.got}${r.note ? ` (${r.note.slice(0, 200)})` : ''}`);
+  }
+
+  console.log(isolation.ok ? '격리 검사 통과' : '격리 검사 실패');
+}
+
 async function main() {
   const config = loadConfig(process.env);
   const api = createApi(config);
@@ -457,6 +481,28 @@ async function main() {
 
   if (config.devConnection) {
     console.log(`임시 개발 연결: ${config.serverUrl}`);
+  }
+
+  // 격리를 확인하지 못하면 작업을 받지 않는다
+  const isolation = await isolationCheck({
+    codexBin: config.codexBin,
+    codexHome: config.codexHome,
+    workRoot: config.workRoot,
+    denyRead: config.denyRead,
+    userCodexHome: config.userCodexHome,
+    windowsSandbox: config.windowsSandbox,
+    env: childEnv(process.env),
+  });
+
+  printIsolation(isolation);
+
+  if (process.argv.includes('--isolation-check')) {
+    process.exit(isolation.ok ? 0 : 1);
+  }
+
+  if (!isolation.ok) {
+    console.error('격리 검사를 통과하지 못해 작업을 받지 않아요. 위 결과를 저장소 담당자에게 전달해 주세요');
+    process.exit(1);
   }
 
   console.log(`워커 ${config.hostId} 시작 — 동시 생성 ${config.concurrency}, 도구 ${JSON.stringify(tools)}`);
