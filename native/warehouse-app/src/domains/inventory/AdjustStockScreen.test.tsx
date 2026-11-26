@@ -636,6 +636,10 @@ describe('AdjustStockScreen', () => {
 });
 
 describe('AdjustStockScreen 제조 모드', () => {
+  afterEach(() => {
+    station.on = false;
+  });
+
   it('재고를 아직 못 불러왔으면 등록하지 못한다', async () => {
     const { '/inventory/stocks/sku/sku-1/warehouse/w-1': _stock, ...withoutStock } = TABLE;
     renderScreen(makeClient([], withoutStock), 'l-1', 'manufacture');
@@ -645,7 +649,9 @@ describe('AdjustStockScreen 제조 모드', () => {
     expect(screen.getByRole('button', { name: '제조 완료 등록' })).toBeDisabled();
   });
 
-  it('유일한 ON_HAND 위치를 자동 선택하고 제출 당시 수량으로 결과를 보여준다', async () => {
+  it.each([false, true])('유일한 ON_HAND 위치를 자동 선택하고 제출 당시 수량으로 결과를 보여준다 (스테이션 %s)', async (isStation) => {
+    station.on = isStation;
+
     const calls: Array<{
       path: string;
       body?: unknown;
@@ -770,9 +776,16 @@ describe('AdjustStockScreen 제조 모드', () => {
     ).not.toBeInTheDocument();
     expect(screen.queryByText('상세화면')).not.toBeInTheDocument();
 
-    await userEvent.click(
-      screen.getByRole('button', { name: '다음 상품 등록' })
-    );
+    const next = screen.getByRole('button', { name: '다음 상품 등록' });
+
+    if (isStation) {
+      expect(next).not.toHaveClass('w-full');
+      expect(next.closest('div')).toHaveClass('justify-end');
+    } else {
+      expect(next).toHaveClass('w-full');
+    }
+
+    await userEvent.click(next);
 
     expect(await screen.findByText('제조 상품 선택')).toBeInTheDocument();
   });
@@ -1054,8 +1067,11 @@ describe('AdjustStockScreen 조정 버튼 배치', () => {
 
   it('스테이션에서는 오른쪽 정렬한 보통 크기다', async () => {
     station.on = true;
+
     renderScreen(makeClient([]));
+
     const button = await screen.findByRole('button', { name: '조정하기' });
+
     expect(button).not.toHaveClass('w-full');
     expect(button.closest('div')).toHaveClass('justify-end');
   });

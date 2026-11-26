@@ -165,11 +165,16 @@ describe('SessionListScreen 새 실사 버튼 배치', () => {
 
   it('스테이션에서는 제목 줄 오른쪽에 보통 크기로 놓는다', async () => {
     station.on = true;
+
     renderScreen([]);
+
     const button = await screen.findByRole('button', { name: '+ 새 실사' });
+
     expect(button).not.toHaveClass('w-full');
     expect(screen.getByRole('heading', { name: '실사' }).closest('.flex')).toContainElement(button);
+
     await userEvent.click(button);
+
     expect(screen.getByLabelText('실사 이름')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '+ 새 실사' })).not.toBeInTheDocument();
   });

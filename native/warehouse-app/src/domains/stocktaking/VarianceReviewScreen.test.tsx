@@ -409,9 +409,12 @@ describe('VarianceReviewScreen 버튼 배치', () => {
 
   it('스테이션에서는 두 버튼 모두 오른쪽 정렬한 보통 크기다', async () => {
     station.on = true;
+
     renderScreen([]);
+
     for (const name of [/실사 완료/, '조정 미리보기']) {
       const button = await screen.findByRole('button', { name });
+
       expect(button).not.toHaveClass('w-full');
       expect(button.closest('div')).toHaveClass('justify-end');
     }
