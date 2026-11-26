@@ -40,7 +40,6 @@ export interface RackLocations {
   total: number;
 }
 
-/** GET /locations/warehouses/:warehouseId?columnName=…&rackNumber=… — 고른 랙에 속한 사용 중인 칸. */
 export function useRackLocations(warehouseId: string | null, rack: Rack | undefined) {
   const api = useApiClient();
   return useQuery({

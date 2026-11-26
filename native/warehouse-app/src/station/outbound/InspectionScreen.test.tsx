@@ -346,7 +346,6 @@ describe('F1 출고 검수 — 송장 스캔 즉시 시작, 상품 스캔 = +1, 
       expect(within(lost).getByText('연결이 끊겨 상품 스캔 1개를 보내지 못하고 있어요. 연결되면 자동으로 보내요. 같은 상품은 다시 찍지 마세요.')).toBeInTheDocument();
       expect(progress()).toHaveTextContent('0 / 4');
       expect(server.scans).toHaveLength(0);
-      // 창이 떠 있는 동안 찍은 상품은 받지 않는다 — 연결된 뒤 두 번 오르지 않게
       scan('8801002');
       expect(flash()).toBe('error');
       disconnect(server, false);
@@ -412,7 +411,6 @@ describe('F1 출고 검수 — 송장 스캔 즉시 시작, 상품 스캔 = +1, 
       disconnect(server, true);
       scan('012345678905');
       await connectionDialog('서버 연결 끊김');
-      // 연결은 돌아왔지만 창은 아직 떠 있다 — 창이 막지 않으면 F12 가 송장을 뽑는다
       disconnect(server, false);
       const toolbar = screen.getByRole('toolbar', { name: '기능키' });
       expect(toolbar.closest('[inert]') ?? Array.from(document.body.children).find((child) => child.contains(toolbar) && (child as HTMLElement).inert)).toBeTruthy();
@@ -434,7 +432,6 @@ describe('F1 출고 검수 — 송장 스캔 즉시 시작, 상품 스캔 = +1, 
       fireEvent.click(within(lost).getByRole('button', { name: '다시 연결 확인' }));
       expect(await within(lost).findByText(/아직 서버에 연결되지 않았습니다/)).toBeInTheDocument();
       expect(server.scans).toHaveLength(0);
-      // 서버는 닿지만 기기는 아직 끊긴 줄 안다 — 다시 연결 확인이 연결을 알려 큐가 보낸다
       server.setOffline(false);
       fireEvent.click(within(lost).getByRole('button', { name: '다시 연결 확인' }));
       await connectionDialog('서버 연결 복구');
@@ -448,7 +445,6 @@ describe('F1 출고 검수 — 송장 스캔 즉시 시작, 상품 스캔 = +1, 
       disconnect(server, true);
       scan('8801002');
       await screen.findByText(/연결이 끊겨 상품 스캔 1개를/);
-      // 연결 끊김 창이 Esc 를 가져간다 — 내려놓지 않는다
       press('Escape');
       await act(async () => {
         await sleep(30);
@@ -471,7 +467,6 @@ describe('F1 출고 검수 — 송장 스캔 즉시 시작, 상품 스캔 = +1, 
       await screen.findByText(/연결이 끊겨 상품 스캔 1개를/);
       const release = server.holdLookups();
       scan('421033881915');
-      // 연결 끊김 창이 떠 있다 — 스캔은 오류음으로 거절되고 송장을 조회하지 않는다
       expect(flash()).toBe('error');
       await act(async () => {
         await sleep(30);
