@@ -63,6 +63,15 @@ describe('도착 대기 목록', () => {
     expect(screen.queryByText(/외 \d+건 — 검색하세요/)).toBeNull();
   });
 
+  it('제목과 설명, 검수 대기 건수를 보인다', async () => {
+    setupReturns();
+    await listed();
+
+    expect(screen.getByRole('heading', { level: 1, name: '반품' })).toBeInTheDocument();
+    expect(screen.getByText('돌아온 상품의 상태와 수량을 확인하세요.')).toBeInTheDocument();
+    expect(screen.getByText('검수 대기 1건')).toBeInTheDocument();
+  });
+
   it('목록이 비면 한 줄', async () => {
     setupReturns({ returns: [] });
     expect(await screen.findByText('도착 대기 반품이 없어요')).toBeInTheDocument();
