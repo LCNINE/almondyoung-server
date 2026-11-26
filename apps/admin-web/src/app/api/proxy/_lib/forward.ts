@@ -21,6 +21,18 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 /** 백엔드가 개인정보 표시 제한을 알리는 응답 헤더 — 화면이 «가림»을 구분하려면 그대로 넘겨야 한다. */
 const PII_RESPONSE_HEADERS = ['x-pii-masked', 'x-pii-mask-reason', 'x-pii-redacted', 'x-pii-revealable'] as const;
 
+// OpenNext 는 자기 바이너리 목록에 없는 content-type 본문을 UTF-8 문자열로 바꿔 Lambda 응답에 싣는다.
+// GLB 가 그 목록에 없어 바이트가 깨졌다(model-viewer 가 못 읽음) — 목록에 있는 octet-stream 으로 보낸다
+const OPENNEXT_UNLISTED_BINARY_TYPES = new Set(['model/gltf-binary']);
+
+function responseContentType(upstream: Response): string {
+  const type = upstream.headers.get('Content-Type') ?? 'application/json';
+
+  return OPENNEXT_UNLISTED_BINARY_TYPES.has(type.split(';')[0].trim().toLowerCase())
+    ? 'application/octet-stream'
+    : type;
+}
+
 const IPV4 = /^(\d{1,3})(\.\d{1,3}){3}$/;
 const IPV6 = /^[0-9a-fA-F:]+$/;
 
@@ -190,7 +202,7 @@ export async function forwardRequest(
   const data = await upstream.arrayBuffer();
 
   const responseHeaders: Record<string, string> = {
-    'Content-Type': upstream.headers.get('Content-Type') ?? 'application/json',
+    'Content-Type': responseContentType(upstream),
   };
   for (const name of PII_RESPONSE_HEADERS) {
     const value = upstream.headers.get(name);

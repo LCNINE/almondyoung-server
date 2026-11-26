@@ -38,6 +38,18 @@ describe('forwardRequest', () => {
     expect(await res.json()).toEqual({ ok: true });
   });
 
+  it('OpenNext 바이너리 목록에 없는 GLB 는 octet-stream 으로 바꿔 바이트가 깨지지 않게 한다', async () => {
+    const glb = new Uint8Array([0x67, 0x6c, 0x54, 0x46, 0x02, 0x00, 0x00, 0x00, 0xff, 0xfe]);
+    mockedFetch.mockResolvedValue(
+      new Response(glb, { status: 200, headers: { 'Content-Type': 'model/gltf-binary' } })
+    );
+
+    const res = await forwardRequest(fakeRequest(), 'http://upstream', ['x', 'files', 'glb']);
+
+    expect(res.headers.get('Content-Type')).toBe('application/octet-stream');
+    expect(new Uint8Array(await res.arrayBuffer())).toEqual(glb);
+  });
+
   it('passThroughRedirects 면 302 와 Location 을 브라우저에 그대로 넘긴다', async () => {
     // 큰 이미지의 S3 302 를 따라가 본문을 나르면 Lambda 응답 상한에 걸려 502 가 난다
     mockedFetch.mockResolvedValue(
