@@ -29,6 +29,6 @@
 
 ## 격리
 - Codex 자식 프로세스 환경변수는 허용 목록뿐이다(PATH·사용자 폴더·임시 폴더·BLENDER_PATH·NODE_BIN·GLTF_TRANSFORM_CLI). 워커 키·서버 주소·테넌트는 넘기지 않는다.
-- `sandbox_mode="workspace-write"` 는 쓰기만 막고 읽기는 디스크 전체라 쓰지 않는다. 워커 전용 Codex 홈(`SKU3D_CODEX_HOME`)의 `config.toml` 에 작업마다 권한 프로필을 쓴다(`isolation.mjs`): 이번 작업실만 쓰기, `SKU3D_DENY_READ`·다른 작업실·Codex 홈들은 읽기 차단, 네트워크 끔, Windows 샌드박스 `mxc`.
-- 워커는 시작할 때 격리 검사를 통과해야 작업을 받는다. 검사만 따로: `node --env-file=... --env-file=... worker.mjs --isolation-check`. 같은 권한 프로필로 `codex sandbox` 를 띄워 키 파일 열기·다른 작업실 쓰기·인터넷 접속을 실제로 시도하고(모델 안 씀), 작업 폴더 쓰기는 되는지도 본다. 결과는 통과/실패와 허용·차단 표시만 낸다(파일 내용은 출력하지 않음).
+- `sandbox_mode="workspace-write"` 는 쓰기만 막고 읽기는 디스크 전체라 쓰지 않는다. 워커 전용 Codex 홈(`SKU3D_CODEX_HOME`)의 `config.toml` 에 작업마다 권한 프로필을 쓴다(`isolation.mjs`): 내장 `:workspace` 를 물려받아(MXC 는 디스크 읽기가 없으면 작업 폴더 안 이름 바꾸기·지우기를 막는다) 이번 작업실만 쓰기, `SKU3D_DENY_READ`·다른 작업실·Codex 홈들은 읽기 차단, 네트워크 끔, Windows 샌드박스 `mxc`.
+- 워커는 시작할 때 격리 검사를 통과해야 작업을 받는다. 검사만 따로: `node --env-file=... --env-file=... worker.mjs --isolation-check`. 같은 권한 프로필로 `codex sandbox` 를 띄워 키 파일 열기·다른 작업실 쓰기·인터넷 접속을 실제로 시도하고(모델 안 씀), 작업 폴더 쓰기·이름 바꾸기·지우기는 되는지도 본다. 결과는 통과/실패와 허용·차단 표시만 낸다(파일 내용은 출력하지 않음).
 - 워커 키 파일은 설정 파일과 따로 두고, 그 파일은 현재 사용자만 읽는다.

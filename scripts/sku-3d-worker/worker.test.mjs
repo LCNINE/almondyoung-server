@@ -9,7 +9,7 @@ import { childEnv, loadConfig, PRODUCTION_SERVER_URL } from './env.mjs';
 import { externalUris, GLB_MAX_BYTES, glbJson, judgeOutputs, reviewProblem } from './judge.mjs';
 import { viewerHtml, viewerShotOf, viewerStateOf } from './viewer-check.mjs';
 import { buildPrompt, changeLines, DONE_MARKER, finishedFor, hasSharp, imageExtOf, runJob } from './worker.mjs';
-import { denyPathsFor, probeScript, probeVerdict, profilePath, sandboxArgs, sandboxConfigToml, toolReadPaths } from './isolation.mjs';
+import { denyPathsFor, probeScript, probeVerdict, profilePath, sandboxArgs, sandboxConfigToml } from './isolation.mjs';
 
 function glb(json, padTo = 0) {
   const text = Buffer.from(JSON.stringify(json));
@@ -431,15 +431,13 @@ test('codexArgs leaves the sandbox to the permission profile (no sandbox_mode)',
 test('sandbox config writes only the workshop, denies secrets and turns the network off', () => {
   const toml = sandboxConfigToml({
     writeDir: 'C:\\jobs\\w1',
-    readPaths: ['C:\\Blender'],
     denyPaths: ['C:\\cfg', 'C:\\jobs\\w2'],
     windowsSandbox: 'mxc',
   });
 
   assert.match(toml, /default_permissions = "sku3d-job"/);
   assert.match(toml, /sandbox = "mxc"/);
-  assert.match(toml, /':minimal' = "read"/);
-  assert.match(toml, /'C:\/Blender' = "read"/);
+  assert.match(toml, /\[permissions\.sku3d-job\]\nextends = ":workspace"/);
   assert.match(toml, /'C:\/jobs\/w1' = "write"/);
   assert.match(toml, /'C:\/cfg' = "deny"/);
   assert.match(toml, /'C:\/jobs\/w2' = "deny"/);
@@ -470,6 +468,8 @@ test('probes print only a verdict, never file contents', () => {
   assert.equal(bin, 'powershell.exe');
   assert.match(args.at(-1), /OpenRead/);
   assert.doesNotMatch(args.at(-1), /Get-Content|ReadAllText/);
+  // 쓰기 허용은 Blender 저장(임시 파일 → 이름 바꾸기)까지 되는지 본다
+  assert.match(probeScript('write', 'C:\\jobs\\w1\\probe.txt', 'win32').at(-1), /Set-Content[\s\S]*Rename-Item[\s\S]*Remove-Item/);
   assert.equal(probeVerdict('PROBE_DENIED'), 'denied');
   assert.equal(probeVerdict('noise PROBE_ALLOWED'), 'allowed');
   assert.equal(probeVerdict(''), 'error');
@@ -480,16 +480,6 @@ test('sandbox probe names the job profile and working dir explicitly', () => {
   assert.deepEqual(sandboxArgs('C:\\jobs\\w1', ['powershell.exe', '-c', 'x']), [
     'sandbox', '-P', 'sku3d-job', '-C', 'C:\\jobs\\w1', '--', 'powershell.exe', '-c', 'x',
   ]);
-});
-
-test('tool read paths open the install folders, and the whole node_modules for gltf-transform', () => {
-  const paths = toolReadPaths({
-    blenderPath: '/opt/blender/blender',
-    nodeBin: '/opt/node/bin/node',
-    gltfTransformCli: '/opt/tools/node_modules/@gltf-transform/cli/bin/cli.js',
-  });
-
-  assert.deepEqual(paths, [resolve('/opt/blender'), resolve('/opt/node/bin'), resolve('/opt/tools/node_modules')]);
 });
 
 test('profile paths use forward slashes even for Windows paths', () => {
