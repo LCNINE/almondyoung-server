@@ -38,6 +38,11 @@ export const metadata: Metadata = getSEOTags({
     icons: {
       shortcut: "https://almondyoung.com/favicon.ico?v=2",
     },
+    verification: {
+      other: {
+        "naver-site-verification": "69e04fcac2c79540f2b81700d996e0b1733d1444",
+      },
+    },
   },
 })
 
