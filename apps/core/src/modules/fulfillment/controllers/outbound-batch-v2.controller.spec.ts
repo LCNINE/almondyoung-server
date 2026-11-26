@@ -37,6 +37,19 @@ describe('OutboundBatchV2Controller read snapshot contract', () => {
     expect(batches.listBatches).not.toHaveBeenCalled();
   });
 
+  it('passes createdFrom as a date and rejects an unreadable one before the query', async () => {
+    const batches = { listBatches: jest.fn().mockResolvedValue([]) };
+    const controller = new OutboundBatchV2Controller(batches as never);
+    await controller.list('warehouse-1', undefined, '2026-11-25T15:00:00.000Z');
+    expect(batches.listBatches).toHaveBeenCalledWith({
+      warehouseId: 'warehouse-1',
+      status: undefined,
+      createdFrom: new Date('2026-11-25T15:00:00.000Z'),
+    });
+    expect(() => controller.list('warehouse-1', undefined, 'yesterday')).toThrow(/Invalid createdFrom/);
+    expect(batches.listBatches).toHaveBeenCalledTimes(1);
+  });
+
   it('rejects an empty join-candidates code with 400', () => {
     const batches = { findJoinCandidates: jest.fn() };
     const controller = new OutboundBatchV2Controller(batches as never);

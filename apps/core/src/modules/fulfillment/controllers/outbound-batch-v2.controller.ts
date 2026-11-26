@@ -49,11 +49,18 @@ export class OutboundBatchV2Controller {
   @RequirePermission('fulfillment.shipment.read')
   @Get('outbound-batches/v2')
   @ApiOkResponse({ type: [OutboundBatchV2ListItemDto] })
-  list(@Query('warehouseId') warehouseId?: string, @Query('status') status?: string) {
+  list(
+    @Query('warehouseId') warehouseId?: string,
+    @Query('status') status?: string,
+    @Query('createdFrom') createdFrom?: string,
+  ) {
     if (status && !['created', 'picking', 'completed', 'canceled'].includes(status)) {
       throw new BadRequestException(`Unsupported outbound batch status: ${status}`);
     }
-    return this.batches.listBatches({ warehouseId, status });
+    const from = createdFrom ? new Date(createdFrom) : undefined;
+    if (from && Number.isNaN(from.getTime())) throw new BadRequestException(`Invalid createdFrom: ${createdFrom}`);
+
+    return this.batches.listBatches({ warehouseId, status, createdFrom: from });
   }
 
   @RequirePermission('fulfillment.warehouse.operate')

@@ -28,19 +28,31 @@ function setupBatches(
     legacy?: boolean;
     fail?: boolean;
     refills?: unknown[];
+    since?: OutboundBatchSummary[];
+    sinceFail?: boolean;
+    print?: PrintRaw;
   } = {}
 ) {
   const server = createOutboundServer({ boxes: opts.boxes ?? [BOX1, { ...BOX2, shipped: true }, BOX3] });
   server.config.refills = opts.refills ?? [];
+  server.config.batchesSince = opts.since ?? null;
+  server.config.batchesSinceFail = opts.sinceFail ?? false;
   server.config.batches.picking = opts.picking ?? [batchSummary({ id: 'b-1', batchNumber: 'B-1002' })];
   server.config.batches.created = opts.created ?? [];
   server.config.legacyBatchStates = opts.legacy ?? false;
   server.config.batchesFail = opts.fail ?? false;
   const runtime = createTestRuntime(server);
   const prefs = stationPrefs();
-  const print = vi.fn<PrintRaw>(async () => {});
+  const print = vi.fn<PrintRaw>(opts.print ?? (async () => {}));
   const view = renderStation(() => <BatchStatusScreen prefs={prefs} print={print} />, { runtime, prefs, path: '/outbound/batches' });
-  return { server, prefs, ...view };
+  return { server, prefs, print, ...view };
+}
+
+function gatedPrint() {
+  const releases: Array<() => void> = [];
+  const print: PrintRaw = () => new Promise<void>((resolve) => releases.push(resolve));
+
+  return { print, releaseNext: () => releases.shift()?.() };
 }
 
 const detail = () => screen.getByRole('region', { name: '배치 상세' });
@@ -158,7 +170,7 @@ describe('F2 배치 현황(스펙 §8, 목업 ⑤)', () => {
   it('빠지는 중인 상자가 있으면 F1 에서 송장을 찍어 상품을 꺼내라고 안내한다', async () => {
     setupBatches({ boxes: [{ ...BOX1, labelState: 'withdrawing' }, BOX3] });
     await screen.findByRole('region', { name: '배치 상세' });
-    expect(await within(detail()).findByText(/빠지는 중인 상자는 F1 «출고 검수»에서 송장을 찍고/)).toBeInTheDocument();
+    expect(await within(detail()).findByText(/빠지는 중인 상자는 F1 출고 검수에서 송장을 찍고/)).toBeInTheDocument();
   });
 
   it('빠지는 중인 상자가 없으면 그 안내를 보이지 않는다', async () => {
@@ -191,7 +203,7 @@ describe('F2 배치 현황(스펙 §8, 목업 ⑤)', () => {
   it('배치 시작 한 번으로 시작하고 확인창 없이 송장을 뽑아 F1 으로 이어 준다', async () => {
     const { server } = setupBatches({ boxes: [BOX1, UNPRINTED_BOX3], created: [NEW_B3] });
     fireEvent.click(await screen.findByRole('button', { name: '배치 시작' }));
-    expect(await screen.findByText('이제 F1 «출고 검수»에서 송장을 찍으세요.')).toBeInTheDocument();
+    expect(await screen.findByText('이제 F1 출고 검수에서 송장을 찍으세요.')).toBeInTheDocument();
     expect(server.requests.filter((r) => r.path === '/picking/v2/starts')).toHaveLength(1);
     expect(server.confirmedPrints).toEqual(['s-3']);
     expect(screen.queryByRole('dialog')).toBeNull();
@@ -207,7 +219,7 @@ describe('F2 배치 현황(스펙 §8, 목업 ⑤)', () => {
   it('시작해서 뽑은 배치를 다른 배치로 갔다 돌아와도 다시 뽑지 않는다', async () => {
     const { server } = setupBatches({ boxes: [BOX1, UNPRINTED_BOX3], created: [NEW_B3] });
     fireEvent.click(await screen.findByRole('button', { name: '배치 시작' }));
-    await screen.findByText('이제 F1 «출고 검수»에서 송장을 찍으세요.');
+    await screen.findByText('이제 F1 출고 검수에서 송장을 찍으세요.');
     fireEvent.click(screen.getByRole('button', { name: 'B-1002' }));
     await waitFor(() => expect(viewing('B-1002')).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: 'B-1004' }));
@@ -399,7 +411,7 @@ describe('F2 배치 현황(스펙 §8, 목업 ⑤)', () => {
     setupBatches();
     fireEvent.click(await screen.findByRole('button', { name: '송장 일괄 출력' }));
     fireEvent.click(await screen.findByRole('button', { name: '인쇄' }));
-    expect(await screen.findByText('이제 F1 «출고 검수»에서 송장을 찍으세요.')).toBeInTheDocument();
+    expect(await screen.findByText('이제 F1 출고 검수에서 송장을 찍으세요.')).toBeInTheDocument();
   });
 
   it('옛 core(송장번호 없음)면 박스 목록 없이 건수만', async () => {
@@ -450,5 +462,126 @@ describe('F2 배치 현황(스펙 §8, 목업 ⑤)', () => {
     await queryClient.refetchQueries({ queryKey: ['outbound-batches'] });
     expect(await screen.findByRole('alert')).toHaveTextContent('마지막으로 불러온');
     expect(screen.getByRole('button', { name: 'B-1002' })).toBeInTheDocument();
+  });
+
+  it('오늘 배치 수는 오늘 만든 배치 전체 조회로 센다 — 끝난 배치도 세고 취소한 배치는 뺀다', async () => {
+    const today = new Date().toISOString();
+    const { server } = setupBatches({
+      since: [
+        batchSummary({ id: 'b-1', batchNumber: 'B-1002', createdAt: today }),
+        batchSummary({ id: 'b-7', batchNumber: 'B-1007', status: 'completed', createdAt: today }),
+        batchSummary({ id: 'b-8', batchNumber: 'B-1008', status: 'completed', createdAt: today }),
+        batchSummary({ id: 'b-9', batchNumber: 'B-1009', status: 'canceled', createdAt: today }),
+      ],
+    });
+    expect(await screen.findByText('오늘 3개 배치')).toBeInTheDocument();
+    const since = server.requests.find((r) => r.path.includes('createdFrom='));
+    expect(since?.path).toMatch(/^\/outbound-batches\/v2\?warehouseId=w-1&createdFrom=/);
+    expect(since?.path).not.toContain('status=');
+  });
+
+  it('오늘 배치 조회가 실패하면 모자란 숫자를 보이지 않는다', async () => {
+    setupBatches({ since: [batchSummary({ id: 'b-1', batchNumber: 'B-1002', createdAt: new Date().toISOString() })], sinceFail: true });
+    await screen.findByRole('button', { name: 'B-1002' });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.queryByText(/오늘 \d+개 배치/)).toBeNull();
+  });
+
+  it('상자 줄은 주문 번호를 크게, 택배사·종 수와 송장번호·받는 분을 작게 보인다', async () => {
+    setupBatches({ boxes: [{ ...BOX1, orderNos: ['20261126-0001', '20261126-0002'] }, BOX2] });
+    const boxes = await screen.findByRole('list', { name: '박스' });
+    const first = await within(boxes).findByText('20261126-0001 외 1건');
+    const line = first.closest('li');
+    expect(line).not.toBeNull();
+    expect(line).toHaveTextContent('한진택배 · 2종');
+    expect(line).toHaveTextContent('4210-3388-1907 · 김*영');
+    expect(within(boxes).getByText('4210-3388-1915')).toBeInTheDocument();
+  });
+
+  it('시작 전 배치의 상자엔 상자 보기가 없고 배치를 먼저 시작하라고 알린다', async () => {
+    setupBatches({ picking: [], created: [NEW_B3], boxes: [BOX1, { ...BOX3, labelState: 'not_started' }] });
+    const boxes = await screen.findByRole('list', { name: '박스' });
+    const line = (await within(boxes).findByText('시작 전')).closest('li');
+    expect(line).toHaveTextContent('4210-3388-1923');
+    expect(within(boxes).queryByRole('button', { name: '상자 보기' })).toBeNull();
+    expect(within(detail()).getByText('배치를 시작해야 상자를 출고 검수에서 열 수 있어요.')).toBeInTheDocument();
+  });
+
+  it('보충 대기를 못 불러오면 0 이 아니라 확인 못 함과 다시 확인을 보인다', async () => {
+    const { server } = setupBatches();
+    server.config.refillsFail = true;
+    await screen.findByRole('region', { name: '배치 상세' });
+    expect(await within(detail()).findByText('보충 대기를 불러오지 못했어요.', { exact: false })).toBeInTheDocument();
+    await waitFor(() => expect(detail()).toHaveTextContent('보충 대기 확인 못 함'));
+    expect(detail()).not.toHaveTextContent('보충 대기 0');
+    server.config.refillsFail = false;
+    fireEvent.click(within(detail()).getByRole('button', { name: '다시 확인' }));
+    await waitFor(() => expect(detail()).toHaveTextContent('보충 대기 0'));
+    expect(within(detail()).queryByText('보충 대기를 불러오지 못했어요.', { exact: false })).toBeNull();
+  });
+
+  it('보충 대기를 다시 받다 실패하면 보이던 숫자를 남기고 마지막으로 불러온 상태라고 알린다', async () => {
+    const { server, queryClient } = setupBatches({
+      boxes: [BOX1, { ...BOX3, batchId: 'b-1' }],
+      refills: [{ shipmentId: 's-3', trackingNo: '421033881923', recipientMasked: '정*호', items: [] }],
+    });
+    await screen.findByRole('region', { name: '배치 상세' });
+    await waitFor(() => expect(detail()).toHaveTextContent('보충 대기 1'));
+    server.config.refillsFail = true;
+    await queryClient.refetchQueries({ queryKey: ['outbound-refills'] });
+    const alert = await within(detail()).findByText('보충 대기를 불러오지 못했어요.', { exact: false });
+    expect(alert).toHaveTextContent('마지막으로 불러온');
+    expect(detail()).toHaveTextContent('보충 대기 1');
+  });
+
+  it('상자 송장 상태를 못 불러오면 확인 필요를 0 으로 보이지 않는다', async () => {
+    const { server } = setupBatches();
+    server.config.labelStatesFail = true;
+    await screen.findByRole('region', { name: '배치 상세' });
+    expect(await within(detail()).findByText('상자 송장 상태를 불러오지 못했어요.', { exact: false })).toBeInTheDocument();
+    await waitFor(() => expect(detail()).toHaveTextContent('확인 필요 확인 못 함'));
+    expect(detail()).not.toHaveTextContent('확인 필요 0');
+  });
+
+  it('상자 두 개의 출력 확인은 겹치지 않는다 — 한 장이 끝나야 다음 상자를 뽑고, 그동안 일괄 출력도 막힌다', async () => {
+    const gate = gatedPrint();
+    const { print } = setupBatches({
+      boxes: [{ ...BOX1, labelState: 'never_printed' }, { ...BOX2, labelState: 'never_printed' }],
+      print: gate.print,
+    });
+    const boxes = await screen.findByRole('list', { name: '박스' });
+    await waitFor(() => expect(within(boxes).getAllByRole('button', { name: '출력 확인' })).toHaveLength(2));
+    const [first, second] = within(boxes).getAllByRole('button', { name: '출력 확인' });
+    fireEvent.click(first);
+    fireEvent.click(second);
+    await waitFor(() => expect(print).toHaveBeenCalledTimes(1));
+    expect(second).toBeDisabled();
+    expect(screen.getByRole('button', { name: '송장 일괄 출력' })).toBeDisabled();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(print).toHaveBeenCalledTimes(1);
+
+    gate.releaseNext();
+    await waitFor(() => expect(within(boxes).getAllByRole('button', { name: '출력 확인' })).toHaveLength(1));
+    const left = within(boxes).getByRole('button', { name: '출력 확인' });
+    await waitFor(() => expect(left).toBeEnabled());
+    fireEvent.click(left);
+    await waitFor(() => expect(print).toHaveBeenCalledTimes(2));
+    gate.releaseNext();
+  });
+
+  it('상자 출력 확인 중엔 화면을 떠나지 못한다 — 실패 안내와 자물쇠를 잃지 않게', async () => {
+    const gate = gatedPrint();
+    const { router } = setupBatches({ boxes: [{ ...BOX1, labelState: 'never_printed' }, BOX2], print: gate.print });
+    const boxes = await screen.findByRole('list', { name: '박스' });
+    fireEvent.click(await within(boxes).findByRole('button', { name: '출력 확인' }));
+    await waitFor(() => expect(within(boxes).getByRole('button', { name: '출력 확인' })).toBeDisabled());
+    void router.navigate({ to: '/outbound' });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(router.state.location.pathname).toBe('/outbound/batches');
+
+    gate.releaseNext();
+    await waitFor(() => expect(within(boxes).queryByRole('button', { name: '출력 확인' })).toBeNull());
+    await router.navigate({ to: '/outbound' });
+    await waitFor(() => expect(router.state.location.pathname).toBe('/outbound'));
   });
 });

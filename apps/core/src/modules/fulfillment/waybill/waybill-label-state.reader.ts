@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { ConflictError } from '@app/shared';
 import { DbService, InjectTypedDb } from '@app/db';
-import { and, asc, desc, eq, inArray, isNotNull, ne, notInArray } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNotNull, ne, notInArray } from 'drizzle-orm';
 import { DbTx, inventorySchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { CurrentLabelSummary, labelStateOf, LabelStateView } from './label/label-print-policy';
 import { WaybillLabelContentAssembler } from './waybill-label-content.assembler';
@@ -24,7 +24,35 @@ export type BatchBoxLabelState = LabelStateView & {
   recipientMasked: string;
   /** 시작된 배치에서 일부만 취소돼 이 박스가 배치에서 빠지기를 기다린다. 빼야 취소가 끝난다 */
   cancelPending: boolean;
+  /** 상자에 든 주문 번호(고객이 보는 번호, 없으면 채널 주문 ID) */
+  orderNos: string[];
+  /** 지금 쓰는 송장의 택배사 코드. 송장이 없으면 null */
+  carrier: string | null;
+  /** 상자에 든 서로 다른 상품 수 */
+  skuKinds: number;
 };
+
+export interface BoxLineFact {
+  shipmentId: string;
+  skuId: string;
+  displayOrderNo: string | null;
+  channelOrderId: string | null;
+}
+
+export function boxFactsOf(lines: readonly BoxLineFact[]): Map<string, { orderNos: string[]; skuKinds: number }> {
+  const grouped = new Map<string, { orders: Set<string>; skus: Set<string> }>();
+  for (const line of lines) {
+    const box = grouped.get(line.shipmentId) ?? { orders: new Set<string>(), skus: new Set<string>() };
+    const orderNo = line.displayOrderNo ?? line.channelOrderId;
+    if (orderNo) box.orders.add(orderNo);
+    box.skus.add(line.skuId);
+    grouped.set(line.shipmentId, box);
+  }
+
+  return new Map(
+    [...grouped].map(([shipmentId, box]) => [shipmentId, { orderNos: [...box.orders].sort(), skuKinds: box.skus.size }]),
+  );
+}
 
 /**
  * 송장 상태(스펙 §10.5) — 조회 전용. 몇 번을 어느 PC 에서 불러도 같은 결과이고 아무것도 바꾸지 않는다.
@@ -99,7 +127,8 @@ export class WaybillLabelStateReader {
         .where(and(eq(WI.batchId, batchId), notInArray(WI.status, ['completed', 'excluded'])))
         .orderBy(asc(WI.shipmentId));
       const shipmentIds = items.map((item) => item.shipmentId);
-      const trackingNos = await this.trackingNosOf(trx, shipmentIds);
+      const waybills = await this.waybillsOf(trx, shipmentIds);
+      const facts = boxFactsOf(await this.lineFactsOf(trx, shipmentIds));
       const recipients = await this.recipientsOf(trx, shipmentIds);
       const pendingCancels = await this.pendingCancelsOf(trx, items.map((item) => item.waitingOperationId));
       const views: BatchBoxLabelState[] = [];
@@ -108,9 +137,12 @@ export class WaybillLabelStateReader {
           shipmentId: item.shipmentId,
           workItemId: item.id,
           workItemStatus: item.status,
-          trackingNo: trackingNos.get(item.shipmentId) ?? null,
+          trackingNo: waybills.get(item.shipmentId)?.trackingNo ?? null,
           recipientMasked: recipients.get(item.shipmentId) ?? '',
           cancelPending: item.waitingOperationId !== null && pendingCancels.has(item.waitingOperationId),
+          orderNos: facts.get(item.shipmentId)?.orderNos ?? [],
+          carrier: waybills.get(item.shipmentId)?.carrier ?? null,
+          skuKinds: facts.get(item.shipmentId)?.skuKinds ?? 0,
           ...(item.status === 'withdrawing'
             ? WITHDRAWING
             : await this.stateOf(
@@ -126,10 +158,17 @@ export class WaybillLabelStateReader {
   }
 
   /** 박스마다 지금 쓰는 송장 번호 — 송장 스캔 조회(`ShipmentWaybillReader.byTrackingNo`)와 같은 기준(종결 송장 제외). */
-  private async trackingNosOf(trx: DbTx, shipmentIds: string[]): Promise<Map<string, string>> {
+  private async waybillsOf(
+    trx: DbTx,
+    shipmentIds: string[],
+  ): Promise<Map<string, { trackingNo: string; carrier: string }>> {
     if (shipmentIds.length === 0) return new Map();
     const rows = await trx
-      .select({ shipmentId: wmsTables.waybills.shipmentId, trackingNo: wmsTables.waybills.trackingNo })
+      .select({
+        shipmentId: wmsTables.waybills.shipmentId,
+        trackingNo: wmsTables.waybills.trackingNo,
+        carrier: wmsTables.waybills.carrier,
+      })
       .from(wmsTables.waybills)
       .where(
         and(
@@ -137,11 +176,35 @@ export class WaybillLabelStateReader {
           notInArray(wmsTables.waybills.status, [...WAYBILL_TERMINAL_STATUSES]),
         ),
       );
-    const byShipment = new Map<string, string>();
+    const byShipment = new Map<string, { trackingNo: string; carrier: string }>();
     for (const row of rows) {
-      if (row.trackingNo && !byShipment.has(row.shipmentId)) byShipment.set(row.shipmentId, row.trackingNo);
+      if (row.trackingNo && !byShipment.has(row.shipmentId))
+        byShipment.set(row.shipmentId, { trackingNo: row.trackingNo, carrier: row.carrier });
     }
     return byShipment;
+  }
+
+  private async lineFactsOf(trx: DbTx, shipmentIds: string[]): Promise<BoxLineFact[]> {
+    if (shipmentIds.length === 0) return [];
+
+    return trx
+      .select({
+        shipmentId: wmsTables.shipmentLines.shipmentId,
+        skuId: wmsTables.shipmentLines.skuId,
+        displayOrderNo: wmsTables.salesOrders.displayOrderNo,
+        channelOrderId: wmsTables.salesOrders.channelOrderId,
+      })
+      .from(wmsTables.shipmentLines)
+      .leftJoin(
+        wmsTables.fulfillmentOrderItems,
+        eq(wmsTables.fulfillmentOrderItems.id, wmsTables.shipmentLines.fulfillmentOrderItemId),
+      )
+      .leftJoin(
+        wmsTables.fulfillmentOrders,
+        eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId),
+      )
+      .leftJoin(wmsTables.salesOrders, eq(wmsTables.salesOrders.id, wmsTables.fulfillmentOrders.salesOrderId))
+      .where(and(inArray(wmsTables.shipmentLines.shipmentId, shipmentIds), gt(wmsTables.shipmentLines.qty, 0)));
   }
 
   private async pendingCancelsOf(trx: DbTx, operationIds: (string | null)[]): Promise<Set<string>> {

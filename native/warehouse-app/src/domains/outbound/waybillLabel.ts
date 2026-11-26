@@ -56,6 +56,9 @@ export interface BatchLabelState {
   recipientMasked?: string;
   /** 시작된 배치에서 일부만 취소돼 배치에서 빠지기를 기다린다. 옛 core 면 없다 */
   cancelPending?: boolean;
+  orderNos?: string[];
+  carrier?: string | null;
+  skuKinds?: number;
 }
 
 export function confirmLabelPrinted(api: ApiClient, shipmentId: string, fingerprint: string): Promise<void> {

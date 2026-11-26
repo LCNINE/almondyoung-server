@@ -145,4 +145,50 @@ describeIfDb('송장 상태 리더 (DB integration)', () => {
       expect(states.find((s) => s.shipmentId === first.shipmentId)?.trackingNo).toEqual(expect.any(String));
     });
   });
+
+  it('forBatch 는 박스마다 주문 번호·택배사·상품 종 수를 싣는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { first, second } = await seedTwoBoxBatch(tx);
+      await promoteToCarrierWaybill(tx, first);
+      await startBatchFor(tx, first);
+      const labels = assembleLabels(ambientDbService(tx));
+      const states = await labels.states.forBatch(first.batchId, tx);
+      for (const box of [first, second]) {
+        const lines = await tx
+          .select({
+            skuId: wmsTables.shipmentLines.skuId,
+            displayOrderNo: wmsTables.salesOrders.displayOrderNo,
+            channelOrderId: wmsTables.salesOrders.channelOrderId,
+          })
+          .from(wmsTables.shipmentLines)
+          .leftJoin(
+            wmsTables.fulfillmentOrderItems,
+            eq(wmsTables.fulfillmentOrderItems.id, wmsTables.shipmentLines.fulfillmentOrderItemId),
+          )
+          .leftJoin(
+            wmsTables.fulfillmentOrders,
+            eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId),
+          )
+          .leftJoin(wmsTables.salesOrders, eq(wmsTables.salesOrders.id, wmsTables.fulfillmentOrders.salesOrderId))
+          .where(eq(wmsTables.shipmentLines.shipmentId, box.shipmentId));
+        const [waybill] = await tx
+          .select({ carrier: wmsTables.waybills.carrier, trackingNo: wmsTables.waybills.trackingNo })
+          .from(wmsTables.waybills)
+          .where(
+            and(
+              eq(wmsTables.waybills.shipmentId, box.shipmentId),
+              notInArray(wmsTables.waybills.status, [...WAYBILL_TERMINAL_STATUSES]),
+            ),
+          );
+        const view = states.find((s) => s.shipmentId === box.shipmentId);
+        expect(view?.skuKinds).toBe(new Set(lines.map((line) => line.skuId)).size);
+        expect(view?.skuKinds).toBeGreaterThan(0);
+        expect(view?.orderNos).toEqual(
+          [...new Set(lines.flatMap((line) => line.displayOrderNo ?? line.channelOrderId ?? []))].sort(),
+        );
+        expect(view?.carrier).toBe(waybill?.trackingNo ? waybill.carrier : null);
+      }
+      expect(states.find((s) => s.shipmentId === first.shipmentId)?.carrier).toEqual(expect.any(String));
+    });
+  });
 });

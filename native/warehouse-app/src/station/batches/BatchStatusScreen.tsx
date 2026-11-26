@@ -1,5 +1,5 @@
 import { useNavigate, useRouterState } from '@tanstack/react-router';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Package, Printer } from 'lucide-react';
 import { useWarehouse } from '../../app/warehouse-context';
@@ -15,13 +15,15 @@ import { printRaw, readLabelPrinter, type PrintRaw } from '../../core/hardware/p
 import { BatchLabelPrintButton } from '../../domains/outbound/BatchLabelPrintButton';
 import {
   arrangeBatches,
+  attentionCountOf,
   batchNameOf,
   batchProgressOf,
-  boxAttentionOf,
   boxCountsOf,
   boxRowOf,
   hasCancelPending,
   isNewBatch,
+  refillCountOf,
+  seoulDayStart,
   sortBoxRows,
   todayBatchCount,
   useBatchWorkItems,
@@ -30,7 +32,7 @@ import {
 } from '../../domains/outbound/batchStatus';
 import { formatTrackingNo } from '../../domains/outbound/inspection';
 import { JoinBoxPanel } from '../../domains/outbound/JoinBoxPanel';
-import { useOutboundBatches, useShipmentByWaybill } from '../../domains/outbound/queries';
+import { useBatchesCreatedSince, useOutboundBatches, useShipmentByWaybill } from '../../domains/outbound/queries';
 import { writeLastBatch, writeLastBox } from '../../domains/outbound/lastBox';
 import { usePendingRefills } from '../../domains/outbound/refills';
 import { RemoveBoxPanel } from '../../domains/outbound/RemoveBoxPanel';
@@ -39,6 +41,7 @@ import { RemovedOnStartNotice, StartBatchButton, type RemovedOnStart } from '../
 import type { OutboundBatchSummary } from '../../domains/outbound/types';
 import { fetchBatchLabelStates, type BatchWorkItem } from '../../domains/outbound/waybillLabel';
 import { WarehousePicker } from '../../domains/warehouse/WarehousePicker';
+import { carrierName } from '../outbound/panels';
 import { useBatchProgress } from '../status/batchProgress';
 
 const DESCRIPTION = '배치를 선택하고, 송장과 진행 상황을 확인하세요.';
@@ -54,6 +57,7 @@ const PILL_GRAY = 'bg-[#eff1f2] text-[#68706d]';
 const TH = 'px-4 py-3 text-left text-xs font-medium text-[#71717a]';
 const NOTE = 'rounded-[10px] px-4 py-3 text-[13px] font-semibold';
 const MUTED = 'text-[#71717a]';
+const BATCH_PRINT = 'batch';
 
 /** 스테이션 F2 배치 현황(스펙 §8, 목업 ⑤) — 관리자 작업, 마우스 허용. 시작·일괄 인쇄·넣기·빼기는 지금 부품 그대로 쓴다 */
 export function BatchStatusScreen({ prefs = localStoragePrefs, print = printRaw }: { prefs?: DevicePrefs; print?: PrintRaw }) {
@@ -80,6 +84,8 @@ function BatchStatus({ warehouseId, prefs, print }: { warehouseId: string; prefs
   const navigate = useNavigate();
   const picking = useOutboundBatches(warehouseId, 'picking');
   const created = useOutboundBatches(warehouseId, 'created');
+  const now = new Date();
+  const since = useBatchesCreatedSince(warehouseId, seoulDayStart(now));
   const { active, empty } = arrangeBatches(picking.data, created.data);
   const [showEmpty, setShowEmpty] = useState(false);
   // 진행할 배치가 없으면 빈 배치를 접어 둘 이유가 없다
@@ -90,9 +96,21 @@ function BatchStatus({ warehouseId, prefs, print }: { warehouseId: string; prefs
   const returnedTo = useRouterState({ select: (state) => state.location.state.batchId });
   const [selectedId, setSelectedId] = useState<string | null>(returnedTo ?? null);
   const [panel, setPanel] = useState<'join' | 'remove' | null>(null);
-  const [batchPrinting, setBatchPrinting] = useState(false);
-  const [boxPrinting, setBoxPrinting] = useState(false);
-  const printing = batchPrinting || boxPrinting;
+  const printOwner = useRef<string | null>(null);
+  const [printingBy, setPrintingBy] = useState<string | null>(null);
+  const printing = printingBy !== null;
+  const acquirePrint = (owner: string) => {
+    if (printOwner.current !== null && printOwner.current !== owner) return false;
+    printOwner.current = owner;
+    setPrintingBy(owner);
+
+    return true;
+  };
+  const releasePrint = (owner: string) => {
+    if (printOwner.current !== owner) return;
+    printOwner.current = null;
+    setPrintingBy(null);
+  };
   const [removedOnStart, setRemovedOnStart] = useState<Record<string, RemovedOnStart>>({});
   // 배치 시작으로 시작한 배치 — 인쇄 단추가 처음 그려질 때 한 번 인쇄한다
   const [autoPrintFor, setAutoPrintFor] = useState<string | null>(null);
@@ -116,7 +134,7 @@ function BatchStatus({ warehouseId, prefs, print }: { warehouseId: string; prefs
 
   const lists = [picking, created];
   const failed = lists.filter(loadFailed);
-  const today = listed ? todayBatchCount([...active, ...empty], new Date()) : null;
+  const today = since.data !== undefined && !loadFailed(since) ? todayBatchCount(since.data, now) : null;
   const failure =
     failed.length > 0 ? (
       <LoadFailure
@@ -206,14 +224,18 @@ function BatchStatus({ warehouseId, prefs, print }: { warehouseId: string; prefs
           label="송장 일괄 출력"
           outline
           className=""
-          disabled={boxPrinting}
-          afterPrinted="이제 F1 «출고 검수»에서 송장을 찍으세요."
+          disabled={printing && printingBy !== BATCH_PRINT}
+          afterPrinted="이제 F1 출고 검수에서 송장을 찍으세요."
           autoPrint={autoPrintFor === selected.id}
           onAutoPrintStarted={() => setAutoPrintFor(null)}
           onRunningChange={(running) => {
-            if (running)
-              writeLastBatch(prefs, { id: selected.id, batchNumber: selected.batchNumber, name: batchNameOf(selected) });
-            setBatchPrinting(running);
+            if (!running) {
+              releasePrint(BATCH_PRINT);
+
+              return;
+            }
+            writeLastBatch(prefs, { id: selected.id, batchNumber: selected.batchNumber, name: batchNameOf(selected) });
+            acquirePrint(BATCH_PRINT);
           }}
         />
         <Button type="button" disabled>
@@ -295,8 +317,9 @@ function BatchStatus({ warehouseId, prefs, print }: { warehouseId: string; prefs
                 print={print}
                 label="출력 확인"
                 className={cn(OUTLINE, SMALL)}
-                disabled={batchPrinting}
-                onRunningChange={setBoxPrinting}
+                disabled={printing && printingBy !== shipmentId}
+                lock={{ acquire: () => acquirePrint(shipmentId), release: () => releasePrint(shipmentId) }}
+                holdScreen
               />
             )}
           />
@@ -344,7 +367,45 @@ const ROW_PILL: Record<BoxRow['tone'], string> = {
   warn: PILL_WARN,
   work: PILL_BLUE,
   idle: PILL_BLUE,
+  off: PILL_GRAY,
 };
+
+function countText(label: string, query: { data: unknown; isError: boolean; errorUpdatedAt: number; dataUpdatedAt: number }, count: number) {
+  if (query.data !== undefined) return `${label} ${count}`;
+
+  return loadFailed(query) ? `${label} 확인 못 함` : `${label} 확인 중`;
+}
+
+function orderTitle(row: BoxRow): string | null {
+  const [first, ...rest] = row.orderNos;
+  if (!first) return null;
+
+  return rest.length > 0 ? `${first} 외 ${rest.length}건` : first;
+}
+
+function BoxLine({ row, action }: { row: BoxRow; action: ReactNode }) {
+  const tracking = row.trackingNo ? formatTrackingNo(row.trackingNo) : '송장 없음';
+  const order = orderTitle(row);
+  const facts = [carrierName(row.carrier), row.skuKinds !== null ? `${row.skuKinds}종` : ''].filter(Boolean).join(' · ');
+  const reference = [tracking, row.recipient].filter(Boolean).join(' · ');
+
+  return (
+    <li className="flex items-center gap-3 border-b border-[#e4e4e7] py-[18px] last:border-b-0">
+      <Package className="h-5 w-5 shrink-0 text-[#27272a]" strokeWidth={1.65} aria-hidden />
+      <div className="min-w-0 flex-1">
+        <strong className="block text-[13px] leading-[1.6] font-semibold tabular-nums">{order ?? tracking}</strong>
+        {order && facts ? <small className={cn('mt-1 block text-xs', MUTED)}>{facts}</small> : null}
+        {order ? (
+          <small className={cn('mt-1 block text-xs tabular-nums', MUTED)}>{reference}</small>
+        ) : row.recipient ? (
+          <small className={cn('mt-1 block text-xs', MUTED)}>{row.recipient}</small>
+        ) : null}
+      </div>
+      <span className={cn(PILL, ROW_PILL[row.tone])}>{row.status}</span>
+      {action}
+    </li>
+  );
+}
 
 function BatchDetail({
   batch,
@@ -383,7 +444,8 @@ function BatchDetail({
     return row ? [row] : [];
   });
   const rows = sortBoxRows(withRefillPending(labelRows, pending));
-  const attention = items ? boxAttentionOf(items, rows, pending) : null;
+  const refillText = countText('보충 대기', refills, items ? refillCountOf(items, pending) : 0);
+  const attentionText = countText('확인 필요', states, attentionCountOf(rows));
   const name = batchNameOf(batch);
   const boxes = progress?.total ?? batch.totalBoxes;
   const sizeText = boxes !== undefined ? `${boxes}상자` : null;
@@ -401,14 +463,14 @@ function BatchDetail({
       </div>
       <div className="flex shrink-0 flex-col gap-3 px-[22px] py-5 empty:hidden">
         {panels}
-        {progress && counts && attention ? (
+        {progress && counts ? (
           <div>
             <div className="flex items-center justify-between gap-3 text-[15px] text-[#27272a]">
               <span>
                 검수 완료 <span aria-label="완료">{progress.done}</span> / {progress.total}상자
               </span>
               <small className={cn('text-xs', MUTED)}>
-                보충 대기 {attention.refill} · 확인 필요 {attention.attention}
+                {refillText} · {attentionText}
               </small>
             </div>
             <div
@@ -434,9 +496,34 @@ function BatchDetail({
             </div>
           </div>
         ) : null}
+        {loadFailed(refills) ? (
+          <LoadFailure
+            className="text-[13px]"
+            message="보충 대기를 불러오지 못했어요."
+            error={refills.error}
+            stale={refills.data !== undefined}
+            retrying={refills.isFetching}
+            onRetry={() => void refills.refetch()}
+          />
+        ) : null}
+        {loadFailed(states) ? (
+          <LoadFailure
+            className="text-[13px]"
+            message="상자 송장 상태를 불러오지 못했어요."
+            error={states.error}
+            stale={states.data !== undefined}
+            retrying={states.isFetching}
+            onRetry={() => void states.refetch()}
+          />
+        ) : null}
+        {batch.startedAt === null && rows.length > 0 ? (
+          <p role="status" className={cn(NOTE, 'bg-[#eff6ff] text-[#2563eb]')}>
+            배치를 시작해야 상자를 출고 검수에서 열 수 있어요.
+          </p>
+        ) : null}
         {counts && counts.withdrawing > 0 ? (
           <p role="status" className={cn(NOTE, 'bg-[#fff1d9] text-[#925e13]')}>
-            빠지는 중인 상자는 F1 «출고 검수»에서 송장을 찍고 담은 상품을 꺼내 주세요.
+            빠지는 중인 상자는 F1 출고 검수에서 송장을 찍고 담은 상품을 꺼내 주세요.
           </p>
         ) : null}
         {hasCancelPending(states.data ?? []) ? (
@@ -454,22 +541,19 @@ function BatchDetail({
         <ol aria-label="박스" className="min-h-0 flex-1 overflow-auto px-5 [scrollbar-gutter:stable]">
           {/* 스크롤바가 내용 위에 겹치는 웹뷰(리눅스)에서도 오른쪽 단추를 가리지 않게 자리를 잡아 둔다 */}
           {rows.map((row) => (
-            <li key={row.shipmentId} className="flex items-center gap-3 border-b border-[#e4e4e7] py-[18px] last:border-b-0">
-              <Package className="h-5 w-5 shrink-0 text-[#27272a]" strokeWidth={1.65} aria-hidden />
-              <div className="min-w-0 flex-1">
-                <strong className="block text-[13px] leading-[1.6] font-semibold tabular-nums">
-                  {row.trackingNo ? formatTrackingNo(row.trackingNo) : '송장 없음'}
-                </strong>
-                {row.recipient ? <small className={cn('mt-1 block text-xs', MUTED)}>{row.recipient}</small> : null}
-              </div>
-              <span className={cn(PILL, ROW_PILL[row.tone])}>{row.status}</span>
-              {row.action === 'print' ? renderPrint(row.shipmentId) : null}
-              {row.action === 'open' ? (
-                <Button type="button" className={cn(OUTLINE, SMALL)} disabled={boxBusy} onClick={() => onOpenBox(row.trackingNo)}>
-                  상자 보기
-                </Button>
-              ) : null}
-            </li>
+            <BoxLine
+              key={row.shipmentId}
+              row={row}
+              action={
+                row.action === 'print' ? (
+                  renderPrint(row.shipmentId)
+                ) : row.action === 'open' ? (
+                  <Button type="button" className={cn(OUTLINE, SMALL)} disabled={boxBusy} onClick={() => onOpenBox(row.trackingNo)}>
+                    상자 보기
+                  </Button>
+                ) : null
+              }
+            />
           ))}
         </ol>
       ) : null}

@@ -99,7 +99,6 @@ export function BatchLabelPrintButton({
   autoPrint?: boolean;
   onAutoPrintStarted?: () => void;
   label?: string;
-  /** 배치 현황 카드 — 주 단추 자리를 다른 단추가 차지해 인쇄는 늘 흰 단추로 둔다 */
   outline?: boolean;
   className?: string;
 }) {

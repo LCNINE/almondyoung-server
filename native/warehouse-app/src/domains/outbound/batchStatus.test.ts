@@ -3,12 +3,14 @@ import {
   arrangeBatches,
   batchNameOf,
   batchProgressOf,
+  attentionCountOf,
   boxCountsOf,
-  boxAttentionOf,
   boxRowOf,
   hasCancelPending,
   mergeBatches,
   newBatchSummary,
+  refillCountOf,
+  seoulDayStart,
   sortBoxRows,
   todayBatchCount,
   withRefillPending,
@@ -103,28 +105,57 @@ describe('배치 현황 박스 줄(스펙 §8 F2)', () => {
     recipientMasked: '김*영',
     ...patch,
   });
+  const NO_FACTS = { orderNos: [], carrier: null, skuKinds: null };
+  const row = (patch: Partial<BoxRow> & Pick<BoxRow, 'shipmentId' | 'status' | 'tone' | 'action'>): BoxRow => ({
+    trackingNo: '1',
+    recipient: '',
+    ...NO_FACTS,
+    ...patch,
+  });
 
   it.each([
     [{ state: 'withdrawing', workItemStatus: 'withdrawing' }, '빠지는 중', 'warn', 'open'],
     [{ state: 'never_printed' }, '미출력', 'alert', 'print'],
     [{ state: 'reprint_required', workItemStatus: 'picking' }, '재출력', 'alert', 'print'],
     [{ state: 'unavailable' }, '송장 확인', 'alert', null],
+    [{ state: 'not_started' }, '시작 전', 'off', null],
     [{ workItemStatus: 'short_pick_recovery' }, '결품 처리 중', 'warn', 'open'],
     [{ workItemStatus: 'picking' }, '검수 중', 'work', 'open'],
     [{ workItemStatus: 'queued' }, '검수 대기', 'idle', 'open'],
   ] as const)('%o → %s', (patch, status, tone, action) => {
-    expect(boxRowOf(state(patch))).toEqual({ shipmentId: 's', trackingNo: '421033881907', recipient: '김*영', status, tone, action });
+    expect(boxRowOf(state(patch))).toEqual({
+      shipmentId: 's',
+      trackingNo: '421033881907',
+      recipient: '김*영',
+      ...NO_FACTS,
+      status,
+      tone,
+      action,
+    });
+  });
+
+  it('시작 전 배치의 상자는 출고 검수에서 열 수 없다 — 상자 보기를 주지 않는다', () => {
+    expect(boxRowOf(state({ state: 'not_started', workItemStatus: 'queued' }))?.action).toBeNull();
+  });
+
+  it('core 가 실은 주문 번호·택배사·상품 종 수를 줄에 싣는다', () => {
+    expect(boxRowOf(state({ orderNos: ['20261126-0001'], carrier: 'HANJIN', skuKinds: 3 }))).toMatchObject({
+      orderNos: ['20261126-0001'],
+      carrier: 'HANJIN',
+      skuKinds: 3,
+    });
   });
 
   it('송장번호 칸이 없으면(옛 core) 줄을 만들지 않는다', () => {
     expect(boxRowOf(state({ trackingNo: undefined }))).toBeNull();
   });
 
-  it('송장이 없는 상자도 빨간 «송장 필요» 줄로 그린다 — 요약 숫자와 목록 줄 수가 맞는다', () => {
+  it('송장이 없는 상자도 빨간 송장 필요 줄로 그린다 — 요약 숫자와 목록 줄 수가 맞는다', () => {
     expect(boxRowOf(state({ trackingNo: null }))).toEqual({
       shipmentId: 's',
       trackingNo: '',
       recipient: '김*영',
+      ...NO_FACTS,
       status: '송장 필요',
       tone: 'alert',
       action: null,
@@ -136,6 +167,7 @@ describe('배치 현황 박스 줄(스펙 §8 F2)', () => {
       shipmentId: 's',
       trackingNo: '',
       recipient: '김*영',
+      ...NO_FACTS,
       status: '취소 대기',
       tone: 'alert',
       action: null,
@@ -148,24 +180,25 @@ describe('배치 현황 박스 줄(스펙 §8 F2)', () => {
     expect(hasCancelPending([state({}), state({ cancelPending: false })])).toBe(false);
   });
 
-  it('손이 가야 하는 박스(송장·빠지는 중)가 위로, 같은 무리 안에서는 송장번호 순', () => {
+  it('손이 가야 하는 박스(송장·빠지는 중)가 위로, 시작 전은 맨 아래, 같은 무리 안에서는 송장번호 순', () => {
     const rows: BoxRow[] = [
-      { shipmentId: 'a', trackingNo: '3', recipient: '', status: '검수 대기', tone: 'idle', action: 'open' },
-      { shipmentId: 'b', trackingNo: '2', recipient: '', status: '재출력', tone: 'alert', action: 'print' },
-      { shipmentId: 'c', trackingNo: '1', recipient: '', status: '검수 대기', tone: 'idle', action: 'open' },
-      { shipmentId: 'd', trackingNo: '9', recipient: '', status: '빠지는 중', tone: 'warn', action: 'open' },
+      row({ shipmentId: 'a', trackingNo: '3', status: '검수 대기', tone: 'idle', action: 'open' }),
+      row({ shipmentId: 'b', trackingNo: '2', status: '재출력', tone: 'alert', action: 'print' }),
+      row({ shipmentId: 'e', trackingNo: '0', status: '시작 전', tone: 'off', action: null }),
+      row({ shipmentId: 'c', trackingNo: '1', status: '검수 대기', tone: 'idle', action: 'open' }),
+      row({ shipmentId: 'd', trackingNo: '9', status: '빠지는 중', tone: 'warn', action: 'open' }),
     ];
-    expect(sortBoxRows(rows).map((r) => r.shipmentId)).toEqual(['b', 'd', 'c', 'a']);
+    expect(sortBoxRows(rows).map((r) => r.shipmentId)).toEqual(['b', 'd', 'c', 'a', 'e']);
   });
 
   it('보충 대기 상자는 송장 손볼 일이 없을 때만 보충 대기로 보인다', () => {
     const rows: BoxRow[] = [
-      { shipmentId: 'a', trackingNo: '1', recipient: '', status: '검수 중', tone: 'work', action: 'open' },
-      { shipmentId: 'b', trackingNo: '2', recipient: '', status: '재출력', tone: 'alert', action: 'print' },
-      { shipmentId: 'c', trackingNo: '3', recipient: '', status: '검수 대기', tone: 'idle', action: 'open' },
+      row({ shipmentId: 'a', status: '검수 중', tone: 'work', action: 'open' }),
+      row({ shipmentId: 'b', status: '재출력', tone: 'alert', action: 'print' }),
+      row({ shipmentId: 'c', status: '검수 대기', tone: 'idle', action: 'open' }),
     ];
     const marked = withRefillPending(rows, new Set(['a', 'b']));
-    expect(marked.map((row) => [row.status, row.tone, row.action])).toEqual([
+    expect(marked.map((r) => [r.status, r.tone, r.action])).toEqual([
       ['보충 대기', 'warn', 'open'],
       ['재출력', 'alert', 'print'],
       ['검수 대기', 'idle', 'open'],
@@ -176,25 +209,27 @@ describe('배치 현황 박스 줄(스펙 §8 F2)', () => {
     const work = [item('picking', 1), item('completed', 2), item('queued', 3)];
     const pending = new Set(['s-picking-1', 's-completed-2', 's-other']);
     const rows: BoxRow[] = [
-      { shipmentId: 'x', trackingNo: '1', recipient: '', status: '미출력', tone: 'alert', action: 'print' },
-      { shipmentId: 'y', trackingNo: '', recipient: '', status: '취소 대기', tone: 'alert', action: null },
-      { shipmentId: 'z', trackingNo: '3', recipient: '', status: '검수 대기', tone: 'idle', action: 'open' },
+      row({ shipmentId: 'x', status: '미출력', tone: 'alert', action: 'print' }),
+      row({ shipmentId: 'y', trackingNo: '', status: '취소 대기', tone: 'alert', action: null }),
+      row({ shipmentId: 'z', status: '검수 대기', tone: 'idle', action: 'open' }),
     ];
-    expect(boxAttentionOf(work, rows, pending)).toEqual({ refill: 1, attention: 2 });
+    expect(refillCountOf(work, pending)).toBe(1);
+    expect(attentionCountOf(rows)).toBe(2);
   });
 });
 
 describe('오늘 배치 수', () => {
   const now = new Date('2026-11-26T03:00:00.000Z');
 
-  it('서울 날짜로 오늘 만든 배치만 센다', () => {
+  it('서울 날짜로 오늘 만든 배치만 센다 — 끝난 배치도 세고 취소한 배치는 뺀다', () => {
     expect(
       todayBatchCount(
         [
-          { createdAt: '2026-11-25T15:30:00.000Z' },
-          { createdAt: '2026-11-26T10:00:00.000Z' },
-          { createdAt: '2026-11-25T14:59:00.000Z' },
-          {},
+          { createdAt: '2026-11-25T15:30:00.000Z', status: 'completed' },
+          { createdAt: '2026-11-26T10:00:00.000Z', status: 'picking' },
+          { createdAt: '2026-11-26T11:00:00.000Z', status: 'canceled' },
+          { createdAt: '2026-11-25T14:59:00.000Z', status: 'created' },
+          { status: 'created' },
         ],
         now
       )
@@ -202,8 +237,13 @@ describe('오늘 배치 수', () => {
   });
 
   it('만든 시각을 싣지 않는 옛 core 면 모른다', () => {
-    expect(todayBatchCount([{}, {}], now)).toBeNull();
+    expect(todayBatchCount([{ status: 'created' }, { status: 'picking' }], now)).toBeNull();
     expect(todayBatchCount([], now)).toBe(0);
+  });
+
+  it('오늘 0시(서울)를 UTC 시각으로', () => {
+    expect(seoulDayStart(now)).toBe('2026-11-25T15:00:00.000Z');
+    expect(seoulDayStart(new Date('2026-11-25T15:30:00.000Z'))).toBe('2026-11-25T15:00:00.000Z');
   });
 });
 
