@@ -206,7 +206,7 @@ describe('SessionCountScreen', () => {
       await screen.findByRole('button', { name: '스캔:A-01-02' })
     );
     expect(await screen.findByTestId('count-line-2')).toHaveTextContent('2');
-    expect(screen.getByTestId('count-line-1')).toHaveTextContent('—');
+    expect(screen.getByTestId('count-line-1')).toHaveTextContent('아직 세지 않음');
   });
 
   it('상품 스캔은 응답의 절대 카운트로 라인을 덮어쓴다', async () => {
