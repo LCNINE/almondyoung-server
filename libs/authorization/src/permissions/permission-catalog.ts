@@ -285,22 +285,34 @@ export const PERMISSION_CATALOG = [
   permission('inventory.model_workshop.read', '3D 작업실 보기', '내 3D 작업실의 사진·모델·대화·버전을 본다', {
     owners: ['core'],
     grant: ADMIN_LOGISTICS,
+    // 작업실은 /mobile 아래 화면이다 — 그 문(재고 조회)을 같이 가져야 들어갈 수 있다
+    requires: ['inventory.stock.read'],
   }),
-  permission('inventory.model_workshop.write', '3D 작업실 사용', '내 3D 작업실에서 모델 제작을 요청하고 고치고 승인한다', {
-    owners: ['core'],
-    grant: ADMIN_LOGISTICS,
-    requires: ['inventory.model_workshop.read'],
-  }),
+  permission(
+    'inventory.model_workshop.write',
+    '3D 작업실 사용',
+    '내 3D 작업실에서 모델 제작을 요청하고 고치고 승인한다',
+    {
+      owners: ['core'],
+      grant: ADMIN_LOGISTICS,
+      requires: ['inventory.model_workshop.read'],
+    },
+  ),
   permission('inventory.model_workshop.manage', '3D 작업실 전체 보기', '다른 작업자의 3D 작업실도 본다', {
     owners: ['core'],
     grant: ADMIN,
     requires: ['inventory.model_workshop.read'],
   }),
-  permission('inventory.inbound_shipment.write', '선적 입고리스트 관리', '중국 선적 입고리스트를 올리고 정리·확정·종결한다', {
-    owners: ['core'],
-    grant: ADMIN,
-    requires: ['inventory.stock.read'],
-  }),
+  permission(
+    'inventory.inbound_shipment.write',
+    '선적 입고리스트 관리',
+    '중국 선적 입고리스트를 올리고 정리·확정·종결한다',
+    {
+      owners: ['core'],
+      grant: ADMIN,
+      requires: ['inventory.stock.read'],
+    },
+  ),
   permission('inventory.warehouse.write', '창고 관리', '창고를 만들고 고치고 피킹 방식을 정한다', {
     owners: ['core'],
     grant: ['admin', ...LOGISTICS_MANAGER],
@@ -423,10 +435,15 @@ export const PERMISSION_CATALOG = [
     grant: ADMIN,
   }),
   // 상세 페이지를 함께 만들어야 해서 처음 게시는 따로 받은 사람만 한다. 다시 게시는 write 로 충분하다
-  permission('marketing.almond_template.publish', '아몬드템플릿 상품 게시', '아몬드템플릿을 판매 상품으로 처음 게시한다', {
-    owners: ['core'],
-    grant: NOBODY,
-  }),
+  permission(
+    'marketing.almond_template.publish',
+    '아몬드템플릿 상품 게시',
+    '아몬드템플릿을 판매 상품으로 처음 게시한다',
+    {
+      owners: ['core'],
+      grant: NOBODY,
+    },
+  ),
   permission('marketing.almond_template.read', '아몬드템플릿 조회', '아몬드템플릿 시안과 디자인을 본다', {
     owners: ['ugc-service'],
     grant: ADMIN_INTERN,

@@ -8,7 +8,10 @@ import { useCan } from '@/hooks/use-permission';
 import { sku3dWorkshopClient } from '@/lib/api/domains/inventory/sku-3d-workshop.client';
 import { MobileTopBar } from '@/features/inventory/sku-field-capture/components/mobile-top-bar';
 import { errorMessageOf } from '@/features/inventory/sku-field-capture/field-capture-model';
-import { workshopKeys } from '@/features/inventory/sku-3d-workshop/workshop-model';
+import {
+  safeBackHref,
+  workshopKeys,
+} from '@/features/inventory/sku-3d-workshop/workshop-model';
 import { WorkshopView } from '@/features/inventory/sku-3d-workshop/workshop-view';
 
 const CAPTURE_BASE = '/mobile/sku-field-capture';
@@ -24,15 +27,12 @@ export default function Sku3dWorkshopPage() {
 function WorkshopPage() {
   const { skuId } = useParams<{ skuId: string }>();
   const back = useSearchParams().get('back');
-  const backHref =
-    back?.startsWith('/') && !back.startsWith('//')
-      ? back
-      : `${CAPTURE_BASE}/${skuId}`;
+  const backHref = safeBackHref(back, `${CAPTURE_BASE}/${skuId}`);
   const canOpen = useCan(['inventory.model_workshop.write']);
   const allowed = canOpen.status === 'ready' && canOpen.allowed;
 
   // 처음이면 서버가 작업실을 만들고, 있으면 그대로 연다 — 새로고침·연타해도 하나다
-  const { data, error } = useQuery({
+  const { data, error, dataUpdatedAt } = useQuery({
     queryKey: workshopKeys.detail(skuId),
     queryFn: async () =>
       sku3dWorkshopClient.detail((await sku3dWorkshopClient.open(skuId)).id),
@@ -57,7 +57,9 @@ function WorkshopPage() {
       {allowed && !data && !error && (
         <Loader2 className="mx-auto mt-10 h-6 w-6 animate-spin text-gray-400" />
       )}
-      {data && <WorkshopView detail={data} skuId={skuId} />}
+      {data && (
+        <WorkshopView detail={data} skuId={skuId} fetchedAt={dataUpdatedAt} />
+      )}
     </>
   );
 }

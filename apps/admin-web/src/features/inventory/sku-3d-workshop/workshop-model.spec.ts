@@ -4,10 +4,12 @@ import type {
   Sku3dWorkshopRevisionDto,
 } from '@/lib/types/dto/inventory';
 import {
+  canRetryCreate,
   canSendMessage,
   chatItems,
   dimensionQuestion,
   mergeEvents,
+  safeBackHref,
   shortHash,
   viewerRevision,
   workerStatusText,
@@ -206,5 +208,41 @@ describe('3D 작업실 화면 로직', () => {
 
   it('shortHash shows the first 8 characters', () => {
     expect(shortHash('abcdef0123456789')).toBe('abcdef01');
+  });
+
+  it('stops claiming a connection when the status is stale', () => {
+    expect(
+      workerStatusText(
+        { online: true, lastSeenAt: '2026-11-26T00:00:00Z' },
+        31_000
+      )
+    ).toBe('작업 PC 상태를 확인하고 있어요');
+  });
+
+  it('offers a retry only after a first build left nothing', () => {
+    const confirmed = {
+      ...detail().workshop,
+      dimensionConfirmedAt: '2026-11-26T00:00:00Z',
+    };
+
+    expect(canRetryCreate(detail())).toBe(false);
+    expect(canRetryCreate(detail({ workshop: confirmed }))).toBe(true);
+    expect(
+      canRetryCreate(detail({ workshop: confirmed, revisions: [revision(1)] }))
+    ).toBe(false);
+  });
+
+  it('safeBackHref keeps only internal capture paths', () => {
+    expect(safeBackHref('/mobile/sku-field-capture/mine?who=all', '/x')).toBe(
+      '/mobile/sku-field-capture/mine?who=all'
+    );
+    expect(safeBackHref('/inventory/sku-field-capture', '/x')).toBe(
+      '/inventory/sku-field-capture'
+    );
+    expect(safeBackHref('/\\evil.example', '/x')).toBe('/x');
+    expect(safeBackHref('/mobile/\\evil.example', '/x')).toBe('/x');
+    expect(safeBackHref('//evil.example', '/x')).toBe('/x');
+    expect(safeBackHref('https://evil.example', '/x')).toBe('/x');
+    expect(safeBackHref(null, '/x')).toBe('/x');
   });
 });

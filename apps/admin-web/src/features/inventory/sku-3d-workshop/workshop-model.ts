@@ -70,9 +70,17 @@ export function chatItems(
   return events.filter((e) => e.type !== 'progress' || keep.has(e.seq));
 }
 
+// 서버가 60초 안에 워커를 봤다는 응답이라도, 그 응답이 오래됐으면 연결됐다고 말하지 않는다
+export const STATUS_FRESH_MS = 30_000;
+
 export function workerStatusText(
-  worker: Sku3dWorkshopDetailDto['worker']
+  worker: Sku3dWorkshopDetailDto['worker'],
+  fetchedAgoMs = 0
 ): string {
+  if (fetchedAgoMs > STATUS_FRESH_MS) {
+    return '작업 PC 상태를 확인하고 있어요';
+  }
+
   if (worker.online) {
     return '작업 PC 연결됨';
   }
@@ -124,4 +132,26 @@ export function canSendMessage(detail: Sku3dWorkshopDetailDto): boolean {
 
 export function shortHash(sha256: string): string {
   return sha256.slice(0, 8);
+}
+
+// 첫 제작이 실패해 버전도 진행 작업도 없으면 다시 만들 수 있다
+export function canRetryCreate(detail: Sku3dWorkshopDetailDto): boolean {
+  return (
+    detail.workshop.dimensionConfirmedAt !== null &&
+    detail.revisions.length === 0 &&
+    detail.activeJob === null
+  );
+}
+
+// 실측·작업 기록·사진 모아보기에서 온 내부 경로만 뒤로 가기로 받는다
+export function safeBackHref(back: string | null, fallback: string): string {
+  if (
+    !back ||
+    back.includes('//') ||
+    !/^\/(mobile|inventory)\/[A-Za-z0-9\-_/?=&%.]*$/.test(back)
+  ) {
+    return fallback;
+  }
+
+  return back;
 }

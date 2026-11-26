@@ -26,6 +26,7 @@ import { resolvePublicFileUrl } from '@/lib/utils/file-url';
 import { errorMessageOf } from '../sku-field-capture/field-capture-model';
 import { WorkshopModelViewer } from './workshop-model-viewer';
 import {
+  canRetryCreate,
   canSendMessage,
   chatItems,
   DIMENSION_CHOICES,
@@ -44,9 +45,11 @@ const EVENTS_POLL_MS = 2_000;
 export function WorkshopView({
   detail,
   skuId,
+  fetchedAt,
 }: {
   detail: Sku3dWorkshopDetailDto;
   skuId: string;
+  fetchedAt: number;
 }): JSX.Element {
   const queryClient = useQueryClient();
   const workshopId = detail.workshop.id;
@@ -68,6 +71,7 @@ export function WorkshopView({
   const refreshDetail = () =>
     queryClient.invalidateQueries({ queryKey: workshopKeys.detail(skuId) });
 
+  const now = useNow(5_000);
   const events = useWorkshopEvents(workshopId, refreshDetail);
 
   const confirm = useMutation({
@@ -121,7 +125,7 @@ export function WorkshopView({
         <p
           className={`text-xs font-semibold ${detail.worker.online ? 'text-green-700' : 'text-gray-500'}`}
         >
-          {workerStatusText(detail.worker)}
+          {workerStatusText(detail.worker, now - fetchedAt)}
         </p>
       </div>
 
@@ -141,6 +145,17 @@ export function WorkshopView({
           ))}
           <p className="text-xs text-gray-500">고르면 바로 제작을 요청해요</p>
         </section>
+      )}
+
+      {canRetryCreate(detail) && (
+        <button
+          type="button"
+          disabled={!writeAllowed || confirm.isPending}
+          onClick={() => confirm.mutate(detail.workshop.dimensionBasis)}
+          className="w-full rounded-lg border border-gray-300 py-3 text-sm font-medium text-gray-800 disabled:opacity-50"
+        >
+          다시 만들기
+        </button>
       )}
 
       {status && (
@@ -176,7 +191,7 @@ export function WorkshopView({
                 className={`rounded-full border px-3 py-1 text-sm ${r.id === shown?.id ? 'border-gray-900 font-bold text-gray-900' : 'border-gray-300 text-gray-700'}`}
               >
                 v{r.number}
-                {r.publishedAt ? ' · 공개 중' : ''}
+                {r.publishedAt ? ' · 공개함' : ''}
               </button>
             ))}
           </div>
@@ -226,7 +241,7 @@ export function WorkshopView({
             className="w-full rounded-xl bg-blue-600 py-4 text-base font-bold text-white disabled:bg-gray-300"
           >
             {shown.publishedAt
-              ? `v${shown.number} 공개 중`
+              ? `v${shown.number} 공개함`
               : `v${shown.number} 승인하고 아몬드영에 반영`}
           </button>
         )}
@@ -286,7 +301,11 @@ export function WorkshopView({
       <section className="space-y-3 rounded-xl border border-gray-200 bg-white p-4">
         <h3 className="text-sm font-semibold text-gray-800">대화</h3>
         <ChatList events={events} />
+        <label htmlFor="workshop-message" className="sr-only">
+          수정 요청
+        </label>
         <textarea
+          id="workshop-message"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           maxLength={2000}
@@ -363,6 +382,9 @@ function useWorkshopEvents(
   const { data } = useQuery({
     queryKey: workshopKeys.events(workshopId),
     queryFn: () => sku3dWorkshopClient.events(workshopId, cursor.current),
+    // 증분 응답을 캐시에 남기면 다시 들어왔을 때 처음부터 받지 않고 건너뛴다
+    staleTime: 0,
+    gcTime: 0,
     refetchInterval: EVENTS_POLL_MS,
     refetchIntervalInBackground: false,
   });
@@ -384,6 +406,18 @@ function useWorkshopEvents(
   }, [data, onNews]);
 
   return events;
+}
+
+function useNow(intervalMs: number): number {
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), intervalMs);
+
+    return () => window.clearInterval(timer);
+  }, [intervalMs]);
+
+  return now;
 }
 
 function ChatList({
