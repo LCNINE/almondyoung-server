@@ -12,7 +12,7 @@ import { codexArgs, runCodex } from './codex-run.mjs';
 import { childEnv, loadConfig } from './env.mjs';
 import { judgeOutputs } from './judge.mjs';
 import { viewerCheck } from './viewer-check.mjs';
-import { denyPathsFor, isolationCheck, writeSandboxConfig } from './isolation.mjs';
+import { denyPathsFor, isolationCheck, toolReadPaths, writeSandboxConfig } from './isolation.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const HEARTBEAT_MS = 30_000;
@@ -270,6 +270,7 @@ export async function runJob(job, { api, config, tools, signal }) {
       // 이번 작업실만 쓰고 다른 작업실·설정·키·로그인 정보는 읽지 못하게, 네트워크는 끄고
       writeSandboxConfig(config.codexHome, {
         writeDir: workshopDir,
+        readPaths: toolReadPaths(config),
         denyPaths: denyPathsFor({
           workRoot: config.workRoot,
           workshopDir,
@@ -491,6 +492,8 @@ async function main() {
     denyRead: config.denyRead,
     userCodexHome: config.userCodexHome,
     windowsSandbox: config.windowsSandbox,
+    readPaths: toolReadPaths(config),
+    blenderPath: config.blenderPath,
     env: childEnv(process.env),
   });
 
