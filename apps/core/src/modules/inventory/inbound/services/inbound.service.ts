@@ -236,18 +236,20 @@ export class InboundService {
         SELECT (SELECT count(*)::int FROM matching_receipts) AS total,
           COALESCE((SELECT jsonb_agg(jsonb_build_object(
             'receipt', ${receiptJson},
+            'actorId', (SELECT j.actor_id FROM ${wmsTables.stockJournals} j WHERE j.id = r.journal_id),
             'lines', COALESCE((SELECT jsonb_agg(to_jsonb(f) ORDER BY f."createdAt", f."lineId")
               FROM facts f WHERE f."receiptId" = r.id), '[]'::jsonb)
           ) ORDER BY r.occurred_at DESC, r.id DESC) FROM receipt_page r), '[]'::jsonb) AS items
       `)) as unknown as {
         total: number;
-        items: { receipt: ReplayableDates<InboundReceipt>; lines: ReceiptFactsRow[] }[];
+        items: { receipt: ReplayableDates<InboundReceipt>; actorId: string | null; lines: ReceiptFactsRow[] }[];
       }[];
       return {
         serverTime: serverTime.toISOString(),
         total: rows[0].total,
-        items: rows[0].items.map(({ receipt, lines }) => ({
+        items: rows[0].items.map(({ receipt, actorId, lines }) => ({
           ...InboundReceiptMapper.toBaseDto(receipt),
+          actorId: actorId ?? null,
           lines: lines.map((row) => {
             const state = receiptStateFromFacts(row);
             return {

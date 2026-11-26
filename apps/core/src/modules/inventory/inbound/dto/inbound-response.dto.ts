@@ -1,5 +1,5 @@
 import type { ReceiptActionBlockReason } from './inbound-receipt-state.dto';
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class InboundReceiptLineDto {
   @ApiProperty({
@@ -234,6 +234,13 @@ export class InboundReceiptHistoryLineDto extends InboundReceiptLineDto {
 }
 
 export class InboundReceiptHistoryItemDto extends BaseInboundReceiptDto {
+  @ApiPropertyOptional({
+    description: '입고를 기록한 작업자 id. 자동 처리는 시스템 행위자 id, 기록이 없으면 null',
+    type: String,
+    nullable: true,
+  })
+  actorId?: string | null;
+
   @ApiProperty({ description: '회차의 전체 입고 라인', type: [InboundReceiptHistoryLineDto] })
   lines: InboundReceiptHistoryLineDto[];
 }
