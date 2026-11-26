@@ -228,7 +228,7 @@ const REFUND_STATUS_CONFIG: Record<
   succeeded: { label: '환불 완료', className: 'bg-green-100 text-green-700' },
   pending: { label: '환불 처리중', className: 'bg-blue-100 text-blue-700' },
   failed: {
-    label: '환불 실패',
+    label: '환불 확인 필요',
     className: 'bg-red-100 text-red-700 ring-1 ring-inset ring-red-300',
   },
   requested: { label: '환불 요청됨', className: 'bg-blue-100 text-blue-700' },
@@ -294,12 +294,12 @@ function RetryRefundButton({
           if (result.refundStatus === 'succeeded') {
             toast.success('환불이 완료되었습니다.');
           } else if (result.refundStatus === 'pending') {
-            toast.info('환불 처리 중입니다. 잠시 후 결제 관리에서 확인하세요.');
+            toast.info('환불 결과를 확인 중입니다. 결제 내역을 확인하세요. 재시도 버튼이 남으면 같은 요청으로 다시 조회할 수 있습니다.');
           } else {
             toast.error('환불 재시도 실패. 결제 관리에서 수동 처리하세요.');
           }
-        } catch {
-          toast.error('환불 재시도 중 오류가 발생했습니다.');
+        } catch (error) {
+          toast.error(error instanceof Error ? error.message : '환불 재시도 중 오류가 발생했습니다.');
         }
       }}
     >
@@ -1050,8 +1050,21 @@ export default function OrderTable() {
                 {r.isFirstOfOrder && r.refundStatus && (
                   <RefundStatusBadge status={r.refundStatus} />
                 )}
-                {r.isFirstOfOrder && r.refundStatus === 'failed' && (
+                {r.isFirstOfOrder && r.refundNeedsBalanceReconciliation && (
+                  <span className="text-[11px] text-red-700 whitespace-normal leading-tight">
+                    환불 잔액 대사 필요 · 결제 내역에서 기존 환불과 남은 금액을 확인하세요
+                  </span>
+                )}
+                {r.isFirstOfOrder && r.refundStatus === 'failed' && !r.refundNeedsBalanceReconciliation && (
                   <RetryRefundButton orderId={r.orderId} onDone={() => {}} />
+                )}
+                {r.isFirstOfOrder && r.refundNeedsBalanceReconciliation && (
+                  <ManualCompleteButton
+                    onDone={() => {
+                      setSelectedOrder(r);
+                      setShowManualRefundModal(true);
+                    }}
+                  />
                 )}
                 <RefundDecisionButtons r={r} />
                 {r.isFirstOfOrder && r.refundStatus === 'failed' && (

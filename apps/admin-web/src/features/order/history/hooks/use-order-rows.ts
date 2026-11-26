@@ -1,5 +1,5 @@
 // src/features/order/history/hooks/use-order-rows.ts
- 
+
 import { useMemo } from 'react';
 import { customerApi, orders } from '@/lib/api/domains';
 import { useVariantsBatch } from '@/lib/services/products';
@@ -9,7 +9,10 @@ import { toShipmentPhase } from '@/lib/api/domains/orders/shipment-phase.shape';
 import type { ShipmentPhase } from '@/lib/api/domains/orders/shipment-phase.shape';
 import { formatCustomerOrderNo } from '../utils/customer-order-no';
 import { isOrderLineMatched } from './demo-order-line';
-import { awaitsSettlementResult, toCancelRequestView } from '@/lib/api/domains/orders/cancel-request.shape';
+import {
+  awaitsSettlementResult,
+  toCancelRequestView,
+} from '@/lib/api/domains/orders/cancel-request.shape';
 import type { CancelRequestView } from '@/lib/api/domains/orders/cancel-request.shape';
 export { filterRefundIssueRows } from './refund-filter.utils';
 import { refundOfTimeline } from './refund-link.utils';
@@ -92,6 +95,7 @@ export type OrderLineRow = {
 
   // 환불 실행/안 함을 운영자가 골라야 하는 상태 (첫 라인만 true 가능)
   refundAwaitingDecision?: boolean;
+  refundNeedsBalanceReconciliation?: boolean;
 
   // 부분취소 수동 검토 사유 코드 (운영자 UI 표시용)
   manualReason?: string;
@@ -133,7 +137,8 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
     // 페이지 이동으로 대상 주문이 바뀌어도 이전 enrichment 를 유지 (테이블 깜빡임 방지)
     placeholderData: keepPreviousData,
     // 막 시작한 채널 취소 정산의 결과(거절·완료)는 응답 몇 초 뒤 따로 온다 — 그 결과가 올 때까지(최대 2분) 3초마다 다시 읽는다.
-    refetchInterval: (query) => (awaitsSettlementResult(query.state.data ?? [], Date.now()) ? 3000 : false),
+    refetchInterval: (query) =>
+      awaitsSettlementResult(query.state.data ?? [], Date.now()) ? 3000 : false,
     queryFn: async () => {
       if (!orderIds.length) return [];
       const details = await Promise.all(
@@ -240,7 +245,9 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
         shippingAddress?.phone ?? detail?.customerPhone ?? userInfo?.phone;
 
       const channelOrderId: string =
-        listItem.channelOrderId ?? detail?.channelOrderId ?? String(listItem.id);
+        listItem.channelOrderId ??
+        detail?.channelOrderId ??
+        String(listItem.id);
       const customerOrderNo = formatCustomerOrderNo(
         listItem.displayOrderNo ?? detail?.displayOrderNo,
         listItem.orderDate ?? listItem.createdAt,
@@ -264,8 +271,9 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
 
       // 상세조회 실패/미도착 시 목록 응답의 lines 로 폴백한다.
       // (목록 엔드포인트가 이미 lines[productName/quantity/금액]을 반환함 → "상품 정보 없음" 방지)
-      const lines: any[] =
-        detail?.lines?.length ? detail.lines : (listItem.lines ?? []);
+      const lines: any[] = detail?.lines?.length
+        ? detail.lines
+        : (listItem.lines ?? []);
 
       // 목록·상세 둘 다 같은 값을 싣지만, 상세가 더 최신일 수 있어 상세를 우선한다.
       const shipmentPhase = toShipmentPhase(
@@ -280,7 +288,10 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
           : undefined;
         const optionName = variant?.optionLabel ?? line.optionName;
 
-        const isMatched = isOrderLineMatched(line, process.env.NEXT_PUBLIC_APP_STAGE);
+        const isMatched = isOrderLineMatched(
+          line,
+          process.env.NEXT_PUBLIC_APP_STAGE
+        );
 
         // 환불 상태 추출 (첫 번째 라인에서만 계산, 나머지는 공유)
         const {
@@ -289,16 +300,17 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
           refundEstimateAmount,
           manualReason,
           awaitingDecision: refundAwaitingDecision,
-        } =
-          idx === 0
-            ? refundOfTimeline(detail?.businessTimeline ?? [])
-            : {
-                refundStatus: undefined,
-                refundLinkId: undefined,
-                refundEstimateAmount: undefined,
-                manualReason: undefined,
-                awaitingDecision: false,
-              };
+          needsBalanceReconciliation: refundNeedsBalanceReconciliation,
+        } = idx === 0
+          ? refundOfTimeline(detail?.businessTimeline ?? [])
+          : {
+              refundStatus: undefined,
+              refundLinkId: undefined,
+              refundEstimateAmount: undefined,
+              manualReason: undefined,
+              awaitingDecision: false,
+              needsBalanceReconciliation: false,
+            };
 
         const walletIntentId: string | null | undefined =
           detail?.walletIntentId ?? listItem.walletIntentId ?? null;
@@ -334,10 +346,13 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
           workLogs: detail?.workLogs ?? [],
 
           variantId: line.variantId,
-          productName: line.productName ?? variant?.masterName ?? line.variantId,
+          productName:
+            line.productName ?? variant?.masterName ?? line.variantId,
           optionName: optionName ?? undefined,
           quantity: Number(line.quantity ?? 1),
-          warehouseCancelPendingQty: Number(line.warehouseCancelPendingQty ?? 0),
+          warehouseCancelPendingQty: Number(
+            line.warehouseCancelPendingQty ?? 0
+          ),
           fulfillmentOrderId: detail?.fulfillmentOrder?.id ?? undefined,
           unitPrice: line.unitPrice ?? undefined,
           totalPrice: line.totalPrice ?? undefined,
@@ -355,6 +370,7 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
           refundEstimateAmount,
           manualReason,
           refundAwaitingDecision,
+          refundNeedsBalanceReconciliation,
           walletIntentId,
 
           // 전체 주문 라인들 추가
@@ -409,7 +425,9 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
           warehouseCancelPendingQty: 0,
           isMatched: false,
           isDirect: false,
-          shipmentPhase: toShipmentPhase(detail?.shipmentPhase ?? listItem.shipmentPhase),
+          shipmentPhase: toShipmentPhase(
+            detail?.shipmentPhase ?? listItem.shipmentPhase
+          ),
           walletIntentId:
             detail?.walletIntentId ?? listItem.walletIntentId ?? null,
           lines: [], // 빈 배열
@@ -424,7 +442,13 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
     });
 
     return { items: lineRows, total };
-  }, [listQuery.data, detailQueries.data, detailQueries.isPlaceholderData, variantMapQuery.data, userMapQuery.data]);
+  }, [
+    listQuery.data,
+    detailQueries.data,
+    detailQueries.isPlaceholderData,
+    variantMapQuery.data,
+    userMapQuery.data,
+  ]);
 
   return {
     data: transformedData,
@@ -466,5 +490,5 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
 }
 
 // 하위 호환 - 모달 컴포넌트가 참조하는 타입 (as any 캐스팅으로 전달되므로 느슨하게 유지)
- 
+
 export type SalesOrderRow = any;

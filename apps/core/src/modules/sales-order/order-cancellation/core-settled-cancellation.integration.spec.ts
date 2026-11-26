@@ -148,6 +148,63 @@ describeIfDb('core 정산 주문 취소 — 커널·결제 쪽 매니저 (K7 PR4
     });
   });
 
+  it('수동 완료 기록이 실패하면 결정 대기 링크를 그대로 남긴다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wireCancelRequest(tx, { walletRefundClient: walletMock().client });
+      const seed = await seedCoreSettledOrder(tx, w);
+
+      await w.cancellation.request(operator(seed.salesOrderId, 'k-admin-manual-persist'));
+      jest.spyOn(w.salesOrders, 'createBusinessLink').mockRejectedValueOnce(new Error('결과 기록 실패'));
+
+      await expect(w.refunds.completeManually(seed.salesOrderId, { adminNote: '확인' })).rejects.toThrow(
+        '결과 기록 실패',
+      );
+      expect((await refundLinksOf(tx, seed.salesOrderId)).map((link) => refundStatusOf(link.metadata))).toEqual([
+        'manual_pending',
+      ]);
+    });
+  });
+
+  it('Wallet 잔액 부족은 완료로 기록하지 않고 CS 대사 뒤 근거 있는 수동 완료로 닫는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const wallet = walletMock();
+      wallet.refundByIntent.mockResolvedValue({
+        kind: 'balance_mismatch',
+        errorCode: 'REFUND_AMOUNT_EXCEEDS_AVAILABLE',
+        errorMessage: 'remaining amount too low',
+      });
+      const w = wireCancelRequest(tx, { walletRefundClient: wallet.client });
+      const seed = await seedCoreSettledOrder(tx, w);
+
+      await w.cancellation.request(operator(seed.salesOrderId, 'k-admin-balance-mismatch'));
+      expect(await w.refunds.retry(seed.salesOrderId)).toEqual({ refundStatus: 'failed' });
+      expect(wallet.refundByIntent).toHaveBeenCalledTimes(1);
+
+      const links = await refundLinksOf(tx, seed.salesOrderId);
+      const failed = links.find((link) => refundStatusOf(link.metadata) === 'failed');
+      expect(failed?.metadata).toMatchObject({ errorCode: 'REFUND_AMOUNT_EXCEEDS_AVAILABLE' });
+      expect(links.some((link) => refundStatusOf(link.metadata) === 'succeeded')).toBe(false);
+      await expect(w.refunds.retry(seed.salesOrderId)).rejects.toThrow('대사');
+      await expect(w.refunds.waive(seed.salesOrderId, {})).rejects.toThrow('대사');
+      await expect(w.refunds.completeManually(seed.salesOrderId, {})).rejects.toThrow('확인 근거');
+      expect(wallet.refundByIntent).toHaveBeenCalledTimes(1);
+
+      await expect(
+        w.refunds.completeManually(seed.salesOrderId, { adminNote: 'Wallet 환불 ID와 금액 대조 및 차액 이체 완료' }),
+      ).resolves.toMatchObject({ refundStatus: 'succeeded', completionType: 'manual' });
+      const completed = (await refundLinksOf(tx, seed.salesOrderId)).find(
+        (link) => refundStatusOf(link.metadata) === 'succeeded',
+      );
+      const awaiting = links.find((link) => refundStatusOf(link.metadata) === 'manual_pending');
+      expect(completed?.metadata).toMatchObject({ providerRefundExecuted: false, completedRefundLinkId: awaiting?.id });
+      const issues = await w.salesOrders.list(
+        { keyword: seed.externalOrderId, keywordType: 'orderNo', refundIssueOnly: true, limit: 20, offset: 0 },
+        tx,
+      );
+      expect(issues.data).toHaveLength(0);
+    });
+  });
+
   it('운영자 부분취소는 추정액을 담은 링크를 남긴다', async () => {
     await inRollbackTx(db, async (tx) => {
       const wallet = walletMock();
@@ -229,6 +286,66 @@ describeIfDb('core 정산 주문 취소 — 커널·결제 쪽 매니저 (K7 PR4
       );
       const statuses = (await refundLinksOf(tx, seed.salesOrderId)).map((link) => refundStatusOf(link.metadata));
       expect(statuses.sort()).toEqual(['requested', 'succeeded']);
+    });
+  });
+
+  it('Wallet 성공 뒤 결과 기록이 실패하면 requested 를 남기고 같은 요청으로 복구한다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const wallet = walletMock();
+      const w = wireCancelRequest(tx, { walletRefundClient: wallet.client });
+      const seed = await seedCoreSettledOrder(tx, w);
+
+      wallet.refundByIntent.mockImplementationOnce(async () => {
+        jest.spyOn(w.salesOrders, 'createBusinessLink').mockRejectedValueOnce(new Error('결과 기록 실패'));
+        return SUCCESS;
+      });
+
+      const outcome = await w.cancellation.request({
+        requester: { kind: 'customer', customerId: CUSTOMER_ID },
+        salesOrderId: seed.salesOrderId,
+        sourceKey: 'k-customer-lost-response',
+        reasonCode: 'CUSTOMER_REQUEST',
+      });
+
+      expect(outcome).toEqual({ kind: 'applied', scope: 'full', refund: { refundStatus: 'requested' } });
+      expect((await refundLinksOf(tx, seed.salesOrderId)).map((link) => refundStatusOf(link.metadata))).toEqual([
+        'requested',
+      ]);
+
+      await expect(w.refunds.retry(seed.salesOrderId)).resolves.toEqual({ refundStatus: 'succeeded' });
+      expect(wallet.refundByIntent.mock.calls[1]).toEqual(wallet.refundByIntent.mock.calls[0]);
+      expect((await refundLinksOf(tx, seed.salesOrderId)).map((link) => refundStatusOf(link.metadata)).sort()).toEqual([
+        'requested',
+        'succeeded',
+      ]);
+    });
+  });
+
+  it('Wallet 응답이 끊겨도 요청 링크를 보존하고 같은 키로 결과를 확인한다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const wallet = walletMock();
+      wallet.refundByIntent.mockResolvedValueOnce({ kind: 'wallet_unavailable', errorMessage: 'connection closed' });
+      const w = wireCancelRequest(tx, { walletRefundClient: wallet.client });
+      const seed = await seedCoreSettledOrder(tx, w);
+
+      const outcome = await w.cancellation.request({
+        requester: { kind: 'customer', customerId: CUSTOMER_ID },
+        salesOrderId: seed.salesOrderId,
+        sourceKey: 'k-customer-network-lost',
+        reasonCode: 'CUSTOMER_REQUEST',
+      });
+
+      expect(outcome).toEqual({ kind: 'applied', scope: 'full', refund: { refundStatus: 'pending' } });
+      expect((await refundLinksOf(tx, seed.salesOrderId)).map((link) => refundStatusOf(link.metadata))).toEqual([
+        'requested',
+      ]);
+
+      await expect(w.refunds.retry(seed.salesOrderId)).resolves.toEqual({ refundStatus: 'succeeded' });
+      expect(wallet.refundByIntent.mock.calls[1]).toEqual(wallet.refundByIntent.mock.calls[0]);
+      expect((await refundLinksOf(tx, seed.salesOrderId)).map((link) => refundStatusOf(link.metadata)).sort()).toEqual([
+        'requested',
+        'succeeded',
+      ]);
     });
   });
 

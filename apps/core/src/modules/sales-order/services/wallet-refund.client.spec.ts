@@ -9,7 +9,7 @@ function mockFetch(status: number, body: unknown): jest.Mock {
   });
 }
 
-describe('WalletRefundClient — already_refunded 파싱', () => {
+describe('WalletRefundClient — 환불 가능 금액 초과 파싱', () => {
   const OLD_ENV = process.env;
 
   beforeEach(() => {
@@ -21,44 +21,44 @@ describe('WalletRefundClient — already_refunded 파싱', () => {
     jest.restoreAllMocks();
   });
 
-  it('body.error가 REFUND_AMOUNT_EXCEEDS_AVAILABLE이면 already_refunded', async () => {
+  it('body.error가 REFUND_AMOUNT_EXCEEDS_AVAILABLE이면 대사 필요', async () => {
     global.fetch = mockFetch(400, { error: 'REFUND_AMOUNT_EXCEEDS_AVAILABLE', message: 'refund failed' });
     const client = new WalletRefundClient();
     const result = await client.refundByIntent('intent-1', 1000, { correlationId: 'c1' });
-    expect(result.kind).toBe('already_refunded');
+    expect(result.kind).toBe('balance_mismatch');
   });
 
-  it('body.error가 REFUND_AMOUNT_EXCEEDS_TOTAL이면 already_refunded', async () => {
+  it('body.error가 REFUND_AMOUNT_EXCEEDS_TOTAL이면 대사 필요', async () => {
     global.fetch = mockFetch(400, { error: 'REFUND_AMOUNT_EXCEEDS_TOTAL', message: 'no refundable amount' });
     const client = new WalletRefundClient();
     const result = await client.refundByIntent('intent-1', 1000, { correlationId: 'c1' });
-    expect(result.kind).toBe('already_refunded');
+    expect(result.kind).toBe('balance_mismatch');
   });
 
-  it('body.errorCode 필드로 already_refunded 감지', async () => {
+  it('body.errorCode 필드로 대사 필요 감지', async () => {
     global.fetch = mockFetch(400, { errorCode: 'REFUND_AMOUNT_EXCEEDS_AVAILABLE', message: 'refund failed' });
     const client = new WalletRefundClient();
     const result = await client.refundByIntent('intent-1', 1000, { correlationId: 'c1' });
-    expect(result.kind).toBe('already_refunded');
+    expect(result.kind).toBe('balance_mismatch');
   });
 
-  it('body.message가 object이고 nested error로 already_refunded 감지', async () => {
+  it('body.message가 object이고 nested error로 대사 필요 감지', async () => {
     global.fetch = mockFetch(400, {
       message: { error: 'REFUND_AMOUNT_EXCEEDS_AVAILABLE', message: 'nested' },
     });
     const client = new WalletRefundClient();
     const result = await client.refundByIntent('intent-1', 1000, { correlationId: 'c1' });
-    expect(result.kind).toBe('already_refunded');
+    expect(result.kind).toBe('balance_mismatch');
   });
 
-  it('message 문자열에 REFUND_AMOUNT_EXCEEDS_AVAILABLE 포함 시 already_refunded', async () => {
+  it('message 문자열에 REFUND_AMOUNT_EXCEEDS_AVAILABLE 포함 시 대사 필요', async () => {
     global.fetch = mockFetch(400, {
       error: 'Bad Request',
       message: 'Refund amount (1000) exceeds REFUND_AMOUNT_EXCEEDS_AVAILABLE (0)',
     });
     const client = new WalletRefundClient();
     const result = await client.refundByIntent('intent-1', 1000, { correlationId: 'c1' });
-    expect(result.kind).toBe('already_refunded');
+    expect(result.kind).toBe('balance_mismatch');
   });
 
   it('다른 400 에러는 failed로 처리', async () => {
@@ -69,6 +69,13 @@ describe('WalletRefundClient — already_refunded 파싱', () => {
     if (result.kind === 'failed') {
       expect(result.errorCode).toBe('INVALID_AMOUNT');
     }
+  });
+
+  it('Wallet 오류 문구가 객체여도 금액 초과로 오판하거나 예외를 내지 않는다', async () => {
+    global.fetch = mockFetch(400, { error: 'INVALID_AMOUNT', message: { message: { unexpected: true } } });
+    const client = new WalletRefundClient();
+    const result = await client.refundByIntent('intent-1', 1000, { correlationId: 'c1' });
+    expect(result).toMatchObject({ kind: 'failed', errorCode: 'INVALID_AMOUNT', determinate: true });
   });
 
   it('body가 null이면 errorCode를 HTTP_400으로 설정하고 failed', async () => {
@@ -149,7 +156,15 @@ describe('WalletRefundClient.listRefundsByIntent — 수동 송금 여부(#1016 
 
   it('목록을 읽는다 — API 키, 시간 제한 신호를 건다', async () => {
     global.fetch = mockFetch(200, [
-      { id: 'r1', chargeId: 'c1', status: 'PENDING', amount: 1000, reasonCode: null, execution: 'MANUAL', createdAt: '2026-10-12T00:00:00.000Z' },
+      {
+        id: 'r1',
+        chargeId: 'c1',
+        status: 'PENDING',
+        amount: 1000,
+        reasonCode: null,
+        execution: 'MANUAL',
+        createdAt: '2026-10-12T00:00:00.000Z',
+      },
     ]);
     const list = await new WalletRefundClient().listRefundsByIntent('intent-1');
     expect(list).toEqual([{ id: 'r1', status: 'PENDING', execution: 'MANUAL', amount: 1000 }]);
@@ -169,7 +184,10 @@ describe('WalletRefundClient.listRefundsByIntent — 수동 송금 여부(#1016 
   });
 
   it('모양이 다른 원소가 하나라도 있으면 null(모름) — 조용히 버리지 않는다', async () => {
-    global.fetch = mockFetch(200, [{ id: 'r1', status: 'PENDING' }, { id: 'r2', status: 'SUCCEEDED', execution: 'AUTO', amount: 10 }]);
+    global.fetch = mockFetch(200, [
+      { id: 'r1', status: 'PENDING' },
+      { id: 'r2', status: 'SUCCEEDED', execution: 'AUTO', amount: 10 },
+    ]);
     expect(await new WalletRefundClient().listRefundsByIntent('intent-1')).toBeNull();
   });
 });
