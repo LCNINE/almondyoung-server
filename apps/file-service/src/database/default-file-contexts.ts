@@ -113,6 +113,8 @@ export const FILE_CONTEXTS: FileContextSeed[] = [
       'text/markdown',
       'application/json',
       'application/x-blender',
+      // Blender 4.2 이상은 .blend 를 zstd 로 압축해 저장한다
+      'application/zstd',
       'application/octet-stream',
     ],
     maxFileSize: SKU_3D_WORKSHOP_MAX_SIZE_BYTES,

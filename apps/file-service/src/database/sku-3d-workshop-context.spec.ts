@@ -50,6 +50,8 @@ describe('sku-3d-workshop file context', () => {
 
   it.each([
     ['blend', Buffer.concat([Buffer.from('BLENDER-v405REND'), Buffer.alloc(4096)])],
+    // 압축 저장된 .blend — zstd 프레임 머리
+    ['zstd blend', Buffer.concat([Buffer.from('28b52ffd', 'hex'), Buffer.alloc(64)])],
     ['glb', glbHeader()],
     [
       'png',
