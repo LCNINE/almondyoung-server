@@ -805,7 +805,8 @@ export class SalesOrdersService {
         occurredAt: dto.occurredAt ? new Date(dto.occurredAt) : new Date(),
       };
 
-      const [businessLink] = await trx.insert(wmsTables.businessLinks).values(values).returning();
+      const [businessLink] = await trx.insert(wmsTables.businessLinks)
+        .values({ ...values, createdAt: sql`clock_timestamp()` }).returning();
       const context = await this.loadBusinessTimelineContext(id, trx);
       if (sourceBelongsToTimeline) {
         this.collectTimelineCsCaseId(context, source.type, source.id);

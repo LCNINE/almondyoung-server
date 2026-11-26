@@ -22,7 +22,12 @@ interface Props {
   onDone?: (refundStatus: string) => void;
 }
 
-export function ManualRefundCompleteModal({ order, open, onOpenChange, onDone }: Props) {
+export function ManualRefundCompleteModal({
+  order,
+  open,
+  onOpenChange,
+  onDone,
+}: Props) {
   const [adminNote, setAdminNote] = useState('');
   const mutation = useAdminManualRefundComplete();
 
@@ -33,6 +38,11 @@ export function ManualRefundCompleteModal({ order, open, onOpenChange, onDone }:
 
   const handleSubmit = async () => {
     if (!order) return;
+    if (order.refundNeedsBalanceReconciliation && !adminNote.trim()) {
+      toast.error('환불 대사 결과와 완료 확인 근거를 메모에 남기세요.');
+      return;
+    }
+
     try {
       const result = await mutation.mutateAsync({
         id: order.orderId,
@@ -55,20 +65,36 @@ export function ManualRefundCompleteModal({ order, open, onOpenChange, onDone }:
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>수동 환불 완료 확인</DialogTitle>
-          <p className="text-xs text-gray-500 mt-1">주문번호: {order.orderNo}</p>
+          <p className="text-xs text-gray-500 mt-1">
+            주문번호: {order.orderNo}
+          </p>
         </DialogHeader>
 
         <div className="space-y-4">
           <div className="rounded bg-amber-50 border border-amber-200 px-3 py-3 text-sm text-amber-800">
-            <p className="font-medium mb-1">이 액션은 PG/은행 자동 환불이 아닙니다.</p>
+            <p className="font-medium mb-1">
+              이 액션은 PG/은행 자동 환불이 아닙니다.
+            </p>
             <p className="text-xs leading-relaxed">
-              외부(PG·은행·수동 이체)에서 이미 환불한 사실을 운영자가 확인하고 내부 상태를 완료로 기록합니다.
-              실제 환불 처리가 완료된 경우에만 확인하세요.
+              외부(PG·은행·수동 이체)에서 이미 환불한 사실을 운영자가 확인하고
+              내부 상태를 완료로 기록합니다. 실제 환불 처리가 완료된 경우에만
+              확인하세요.
             </p>
           </div>
 
+          {order.refundNeedsBalanceReconciliation && (
+            <div className="rounded bg-red-50 border border-red-200 px-3 py-3 text-xs text-red-800 leading-relaxed">
+              Wallet 환불 가능 금액과 요청 금액이 다릅니다. 결제 내역에서 기존
+              환불 ID·금액·상태와 남은 환불액을 대조하세요. 부족한 금액은
+              외부에서 실제 환불한 뒤, 전체 완료 근거를 메모에 남겨야 합니다.
+            </div>
+          )}
+
           <div className="space-y-1.5">
-            <Label>처리 메모 (선택)</Label>
+            <Label>
+              처리 메모{' '}
+              {order.refundNeedsBalanceReconciliation ? '(필수)' : '(선택)'}
+            </Label>
             <Textarea
               value={adminNote}
               onChange={(e) => setAdminNote(e.target.value)}
@@ -82,16 +108,28 @@ export function ManualRefundCompleteModal({ order, open, onOpenChange, onDone }:
           {order.totalAmount != null && (
             <div className="rounded border px-3 py-2 text-sm bg-gray-50">
               <span className="text-gray-500">주문 금액: </span>
-              <span className="font-medium">{order.totalAmount.toLocaleString()}원</span>
+              <span className="font-medium">
+                {order.totalAmount.toLocaleString()}원
+              </span>
             </div>
           )}
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={handleClose} disabled={mutation.isPending}>
+          <Button
+            variant="outline"
+            onClick={handleClose}
+            disabled={mutation.isPending}
+          >
             닫기
           </Button>
-          <Button onClick={handleSubmit} disabled={mutation.isPending}>
+          <Button
+            onClick={handleSubmit}
+            disabled={
+              mutation.isPending ||
+              (order.refundNeedsBalanceReconciliation && !adminNote.trim())
+            }
+          >
             {mutation.isPending ? '처리 중...' : '수동 완료 확인'}
           </Button>
         </DialogFooter>

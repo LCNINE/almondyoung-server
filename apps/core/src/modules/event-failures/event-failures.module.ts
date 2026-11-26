@@ -8,7 +8,18 @@ import { EventFailuresController } from './event-failures.controller';
  * 보류(같은 순서 키 지키기)는 core 가 소비하는 주문 생애 토픽만 — 이유는 `EventFailuresOptions.sequencedTopics` 주석.
  */
 @Module({
-  imports: [EventFailuresCapability.forRoot({ sequencedTopics: [ORDER_STREAM.topic.topic] })],
+  imports: [
+    EventFailuresCapability.forRoot({
+      sequencedTopics: [ORDER_STREAM.topic.topic],
+      replayPrerequisites: [
+        {
+          topic: ORDER_STREAM.topic.topic,
+          blockedEventType: 'OrderCancelled',
+          prerequisiteEventType: 'OrderCreated',
+        },
+      ],
+    }),
+  ],
   controllers: [EventFailuresController],
 })
 export class CoreEventFailuresModule {}

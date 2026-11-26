@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { and, asc, eq, inArray, notExists, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, notExists, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { BadRequestError, ConflictError, NotFoundError } from '@app/shared/filters/domain-exceptions';
 import { dead_letters } from './dead-letter.schema';
@@ -125,11 +125,7 @@ export class DeadLetterRedriver {
         if (headBefore?.id !== row.id) return { processed: 0, stoppedAt: null };
       }
 
-      let processed = 0;
-      for (;;) {
-        const next = await this.nextInSequence(row);
-        if (!next) return { processed, stoppedAt: null };
-
+      const dispatch = async (next: DeadLetterRow) => {
         const stop = await this.dispatchOne(next);
         await this.actions.record({
           targetKind: 'dead_letter',
@@ -139,6 +135,25 @@ export class DeadLetterRedriver {
           actor,
           note: stop?.errorMessage ?? null,
         });
+        return stop;
+      };
+
+      let processed = 0;
+      if (discardReason === undefined && this.options.replayPrerequisites?.length) {
+        const head = await this.nextInSequence(row);
+        const prerequisite = head ? await this.prerequisiteFor(head) : undefined;
+        if (prerequisite) {
+          const stop = await dispatch(prerequisite);
+          if (stop) return { processed, stoppedAt: stop };
+          processed += 1;
+        }
+      }
+
+      for (;;) {
+        const next = await this.nextInSequence(row);
+        if (!next) return { processed, stoppedAt: null };
+
+        const stop = await dispatch(next);
         if (stop) return { processed, stoppedAt: stop };
         processed += 1;
       }
@@ -178,6 +193,39 @@ export class DeadLetterRedriver {
    */
   private sequenceKeyOf(row: DeadLetterRow): string | null {
     return row.sequenceKey !== null && this.options.sequencedTopics.includes(row.topic) ? row.sequenceKey : null;
+  }
+
+  private async prerequisiteFor(head: DeadLetterRow): Promise<DeadLetterRow | undefined> {
+    const sequenceKey = this.sequenceKeyOf(head);
+    if (
+      head.status !== 'failed' ||
+      sequenceKey === null ||
+      head.errorName !== 'NotFoundException' ||
+      !/^Sales order .+ not found for OrderCancelled$/.test(head.errorMessage ?? '')
+    ) {
+      return undefined;
+    }
+
+    const rule = this.options.replayPrerequisites?.find(
+      (item) => item.topic === head.topic && item.blockedEventType === head.eventType,
+    );
+    if (!rule) return undefined;
+
+    const [prerequisite] = await this.db
+      .select()
+      .from(dead_letters)
+      .where(
+        and(
+          eq(dead_letters.consumerGroup, head.consumerGroup),
+          eq(dead_letters.topic, head.topic),
+          eq(dead_letters.sequenceKey, sequenceKey),
+          gt(dead_letters.id, head.id),
+          inArray(dead_letters.status, UNRESOLVED),
+        ),
+      )
+      .orderBy(asc(dead_letters.id))
+      .limit(1);
+    return prerequisite?.eventType === rule.prerequisiteEventType ? prerequisite : undefined;
   }
 
   private async nextInSequence(row: DeadLetterRow): Promise<DeadLetterRow | undefined> {

@@ -29,7 +29,7 @@ export type WalletRefundOutcome =
   | { kind: 'partial_pending'; refunds: WalletRefundResult[] }
   | { kind: 'failed'; errorCode: string; errorMessage: string; determinate: boolean }
   | { kind: 'in_flight'; errorCode: string; errorMessage: string }
-  | { kind: 'already_refunded'; errorCode: string; errorMessage: string }
+  | { kind: 'balance_mismatch'; errorCode: string; errorMessage: string }
   | { kind: 'no_intent_id' }
   | { kind: 'wallet_unavailable'; errorMessage: string };
 
@@ -168,25 +168,21 @@ export class WalletRefundClient {
         `HTTP_${response.status}`;
       const rawErrorMessage =
         (typeof b?.message === 'string' ? b.message : undefined) ??
-        (nestedMessage?.message as string | undefined) ??
+        (typeof nestedMessage?.message === 'string' ? nestedMessage.message : undefined) ??
         response.statusText;
       const errorCode = rawErrorCode;
       const errorMessage = rawErrorMessage;
 
-      // Wallet이 "이미 환불 완료" 또는 "환불 가능 금액 초과(= 이미 환불됨)"를 반환하면
-      // 실패가 아니라 "이미 환불 완료"로 정상화한다. failed로 남기면 운영자가 잘못된
-      // 실패를 계속 보게 되어 혼란이 발생한다.
-      const ALREADY_REFUNDED_CODES = new Set(['REFUND_AMOUNT_EXCEEDS_AVAILABLE', 'REFUND_AMOUNT_EXCEEDS_TOTAL']);
-      // errorCode 외에도 메시지 문자열에서 패턴 매칭 (방어적 처리)
-      const alreadyRefundedByMessage =
-        typeof errorMessage === 'string' &&
-        (errorMessage.includes('REFUND_AMOUNT_EXCEEDS_AVAILABLE') ||
-          errorMessage.includes('REFUND_AMOUNT_EXCEEDS_TOTAL'));
-      if (ALREADY_REFUNDED_CODES.has(errorCode) || alreadyRefundedByMessage) {
+      // 남은 금액 부족은 이번 환불의 성공 증거가 아니다. 이전 부분환불·분쟁·금액 오류도 가능하다.
+      // 메시지에만 코드가 담긴 응답은 표준 코드로 정규화해 CS 대사 화면까지 전달한다.
+      const balanceMismatchCode = ['REFUND_AMOUNT_EXCEEDS_AVAILABLE', 'REFUND_AMOUNT_EXCEEDS_TOTAL'].find(
+        (code) => errorCode === code || (typeof errorMessage === 'string' && errorMessage.includes(code)),
+      );
+      if (response.status === 400 && balanceMismatchCode) {
         this.logger.warn(
-          `[WalletRefundClient] Already-refunded detected for intent ${intentId}: ${errorCode} — ${errorMessage}. correlationId=${options.correlationId}`,
+          `[WalletRefundClient] Refund balance mismatch for intent ${intentId}: ${balanceMismatchCode} — ${errorMessage}. correlationId=${options.correlationId}`,
         );
-        return { kind: 'already_refunded', errorCode, errorMessage };
+        return { kind: 'balance_mismatch', errorCode: balanceMismatchCode, errorMessage };
       }
 
       // 409 처리중 = 불확정 (규율 3). 같은 key 재시도 버킷이며 N 증가 금지.

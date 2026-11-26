@@ -1,7 +1,11 @@
 import { refundOfTimeline } from './refund-link.utils';
 
 const REL = 'cancellation_linked_wallet_refund';
-const link = (id: string, createdAt: string, metadata: Record<string, unknown>) => ({
+const link = (
+  id: string,
+  createdAt: string,
+  metadata: Record<string, unknown>
+) => ({
   id,
   relationName: REL,
   createdAt,
@@ -9,6 +13,38 @@ const link = (id: string, createdAt: string, metadata: Record<string, unknown>) 
 });
 
 describe('refundOfTimeline', () => {
+  it('옛 결정 대기 뒤 잔액 불일치가 오면 실패·대사 필요를 우선 표시하고 옛 링크를 완료 대상으로 유지한다', () => {
+    const r = refundOfTimeline([
+      link('pending', '2026-10-01T00:00:00Z', {
+        refundStatus: 'manual_pending',
+        awaitingDecision: true,
+      }),
+      link('mismatch', '2026-10-02T00:00:00Z', {
+        refundStatus: 'failed',
+        errorCode: 'REFUND_AMOUNT_EXCEEDS_AVAILABLE',
+      }),
+    ]);
+    expect(r).toMatchObject({
+      refundStatus: 'failed',
+      refundLinkId: 'pending',
+      awaitingDecision: false,
+      needsBalanceReconciliation: true,
+    });
+  });
+
+  it('잔액 불일치만 있으면 그 실패 링크를 수동 완료 대상으로 둔다', () => {
+    const r = refundOfTimeline([
+      link('mismatch', '2026-10-02T00:00:00Z', {
+        refundStatus: 'failed',
+        errorCode: 'REFUND_AMOUNT_EXCEEDS_TOTAL',
+      }),
+    ]);
+    expect(r).toMatchObject({
+      refundStatus: 'failed',
+      refundLinkId: 'mismatch',
+      needsBalanceReconciliation: true,
+    });
+  });
   it('타임라인이 비면 아무것도 없고 결정 대기도 아니다', () => {
     expect(refundOfTimeline([])).toEqual({
       refundStatus: undefined,
@@ -21,8 +57,14 @@ describe('refundOfTimeline', () => {
 
   it('waived 로 닫힌 manual_pending 은 결정 대기가 아니고 최신 링크 상태를 보인다', () => {
     const r = refundOfTimeline([
-      link('a', '2026-10-01T00:00:00Z', { refundStatus: 'manual_pending', awaitingDecision: true }),
-      link('b', '2026-10-02T00:00:00Z', { refundStatus: 'waived', completedRefundLinkId: 'a' }),
+      link('a', '2026-10-01T00:00:00Z', {
+        refundStatus: 'manual_pending',
+        awaitingDecision: true,
+      }),
+      link('b', '2026-10-02T00:00:00Z', {
+        refundStatus: 'waived',
+        completedRefundLinkId: 'a',
+      }),
     ]);
     expect(r.refundStatus).toBe('waived');
     expect(r.refundLinkId).toBeUndefined();
@@ -32,7 +74,10 @@ describe('refundOfTimeline', () => {
   it('succeeded 로 닫힌 manual_pending 도 닫힌다', () => {
     const r = refundOfTimeline([
       link('a', '2026-10-01T00:00:00Z', { refundStatus: 'manual_pending' }),
-      link('b', '2026-10-02T00:00:00Z', { refundStatus: 'succeeded', completedRefundLinkId: 'a' }),
+      link('b', '2026-10-02T00:00:00Z', {
+        refundStatus: 'succeeded',
+        completedRefundLinkId: 'a',
+      }),
     ]);
     expect(r.refundStatus).toBe('succeeded');
     expect(r.refundLinkId).toBeUndefined();
@@ -75,7 +120,12 @@ describe('refundOfTimeline', () => {
 
   it('다른 관계 이름의 링크는 무시한다', () => {
     const r = refundOfTimeline([
-      { id: 'z', relationName: 'other', createdAt: '2026-10-01T00:00:00Z', metadata: { refundStatus: 'failed' } },
+      {
+        id: 'z',
+        relationName: 'other',
+        createdAt: '2026-10-01T00:00:00Z',
+        metadata: { refundStatus: 'failed' },
+      },
     ]);
     expect(r.refundStatus).toBeUndefined();
   });

@@ -1,7 +1,7 @@
 /**
  * wallet 이 환불 요청을 4xx 로 거절할 때의 본문 — `{ error, message, detail, retryable }`.
  *
- * error 는 옛 이름 그대로다: core WalletRefundClient 가 body.error 로 금액 초과류를 «이미 환불됨»으로 읽는다.
+ * error 는 옛 이름 그대로다: core WalletRefundClient 가 body.error 로 금액 초과류를 «잔액 대사 필요»로 읽는다.
  * retryable 은 «같은 요청을 나중에 다시 보내면 될 수 있는가» — almond-payment 가 영구 거절과 일시 실패를 가른다(스펙 §6.4).
  * 코드를 더하면 이 표에 판정과 운영자 문장을 함께 적어야 컴파일된다.
  */

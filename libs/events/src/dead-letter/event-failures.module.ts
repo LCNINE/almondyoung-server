@@ -25,7 +25,13 @@ export class EventFailuresModule {
       module: EventFailuresModule,
       imports: [SCHEDULE_ROOT],
       providers: [
-        { provide: EVENT_FAILURES_OPTIONS, useValue: { sequencedTopics: [...options.sequencedTopics] } },
+        {
+          provide: EVENT_FAILURES_OPTIONS,
+          useValue: {
+            sequencedTopics: [...options.sequencedTopics],
+            replayPrerequisites: [...(options.replayPrerequisites ?? [])],
+          },
+        },
         DeadLetterStore,
         FailureActionLog,
         DeadLetterRuntime,

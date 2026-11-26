@@ -14,6 +14,7 @@ import { REFUND_REQUESTED, REFUND_WAIVED, RefundLinkStatus, RefundPolicy } from 
 type SalesOrderRow = typeof wmsTables.salesOrders.$inferSelect;
 
 const REFUND_RELATION = 'cancellation_linked_wallet_refund';
+const BALANCE_MISMATCH_CODES = new Set(['REFUND_AMOUNT_EXCEEDS_AVAILABLE', 'REFUND_AMOUNT_EXCEEDS_TOTAL']);
 
 /**
  * 취소의 «환불» 한 곳 (K7 PR4, 스펙 §5.5). Wallet(`WalletRefundClient.refundByIntent`)을 부르는 취소 쪽 파일은 이것 하나다.
@@ -117,8 +118,10 @@ export class CancellationRefundManager {
       {
         actor: 'customer',
         attemptType: 'initial',
-        correlationId: `cancel:${orderCancellationId}:initial`,
-        // 막히면(Wallet 장애·intent 없음 등) 목록에서 «환불 실행»·«환불 안 함» 을 고를 수 있게 결정 대기로 남긴다(스펙 §5.5)
+        correlationId:
+          typeof meta.correlationId === 'string' ? meta.correlationId : `cancel:${orderCancellationId}:initial`,
+        onUncertain: 'keep_requested',
+        // 결과가 불명확하면 requested 를 지켜 같은 키로 재조회한다. intent 없음 등 확정 장애는 결정 대기로 남긴다.
         onBlocked: 'await_decision',
       },
     );
@@ -134,6 +137,9 @@ export class CancellationRefundManager {
   ): Promise<{ refundStatus: 'waived' }> {
     const so = await this.findSoOrThrow(orderId);
     const rows = await this.refundLinks(so.id);
+    if (BALANCE_MISMATCH_CODES.has(String(this.metaOf(rows[0]?.metadata).errorCode))) {
+      throw new BadRequestException('Wallet 환불 잔액 대사 후 처리하세요. 현재는 환불 여부가 확인되지 않았습니다.');
+    }
     if (!dto.refundLinkId && this.metaOf(rows[0]?.metadata).refundStatus === REFUND_WAIVED) {
       return { refundStatus: REFUND_WAIVED };
     }
@@ -200,10 +206,14 @@ export class CancellationRefundManager {
     // otherwise find the most recent manual_pending link that hasn't been closed by a
     // subsequent completion/waive record (supports partial cancellations).
     const rows = await this.refundLinks(so.id);
+    const needsBalanceReconciliation = BALANCE_MISMATCH_CODES.has(String(this.metaOf(rows[0]?.metadata).errorCode));
+    if (needsBalanceReconciliation && !dto.adminNote?.trim()) {
+      throw new BadRequestException('Wallet 환불 잔액 대사 결과와 외부 환불 완료 확인 근거를 메모에 남기세요.');
+    }
     const targetRefundLink = dto.refundLinkId
       ? (rows.find((r) => r.id === dto.refundLinkId) ?? null)
       : (rows.find((r) => this.metaOf(r.metadata).refundStatus === 'manual_pending' && !this.closedBy(rows, r.id)) ??
-        null);
+        (needsBalanceReconciliation ? rows[0] : null));
 
     // 환불 안 함으로 결정된 건에 «완료» 를 덮어쓰면 결정과 모순되는 기록이 남는다
     const waivedTarget = targetRefundLink
@@ -229,18 +239,24 @@ export class CancellationRefundManager {
       );
     }
 
-    await this.recordWalletRefundLink(so.id, {
-      refundStatus: 'succeeded',
-      intentId: so.walletIntentId ?? undefined,
-      note: `운영자 수동 환불 완료 확인${dto.adminNote ? `: ${dto.adminNote}` : ''}`,
-      actor: 'admin',
-      attemptType: 'retry',
-      extraMetadata: {
-        completionType: 'manual',
-        providerRefundExecuted: false,
-        completedRefundLinkId: targetRefundLink?.id ?? null,
-      },
-    });
+    await this.db.run((tx) =>
+      this.recordWalletRefundLink(
+        so.id,
+        {
+          refundStatus: 'succeeded',
+          intentId: so.walletIntentId ?? undefined,
+          note: `운영자 수동 환불 완료 확인${dto.adminNote ? `: ${dto.adminNote}` : ''}`,
+          actor: 'admin',
+          attemptType: 'retry',
+          extraMetadata: {
+            completionType: 'manual',
+            providerRefundExecuted: false,
+            completedRefundLinkId: targetRefundLink?.id ?? null,
+          },
+        },
+        tx,
+      ),
+    );
 
     return { refundStatus: 'succeeded', completionType: 'manual' };
   }
@@ -252,7 +268,8 @@ export class CancellationRefundManager {
    * - pending: 처리 중 → 중복 재시도 없이 pending 반환
    * - waived: 환불하지 않기로 한 주문 → 400
    * - manual_pending (walletIntentId/amount 없음): 자동 재시도 불가 → 400
-   * - failed / 링크 없음 / 결정 대기: 새 idempotency key `cancel:{id}:retry:{uuid}`로 Wallet 재호출
+   * - requested: 최초 key 와 본문으로 Wallet 결과 재조회
+   * - failed / 링크 없음 / 결정 대기: 현재 링크에 고정된 새 key 로 Wallet 재호출. 확정 실패 링크가 새로 남을 때만 다음 key 로 넘어간다.
    *
    * 목록의 «환불 실행» 도 이 길이다. 결정 대기 건(waive 와 같은 기준의 대상)이 있으면 결과 링크가 `completedRefundLinkId` 로
    * 그 건을 가리킨다 — 성공이면 그 건이 닫혀 «환불 결정 전·실패» 에서 빠진다(닫기는 succeeded·waived 만 하므로 다른 결과엔 무해).
@@ -275,6 +292,11 @@ export class CancellationRefundManager {
     }
 
     const currentStatus = this.metaOf(refundLink?.metadata).refundStatus;
+    if (BALANCE_MISMATCH_CODES.has(String(this.metaOf(refundLink?.metadata).errorCode))) {
+      throw new BadRequestException(
+        'Wallet 환불 잔액 대사 후 결제 내역에서 환불 금액을 확인하세요. 자동 재시도는 막혀 있습니다.',
+      );
+    }
 
     if (currentStatus === REFUND_WAIVED) {
       throw new BadRequestException('환불하지 않기로 한 주문입니다.');
@@ -289,6 +311,13 @@ export class CancellationRefundManager {
       return { refundStatus: 'pending' };
     }
 
+    const latestMeta = this.metaOf(refundLink?.metadata);
+    if (currentStatus === REFUND_REQUESTED && typeof latestMeta.orderCancellationId !== 'string') {
+      throw new BadRequestException(
+        '최초 환불 요청 키를 복원할 수 없습니다. Wallet 환불 이력을 확인한 뒤 수동 완료 처리하세요.',
+      );
+    }
+
     // manual_pending이면서 Wallet 호출에 필요한 정보가 없는 경우 → 수동 처리 필요
     if (!so.walletIntentId) {
       throw new BadRequestException(
@@ -301,17 +330,30 @@ export class CancellationRefundManager {
       );
     }
 
-    // failed·링크 없음·결정 대기 → 새 per-attempt key로 실제 PG 재호출
+    // requested 는 최초 키로 결과를 재조회한다. 그 밖의 재시도는 현재 링크 ID에 키를 묶어,
+    // Wallet 성공 뒤 결과 기록이 실패해도 다음 클릭이 같은 키와 본문으로 결과를 회수한다.
     const target = this.openDecisionTarget(rows);
-    const targetIsManualPending = this.metaOf(target?.metadata).refundStatus === 'manual_pending';
+    const targetMeta = this.metaOf(target?.metadata);
+    const targetIsManualPending = targetMeta.refundStatus === 'manual_pending';
+    const retryOriginalRequest = currentStatus === REFUND_REQUESTED;
+    const correlationId = retryOriginalRequest
+      ? typeof latestMeta.correlationId === 'string'
+        ? latestMeta.correlationId
+        : `cancel:${latestMeta.orderCancellationId}:initial`
+      : `cancel:${refundLink?.id ?? so.id}:retry`;
     // 결정 대기 표지는 core 가 돈을 쥔 주문에만 — 채널 주문의 옛 링크에 «환불 실행» 버튼을 새로 열지 않는다(N19)
     const settlesHere = cancellationCapabilityOf(so.salesChannel).settlesMoney === 'core';
     const refundStatus = await this.requestWalletRefundAfterCancel(
       so,
-      {},
+      {
+        reasonCode:
+          retryOriginalRequest && typeof latestMeta.reasonCode === 'string' ? latestMeta.reasonCode : undefined,
+      },
       {
         attemptType: 'retry',
         actor: 'admin',
+        correlationId,
+        onUncertain: 'keep_requested',
         extraMetadata: target ? { completedRefundLinkId: target.id } : undefined,
         onBlocked: targetIsManualPending ? 'record_failed' : settlesHere ? 'await_decision' : undefined,
       },
@@ -323,14 +365,15 @@ export class CancellationRefundManager {
    * Core 취소 성공 후 Wallet 환불을 요청하고 결과를 business timeline에 기록한다.
    * Wallet 호출 실패/unavailable은 취소 자체를 롤백하지 않는다.
    *
-   * correlationId는 per-attempt UUID를 포함하여 생성된다. 과거 실패 응답이
-   * Wallet idempotency에 의해 재생되어 복구를 막는 문제를 방지한다.
+   * 재시도 키는 이전 결과 링크 ID에 묶는다. 확정 실패가 새 링크로 기록되면 다음 키로 넘어가고,
+   * 결과 불명·기록 실패면 이전 링크를 유지해 Wallet 결과를 같은 키로 다시 읽는다.
    * 중복/초과 환불 방어는 Wallet의 refundable amount 검증이 담당한다.
    *
    * `onBlocked` — 환불이 막혔을 때(intent 없음·금액 없음·Wallet 장애·in-flight) 남길 모양.
    * - 없음: 지금처럼 `manual_pending`
    * - `await_decision`: `manual_pending` + `awaitingDecision` — 목록에서 «환불 실행»·«환불 안 함» 을 고른다
    * - `record_failed`: `failed` — 이미 열린 결정 대기 manual_pending 이 이 환불을 대표할 때(두 번째 manual_pending 금지)
+   * `onUncertain` 은 네트워크 단절·5xx·처리 중 응답에서 현재 결과 링크를 보존한다.
    */
   async requestWalletRefundAfterCancel(
     so: SalesOrderRow,
@@ -342,6 +385,7 @@ export class CancellationRefundManager {
       amountOverride?: number;
       extraMetadata?: Record<string, unknown>;
       onBlocked?: 'await_decision' | 'record_failed';
+      onUncertain?: 'keep_requested';
       tx?: DbTx;
     },
   ): Promise<StoreRefundStatus> {
@@ -444,14 +488,14 @@ export class CancellationRefundManager {
         );
         return 'pending';
       }
-      case 'already_refunded': {
+      case 'balance_mismatch': {
         await this.recordWalletRefundLink(
           so.id,
           {
-            refundStatus: 'succeeded',
+            refundStatus: 'failed',
             intentId: so.walletIntentId,
             amount,
-            note: `이미 환불 완료 (Wallet: ${outcome.errorCode})`,
+            note: `Wallet 환불 가능 금액 불일치 — 결제 내역·기존 환불·남은 금액 대사 필요 (${outcome.errorCode})`,
             reasonCode: dto.reasonCode,
             attemptType,
             actor,
@@ -462,9 +506,10 @@ export class CancellationRefundManager {
           },
           options?.tx,
         );
-        return 'succeeded';
+        return 'failed';
       }
       case 'failed': {
+        if (outcome.determinate === false && options?.onUncertain === 'keep_requested') return 'pending';
         await this.recordWalletRefundLink(
           so.id,
           {
@@ -485,6 +530,7 @@ export class CancellationRefundManager {
         return 'failed';
       }
       case 'wallet_unavailable': {
+        if (options?.onUncertain === 'keep_requested') return 'pending';
         await this.recordWalletRefundLink(
           so.id,
           {
@@ -503,6 +549,7 @@ export class CancellationRefundManager {
         return blockedStatus;
       }
       case 'in_flight': {
+        if (options?.onUncertain === 'keep_requested') return 'pending';
         await this.recordWalletRefundLink(
           so.id,
           {
@@ -576,10 +623,9 @@ export class CancellationRefundManager {
         tx,
       );
     } catch (err) {
-      // A keyed single-flight must persist its replay result before releasing
-      // the advisory lock. The stable Wallet correlation makes a retry safe.
-      if (tx) throw err;
-      // Legacy/unkeyed callers retain the historical best-effort timeline behavior.
+      // Wallet 호출 결과를 기록하지 못하면 완료로 답할 수 없다. 같은 키를 보존한 requested 는 다시 조회할 수 있다.
+      if (tx || info.correlationId) throw err;
+      // Wallet 호출이 없는 옛 기록은 기존의 best-effort 동작을 유지한다.
       const message = err instanceof Error ? err.message : String(err);
       this.logger.error(`[WalletRefund] Failed to record business link for SO ${salesOrderId}: ${message}`);
     }
