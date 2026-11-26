@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { ReactNode } from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
   createRouter,
@@ -147,16 +147,18 @@ describe('ExpectedArrivalListScreen', () => {
     ).toBeInTheDocument();
   });
 
-  it('간편입고·입고내역 링크가 있다 — 스테이션 홈이 사라져도 닿는 유일한 길(U3)', async () => {
+  it('세그먼트로 간편입고·입고내역에 가고, 발주 입고 칸이 지금 화면이다 — 스테이션 홈이 사라져도 닿는 유일한 길(U3)', async () => {
     renderScreen(SELECTED);
-    expect(
-      await screen.findByRole('link', { name: '간편입고' })
-    ).toHaveAttribute('href', '/inbound/quick');
-    // 링크 이름은 「입고내역 · 취소」다
-    expect(screen.getByRole('link', { name: /입고내역/ })).toHaveAttribute(
-      'href',
-      '/inbound/history'
-    );
+    const segment = await screen.findByRole('navigation', { name: '입고 화면' });
+    expect(within(segment).getByRole('link', { name: '간편입고' })).toHaveAttribute('href', '/inbound/quick');
+    expect(within(segment).getByRole('link', { name: '입고내역' })).toHaveAttribute('href', '/inbound/history');
+    expect(within(segment).getByRole('link', { name: '발주 입고' })).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('창고를 고르기 전에도 세그먼트로 간편입고에 갈 수 있다', async () => {
+    renderScreen();
+    await screen.findByText('창고를 먼저 선택해 주세요.');
+    expect(screen.getByRole('link', { name: '간편입고' })).toHaveAttribute('href', '/inbound/quick');
   });
 
   it('스테이션에서만 «선적 상자 입고» 링크가 /inbound/boxes 로 간다', async () => {

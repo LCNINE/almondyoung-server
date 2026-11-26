@@ -55,11 +55,12 @@ describe('activeSectionOf', () => {
 describe('STATION_TABS', () => {
   it('F1~F7 순서, 각 탭의 첫 경로는 자기 탭에 속한다', () => {
     expect(STATION_TABS.map((t) => t.key)).toEqual(['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7']);
+    expect(STATION_TABS.find((t) => t.key === 'F3')).toMatchObject({ to: '/inbound/quick', owns: ['/inbound'] });
     expect(STATION_TABS.at(-1)).toMatchObject({ key: 'F7', label: '반품', to: '/customer-returns' });
     for (const tab of STATION_TABS) expect(activeTabOf(tab.to)?.key).toBe(tab.key);
   });
 
-  it('하위 탭은 F4·F6 에만 — F3 은 입고 화면이 간편입고·입고내역 링크를 이미 갖는다(U2)', () => {
+  it('하위 탭은 F4·F6 에만 — F3 은 입고 화면의 세그먼트가 간편입고·입고내역·발주 입고를 잇는다(U2)', () => {
     expect(STATION_TABS.filter((t) => t.sections.length > 0).map((t) => t.key)).toEqual(['F4', 'F6']);
   });
 });

@@ -4,7 +4,7 @@ import type { TabKey } from './keys';
 export type StationPath =
   | '/outbound'
   | '/outbound/batches'
-  | '/inbound'
+  | '/inbound/quick'
   | '/putaway'
   | '/putaway/location-labels'
   | '/returns/putaway'
@@ -32,7 +32,7 @@ export interface StationTab {
 /**
  * 스테이션 탭(스펙 §4). 새 탭 화면이 생기기 전(PR C~G)에는 지금 화면을 그 탭 안에 그대로 그린다.
  * - F1·F2 는 출고 검수·배치 현황 화면이다(PR C)
- * - F3 은 입고 화면이 간편입고·입고내역 링크를 이미 가져 하위 탭이 없다
+ * - F3 은 간편입고로 열고, 간편입고·입고내역·발주 입고를 화면 오른쪽 위 세그먼트로 오가 하위 탭이 없다
  * - F4 는 적치 화면에서 재고 이동·선반 복귀로 갈 길이 없어 하위 탭을 둔다
  * - F6 은 재고 조회 화면에서 제조 완료 등록으로 갈 길이 없어 하위 탭을 둔다
  * - F7 반품은 고객 반품의 도착·검수다(`/returns/putaway` 는 피킹 되돌림 — 경로를 겹치지 않는다)
@@ -40,7 +40,7 @@ export interface StationTab {
 export const STATION_TABS: readonly StationTab[] = [
   { key: 'F1', label: '출고 검수', to: '/outbound', owns: ['/outbound'], sections: [] },
   { key: 'F2', label: '배치 현황', to: '/outbound/batches', owns: ['/outbound/batches'], sections: [] },
-  { key: 'F3', label: '입고', to: '/inbound', owns: ['/inbound'], sections: [] },
+  { key: 'F3', label: '입고', to: '/inbound/quick', owns: ['/inbound'], sections: [] },
   {
     key: 'F4',
     label: '적치·이동',

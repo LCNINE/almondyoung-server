@@ -545,9 +545,11 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
 
   if (!isSet) {
     return (
-      <div className="space-y-4">
-        <ScreenHeader title="발주 입고" backTo="/inbound" />
-        <p className="text-sm text-gray-600">창고를 먼저 선택해 주세요.</p>
+      <div className="space-y-[22px]">
+        <ScreenHeader title="발주 입고" backTo="/inbound" description={PO_DESCRIPTION} />
+        <p className="rounded-xl border border-[#e4e4e7] bg-white px-[22px] py-[19px] text-[13px] text-[#71717a]">
+          창고를 먼저 선택해 주세요.
+        </p>
       </div>
     );
   }
@@ -558,6 +560,7 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
       <ScreenHeader
         title={purchaseOrder?.supplier?.name ?? '발주 입고'}
         backTo="/inbound"
+        description={PO_DESCRIPTION}
       />
 
       {draft.error ? (
@@ -898,6 +901,8 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
     </div>
   );
 }
+
+const PO_DESCRIPTION = '발주 품목을 스캔하고 받은 수량을 등록하세요.';
 
 export function PurchaseOrderReceiveScreen(
   props: Parameters<typeof PurchaseOrderReceiveScreenContent>[0]

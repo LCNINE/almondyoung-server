@@ -63,7 +63,7 @@ function renderShell(initial = '/outbound', api: ApiClient = emptyApi) {
   const tree = root.addChildren([
     createRoute({ getParentRoute: () => root, path: '/outbound', component: Probe }),
     page('/outbound/batches'),
-    page('/inbound'),
+    page('/inbound/quick'),
     page('/putaway'),
     page('/returns/putaway'),
     page('/movement'),
@@ -112,12 +112,12 @@ describe('StationShell', () => {
     expect(screen.queryByRole('link', { name: /시작 전 배치/ })).toBeNull();
   });
 
-  it('입력칸에 포커스가 있어도 F3 이 입고 탭으로 간다', async () => {
+  it('입력칸에 포커스가 있어도 F3 이 입고 탭의 간편입고로 간다', async () => {
     const { router } = renderShell();
     const input = await screen.findByLabelText('운송장번호');
     input.focus();
     expect(fireEvent.keyDown(input, { key: 'F3' })).toBe(false);
-    await waitFor(() => expect(router.state.location.pathname).toBe('/inbound'));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/inbound/quick'));
   });
 
   it('화면 액션: 켜진 것만 기능키 바에(탭 키는 다시 그리지 않는다), F7 은 실행, 꺼진 F8 은 오류', async () => {
@@ -139,7 +139,7 @@ describe('StationShell', () => {
     fireEvent.keyDown(window, { key: 'F8' });
     expect(flash()).toBe('error');
     fireEvent.keyDown(window, { key: 'F3' });
-    await waitFor(() => expect(router.state.location.pathname).toBe('/inbound'));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/inbound/quick'));
     await waitFor(() => expect(flash()).toBeNull());
   });
 
@@ -181,7 +181,7 @@ describe('StationShell', () => {
     const { router } = renderShell();
     await screen.findByLabelText('운송장번호');
     scan('%90%03');
-    await waitFor(() => expect(router.state.location.pathname).toBe('/inbound'));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/inbound/quick'));
   });
 
   it('F4 탭은 하위 탭으로 적치·선반 복귀·재고 이동을 오간다, F1 에는 하위 탭이 없다', async () => {
@@ -200,7 +200,7 @@ describe('StationShell', () => {
     const { router } = renderShell();
     expect(await screen.findByText('B-1002 13/40')).toBeInTheDocument();
     fireEvent.keyDown(window, { key: 'F3' });
-    await waitFor(() => expect(router.state.location.pathname).toBe('/inbound'));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/inbound/quick'));
     expect(screen.queryByText('B-1002 13/40')).toBeNull();
   });
 

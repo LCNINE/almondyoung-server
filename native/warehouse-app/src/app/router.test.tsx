@@ -137,10 +137,10 @@ it('예전 스테이션 홈 타일의 작업에 탭·하위 탭으로 모두 닿
   setAuthed(true);
   const router = renderApp(session);
   await screen.findByRole('navigation', { name: '탭' });
-  // 입고내역·간편입고는 입고 화면 안의 링크로 간다 — ExpectedArrivalListScreen 테스트가 그 링크를 지킨다
+  // 입고내역·발주 입고는 입고 화면의 세그먼트로 간다 — 아래 F3 세그먼트 테스트가 그 길을 지킨다
   const cases: Array<[string, string | null, string]> = [
     ['F6', null, '/inventory'],
-    ['F3', null, '/inbound'],
+    ['F3', null, '/inbound/quick'],
     ['F4', '적치', '/putaway'],
     ['F4', '선반 복귀', '/returns/putaway'],
     ['F4', '재고 이동', '/movement'],
@@ -160,6 +160,30 @@ it('예전 스테이션 홈 타일의 작업에 탭·하위 탭으로 모두 닿
   }
   fireEvent.click(screen.getByRole('link', { name: '창고 미설정' }));
   await waitFor(() => expect(router.state.location.pathname).toBe('/settings'));
+});
+
+it('F3 은 간편입고로 열리고, 세그먼트 세 칸으로 입고내역·발주 입고 예정 목록을 오간다', async () => {
+  const { session, setAuthed } = makeStub();
+  setAuthed(true);
+  const router = renderApp(session);
+  await screen.findByRole('navigation', { name: '탭' });
+  fireEvent.keyDown(window, { key: 'F3' });
+  await waitFor(() => expect(router.state.location.pathname).toBe('/inbound/quick'));
+  const segment = () => screen.getByRole('navigation', { name: '입고 화면' });
+  await waitFor(() => expect(within(segment()).getByRole('link', { name: '간편입고' })).toHaveAttribute('aria-current', 'page'));
+  expect(within(screen.getByRole('navigation', { name: '탭' })).getByRole('link', { name: /^입고/ })).toHaveAttribute('data-active', 'true');
+
+  fireEvent.click(within(segment()).getByRole('link', { name: '입고내역' }));
+  await waitFor(() => expect(router.state.location.pathname).toBe('/inbound/history'));
+  await waitFor(() => expect(within(segment()).getByRole('link', { name: '입고내역' })).toHaveAttribute('aria-current', 'page'));
+
+  fireEvent.click(within(segment()).getByRole('link', { name: '발주 입고' }));
+  await waitFor(() => expect(router.state.location.pathname).toBe('/inbound'));
+  expect(await screen.findByRole('heading', { name: '발주 입고' })).toBeInTheDocument();
+  expect(within(screen.getByRole('navigation', { name: '탭' })).getByRole('link', { name: /^입고/ })).toHaveAttribute('data-active', 'true');
+
+  fireEvent.click(within(segment()).getByRole('link', { name: '간편입고' }));
+  await waitFor(() => expect(router.state.location.pathname).toBe('/inbound/quick'));
 });
 
 it('스테이션 설정에서 명령 바코드 시트를 연다', async () => {
