@@ -516,6 +516,12 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
       '.onConflictDoUpdate({ target: fcmTokens.token, set: updateSet, setWhere: eq(fcmTokens.userId, userId) })',
     note: "Fixed (task-7, 2026-08-08; observability added in fix round 1). The no-deviceId branch's onConflictDoUpdate carries setWhere: eq(fcmTokens.userId, userId) (device.service.ts:57), so when the globally-unique token column (idx_fcm_token) conflicts with a row owned by a different user, Postgres's ON CONFLICT ... DO UPDATE ... WHERE skips the update entirely (silent no-op, still 201 to the client - avoids a token-existence oracle) instead of overwriting it. updateSet still has no userId, so ownership can never transfer even on a self-match. The skip is not silent server-side: .returning({ userId: fcmTokens.userId }) (device.service.ts:58) detects the zero-row result and DeviceService.registerToken logs a warn ('FCM token registration skipped: token already owned by another user', { userId }) - never the token itself - then returns before the unconditional success log. Proven by apps/notification/src/device/services/__tests__/device.service.idor.spec.ts: one test asserts the exact setWhere predicate reaches onConflictDoUpdate (not just the return value), two more assert the skip path logs exactly { userId } (no token) and suppresses the success log, and the normal path logs no warning. Contrast with DELETE below, which carries the same kind of ownership predicate via a WHERE clause.",
   },
+  'notification POST /sms-gate/links/:code/attributions': {
+    verdict: 'N/A',
+    evidence: 'apps/notification/src/sms-gate/controllers/sms-link-attributions.controller.ts:24',
+    predicate: 'return this.service.attribute(code, user.userId, dto.kind);',
+    note: '쓰기 전용·응답 본문 없음(204). 기록하는 계정은 서명 검증된 토큰의 user.userId 뿐이라 남의 계정으로 기록할 수 없다. :code 는 사용자 소유 자원이 아니라 문자로 보낸 추적 링크다 — 받은 링크를 다른 사람이 눌러 자기 계정을 잇는 것이 의도된 동작(전달된 링크)이다. 읽어 가는 데이터가 없어 IDOR 대상 아님. 한 번도 안 눌린 코드는 404(SmsLinkAttributionManager).',
+  },
   'search GET /health': {
     verdict: 'N/A',
     evidence: 'apps/search/src/health.controller.ts:8',
@@ -1786,15 +1792,15 @@ const keyOf = (r: AuditRow): string => `${r.app} ${r.verb} ${r.route}`;
 describe('IDOR 검사 대상 집합', () => {
   it('감사 스크립트가 idorTarget 을 내보낸다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(targets).toHaveLength(290);
+    expect(targets).toHaveLength(291);
   });
 
   // search 와 analytics 가 둘 다 `GET /health` 이고, user-service 와 file-service 가 둘 다
   // `POST /files/upload` 다. `<VERB> <route>` 로 키를 만들면 그만큼 뭉개지고 스냅샷이 조용히 잃는다.
   it('키에 app 이 들어가야 충돌하지 않는다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(new Set(targets.map(keyOf)).size).toBe(290);
-    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(288);
+    expect(new Set(targets.map(keyOf)).size).toBe(291);
+    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(289);
   });
 
   it('감사 스크립트의 대상 집합과 명단이 정확히 일치한다', () => {

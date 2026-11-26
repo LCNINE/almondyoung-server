@@ -222,11 +222,12 @@ export const smsTrackedLinks = pgTable(
   'sms_tracked_links',
   {
     code: varchar('code', { length: 16 }).primaryKey(),
-    notificationId: uuid('notification_id')
-      .notNull()
-      .references(() => notifications.notificationId, { onDelete: 'cascade' }),
+    // 우리 발송폰으로 보낸 링크는 그 문자 행을 가리킨다. 외부 서비스로 보낸 링크는 비고, 받는 사람을 아래 두 칸에 둔다.
+    notificationId: uuid('notification_id').references(() => notifications.notificationId, { onDelete: 'cascade' }),
     campaignId: uuid('campaign_id').notNull(),
     url: text('url').notNull(),
+    recipientPhone: varchar('recipient_phone', { length: 20 }), // E.164
+    recipientUserId: varchar('recipient_user_id', { length: 100 }), // 번호로 회원 한 명을 찾았을 때만
     clickCount: integer('click_count').default(0).notNull(),
     firstClickedAt: timestamp('first_clicked_at'),
     lastClickedAt: timestamp('last_clicked_at'),
@@ -234,6 +235,34 @@ export const smsTrackedLinks = pgTable(
   },
   (table) => ({
     campaignIdx: index('idx_sms_tracked_links_campaign').on(table.campaignId),
+  }),
+);
+
+// 외부 문자 서비스(엑셀 업로드)로 보낸 캠페인. 링크 행은 scripts/ops/sms-link-export 가 만든다.
+export const externalSmsCampaigns = pgTable('external_sms_campaigns', {
+  campaignId: uuid('campaign_id').defaultRandom().primaryKey(),
+  name: varchar('name', { length: 255 }).notNull().unique(),
+  // 보낸 발송 서비스. 값은 생성 스크립트의 --provider 인자로만 정한다(코드에 기본값을 두지 않는다).
+  provider: text('provider').notNull(),
+  createdBy: varchar('created_by', { length: 100 }).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+// 추적 링크를 누른 브라우저가 어느 계정이었는지. kind: clicked_signed_in(로그인한 채 누름) | login | signup.
+// 덮어쓰지 않고 쌓는다 — 같은 링크·계정·종류는 한 번만.
+export const smsLinkAttributions = pgTable(
+  'sms_link_attributions',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    code: varchar('code', { length: 16 })
+      .notNull()
+      .references(() => smsTrackedLinks.code, { onDelete: 'cascade' }),
+    userId: varchar('user_id', { length: 100 }).notNull(),
+    kind: varchar('kind', { length: 20 }).notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    codeUserKindIdx: uniqueIndex('uq_sms_link_attribution').on(table.code, table.userId, table.kind),
   }),
 );
 
@@ -586,6 +615,8 @@ export const notificationTables = {
   smsGroupRecipients,
   smsOptOuts,
   smsTrackedLinks,
+  externalSmsCampaigns,
+  smsLinkAttributions,
 };
 
 // Export types
@@ -624,6 +655,8 @@ export type SmsRecipientGroup = typeof smsRecipientGroups.$inferSelect;
 export type SmsGroupRecipient = typeof smsGroupRecipients.$inferSelect;
 export type NewSmsGroupRecipient = typeof smsGroupRecipients.$inferInsert;
 export type NewSmsTrackedLink = typeof smsTrackedLinks.$inferInsert;
+export type NewExternalSmsCampaign = typeof externalSmsCampaigns.$inferInsert;
+export type NewSmsLinkAttribution = typeof smsLinkAttributions.$inferInsert;
 
 // Export schema type for DbService
 export type NotificationSchema = typeof notificationTables;

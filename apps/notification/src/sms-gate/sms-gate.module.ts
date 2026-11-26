@@ -9,6 +9,7 @@ import { SmsCampaignsController } from './controllers/sms-campaigns.controller';
 import { SmsConversationsController } from './controllers/sms-conversations.controller';
 import { SmsDevicesController } from './controllers/sms-devices.controller';
 import { SmsGateWebhookController } from './controllers/sms-gate-webhook.controller';
+import { SmsLinkAttributionsController } from './controllers/sms-link-attributions.controller';
 import { SmsLinksController } from './controllers/sms-links.controller';
 import { SmsMessagesController } from './controllers/sms-messages.controller';
 import { SmsRecipientGroupsController } from './controllers/sms-recipient-groups.controller';
@@ -17,6 +18,7 @@ import { SmsGateRepository } from './repositories/sms-gate.repository';
 import { SmsCampaignManager } from './services/sms-campaign.manager';
 import { SmsCampaignReader } from './services/sms-campaign.reader';
 import { SmsCampaignsService } from './services/sms-campaigns.service';
+import { SmsLinkAttributionManager } from './services/sms-link-attribution.manager';
 import { SmsConversationManager } from './services/sms-conversation.manager';
 import { SmsConversationReader } from './services/sms-conversation.reader';
 import { SmsConversationsService } from './services/sms-conversations.service';
@@ -46,11 +48,13 @@ import { SmsTemplatesService } from './services/sms-templates.service';
     SmsGateWebhookController,
     SmsRecipientGroupsController,
     SmsLinksController,
+    SmsLinkAttributionsController,
   ],
   providers: [
     SmsDevicesService,
     SmsMessagesService,
     SmsGateRepository,
+    SmsLinkAttributionManager,
     SmsGateClient,
     GoogleChatClient,
     SmsDeviceOfflineMonitor,

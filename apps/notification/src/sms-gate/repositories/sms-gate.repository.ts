@@ -11,6 +11,7 @@ import {
   NewSmsDevice,
   NewSmsGroupRecipient,
   NewSmsTemplate,
+  NewSmsLinkAttribution,
   NewSmsTrackedLink,
   Notification,
   NotificationCampaign,
@@ -26,6 +27,7 @@ import {
   smsRecipientGroups,
   SmsTemplate,
   smsTemplates,
+  smsLinkAttributions,
   smsTrackedLinks,
 } from '../../../database/schemas/notification-schema';
 import { SMS_GATE_PROVIDER_ID } from '../constants/sms-gate.constants';
@@ -255,6 +257,18 @@ export class SmsGateRepository {
       .where(eq(smsTrackedLinks.code, code))
       .returning({ url: smsTrackedLinks.url });
     return row?.url;
+  }
+
+  async findLinkClickState(code: string): Promise<{ clicked: boolean } | undefined> {
+    const [row] = await this.dbService.db
+      .select({ firstClickedAt: smsTrackedLinks.firstClickedAt })
+      .from(smsTrackedLinks)
+      .where(eq(smsTrackedLinks.code, code));
+    return row && { clicked: row.firstClickedAt !== null };
+  }
+
+  async insertLinkAttribution(row: NewSmsLinkAttribution): Promise<void> {
+    await this.dbService.db.insert(smsLinkAttributions).values(row).onConflictDoNothing();
   }
 
   async countClickedByCampaign(campaignIds: string[]): Promise<Map<string, number>> {

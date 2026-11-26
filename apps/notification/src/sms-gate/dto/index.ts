@@ -6,3 +6,4 @@ export * from './sms-campaign.dto';
 export * from './reply-sms-conversation.dto';
 export * from './list-sms-conversations.dto';
 export * from './sms-recipient-group.dto';
+export * from './create-sms-link-attribution.dto';
