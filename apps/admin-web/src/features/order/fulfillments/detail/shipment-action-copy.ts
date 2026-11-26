@@ -92,6 +92,8 @@ const CHANGED_MESSAGE =
   '그사이 다른 작업으로 상자가 바뀌었어요. 새로고침한 뒤 다시 해 주세요.';
 const NOT_RECALLABLE_MESSAGE =
   '고른 출고는 지금 되돌릴 수 없는 상태예요. 새로고침해 출고 기록을 확인해 주세요.';
+const RECALL_RECORD_MISMATCH_MESSAGE =
+  '출고 기록이 서로 맞지 않아 되돌리지 못했어요. 새로고침해 상자 상태를 확인하고, 그대로면 상자 번호와 함께 개발 담당에게 알려 주세요.';
 
 // 상자 작업 네 가지가 받을 수 있는 거절 코드 — 서버 문장은 개발용 영어라 보이지 않는다
 const REJECTION_MESSAGE: Record<string, (action: ShipmentAction) => string> = {
@@ -121,6 +123,19 @@ const REJECTION_MESSAGE: Record<string, (action: ShipmentAction) => string> = {
   SHIPMENT_RECALL_ATTEMPT_NOT_DISPATCHED: () => NOT_RECALLABLE_MESSAGE,
   SHIPMENT_RECALL_ATTEMPT_CHANGED: () => NOT_RECALLABLE_MESSAGE,
   SHIPMENT_RECALL_NOT_SHIPPED: () => NOT_RECALLABLE_MESSAGE,
+  SHIPMENT_RECALL_WAYBILL_NOT_USED: () => NOT_RECALLABLE_MESSAGE,
+  SHIPMENT_DISPATCH_ALREADY_REVERSED: () =>
+    '이미 되돌린 출고예요. 새로고침해 출고 기록을 확인해 주세요.',
+  FULFILLMENT_COMMAND_IN_PROGRESS: () =>
+    '같은 요청을 아직 처리하고 있어요. 잠시 뒤 새로고침해 결과를 확인해 주세요.',
+  SHIPMENT_RECALL_ATTEMPT_INCOMPLETE: () => RECALL_RECORD_MISMATCH_MESSAGE,
+  SHIPMENT_RECALL_QUANTITY_MISMATCH: () => RECALL_RECORD_MISMATCH_MESSAGE,
+  SHIPMENT_RECALL_FOI_PROGRESS_MISMATCH: () => RECALL_RECORD_MISMATCH_MESSAGE,
+  SHIPMENT_RECALL_FO_NOT_REOPENED: () => RECALL_RECORD_MISMATCH_MESSAGE,
+  SHIPMENT_RECALL_SHIPMENT_NOT_RECOVERING: () => RECALL_RECORD_MISMATCH_MESSAGE,
+  SHIPMENT_RECALL_ATTEMPT_NOT_RECOVERING: () => RECALL_RECORD_MISMATCH_MESSAGE,
+  SHIPMENT_RECALL_NOT_RESUMABLE: () => RECALL_RECORD_MISMATCH_MESSAGE,
+  SHIPMENT_RECALL_OWNER_MISSING: () => RECALL_RECORD_MISMATCH_MESSAGE,
 };
 
 /** 응답이 없어 같은 요청으로 다시 보낼 수 있을 때 — 바로 아래 «다시 시도» 안내를 가리킨다 */

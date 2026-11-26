@@ -21,6 +21,7 @@ import { loadSellmateShipmentIds } from '../services/sellmate-handed-over-shipme
 import { waybillFailureText } from '../waybill/waybill-failure-text';
 import { loadShortPickReturns } from './short-pick-returns';
 import { batchExitReasonOf, loadNeedsNewWaybill, loadReturnedWorkItems } from './batch-returns';
+import { loadRecallReturns } from './recall-returns';
 import { OUR_HOLDER_KEY, preparationOwnerOf } from './preparation-owner';
 import { loadNeedsInfoLines, loadUntrustedLineSkus, needsInfoIssues, needsInfoReasonText } from './needs-info';
 import { loadWaitingQuantities, loadWarehouseStock, readPipelineScope, shortageStockOf } from './shortage-stock';
@@ -103,6 +104,7 @@ export class OutboundPreparationReader {
         multiCount: 0,
         shortPickCount: 0,
         batchReturnCount: 0,
+        recallReturnCount: 0,
         shipments: [],
       }));
       const holders = new Map<string, PreparationHolderDto>();
@@ -136,16 +138,17 @@ export class OutboundPreparationReader {
       const ids = kept.map((shipment) => shipment.id);
       const returned = await loadReturnedWorkItems(trx, ids);
       const shortPicks = await loadShortPickReturns(trx, returned);
-      const newWaybills = await loadNeedsNewWaybill(trx, [...returned.keys()]);
+      const recalls = await loadRecallReturns(trx, ids);
+      const newWaybills = await loadNeedsNewWaybill(trx, [...returned.keys(), ...recalls.keys()]);
       if (ids.length === 0) {
         return { warehouseId, buckets, awaitingMatchingCount: backlog.count, holders: [] };
       }
 
       const lines = await loadShipmentLines(trx, ids);
       const orderedAt = earliestOrderDates(lines);
-      // 분류마다 결품으로 돌아온 상자, 배치에서 빠져 돌아온 상자 순으로 앞에 모으고, 그 안에서는 우선할당, 오래된 주문 순 —
+      // 분류마다 결품으로 돌아온 상자, 배치에서 빠져 돌아온 상자, 출고를 되돌린 상자 순으로 앞에 모으고, 그 안에서는 우선할당, 오래된 주문 순 —
       // 쪽 나누기 전에 정렬해야 다음 쪽에 묻히지 않는다. 주문일이 없거나 같으면 상자를 만든 순서 그대로다
-      const rank = (id: string) => (shortPicks.has(id) ? 0 : returned.has(id) ? 1 : 2);
+      const rank = (id: string) => (shortPicks.has(id) ? 0 : returned.has(id) ? 1 : recalls.has(id) ? 2 : 3);
       const waiting = new Set(
         lines.filter((line) => line.stockAllocation !== 'priority').map((line) => line.shipmentId),
       );
@@ -224,12 +227,14 @@ export class OutboundPreparationReader {
         const single = isSingleItem(quantities);
         const shortPick = shortPicks.get(shipment.id) ?? null;
         const exit = returned.get(shipment.id);
+        const recall = recalls.get(shipment.id);
 
         bucket.count++;
         bucket.singleCount += single ? 1 : 0;
         bucket.multiCount += single ? 0 : 1;
         bucket.shortPickCount += shortPick ? 1 : 0;
         bucket.batchReturnCount += exit && !shortPick ? 1 : 0;
+        bucket.recallReturnCount += recall && !exit ? 1 : 0;
 
         if (
           countsOnly ||
@@ -274,6 +279,14 @@ export class OutboundPreparationReader {
                 batchNumber: exit.batchNumber,
                 exitedAt: exit.exitedAt.toISOString(),
                 ...batchExitReasonOf(exit.exclusionReason),
+                needsNewWaybill: newWaybills.has(shipment.id),
+              }
+            : null,
+          recallReturn: recall
+            ? {
+                recalledAt: recall.recalledAt.toISOString(),
+                reasonCode: recall.reasonCode,
+                reason: recall.reason,
                 needsNewWaybill: newWaybills.has(shipment.id),
               }
             : null,

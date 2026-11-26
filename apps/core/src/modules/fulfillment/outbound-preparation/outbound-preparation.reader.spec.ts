@@ -49,6 +49,10 @@ jest.mock('./batch-returns', () => ({
   loadNeedsNewWaybill: jest.fn(async () => new Set<string>()),
 }));
 
+jest.mock('./recall-returns', () => ({
+  loadRecallReturns: jest.fn(async () => new Map()),
+}));
+
 function query(rows: unknown[]) {
   const result = Object.assign(Promise.resolve(rows), {
     from: () => result,

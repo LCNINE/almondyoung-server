@@ -183,6 +183,97 @@ it('결품 상자, 배치에서 빠져 돌아온 상자, 그 밖의 상자를 �
   expect(rows[6]).toContain('-');
 });
 
+it('출고를 되돌린 상자를 따로 묶고 되돌린 때·사유·재고가 잡힌 곳과 다음 할 일을 붙인다', () => {
+  render(
+    list({
+      bucket: 'ready',
+      count: 2,
+      singleCount: 2,
+      multiCount: 0,
+      shortPickCount: 0,
+      batchReturnCount: 0,
+      recallReturnCount: 1,
+      shipments: [
+        {
+          ...shipment('recalled', null),
+          recallReturn: {
+            recalledAt: '2026-01-02T05:49:00Z',
+            reasonCode: 'carrier_handoff_failed',
+            reason: '택배사 인계 실패',
+            needsNewWaybill: true,
+          },
+        },
+        shipment('plain', null),
+      ],
+    })
+  );
+
+  const rows = Array.from(document.querySelectorAll('tbody tr')).map(
+    (row) => row.textContent
+  );
+
+  expect(rows[0]).toBe(
+    '출고를 되돌린 상자 1건 — 되돌린 이유를 보고 다시 준비해 주세요'
+  );
+  expect(rows[1]).toContain('출고 되돌림 — 택배사 인계 실패');
+  expect(rows[1]).toContain(
+    '1월 2일 14:49 출고 되돌림 · 돌려받은 상품은 «출고 재작업존» 재고예요'
+  );
+  expect(rows[1]).toContain(
+    '«출고 준비»를 누르면 새 송장을 받아 다시 배치에 담아요'
+  );
+  expect(rows[2]).toBe('그 밖의 상자');
+  expect(
+    screen
+      .getAllByRole('link', { name: '상자 상세' })
+      .map((link) => link.getAttribute('href'))
+  ).toEqual(['/order/fulfillments?shipmentId=recalled']);
+});
+
+it('출고를 되돌린 뒤 배치에서 다시 빠진 상자는 배치 묶음에 두고 되돌린 사실을 함께 적는다', () => {
+  render(
+    list({
+      bucket: 'ready',
+      count: 1,
+      singleCount: 1,
+      multiCount: 0,
+      shortPickCount: 0,
+      batchReturnCount: 1,
+      recallReturnCount: 0,
+      shipments: [
+        {
+          ...shipment('both', null),
+          batchReturn: {
+            batchNumber: 'OB-9',
+            exitedAt: '2026-01-02T06:00:00Z',
+            place: '관리자 출고 배치',
+            reason: '잘못 넣은 상자',
+            needsNewWaybill: true,
+          },
+          recallReturn: {
+            recalledAt: '2026-01-02T05:49:00Z',
+            reasonCode: 'carrier_handoff_failed',
+            reason: '택배사 인계 실패',
+            needsNewWaybill: true,
+          },
+        },
+      ],
+    })
+  );
+
+  const rows = Array.from(document.querySelectorAll('tbody tr')).map(
+    (row) => row.textContent
+  );
+
+  expect(rows[0]).toBe(
+    '배치에서 빠져 돌아온 상자 1건 — 뺀 이유를 보고 다시 준비해 주세요'
+  );
+  expect(rows[1]).toContain('1월 2일 15:00 · OB-9에서 뺌 · 관리자 출고 배치');
+  expect(rows[1]).toContain('출고 되돌림 — 택배사 인계 실패');
+  expect(rows[1]).toContain('«출고 준비»를 누르면 다시 배치에 담아요');
+  expect(rows).toHaveLength(2);
+});
+
 it('돌아온 상자가 앞 쪽에서 끝난 쪽은 첫 줄에 «그 밖의 상자»를 단다', () => {
   render(
     list({

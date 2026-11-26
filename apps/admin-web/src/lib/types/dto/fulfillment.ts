@@ -2,6 +2,7 @@
 // 풀필먼트(출고) 도메인 DTO 타입 — 통합 서버 컨트롤러 스키마와 1:1 대응
 
 import type { LineCompositionView } from './line-composition';
+import type { PreparationRecallReturn } from './preparation-recall';
 
 // ===== Fulfillment Order =====
 
@@ -1218,6 +1219,8 @@ export interface PreparationShipmentDto {
   shortPick?: PreparationShortPickLine[] | null;
   // 출고 배치에서 빠져 돌아온 상자. 결품 상자 다음에 모아 준다.
   batchReturn?: PreparationBatchReturn | null;
+  // 출고를 되돌려 돌아온 상자. 배치에서 돌아온 상자 다음에 모아 준다. 옛 core 응답엔 없다
+  recallReturn?: PreparationRecallReturn | null;
   // 위탁 업체(3pl) 상자면 그 화주. 자사 상자는 null
   owner?: { id: string; name: string } | null;
   // 우선할당한 상자. 옛 core 응답엔 없다
@@ -1273,6 +1276,7 @@ export interface PreparationBucketDto {
   multiCount: number;
   shortPickCount?: number;
   batchReturnCount?: number;
+  recallReturnCount?: number;
   shipments: PreparationShipmentDto[];
 }
 
