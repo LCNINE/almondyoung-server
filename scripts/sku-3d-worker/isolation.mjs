@@ -109,13 +109,18 @@ export function probeVerdict(output) {
     return 'denied';
   }
 
-  // 샌드박스가 명령을 아예 띄우지 못해도 막힌 것이다(표시가 안 나온다)
-  return 'denied';
+  // 표시가 없으면 명령이 돌지 않은 것이다 — 막힘으로 치면 잘못 부른 검사가 차단 항목을 통과시킨다
+  return 'error';
+}
+
+// 0.166 부터 -P·-C 가 필수다. 없던 버전에선 프로필 대신 기본 정책으로 돌아 검사가 엉뚱한 것을 잰다
+export function sandboxArgs(cwd, command) {
+  return ['sandbox', '-P', PROFILE, '-C', cwd, '--', ...command];
 }
 
 function runInSandbox({ codexBin, codexHome, cwd, env, command }) {
   return new Promise((resolvePromise) => {
-    const child = spawn(codexBin, ['sandbox', '--', ...command], {
+    const child = spawn(codexBin, sandboxArgs(cwd, command), {
       cwd,
       env: { ...env, CODEX_HOME: codexHome },
       shell: false,
