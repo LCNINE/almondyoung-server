@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
+import { isJwtExpired } from "@/lib/auth/jwt-expiry"
 import { requireBackendBaseUrl } from "@/lib/config/backend"
+import { recordSmsRef, SMS_REF_COOKIE, smsRefCookieOptions } from "@/lib/sms-ref/sms-ref"
 
 const REGION = process.env.NEXT_PUBLIC_DEFAULT_REGION || "kr"
 
@@ -22,7 +24,14 @@ export async function GET(request: NextRequest) {
     )
     if (!res.ok) return NextResponse.redirect(home, 302)
     const { url } = (await res.json()) as { url: string }
-    return NextResponse.redirect(url, 302)
+    const response = NextResponse.redirect(url, 302)
+    // 이미 로그인한 브라우저면 지금 계정을 잇는다. 못 이으면(비로그인·토큰 만료·기록 실패) 쿠키를 남겨
+    // 토큰 복구나 로그인·가입 콜백에서 잇는다 — middleware 의 /r rewrite 는 토큰 복구보다 앞이라 여기선 만료 토큰을 못 살린다.
+    const accessToken = request.cookies.get("accessToken")?.value
+    const recorded =
+      !!accessToken && !isJwtExpired(accessToken) && (await recordSmsRef(code, accessToken, "clicked_signed_in"))
+    if (!recorded) response.cookies.set(SMS_REF_COOKIE, code, smsRefCookieOptions())
+    return response
   } catch {
     return NextResponse.redirect(home, 302)
   }
