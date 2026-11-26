@@ -96,8 +96,9 @@ describe('도착 대기 목록', () => {
     submitSearch('김민');
 
     await waitFor(() => expect(orderNos()).toEqual(['O-1001']));
-    expect(screen.getByRole('heading', { level: 2, name: '검수 대기' })).toBeInTheDocument();
-    expect(screen.getAllByText('1건').length).toBeGreaterThan(0);
+    const readyHeader = screen.getByRole('heading', { level: 2, name: '검수 대기' }).parentElement;
+    if (!readyHeader) throw new Error('ready card header not found');
+    expect(within(readyHeader).getByText('1건')).toBeInTheDocument();
     expect(screen.getByText('검색한 검수 대기 반품이 없어요.')).toBeInTheDocument();
   });
 
