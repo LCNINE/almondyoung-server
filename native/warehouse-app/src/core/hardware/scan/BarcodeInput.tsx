@@ -5,10 +5,14 @@ import { useScanEmit } from './useScanner';
 export function BarcodeInput({
   label = '바코드 입력',
   disabled,
+  hideSubmit,
+  placeholder,
   onSubmit,
 }: {
   label?: string;
   disabled?: boolean;
+  hideSubmit?: boolean;
+  placeholder?: string;
   onSubmit: (code: string) => void;
 }) {
   const [code, setCode] = useState('');
@@ -36,14 +40,17 @@ export function BarcodeInput({
           id={id}
           value={code}
           disabled={disabled}
+          placeholder={placeholder}
           autoComplete="off"
           onChange={(e) => setCode(e.target.value)}
           className="w-full rounded border px-3 py-2"
         />
       </div>
-      <Button type="submit" disabled={disabled || !code.trim()}>
-        입력
-      </Button>
+      {hideSubmit ? null : (
+        <Button type="submit" disabled={disabled || !code.trim()}>
+          입력
+        </Button>
+      )}
     </form>
   );
 }

@@ -4,14 +4,46 @@ import { useApiClient } from '../../core/data/ApiClientProvider';
 import { errorMessage } from '../../core/data/errorMessage';
 import { ApiError } from '../../core/data/httpClient';
 import { Button } from '../../core/design/Button';
+import { cn } from '../../core/design/cn';
 import { ScreenHeader } from '../../core/design/ScreenHeader';
 import { BarcodeInput } from '../../core/hardware/scan/BarcodeInput';
 import { useScanner } from '../../core/hardware/scan/useScanner';
 import { SCAN_STORAGE_MESSAGE, useWorkScanQueue } from '../../core/hardware/scan/useWorkScanQueue';
 import { WarehousePicker } from '../warehouse/WarehousePicker';
 import { afterPutaway, returnLocations, type PutawayStep } from './returnPutaway';
-import { fetchMyReturnBin, putawayReturn } from './returnBinApi';
+import { fetchMyReturnBin, putawayReturn, type ReturnBinItem } from './returnBinApi';
 import { WorkArea } from '../../core/operations/WorkBoundary';
+
+interface CompletedPutaway {
+  key: string;
+  skuName: string;
+  skuCode: string;
+  locationCode: string;
+  qty: number;
+}
+
+const DESCRIPTION = '상품을 원래 선반에 놓고 바코드를 스캔하세요.';
+
+function completedBetween(before: ReturnBinItem[], after: ReturnBinItem[]): CompletedPutaway[] {
+  const done: CompletedPutaway[] = [];
+
+  for (const item of before) {
+    const left = after.find((next) => next.skuId === item.skuId && next.sourceLocationId === item.sourceLocationId);
+    const qty = item.qty - (left?.qty ?? 0);
+
+    if (qty > 0) {
+      done.push({
+        key: `${item.skuId}|${item.locationCode}`,
+        skuName: item.skuName,
+        skuCode: item.skuCode,
+        locationCode: item.locationCode,
+        qty,
+      });
+    }
+  }
+
+  return done;
+}
 
 function ReturnPutawayContent({ warehouseId }: { warehouseId: string }) {
   const api = useApiClient();
@@ -20,11 +52,30 @@ function ReturnPutawayContent({ warehouseId }: { warehouseId: string }) {
   stepRef.current = step;
   const [notice, setNotice] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
   const [loadAttempt, setLoadAttempt] = useState(0);
+  const [completed, setCompleted] = useState<CompletedPutaway[]>([]);
 
   const queue = useWorkScanQueue<{ binBarcode: string; warehouseId: string; productBarcode: string; locationCode?: string }>(
     async (input, id) => {
       try {
         const result = await putawayReturn(api, { ...input, idempotencyKey: id });
+        const before = stepRef.current;
+
+        if (before.kind !== 'loading') {
+          const done = completedBetween(before.bin.items, result.items);
+
+          setCompleted((list) => {
+            const merged = [...list];
+
+            for (const entry of done) {
+              const index = merged.findIndex((row) => row.key === entry.key);
+
+              if (index === -1) merged.push(entry);
+              else merged[index] = { ...merged[index], qty: merged[index].qty + entry.qty };
+            }
+
+            return merged;
+          });
+        }
 
         setStep(afterPutaway({ ...result.returnBin, items: result.items }, result.items));
         setNotice(result.items.length ? { kind: 'ok', text: '넣었어요. 다음 상품을 스캔해 주세요.' } : null);
@@ -107,56 +158,154 @@ function ReturnPutawayContent({ warehouseId }: { warehouseId: string }) {
   useScanner((event) => accept(event.code));
 
   const empty = step.kind !== 'loading' && step.bin.items.length === 0;
-  const prompt =
-    step.kind === 'loading' ? '되돌릴 상품을 불러오고 있어요.' : empty ? '되돌릴 상품이 없어요.' : step.kind === 'product' ? '넣을 상품을 스캔해 주세요.' : '로케이션을 스캔해 주세요.';
+  const items = step.kind === 'loading' ? [] : step.bin.items;
+  const totalQty = items.reduce((sum, item) => sum + item.qty, 0);
+  const choosing = step.kind === 'location';
+
+  const stepLabel = step.kind === 'loading' ? '불러오는 중' : empty ? '완료' : choosing ? '위치 확인' : '상품 스캔';
+  const title =
+    step.kind === 'loading'
+      ? '복귀할 상품을 불러오고 있어요.'
+      : empty
+        ? '되돌릴 상품이 없어요.'
+        : choosing
+          ? '어느 선반에 놓았나요?'
+          : '선반에 놓고 상품을 스캔하세요';
+  const guide =
+    step.kind === 'loading'
+      ? null
+      : empty
+        ? '대기 상품을 모두 처리했습니다.'
+        : choosing
+          ? '복귀 위치가 여러 곳입니다. 실제로 놓은 선반의 위치 바코드를 스캔하세요.'
+          : '복귀 선반이 한 곳이면 상품 스캔으로 1개가 처리됩니다. 별도로 확인 버튼을 누를 필요가 없습니다.';
 
   return (
-    <div className="space-y-4">
-      <ScreenHeader title="되돌림 적치" backTo="/" />
-      <p className="text-sm text-neutral-500">{prompt}</p>
-      {step.kind !== 'loading' && (
-        <ul className="space-y-1">
-          {step.bin.items.map((item) => (
-            <li key={`${item.skuId}|${item.sourceLocationId}`} className="rounded border px-3 py-2">
-              {item.skuName} {item.qty}개 → {item.locationCode}
-            </li>
-          ))}
-        </ul>
-      )}
-      {step.kind === 'location' && (
-        <section role="region" aria-label="넣을 곳" className="rounded border border-blue-300 px-3 py-2">
-          {step.locations.map((location) => (
-            <p key={location.locationCode}>{location.locationCode} · {location.qty}개</p>
-          ))}
-          <Button
-            onClick={() => {
-              setStep({ kind: 'product', bin: step.bin });
-              setNotice(null);
-            }}
+    <div className="space-y-5">
+      <ScreenHeader title="선반 복귀" backTo="/" description={empty ? '대기 상품을 모두 처리했습니다.' : DESCRIPTION} />
+      <div className="grid h-[clamp(360px,52vh,560px)] min-h-0 grid-cols-1 items-stretch gap-6 max-[900px]:h-auto lg:grid-cols-[minmax(300px,0.9fr)_minmax(450px,1.4fr)]">
+        <section
+          aria-label="선반 복귀 대기"
+          className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-[#e4e4e7] bg-white max-[900px]:max-h-[400px]"
+        >
+          <div className="flex shrink-0 items-center justify-between gap-2.5 border-b border-[#e4e4e7] px-[22px] py-[19px]">
+            <h3 className="text-base font-semibold text-[#27272a]">선반 복귀 대기</h3>
+            <span className="text-[13px] font-semibold text-[#27272a]">
+              {items.length}건 · {totalQty}개
+            </span>
+          </div>
+          <div
+            role="region"
+            aria-label="선반 복귀 대기 목록"
+            tabIndex={0}
+            className="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-gutter:stable] [scrollbar-width:thin]"
           >
-            다른 상품
-          </Button>
+            <ul aria-label="대기 상품">
+              {items.map((item) => (
+                <li
+                  key={`${item.skuId}|${item.sourceLocationId}`}
+                  className="border-t border-[#e4e4e7] px-[22px] py-[18px] first:border-t-0"
+                >
+                  <strong className="block text-sm leading-normal font-semibold text-[#27272a]">{item.skuName}</strong>
+                  <code className="mt-1.5 block text-[11px] text-[#71717a]">{item.skuCode}</code>
+                  <div className="mt-3 flex items-center justify-between text-[13px]">
+                    <span className="text-[#71717a]">
+                      복귀 선반 <strong className="ml-2 font-semibold text-[#27272a]">{item.locationCode}</strong>
+                    </span>
+                    <strong className="font-semibold text-[#27272a]">{item.qty}개</strong>
+                  </div>
+                </li>
+              ))}
+            </ul>
+            {completed.length > 0 && (
+              <section aria-label="완료 내역" className="border-t border-[#e4e4e7] bg-[#fafafa]">
+                <h4 className="px-[22px] pt-4 text-xs font-semibold text-[#71717a]">완료 내역</h4>
+                <ul aria-label="완료 상품">
+                  {completed.map((entry) => (
+                    <li
+                      key={entry.key}
+                      className="flex items-center gap-4 border-t border-[#e4e4e7] px-[22px] py-3 text-[13px] first:border-t-0"
+                    >
+                      <span className="min-w-0 flex-1 text-[#27272a]">{entry.skuName}</span>
+                      <strong className="font-semibold text-[#27272a]">{entry.qty}개</strong>
+                      <span className="text-[#71717a]">{entry.locationCode}</span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+          </div>
+          <div className="shrink-0 border-t border-[#e4e4e7] bg-[#fafafa] px-[22px] py-3 text-[11px] text-[#71717a]">
+            목록을 스크롤해 복귀 위치를 확인하세요.
+          </div>
         </section>
-      )}
-      {queue.storageError() ? (
-        <p role="alert">{SCAN_STORAGE_MESSAGE}</p>
-      ) : queue.error() ? (
-        <p role="alert">
-          앞의 스캔이 처리됐는지 확인하지 못했어요. 같은 상품을 다시 찍지 말고 처리 내역 확인을 눌러 주세요.
-        </p>
-      ) : notice ? (
-        <p role={notice.kind === 'error' ? 'alert' : 'status'}>{notice.text}</p>
-      ) : null}
-      {queue.error() ? <Button onClick={() => void queue.retryHead().catch(() => {})}>처리 내역 확인</Button> : null}
-      {step.kind === 'loading' && notice && !queue.error() ? (
-        <Button onClick={() => setLoadAttempt((attempt) => attempt + 1)}>다시 불러오기</Button>
-      ) : null}
-      {step.kind !== 'loading' && !empty && (
-        <BarcodeInput
-          label={step.kind === 'product' ? '상품 바코드' : '로케이션 코드'}
-          onSubmit={accept}
-        />
-      )}
+        <section
+          aria-label="스캔"
+          className="flex min-h-0 min-w-0 flex-col gap-6 overflow-y-auto rounded-xl border border-[#e4e4e7] bg-white p-7 max-[900px]:h-auto max-[600px]:gap-5 max-[600px]:px-[17px] max-[600px]:py-5 [&>*]:shrink-0"
+        >
+          <div>
+            <span className="mb-2.5 block text-xs text-[#71717a]">{stepLabel}</span>
+            <h2 className="text-2xl font-bold text-[#27272a] max-[600px]:text-xl">{title}</h2>
+            {guide ? <p className="mt-3 text-[13px] leading-[1.9] text-[#71717a]">{guide}</p> : null}
+          </div>
+          {step.kind === 'location' && (
+            <section
+              role="region"
+              aria-label="넣을 곳"
+              className="flex flex-col gap-3 border-y border-[#e4e4e7] py-[18px]"
+            >
+              {step.locations.map((location) => (
+                <p key={location.locationCode} className="flex items-center justify-between text-[13px]">
+                  <strong className="font-semibold text-[#27272a]">{location.locationCode}</strong>
+                  <span className="text-xs text-[#71717a]">{` · ${location.qty}개 대기`}</span>
+                </p>
+              ))}
+            </section>
+          )}
+          {step.kind !== 'loading' && !empty && (
+            <BarcodeInput
+              label={step.kind === 'product' ? '복귀 상품 바코드' : '복귀 선반 바코드'}
+              placeholder={step.kind === 'product' ? '상품 바코드 스캔' : '선반 위치 바코드 스캔'}
+              hideSubmit
+              onSubmit={accept}
+            />
+          )}
+          {queue.storageError() ? (
+            <p role="alert" className="text-xs leading-[1.7] text-[#b42318]">
+              {SCAN_STORAGE_MESSAGE}
+            </p>
+          ) : queue.error() ? (
+            <p role="alert" className="text-xs leading-[1.7] text-[#b42318]">
+              앞의 스캔이 처리됐는지 확인하지 못했어요. 같은 상품을 다시 찍지 말고 처리 내역 확인을 눌러 주세요.
+            </p>
+          ) : notice ? (
+            <p
+              role={notice.kind === 'error' ? 'alert' : 'status'}
+              className={cn('text-xs leading-[1.7]', notice.kind === 'error' ? 'text-[#b42318]' : 'text-[#52525b]')}
+            >
+              {notice.text}
+            </p>
+          ) : choosing ? (
+            <p className="text-xs leading-[1.7] text-[#52525b]">위치를 확인하기 전에는 수량이 줄지 않습니다.</p>
+          ) : null}
+          {queue.error() ? <Button onClick={() => void queue.retryHead().catch(() => {})}>처리 내역 확인</Button> : null}
+          {step.kind === 'loading' && notice && !queue.error() ? (
+            <Button onClick={() => setLoadAttempt((attempt) => attempt + 1)}>다시 불러오기</Button>
+          ) : null}
+          {choosing && (
+            <button
+              type="button"
+              className="self-start text-[13px] text-[#71717a] underline"
+              onClick={() => {
+                setStep({ kind: 'product', bin: step.bin });
+                setNotice(null);
+              }}
+            >
+              다른 상품
+            </button>
+          )}
+        </section>
+      </div>
     </div>
   );
 }
@@ -170,7 +319,7 @@ export function ReturnPutawayScreen() {
         <ReturnPutawayContent key={warehouseId} warehouseId={warehouseId} />
       ) : (
         <div className="space-y-4">
-          <ScreenHeader title="되돌림 적치" backTo="/" />
+          <ScreenHeader title="선반 복귀" backTo="/" description={DESCRIPTION} />
           <WarehousePicker />
         </div>
       )}

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
@@ -101,8 +101,15 @@ const putawayResult = {
   items: [],
 };
 
+async function waitingItem(name: string, location: string) {
+  const list = await screen.findByRole('list', { name: '대기 상품' });
+  const row = await within(list).findByText(name);
+
+  expect(row.closest('li')).toHaveTextContent(location);
+}
+
 async function scanProduct(user: ReturnType<typeof userEvent.setup>) {
-  await screen.findByText('볼펜 1개 → A-01');
+  await waitingItem('볼펜', 'A-01');
   await user.click(screen.getByRole('button', { name: '스캔:880' }));
 }
 
@@ -115,7 +122,7 @@ describe('ReturnPutawayScreen', () => {
       if (o.path === '/return-bins/mine?warehouseId=wh') return BIN;
       throw new Error(`unexpected ${o.path}`);
     });
-    await screen.findByText('볼펜 1개 → A-01');
+    await waitingItem('볼펜', 'A-01');
     expect(screen.queryByText(/RB-/)).not.toBeInTheDocument();
     expect(screen.queryByLabelText('바구니 바코드')).not.toBeInTheDocument();
     await scanProduct(user);
@@ -139,7 +146,7 @@ describe('ReturnPutawayScreen', () => {
     await screen.findByText('되돌릴 상품이 없어요.');
     await user.click(screen.getByRole('button', { name: '스캔:880' }));
     expect(calls).toEqual([{ path: '/return-bins/mine?warehouseId=wh' }]);
-    expect(screen.queryByLabelText('상품 바코드')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('복귀 상품 바코드')).not.toBeInTheDocument();
   });
 
   it('shows server candidates and retries with a scanned location and a new key', async () => {
@@ -152,7 +159,7 @@ describe('ReturnPutawayScreen', () => {
     });
 
     await scanProduct(user);
-    await screen.findByText('로케이션을 스캔해 주세요.');
+    await screen.findByText('어느 선반에 놓았나요?');
     expect(screen.getByRole('region', { name: '넣을 곳' })).toHaveTextContent('A-01 · 1개');
     expect(screen.getByRole('region', { name: '넣을 곳' })).toHaveTextContent('B-02 · 2개');
     expect(await screen.findByRole('alert')).toHaveTextContent('원래 로케이션이 여러 곳이에요.');
@@ -178,7 +185,7 @@ describe('ReturnPutawayScreen', () => {
     await screen.findByRole('region', { name: '넣을 곳' });
     await user.click(screen.getByRole('button', { name: '스캔:Z-99' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('원래 로케이션이 아니에요.');
-    expect(screen.getByText('로케이션을 스캔해 주세요.')).toBeInTheDocument();
+    expect(screen.getByText('어느 선반에 놓았나요?')).toBeInTheDocument();
     expect(screen.getByRole('region', { name: '넣을 곳' })).toHaveTextContent('A-01 · 1개');
   });
 
@@ -196,7 +203,7 @@ describe('ReturnPutawayScreen', () => {
 
     await scanProduct(user);
     expect(await screen.findByRole('alert')).toHaveTextContent(message);
-    expect(screen.getByText('넣을 상품을 스캔해 주세요.')).toBeInTheDocument();
+    expect(screen.getByText('선반에 놓고 상품을 스캔하세요')).toBeInTheDocument();
     expect(gets).toBe(2);
   });
 
@@ -207,7 +214,7 @@ describe('ReturnPutawayScreen', () => {
     });
     await scanProduct(user);
     await user.click(await screen.findByRole('button', { name: '다른 상품' }));
-    expect(await screen.findByText('넣을 상품을 스캔해 주세요.')).toBeInTheDocument();
+    expect(await screen.findByText('선반에 놓고 상품을 스캔하세요')).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: '넣을 곳' })).not.toBeInTheDocument();
   });
 
@@ -219,7 +226,7 @@ describe('ReturnPutawayScreen', () => {
     });
 
     await user.click(await screen.findByRole('button', { name: '다시 불러오기' }));
-    expect(await screen.findByText('볼펜 1개 → A-01')).toBeInTheDocument();
+    await waitingItem('볼펜', 'A-01');
     expect(attempts).toBe(2);
   });
 
@@ -240,7 +247,7 @@ describe('ReturnPutawayScreen', () => {
       { id: 'k-1', data: { binBarcode: 'RB-1', warehouseId: 'wh', productBarcode: '880', locationCode: 'A-01' } },
     ]);
     mount(api, runtime);
-    expect(await screen.findByText('노트 2개 → B-02')).toBeInTheDocument();
+    await waitingItem('노트', 'B-02');
     expect(posts).toHaveLength(1);
     expect(posts[0].idempotencyKey).toBe('k-1');
     expect(posts[0].body).toEqual({ warehouseId: 'wh', barcode: '880', locationCode: 'A-01', quantity: 1 });
@@ -264,5 +271,43 @@ describe('ReturnPutawayScreen', () => {
     expect(posts).toHaveLength(2);
     expect(posts[1].idempotencyKey).toBe(posts[0].idempotencyKey);
     expect(posts[1].body).toEqual(posts[0].body);
+  });
+
+  it('처리한 상품은 대기 목록에서 빠지고 완료 내역에 쌓인다', async () => {
+    const { user } = mount(async (o) => {
+      if (o.method === 'POST') return putawayResult;
+      return BIN;
+    });
+    await scanProduct(user);
+    const done = await screen.findByRole('region', { name: '완료 내역' });
+    expect(within(done).getByRole('listitem')).toHaveTextContent('볼펜');
+    expect(within(done).getByRole('listitem')).toHaveTextContent('1개');
+    expect(within(done).getByRole('listitem')).toHaveTextContent('A-01');
+    expect(screen.queryByRole('list', { name: '대기 상품' })?.children ?? []).toHaveLength(0);
+    expect(screen.getByText('0건 · 0개')).toBeInTheDocument();
+  });
+
+  it('복귀 위치가 여러 곳이면 위치를 스캔하기 전에는 대기 수량이 줄지 않고 완료 내역도 비어 있다', async () => {
+    let posts = 0;
+    const { user } = mount(async (o) => {
+      if (o.method !== 'POST') return BIN;
+      if (++posts === 1) throw required();
+      return putawayResult;
+    });
+    await scanProduct(user);
+    await screen.findByRole('region', { name: '넣을 곳' });
+    expect(screen.getByText('1건 · 1개')).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: '완료 내역' })).not.toBeInTheDocument();
+    expect(screen.getByText(/위치 바코드를 스캔하세요/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '스캔:B-02' }));
+    expect(await screen.findByRole('region', { name: '완료 내역' })).toBeInTheDocument();
+    expect(posts).toBe(2);
+  });
+
+  it('스캔 입력에는 확인 버튼이 없다', async () => {
+    mount(async () => BIN);
+    await waitingItem('볼펜', 'A-01');
+    expect(screen.getByLabelText('복귀 상품 바코드')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '입력' })).not.toBeInTheDocument();
   });
 });
