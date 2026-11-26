@@ -224,3 +224,27 @@ export function safeBackHref(back: string | null, fallback: string): string {
 
   return back;
 }
+
+export const MATERIAL_CHANGED_REQUEST =
+  '실측 사진·치수가 바뀌었어요. 바뀐 자료에 맞춰 다시 만들어 주세요';
+
+// 마지막 버전 뒤에 바뀐 실측 자료를 한 줄로
+export function materialChangeText(
+  changes: Sku3dWorkshopDetailDto['materialChanges']
+): string | null {
+  if (!changes) {
+    return null;
+  }
+
+  const parts = [
+    changes.addedPhotos.length > 0
+      ? `사진 ${changes.addedPhotos.length}장 추가`
+      : null,
+    changes.removedPhotos.length > 0
+      ? `사진 ${changes.removedPhotos.length}장 삭제`
+      : null,
+    changes.dimensions ? '치수 변경' : null,
+  ].filter(Boolean);
+
+  return `마지막 버전을 만든 뒤 실측 자료가 바뀌었어요 (${parts.join(', ')})`;
+}

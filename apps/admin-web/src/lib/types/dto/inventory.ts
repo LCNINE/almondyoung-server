@@ -2183,6 +2183,24 @@ export type Sku3dWorkshopDetailDto = {
   activeJob: Sku3dWorkshopJobDto | null;
   revisions: Sku3dWorkshopRevisionDto[];
   worker: { online: boolean; lastSeenAt: string | null };
+  materialChanges: Sku3dMaterialChangesDto | null;
+};
+
+export type Sku3dMaterialChangesDto = {
+  addedPhotos: string[];
+  removedPhotos: string[];
+  dimensions: {
+    before: Sku3dMaterialDimensionsDto;
+    after: Sku3dMaterialDimensionsDto;
+  } | null;
+};
+
+export type Sku3dMaterialDimensionsDto = {
+  packageWidthMm: number | null;
+  packageLengthMm: number | null;
+  packageHeightMm: number | null;
+  packageWeightG: number | null;
+  dimensionBasis: string;
 };
 
 export type Sku3dWorkshopEventDto = {

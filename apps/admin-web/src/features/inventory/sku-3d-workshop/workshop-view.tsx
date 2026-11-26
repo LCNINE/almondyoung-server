@@ -36,6 +36,8 @@ import {
   JOB_STEPS,
   jobStage,
   latestProgressText,
+  MATERIAL_CHANGED_REQUEST,
+  materialChangeText,
   mergeEvents,
   shortHash,
   VERDICT_LABEL,
@@ -161,6 +163,25 @@ export function WorkshopView({
         >
           다시 만들기
         </button>
+      )}
+
+      {materialChangeText(detail.materialChanges) && !detail.activeJob && (
+        <section className="space-y-2 rounded-xl border border-gray-300 bg-gray-50 p-4">
+          <p className="text-sm font-semibold text-gray-900">
+            {materialChangeText(detail.materialChanges)}
+          </p>
+          <button
+            type="button"
+            disabled={!writeAllowed || send.isPending}
+            onClick={() => send.mutate(MATERIAL_CHANGED_REQUEST)}
+            className="w-full rounded-lg bg-gray-900 py-3 text-sm font-bold text-white disabled:bg-gray-300"
+          >
+            바뀐 자료로 다시 만들기
+          </button>
+          <p className="text-xs text-gray-500">
+            같은 Codex 세션으로 새 버전을 만들어요. 지금 버전은 그대로 남아요
+          </p>
+        </section>
       )}
 
       {detail.activeJob && (

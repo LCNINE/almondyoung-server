@@ -11,6 +11,7 @@ import {
   elapsedText,
   jobStage,
   latestProgressText,
+  materialChangeText,
   mergeEvents,
   safeBackHref,
   shortHash,
@@ -80,6 +81,7 @@ const detail = (
   activeJob: null,
   revisions: [],
   worker: { online: true, lastSeenAt: '2026-11-26T00:00:00Z' },
+  materialChanges: null,
   ...overrides,
 });
 
@@ -300,5 +302,18 @@ describe('3D 작업실 화면 로직', () => {
     expect(
       elapsedText('2026-11-26T00:00:00Z', Date.parse('2026-11-26T00:12:05Z'))
     ).toBe('12:05');
+  });
+
+  it('materialChangeText summarises what changed after the last version', () => {
+    expect(materialChangeText(null)).toBeNull();
+    expect(
+      materialChangeText({
+        addedPhotos: ['a', 'b'],
+        removedPhotos: ['c'],
+        dimensions: null,
+      })
+    ).toBe(
+      '마지막 버전을 만든 뒤 실측 자료가 바뀌었어요 (사진 2장 추가, 사진 1장 삭제)'
+    );
   });
 });
