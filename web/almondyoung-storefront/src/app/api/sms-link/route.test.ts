@@ -16,12 +16,10 @@ const fetchMock = vi.fn()
 const jwt = (expOffsetSeconds: number) =>
   `h.${Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + expOffsetSeconds })).toString("base64url")}.s`
 
-// 미들웨어가 /r/<코드> 를 rewrite 해도 라우트가 받는 request.url 은 원래 주소다(로컬 next dev 실측) —
-// 그래서 코드는 쿼리가 아니라 rewrite 된 경로의 파라미터로만 받는다.
 const click = (cookie?: string) =>
-  GET(new NextRequest("http://localhost:8000/r/AbCd_123", cookie ? { headers: { cookie } } : undefined), {
-    params: Promise.resolve({ code: "AbCd_123" }),
-  })
+  GET(
+    new NextRequest("http://localhost:8000/api/sms-link?code=AbCd_123", cookie ? { headers: { cookie } } : undefined)
+  )
 
 beforeEach(() => {
   vi.stubGlobal("fetch", fetchMock)
