@@ -20,7 +20,15 @@ function tomlKey(path) {
   return `'${profilePath(path)}'`;
 }
 
-export function sandboxConfigToml({ writeDir, denyPaths, windowsSandbox }) {
+// Codex 안에서 부르는 도구(Blender·Node·gltf-transform)의 설치 폴더 — 읽지 못하면 도구가 뜨지 않는다
+export function toolReadPaths({ blenderPath, nodeBin, gltfTransformCli }) {
+  const nodeModules = gltfTransformCli.match(/^(.*[\\/]node_modules)[\\/]/)?.[1] ?? dirname(gltfTransformCli);
+
+  return [...new Set([dirname(blenderPath), dirname(nodeBin), nodeModules].map((p) => resolve(p)))];
+}
+
+// 읽기 허용이 없으면 MXC 는 상위 폴더도 못 읽어 작업 폴더 쓰기까지 막힌다(Windows 실측) — :minimal 과 도구 폴더만 연다
+export function sandboxConfigToml({ writeDir, readPaths = [], denyPaths, windowsSandbox }) {
   const lines = [
     '# sku-3d-worker 가 작업마다 다시 쓴다 — 손으로 고치지 말 것',
     `default_permissions = "${PROFILE}"`,
@@ -29,6 +37,8 @@ export function sandboxConfigToml({ writeDir, denyPaths, windowsSandbox }) {
     `sandbox = "${windowsSandbox}"`,
     '',
     `[permissions.${PROFILE}.filesystem]`,
+    `':minimal' = "read"`,
+    ...readPaths.map((path) => `${tomlKey(path)} = "read"`),
     `${tomlKey(writeDir)} = "write"`,
     ...denyPaths.map((path) => `${tomlKey(path)} = "deny"`),
     '',
@@ -148,7 +158,7 @@ function runInSandbox({ codexBin, codexHome, cwd, env, command }) {
 }
 
 // 모델 없이 같은 권한 프로필로 명령을 직접 띄워 본다. 하나라도 뚫리면 실패
-export async function isolationCheck({ codexBin, codexHome, workRoot, denyRead, userCodexHome, windowsSandbox, env }) {
+export async function isolationCheck({ codexBin, codexHome, workRoot, denyRead, userCodexHome, windowsSandbox, readPaths, blenderPath, env }) {
   const probeDir = join(workRoot, '_isolation-check');
   const neighborDir = join(workRoot, '_isolation-neighbor');
   const neighborCanary = join(neighborDir, 'canary.txt');
@@ -160,7 +170,7 @@ export async function isolationCheck({ codexBin, codexHome, workRoot, denyRead, 
 
   const denyPaths = denyPathsFor({ workRoot, workshopDir: probeDir, denyRead, codexHome, userCodexHome });
 
-  writeSandboxConfig(codexHome, { writeDir: probeDir, denyPaths, windowsSandbox });
+  writeSandboxConfig(codexHome, { writeDir: probeDir, readPaths, denyPaths, windowsSandbox });
 
   const probes = [
     ...denyRead.map((path) => ({ name: `읽기 차단: ${path}`, kind: 'read', target: readProbeTarget(path), want: 'denied' })),
@@ -168,6 +178,7 @@ export async function isolationCheck({ codexBin, codexHome, workRoot, denyRead, 
     { name: `다른 작업실 쓰기 차단: ${neighborDir}`, kind: 'write', target: join(neighborDir, 'probe.txt'), want: 'denied' },
     { name: '인터넷 차단', kind: 'network', target: 'https://example.com', want: 'denied' },
     { name: `작업 폴더 쓰기 허용: ${probeDir}`, kind: 'write', target: join(probeDir, 'probe.txt'), want: 'allowed' },
+    { name: `도구 읽기 허용: ${blenderPath}`, kind: 'read', target: blenderPath, want: 'allowed' },
   ];
   const results = [];
 
