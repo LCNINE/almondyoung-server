@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { cookies } from "next/headers"
 import { requireBackendBaseUrl } from "@/lib/config/backend"
 import { restoreAccessToken } from "@/lib/auth/user-service"
+import { settleSmsRef } from "@/lib/sms-ref/sms-ref"
 
 export const dynamic = "force-dynamic"
 export const revalidate = 0
@@ -167,6 +168,8 @@ async function restoreTokens(
       // 다음 Medusa 호출에서 401 이 나면 그때 재로그인을 유도한다.
     }
 
+    // 추적 링크를 누를 땐 액세스 토큰이 만료돼 계정을 몰랐던 «로그인해 둔» 회원을 여기서 잇는다(새 토큰을 직접 싣는다).
+    await settleSmsRef(request, response, tokens.access_token, "clicked_signed_in")
     return response
   } catch (error) {
     // oauth_tokens 에 없는 레거시 JWT refreshToken → deprecated /auth/restore-token 으로 accessToken 재발급.
@@ -187,6 +190,7 @@ async function restoreTokens(
           maxAge: 60 * 15,
           ...(tokenCookieDomain ? { domain: tokenCookieDomain } : {}),
         })
+        await settleSmsRef(request, response, legacyAccessToken, "clicked_signed_in")
         return response
       }
       console.warn("Restore token: stale refresh token, clearing session")

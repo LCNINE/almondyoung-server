@@ -8,6 +8,7 @@ import {
 } from "@/lib/app-context/parse"
 import { getBackendBaseUrl } from "@/lib/config/backend"
 import { parseCafe24LegacyUrl } from "@/lib/seo/cafe24-legacy-url"
+import { isJwtExpired } from "@/lib/auth/jwt-expiry"
 
 const MEDUSA_BASE_URL = getBackendBaseUrl("medusa")
 const PUBLISHABLE_API_KEY = process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY
@@ -54,27 +55,6 @@ function buildLoginRedirect(request: NextRequest): NextResponse {
     request.nextUrl.pathname + request.nextUrl.search
   )
   return NextResponse.redirect(url, 307)
-}
-
-function isJwtExpired(token?: string, skewSeconds = 30): boolean {
-  if (!token) return true
-
-  try {
-    const payload = token.split(".")[1]
-    if (!payload) return true
-    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/")
-    const padded = normalized.padEnd(
-      normalized.length + ((4 - (normalized.length % 4)) % 4),
-      "="
-    )
-    const decoded = JSON.parse(atob(padded)) as { exp?: number }
-
-    if (!decoded.exp) return true
-
-    return decoded.exp <= Math.floor(Date.now() / 1000) + skewSeconds
-  } catch {
-    return true
-  }
 }
 
 function buildRestoreTokenRedirect(request: NextRequest): NextResponse {
