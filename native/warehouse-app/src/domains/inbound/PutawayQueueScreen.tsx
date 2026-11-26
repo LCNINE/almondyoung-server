@@ -351,7 +351,7 @@ export function PutawayQueueScreen({
                     }}
                   >
                     <span className="flex items-center gap-3">
-                      <SkuThumbnail className={THUMB} />
+                      <SkuThumbnail fileIds={item.imageFileIds} className={THUMB} />
                       <span className="min-w-0 flex-1">
                         <strong
                           id={`putaway-${item.lineId}`}
@@ -371,9 +371,19 @@ export function PutawayQueueScreen({
                       </span>
                     </span>
                     <span className="mt-[15px] flex items-center justify-between gap-2 text-xs text-[#71717a]">
-                      <span className="min-w-0 truncate">
-                        {item.originLocationCode ?? '원위치 확인 필요'} ·{' '}
-                        {formatTime(item.receivedAt)}
+                      <span className="min-w-0">
+                        {item.usualLocationCode ? (
+                          <span className="block truncate">
+                            자주 놓는 위치{' '}
+                            <strong className="font-semibold text-[#27272a]">
+                              {item.usualLocationCode}
+                            </strong>
+                          </span>
+                        ) : null}
+                        <span className="block truncate">
+                          {item.originLocationCode ?? '원위치 확인 필요'} ·{' '}
+                          {formatTime(item.receivedAt)}
+                        </span>
                       </span>
                       <ArrowRight
                         className="h-4 w-4 shrink-0 text-[#2563eb]"

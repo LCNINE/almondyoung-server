@@ -131,6 +131,10 @@ export interface PutawayPendingItem {
   originLocationCode: string | null;
   /** ISO 문자열. */
   receivedAt: string;
+  /** 옛 서버는 보내지 않는다. */
+  imageFileIds?: string[];
+  /** 이 창고의 평소 선반. 옛 서버는 보내지 않는다. */
+  usualLocationCode?: string | null;
 }
 
 export interface PutawayPendingResult {

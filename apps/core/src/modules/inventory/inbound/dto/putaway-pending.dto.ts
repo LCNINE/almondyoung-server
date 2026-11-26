@@ -34,6 +34,22 @@ export class PutawayPendingItemDto {
 
   @ApiProperty({ description: '입고 시각 (ISO)', example: '2026-07-26T00:14:00.000Z' })
   receivedAt: string;
+
+  @ApiProperty({
+    description: 'SKU 사진 파일 ID (대표 사진부터). 옛 서버는 보내지 않는다',
+    type: [String],
+    required: false,
+  })
+  imageFileIds?: string[];
+
+  @ApiProperty({
+    description: '이 창고의 평소 선반 코드. 없으면 null, 옛 서버는 보내지 않는다',
+    type: String,
+    nullable: true,
+    required: false,
+    example: 'A-01-01',
+  })
+  usualLocationCode?: string | null;
 }
 
 export class PutawayPendingListDto {

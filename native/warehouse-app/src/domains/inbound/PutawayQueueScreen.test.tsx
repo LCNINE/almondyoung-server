@@ -3,7 +3,7 @@ import {
   TestWorkProvider,
   receiptFixture,
 } from './__fixtures__/workRuntime';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -30,6 +30,11 @@ import type { ReturnGoods } from './returnGoods';
 import type { ReturnBinContents } from '../returns/returnBinApi';
 import { PutawayQueueScreen } from './PutawayQueueScreen';
 import { scanHid } from '../../core/hardware/scan/__fixtures__/hid';
+
+vi.mock('../../app/config', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../app/config')>()),
+  filePublicBaseUrl: 'https://file.tenant-2.example',
+}));
 
 it('적치 대기에서 전량 → HID 위치 스캔 → 명시적 적치로 이어진다', async () => {
   renderScreen(SELECTED, {
@@ -1509,6 +1514,37 @@ describe('적치 보드', () => {
     expect(
       within(returns).getByText('복귀 대기 상품이 없습니다.')
     ).toBeInTheDocument();
+  });
+
+  it('입고 카드에 상품 사진과 자주 놓는 위치를 보이고, 없으면 회색 자리와 현재 위치만 보인다', async () => {
+    renderScreen(SELECTED, {
+      queue: {
+        ...QUEUE,
+        items: [
+          {
+            ...QUEUE.items[0],
+            imageFileIds: ['main-file', 'extra-file'],
+            usualLocationCode: 'A-01-01',
+          },
+          { ...QUEUE.items[1], imageFileIds: [], usualLocationCode: null },
+        ],
+      },
+    });
+    const withFacts = await screen.findByRole('button', {
+      name: /무선마우스 블랙/,
+    });
+    const without = screen.getByRole('button', { name: /USB-C 케이블 1m/ });
+
+    expect(withFacts.querySelector('img')?.getAttribute('src')).toBe(
+      'https://file.tenant-2.example/files/public/main-file'
+    );
+    expect(withFacts).toHaveTextContent('자주 놓는 위치 A-01-01');
+    expect(without.querySelector('img')).toBeNull();
+    expect(
+      within(without).getByTestId('sku-thumbnail-empty')
+    ).toBeInTheDocument();
+    expect(without).not.toHaveTextContent('자주 놓는 위치');
+    expect(without).toHaveTextContent('zone-inbound-default');
   });
 
   it('로케이션 라벨 버튼은 로케이션 라벨 화면으로 간다', async () => {
