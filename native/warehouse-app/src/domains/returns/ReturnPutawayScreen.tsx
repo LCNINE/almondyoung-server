@@ -3,7 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useWarehouse } from '../../app/warehouse-context';
 import { useApiClient } from '../../core/data/ApiClientProvider';
 import { errorMessage } from '../../core/data/errorMessage';
-import { ApiError } from '../../core/data/httpClient';
+import { ApiError, type ApiClient } from '../../core/data/httpClient';
+import type { SkuSearchItem } from '../inventory/types';
 import { Button } from '../../core/design/Button';
 import { cn } from '../../core/design/cn';
 import { ScreenHeader } from '../../core/design/ScreenHeader';
@@ -25,33 +26,39 @@ interface CompletedPutaway {
 
 const DESCRIPTION = '상품을 원래 선반에 놓고 바코드를 스캔하세요.';
 
-function completedFrom(
+async function completedFrom(
+  api: ApiClient,
   before: ReturnBinItem[],
-  after: ReturnBinItem[],
   putAwayQty: number,
-  locationCode: string | undefined,
-): CompletedPutaway | null {
+  input: { productBarcode: string; locationCode?: string },
+): Promise<CompletedPutaway | null> {
   if (!Number.isSafeInteger(putAwayQty) || putAwayQty <= 0) return null;
 
-  const candidates = before.filter((item) => {
-    if (locationCode !== undefined && item.locationCode !== locationCode) return false;
+  try {
+    const skus = await api.request<SkuSearchItem[]>({
+      path: `/inventory/skus?barcode=${encodeURIComponent(input.productBarcode)}`,
+    });
 
-    const left = after.find((next) => next.skuId === item.skuId && next.sourceLocationId === item.sourceLocationId);
+    if (!Array.isArray(skus) || skus.length !== 1) return null;
 
-    return item.qty - (left?.qty ?? 0) === putAwayQty;
-  });
+    const matches = before.filter(
+      (item) => item.skuId === skus[0].id && (input.locationCode === undefined || item.locationCode === input.locationCode),
+    );
 
-  if (candidates.length !== 1) return null;
+    if (matches.length !== 1) return null;
 
-  const [item] = candidates;
+    const [item] = matches;
 
-  return {
-    key: `${item.skuId}|${item.locationCode}`,
-    skuName: item.skuName,
-    skuCode: item.skuCode,
-    locationCode: item.locationCode,
-    qty: putAwayQty,
-  };
+    return {
+      key: `${item.skuId}|${item.locationCode}`,
+      skuName: item.skuName,
+      skuCode: item.skuCode,
+      locationCode: item.locationCode,
+      qty: putAwayQty,
+    };
+  } catch {
+    return null;
+  }
 }
 
 function ReturnPutawayContent({ warehouseId }: { warehouseId: string }) {
@@ -69,25 +76,25 @@ function ReturnPutawayContent({ warehouseId }: { warehouseId: string }) {
       try {
         const result = await putawayReturn(api, { ...input, idempotencyKey: id });
         const before = stepRef.current;
-        const entry =
-          before.kind === 'loading' || countedRequests.current.has(id)
-            ? null
-            : completedFrom(before.bin.items, result.items, result.putAwayQty, input.locationCode);
-
-        countedRequests.current.add(id);
-
-        if (entry) {
-          setCompleted((list) => {
-            const index = list.findIndex((row) => row.key === entry.key);
-
-            if (index === -1) return [...list, entry];
-
-            return list.map((row, at) => (at === index ? { ...row, qty: row.qty + entry.qty } : row));
-          });
-        }
 
         setStep(afterPutaway({ ...result.returnBin, items: result.items }, result.items));
         setNotice(result.items.length ? { kind: 'ok', text: '넣었어요. 다음 상품을 스캔해 주세요.' } : null);
+
+        if (before.kind !== 'loading' && !countedRequests.current.has(id)) {
+          countedRequests.current.add(id);
+
+          const entry = await completedFrom(api, before.bin.items, result.putAwayQty, input);
+
+          if (entry) {
+            setCompleted((list) => {
+              const index = list.findIndex((row) => row.key === entry.key);
+
+              if (index === -1) return [...list, entry];
+
+              return list.map((row, at) => (at === index ? { ...row, qty: row.qty + entry.qty } : row));
+            });
+          }
+        }
       } catch (error) {
         if (!(error instanceof ApiError && error.outcome === 'rejected')) {
           setNotice({ kind: 'error', text: errorMessage(error, 'return-putaway') });
@@ -189,7 +196,31 @@ function ReturnPutawayContent({ warehouseId }: { warehouseId: string }) {
           ? '복귀 위치가 여러 곳입니다. 실제로 놓은 선반의 위치 바코드를 스캔하세요.'
           : '복귀 선반이 한 곳이면 상품 스캔으로 1개가 처리됩니다. 별도로 확인 버튼을 누를 필요가 없습니다.';
 
-  if (empty && completed.length > 0) {
+  const feedback = (
+    <>
+      {queue.storageError() ? (
+        <p role="alert" className="text-xs leading-[1.7] text-[#b42318]">
+          {SCAN_STORAGE_MESSAGE}
+        </p>
+      ) : queue.error() ? (
+        <p role="alert" className="text-xs leading-[1.7] text-[#b42318]">
+          앞의 스캔이 처리됐는지 확인하지 못했어요. 같은 상품을 다시 찍지 말고 처리 내역 확인을 눌러 주세요.
+        </p>
+      ) : notice ? (
+        <p
+          role={notice.kind === 'error' ? 'alert' : 'status'}
+          className={cn('text-xs leading-[1.7]', notice.kind === 'error' ? 'text-[#b42318]' : 'text-[#52525b]')}
+        >
+          {notice.text}
+        </p>
+      ) : choosing ? (
+        <p className="text-xs leading-[1.7] text-[#52525b]">위치를 확인하기 전에는 수량이 줄지 않습니다.</p>
+      ) : null}
+      {queue.error() ? <Button onClick={() => void queue.retryHead().catch(() => {})}>처리 내역 확인</Button> : null}
+    </>
+  );
+
+  if (empty) {
     return (
       <div className="space-y-5">
         <ScreenHeader title="선반 복귀" backTo="/" description="대기 상품을 모두 처리했습니다." />
@@ -211,6 +242,7 @@ function ReturnPutawayContent({ warehouseId }: { warehouseId: string }) {
               </li>
             ))}
           </ul>
+          {feedback}
           <Link
             to="/putaway"
             className="inline-flex items-center justify-center rounded-lg bg-[#2563eb] px-4 py-2.5 text-sm font-semibold text-white"
@@ -312,25 +344,7 @@ function ReturnPutawayContent({ warehouseId }: { warehouseId: string }) {
               onSubmit={accept}
             />
           )}
-          {queue.storageError() ? (
-            <p role="alert" className="text-xs leading-[1.7] text-[#b42318]">
-              {SCAN_STORAGE_MESSAGE}
-            </p>
-          ) : queue.error() ? (
-            <p role="alert" className="text-xs leading-[1.7] text-[#b42318]">
-              앞의 스캔이 처리됐는지 확인하지 못했어요. 같은 상품을 다시 찍지 말고 처리 내역 확인을 눌러 주세요.
-            </p>
-          ) : notice ? (
-            <p
-              role={notice.kind === 'error' ? 'alert' : 'status'}
-              className={cn('text-xs leading-[1.7]', notice.kind === 'error' ? 'text-[#b42318]' : 'text-[#52525b]')}
-            >
-              {notice.text}
-            </p>
-          ) : choosing ? (
-            <p className="text-xs leading-[1.7] text-[#52525b]">위치를 확인하기 전에는 수량이 줄지 않습니다.</p>
-          ) : null}
-          {queue.error() ? <Button onClick={() => void queue.retryHead().catch(() => {})}>처리 내역 확인</Button> : null}
+          {feedback}
           {step.kind === 'loading' && notice && !queue.error() ? (
             <Button onClick={() => setLoadAttempt((attempt) => attempt + 1)}>다시 불러오기</Button>
           ) : null}
