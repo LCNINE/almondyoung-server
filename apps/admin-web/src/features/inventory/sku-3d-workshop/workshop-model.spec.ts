@@ -8,6 +8,9 @@ import {
   canSendMessage,
   chatItems,
   dimensionQuestion,
+  elapsedText,
+  jobStage,
+  latestProgressText,
   mergeEvents,
   safeBackHref,
   shortHash,
@@ -244,5 +247,58 @@ describe('3D 작업실 화면 로직', () => {
     expect(safeBackHref('//evil.example', '/x')).toBe('/x');
     expect(safeBackHref('https://evil.example', '/x')).toBe('/x');
     expect(safeBackHref(null, '/x')).toBe('/x');
+  });
+
+  it('hides command lines from the chat', () => {
+    const command = { ...event(2), body: '실행: pwsh -Command Get-Content' };
+
+    expect(chatItems([event(1), command, event(3)]).map((e) => e.seq)).toEqual([
+      1, 3,
+    ]);
+  });
+
+  it('jobStage follows the job and its first progress', () => {
+    const job = {
+      id: 'j',
+      workshopId: 'w',
+      kind: 'create' as const,
+      status: 'running' as const,
+      attempts: 1,
+      createdAt: '',
+      startedAt: '',
+    };
+
+    expect(jobStage(null, [])).toBeNull();
+    expect(jobStage({ ...job, status: 'queued' }, [])?.step).toBe(1);
+    expect(jobStage(job, [])?.step).toBe(2);
+    expect(jobStage(job, [{ ...event(1), jobId: 'j' }])).toEqual({
+      step: 3,
+      label: '만들고 있어요',
+    });
+  });
+
+  it('latestProgressText skips command lines and other jobs', () => {
+    const job = {
+      id: 'j',
+      workshopId: 'w',
+      kind: 'create' as const,
+      status: 'running' as const,
+      attempts: 1,
+      createdAt: '',
+      startedAt: '',
+    };
+    const events = [
+      { ...event(1), jobId: 'j', body: '렌더를 비교하고 있어요' },
+      { ...event(2), jobId: 'j', body: '실행: blender -b' },
+      { ...event(3), jobId: 'other', body: '다른 작업' },
+    ];
+
+    expect(latestProgressText(job, events)).toBe('렌더를 비교하고 있어요');
+  });
+
+  it('elapsedText shows minutes and seconds', () => {
+    expect(
+      elapsedText('2026-11-26T00:00:00Z', Date.parse('2026-11-26T00:12:05Z'))
+    ).toBe('12:05');
   });
 });

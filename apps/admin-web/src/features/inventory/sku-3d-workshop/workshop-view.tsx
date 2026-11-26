@@ -31,6 +31,10 @@ import {
   chatItems,
   DIMENSION_CHOICES,
   dimensionQuestion,
+  elapsedText,
+  JOB_STEPS,
+  jobStage,
+  latestProgressText,
   mergeEvents,
   shortHash,
   VERDICT_LABEL,
@@ -71,7 +75,7 @@ export function WorkshopView({
   const refreshDetail = () =>
     queryClient.invalidateQueries({ queryKey: workshopKeys.detail(skuId) });
 
-  const now = useNow(5_000);
+  const now = useNow(1_000);
   const events = useWorkshopEvents(workshopId, refreshDetail);
 
   const confirm = useMutation({
@@ -158,11 +162,13 @@ export function WorkshopView({
         </button>
       )}
 
-      {status && (
-        <p className="flex items-center gap-2 rounded-lg bg-gray-100 px-3 py-2 text-sm text-gray-800">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          {status}
-        </p>
+      {detail.activeJob && (
+        <JobProgressCard
+          detail={detail}
+          events={events}
+          now={now}
+          offlineText={detail.worker.online ? null : status}
+        />
       )}
 
       <section className="space-y-3">
@@ -406,6 +412,72 @@ function useWorkshopEvents(
   }, [data, onNews]);
 
   return events;
+}
+
+// 만드는 동안 화면이 멈춰 보이지 않게 — 단계, 경과 시간, Codex 가 방금 남긴 말
+function JobProgressCard({
+  detail,
+  events,
+  now,
+  offlineText,
+}: {
+  detail: Sku3dWorkshopDetailDto;
+  events: Sku3dWorkshopEventDto[];
+  now: number;
+  offlineText: string | null;
+}): JSX.Element | null {
+  const job = detail.activeJob;
+  const stage = jobStage(job, events);
+
+  if (!job || !stage) {
+    return null;
+  }
+
+  const latest = latestProgressText(job, events);
+
+  return (
+    <section
+      className="sticky top-0 z-10 space-y-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm"
+      aria-live="polite"
+    >
+      <div className="flex items-center justify-between gap-2">
+        <p className="flex items-center gap-2 text-sm font-bold text-gray-900">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          {offlineText ?? stage.label}
+        </p>
+        <p className="text-xs tabular-nums text-gray-500">
+          {elapsedText(job.startedAt ?? job.createdAt, now)}
+        </p>
+      </div>
+      <div
+        className="h-1.5 w-full overflow-hidden rounded-full bg-gray-200"
+        role="progressbar"
+        aria-label={stage.label}
+      >
+        <div className="h-full w-full animate-pulse rounded-full bg-gray-700" />
+      </div>
+      <ol className="flex justify-between text-xs">
+        {JOB_STEPS.map((label, i) => (
+          <li
+            key={label}
+            className={
+              i + 1 <= stage.step
+                ? 'font-semibold text-gray-900'
+                : 'text-gray-400'
+            }
+          >
+            {i + 1}. {label}
+          </li>
+        ))}
+      </ol>
+      {latest && <p className="line-clamp-3 text-sm text-gray-700">{latest}</p>}
+      <p className="text-xs text-gray-500">
+        보통 15~25분 걸려요. 화면을 닫아도 계속 만들고, 다시 들어오면 이어서
+        보여요
+        {job.attempts > 1 ? ` · ${job.attempts}번째 시도` : ''}
+      </p>
+    </section>
+  );
 }
 
 function useNow(intervalMs: number): number {

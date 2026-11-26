@@ -63,11 +63,80 @@ export function chatItems(
   progressTail = 5
 ): Sku3dWorkshopEventDto[] {
   const progress = events
-    .filter((e) => e.type === 'progress')
+    .filter((e) => e.type === 'progress' && !isCommandLine(e))
     .slice(-progressTail);
   const keep = new Set(progress.map((e) => e.seq));
 
   return events.filter((e) => e.type !== 'progress' || keep.has(e.seq));
+}
+
+// 워커가 남기는 명령 실행 줄(실행: ...)은 작업자에게 잡음이다
+export function isCommandLine(event: Sku3dWorkshopEventDto): boolean {
+  return event.type === 'progress' && event.body.startsWith('실행:');
+}
+
+export type JobStage = { step: 1 | 2 | 3; label: string };
+
+export const JOB_STEPS = [
+  '순서 대기',
+  '작업 PC 가 가져감',
+  '만드는 중',
+] as const;
+
+// 진행률은 알 수 없다 — 작업 상태와 진행 이벤트로 단계만 보여 준다
+export function jobStage(
+  job: Sku3dWorkshopDetailDto['activeJob'],
+  events: Sku3dWorkshopEventDto[]
+): JobStage | null {
+  if (!job) {
+    return null;
+  }
+
+  if (job.status === 'queued') {
+    return { step: 1, label: '순서를 기다리고 있어요' };
+  }
+
+  const started = events.some(
+    (e) => e.jobId === job.id && e.type === 'progress'
+  );
+
+  return started
+    ? {
+        step: 3,
+        label: job.kind === 'create' ? '만들고 있어요' : '고치고 있어요',
+      }
+    : { step: 2, label: '작업 PC 가 준비하고 있어요' };
+}
+
+// Codex 가 사람 말로 남긴 마지막 진행 한 줄
+export function latestProgressText(
+  job: Sku3dWorkshopDetailDto['activeJob'],
+  events: Sku3dWorkshopEventDto[]
+): string | null {
+  if (!job) {
+    return null;
+  }
+
+  const latest = events
+    .filter(
+      (e) =>
+        e.jobId === job.id &&
+        (e.type === 'progress' || e.type === 'status') &&
+        !isCommandLine(e)
+    )
+    .at(-1);
+
+  return latest?.body ?? null;
+}
+
+export function elapsedText(fromIso: string, nowMs: number): string {
+  const seconds = Math.max(
+    0,
+    Math.floor((nowMs - new Date(fromIso).getTime()) / 1000)
+  );
+  const minutes = Math.floor(seconds / 60);
+
+  return `${minutes}:${String(seconds % 60).padStart(2, '0')}`;
 }
 
 // 서버가 60초 안에 워커를 봤다는 응답이라도, 그 응답이 오래됐으면 연결됐다고 말하지 않는다
