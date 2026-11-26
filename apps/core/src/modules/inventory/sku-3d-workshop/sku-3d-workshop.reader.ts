@@ -15,6 +15,7 @@ import {
 } from '../schema/inventory.schema';
 import { FileServiceClient } from '../../library/clients/file-service.client';
 import { assertCanView, WorkshopActor } from './workshop-access';
+import { materialChanges, MaterialChanges, materialInputsOf } from './material-changes';
 import type { Workshop, WorkshopJob } from './sku-3d-workshop.manager';
 
 export const WORKER_ONLINE_WINDOW_MS = 60_000;
@@ -38,6 +39,8 @@ export type WorkshopDetail = {
   activeJob: WorkshopJob | null;
   revisions: WorkshopRevision[];
   worker: { online: boolean; lastSeenAt: Date | null };
+  // 마지막 버전을 만든 뒤 실측 사진·치수가 바뀌었으면 그 차이
+  materialChanges: MaterialChanges | null;
 };
 
 export type RevisionFile = { bytes: Buffer; contentType: string };
@@ -70,6 +73,22 @@ export class Sku3dWorkshopReader {
         .where(eq(skuReferencePhotos.skuId, workshop.skuId))
         .orderBy(asc(skuReferencePhotos.sortOrder), asc(skuReferencePhotos.createdAt));
       const revisions = await this.revisions(trx, workshopId);
+      const [latest] = await trx
+        .select({ provenance: sku3dWorkshopRevisions.provenance })
+        .from(sku3dWorkshopRevisions)
+        .where(eq(sku3dWorkshopRevisions.workshopId, workshopId))
+        .orderBy(desc(sku3dWorkshopRevisions.number))
+        .limit(1);
+      const current = {
+        photos,
+        sku: {
+          packageWidthMm: sku.packageWidthMm,
+          packageLengthMm: sku.packageLengthMm,
+          packageHeightMm: sku.packageHeightMm,
+          packageWeightG: sku.packageWeightG,
+          dimensionBasis: workshop.dimensionBasis,
+        },
+      };
 
       return {
         workshop,
@@ -77,6 +96,7 @@ export class Sku3dWorkshopReader {
         activeJob: await this.activeJob(trx, workshopId),
         revisions,
         worker: await this.workerStatus(trx),
+        materialChanges: materialChanges(materialInputsOf(latest?.provenance), current),
       };
     }, tx);
   }

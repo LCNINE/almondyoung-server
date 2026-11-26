@@ -1,6 +1,12 @@
 import { eq } from 'drizzle-orm';
 import { ConflictError, ForbiddenError, NotFoundError } from '@app/shared';
-import { sku3dWorkshopEvents, sku3dWorkshopJobs, sku3dWorkshops } from '../schema/inventory.schema';
+import {
+  skuReferencePhotos,
+  sku3dWorkshopEvents,
+  sku3dWorkshopJobs,
+  sku3dWorkshopRevisions,
+  sku3dWorkshops,
+} from '../schema/inventory.schema';
 import { actor, finishedRevision, seedSku, startWorkshopDb, WorkshopTestDb } from './__support__/workshop-db';
 import { Sku3dWorkshopManager } from './sku-3d-workshop.manager';
 import { Sku3dWorkshopReader } from './sku-3d-workshop.reader';
@@ -153,6 +159,50 @@ describeWithPostgres('SKU 3D workshop (PostgreSQL)', () => {
 
     expect([...file.bytes]).toEqual([1, 2, 3]);
     expect(fetchFile).toHaveBeenCalledWith(expect.any(String), owner.userId);
+  });
+
+  it('detail reports material changes since the latest version', async () => {
+    const skuId = await seedSku(t.db);
+    const me = actor();
+    const workshop = await manager.open(skuId, me);
+
+    await manager.confirmDimensions(workshop.id, me, 'package');
+
+    const revisionId = await finishedRevision(t.db, workshop.id);
+
+    await t.db
+      .update(sku3dWorkshopRevisions)
+      .set({
+        provenance: {
+          inputs: {
+            photos: [],
+            sku: {
+              packageWidthMm: 120,
+              packageLengthMm: 45,
+              packageHeightMm: 30,
+              packageWeightG: 250,
+              dimensionBasis: 'package',
+            },
+          },
+        },
+      })
+      .where(eq(sku3dWorkshopRevisions.id, revisionId));
+
+    expect((await reader.detail(workshop.id, me)).materialChanges).toBeNull();
+
+    await t.db.insert(skuReferencePhotos).values({
+      skuId,
+      fileId: '00000000-0000-4000-8000-00000000f001',
+      sortOrder: 1,
+      takenById: me.userId,
+      takenByLabel: me.label,
+    });
+
+    expect((await reader.detail(workshop.id, me)).materialChanges).toEqual({
+      addedPhotos: ['00000000-0000-4000-8000-00000000f001'],
+      removedPhotos: [],
+      dimensions: null,
+    });
   });
 
   it('events after cursor', async () => {

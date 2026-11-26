@@ -18,6 +18,7 @@ import {
   wmsSchema,
 } from '../../schema/inventory.schema';
 import type { WorkshopJob } from '../sku-3d-workshop.manager';
+import { materialChanges, MaterialChanges, materialInputsOf } from '../material-changes';
 
 export const WORKSHOP_FILE_CONTEXT_ID = 'sku-3d-workshop';
 export const GLB_MAX_BYTES = 2 * 1024 * 1024;
@@ -42,6 +43,8 @@ export type JobInputSnapshot = {
   photos: { fileId: string; sortOrder: number }[];
   request: string;
   base: { revisionId: string; number: number; files: Record<string, string> } | null;
+  // 기준 버전을 만든 뒤 바뀐 실측 자료 — Codex 에게 무엇이 바뀌었는지 알려 준다
+  changes: MaterialChanges | null;
 };
 
 export type JobInputs = JobInputSnapshot & { sessionId: string | null; iteration: number };
@@ -457,7 +460,7 @@ export class Sku3dWorkerManager {
     const [base] = job.baseRevisionId
       ? await trx.select().from(sku3dWorkshopRevisions).where(eq(sku3dWorkshopRevisions.id, job.baseRevisionId))
       : [];
-    const snapshot: JobInputSnapshot = {
+    const sku3d = {
       sku: {
         code: sku.code,
         name: sku.name,
@@ -468,8 +471,12 @@ export class Sku3dWorkerManager {
         dimensionBasis: workshop.dimensionBasis,
       },
       photos: await this.photosOf(trx, workshop.skuId),
+    };
+    const snapshot: JobInputSnapshot = {
+      ...sku3d,
       request: job.request,
       base: base ? { revisionId: base.id, number: base.number, files: baseFilesOf(base) } : null,
+      changes: base ? materialChanges(materialInputsOf(base.provenance), sku3d) : null,
     };
 
     await trx.update(sku3dWorkshopJobs).set({ inputSnapshot: snapshot }).where(eq(sku3dWorkshopJobs.id, job.id));
