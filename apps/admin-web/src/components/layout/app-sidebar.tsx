@@ -16,6 +16,7 @@ import {
 import { guardedNavigate, navigateTo } from '@/lib/navigation-guard';
 import { IconComponent } from '@/lib/utils/icons';
 import { Badge } from '@/components/ui/badge';
+import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card';
 import { useOrderStats } from '@/lib/services/orders';
 import { useAdminUserCount } from '@/lib/services/users';
 import { usePermissions, useCan } from '@/hooks/use-permission';
@@ -33,6 +34,7 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar';
 import { SidebarMenuItemRecursive } from './sidebar-menu-item';
+import { MenuItemBadges } from './menu-item-badges';
 
 interface AppSidebarProps {
   activeMenu: string;
@@ -59,6 +61,47 @@ function findParentPath(
   return null;
 }
 
+function FlyoutItems({
+  items,
+  onItemClick,
+}: {
+  items: MenuItem[];
+  onItemClick: (item: MenuItem) => void;
+}) {
+  return items.map((item) => {
+    if (item.children?.length) {
+      return (
+        <div key={item.id} className="py-1">
+          <p className="px-2 py-1 text-xs font-medium text-muted-foreground">{item.title}</p>
+          <div className="pl-2">
+            <FlyoutItems items={item.children} onItemClick={onItemClick} />
+          </div>
+        </div>
+      );
+    }
+
+    if (!item.path || item.isComingSoon) {
+      return (
+        <span key={item.id} className="block px-2 py-1.5 text-sm text-muted-foreground">
+          {item.title}
+        </span>
+      );
+    }
+
+    return (
+      <Link
+        key={item.id}
+        href={item.path}
+        onClick={() => onItemClick(item)}
+        className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground"
+      >
+        {item.title}
+        <MenuItemBadges item={item} />
+      </Link>
+    );
+  });
+}
+
 export function AppSidebar({
   activeMenu,
   activeItem,
@@ -66,7 +109,7 @@ export function AppSidebar({
   onMenuChange,
 }: AppSidebarProps) {
   const router = useRouter();
-  const { setOpen } = useSidebar();
+  const { setOpen, peek, setPeeking } = useSidebar();
   const pathname = usePathname();
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
   const [browsingAll, setBrowsingAll] = useState(false);
@@ -164,7 +207,7 @@ export function AppSidebar({
 
   const isHome = pathname === '/';
   // 권한으로 하위 메뉴가 하나도 안 남은 메뉴(권한 없는 화면에 직접 들어온 경우)는 빈 제목 대신 전체 목록을 보인다.
-  const showAll = browsingAll || isHome || !currentMenu || (permissionsReady && visibleChildren.length === 0);
+  const showAll = peek || browsingAll || isHome || !currentMenu || (permissionsReady && visibleChildren.length === 0);
 
   return (
     <Sidebar collapsible="icon" className="border-r">
@@ -190,8 +233,8 @@ export function AppSidebar({
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
-              {visibleMainMenus.map((menu) => (
-                <SidebarMenuItem key={menu.id}>
+              {visibleMainMenus.map((menu) => {
+                const button = (
                   <SidebarMenuButton
                     tooltip={menu.title}
                     isActive={!isHome && activeMenu === menu.id}
@@ -201,8 +244,35 @@ export function AppSidebar({
                     <span>{menu.title}</span>
                     <ChevronRight className="ml-auto" />
                   </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
+                );
+
+                return (
+                  <SidebarMenuItem key={menu.id}>
+                    {peek ? (
+                      <HoverCard openDelay={150} closeDelay={100}>
+                        <HoverCardTrigger asChild>{button}</HoverCardTrigger>
+                        <HoverCardContent
+                          side="right"
+                          align="start"
+                          sideOffset={9}
+                          className="max-h-[80vh] w-56 overflow-y-auto p-2"
+                        >
+                          <p className="px-2 pb-2 text-sm font-semibold">{menu.title}</p>
+                          <FlyoutItems
+                            items={filterMenuItems(menu.children, permissions)}
+                            onItemClick={(item) => {
+                              setPeeking(false);
+                              onItemClick(item);
+                            }}
+                          />
+                        </HoverCardContent>
+                      </HoverCard>
+                    ) : (
+                      button
+                    )}
+                  </SidebarMenuItem>
+                );
+              })}
             </SidebarMenu>
           </SidebarGroup>
         ) : (

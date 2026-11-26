@@ -40,6 +40,8 @@ type SidebarContextProps = {
   setOpenMobile: (open: boolean) => void;
   isMobile: boolean;
   toggleSidebar: () => void;
+  peek: boolean;
+  setPeeking: (peeking: boolean) => void;
 };
 
 const SidebarContext = React.createContext<SidebarContextProps | null>(null);
@@ -68,6 +70,7 @@ function SidebarProvider({
 }) {
   const isMobile = useIsMobile();
   const [openMobile, setOpenMobile] = React.useState(false);
+  const [peeking, setPeeking] = React.useState(false);
 
   // This is the internal state of the sidebar.
   // We use openProp and setOpenProp for control from outside the component.
@@ -76,6 +79,7 @@ function SidebarProvider({
   const setOpen = React.useCallback(
     (value: boolean | ((value: boolean) => boolean)) => {
       const openState = typeof value === 'function' ? value(open) : value;
+      setPeeking(false);
       if (setOpenProp) {
         setOpenProp(openState);
       } else {
@@ -112,6 +116,7 @@ function SidebarProvider({
   // We add a state so that we can do data-state="expanded" or "collapsed".
   // This makes it easier to style the sidebar with Tailwind classes.
   const state = open ? 'expanded' : 'collapsed';
+  const peek = !open && !isMobile && peeking;
 
   const contextValue = React.useMemo<SidebarContextProps>(
     () => ({
@@ -122,8 +127,10 @@ function SidebarProvider({
       openMobile,
       setOpenMobile,
       toggleSidebar,
+      peek,
+      setPeeking,
     }),
-    [state, open, setOpen, isMobile, openMobile, setOpenMobile, toggleSidebar]
+    [state, open, setOpen, isMobile, openMobile, setOpenMobile, toggleSidebar, peek]
   );
 
   return (
@@ -163,7 +170,10 @@ function Sidebar({
   variant?: 'sidebar' | 'floating' | 'inset';
   collapsible?: 'offcanvas' | 'icon' | 'none';
 }) {
-  const { isMobile, state, openMobile, setOpenMobile } = useSidebar();
+  const { isMobile, state, openMobile, setOpenMobile, peek, setPeeking } = useSidebar();
+  const peekCloseTimer = React.useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  React.useEffect(() => () => clearTimeout(peekCloseTimer.current), []);
 
   if (collapsible === 'none') {
     return (
@@ -209,7 +219,8 @@ function Sidebar({
     <div
       className="group peer text-sidebar-foreground hidden md:block"
       data-state={state}
-      data-collapsible={state === 'collapsed' ? collapsible : ''}
+      data-collapsible={state === 'collapsed' && !peek ? collapsible : ''}
+      data-peek={peek}
       data-variant={variant}
       data-side={side}
       data-slot="sidebar"
@@ -223,7 +234,7 @@ function Sidebar({
           'group-data-[side=right]:rotate-180',
           variant === 'floating' || variant === 'inset'
             ? 'group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4)))]'
-            : 'group-data-[collapsible=icon]:w-(--sidebar-width-icon)'
+            : 'group-data-[collapsible=icon]:w-(--sidebar-width-icon) group-data-[peek=true]:w-(--sidebar-width-icon)'
         )}
       />
       <div
@@ -237,8 +248,17 @@ function Sidebar({
           variant === 'floating' || variant === 'inset'
             ? 'p-2 group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4))+2px)]'
             : 'group-data-[collapsible=icon]:w-(--sidebar-width-icon) group-data-[side=left]:border-r group-data-[side=right]:border-l',
+          'group-data-[peek=true]:z-40 group-data-[peek=true]:shadow-xl',
           className
         )}
+        onMouseEnter={() => {
+          clearTimeout(peekCloseTimer.current);
+          if (state === 'collapsed' && collapsible === 'icon') setPeeking(true);
+        }}
+        onMouseLeave={() => {
+          // 사이드바와 하위 메뉴 창 사이 틈을 지나는 동안 접히지 않게 잠깐 기다린다
+          peekCloseTimer.current = setTimeout(() => setPeeking(false), 100);
+        }}
         {...props}
       >
         <div
@@ -509,7 +529,7 @@ function SidebarMenuButton({
   tooltip?: string | React.ComponentProps<typeof TooltipContent>;
 } & VariantProps<typeof sidebarMenuButtonVariants>) {
   const Comp = asChild ? Slot : 'button';
-  const { isMobile, state } = useSidebar();
+  const { isMobile, state, peek } = useSidebar();
 
   const button = (
     <Comp
@@ -538,7 +558,7 @@ function SidebarMenuButton({
       <TooltipContent
         side="right"
         align="center"
-        hidden={state !== 'collapsed' || isMobile}
+        hidden={state !== 'collapsed' || isMobile || peek}
         {...tooltip}
       />
     </Tooltip>
