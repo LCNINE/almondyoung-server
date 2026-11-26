@@ -13,4 +13,10 @@ export interface EventFailuresOptions {
    * 토픽 이름 문자열 대신 스트림 상수(`X_STREAM.topic.topic`)로 적는다.
    */
   sequencedTopics: readonly string[];
+  /** 뒤에 보류된 선행 사실을 먼저 재실행해도 안전한 이벤트 쌍만 앱에서 지정한다. */
+  replayPrerequisites?: readonly {
+    topic: string;
+    blockedEventType: string;
+    prerequisiteEventType: string;
+  }[];
 }

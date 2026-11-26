@@ -33,6 +33,9 @@ describeIfDb('DeadLetterRedriver (PostgreSQL 통합)', () => {
   let dispatched: string[];
   /** 이 messageId 를 다시 넣으면 실패한다 */
   let failOn: Set<string>;
+  let createBeforeCancel: boolean;
+  let created: boolean;
+  let beforeCreateDispatch: (() => Promise<void>) | undefined;
 
   beforeAll(() => {
     client = postgres(DATABASE_URL as string, { max: 4 });
@@ -45,6 +48,9 @@ describeIfDb('DeadLetterRedriver (PostgreSQL 통합)', () => {
   beforeEach(() => {
     dispatched = [];
     failOn = new Set();
+    createBeforeCancel = false;
+    created = false;
+    beforeCreateDispatch = undefined;
     const dbService = { db } as never;
     store = new DeadLetterStore(dbService);
     const runtime = new DeadLetterRuntime();
@@ -54,14 +60,24 @@ describeIfDb('DeadLetterRedriver (PostgreSQL 통합)', () => {
           ? async (data: { messageId: string }, context: { getMessage(): { headers: Record<string, Buffer> } }) => {
               const id = Number(context.getMessage().headers[DEAD_LETTER_HEADERS.id].toString());
               dispatched.push(data.messageId);
-              if (failOn.has(data.messageId)) await store.recordRedriveFailure(id, new Error(`fail ${data.messageId}`));
-              else await store.markRedriven(id);
+              if (data.messageId === 'create-after-cancel') await beforeCreateDispatch?.();
+              if (createBeforeCancel && data.messageId === 'cancel-before-create' && !created) {
+                await store.recordRedriveFailure(id, new Error('Sales order not found'));
+              } else if (failOn.has(data.messageId)) {
+                await store.recordRedriveFailure(id, new Error(`fail ${data.messageId}`));
+              } else {
+                if (data.messageId === 'create-after-cancel') created = true;
+                await store.markRedriven(id);
+              }
             }
           : null,
     } as unknown as Server;
     runtime.attach({ consumerGroup: GROUP, server, redriveTenant: () => undefined });
     redriver = new DeadLetterRedriver(dbService, runtime, new FailureActionLog(dbService), {
       sequencedTopics: [TOPIC],
+      replayPrerequisites: [
+        { topic: TOPIC, blockedEventType: 'OrderCancelled', prerequisiteEventType: 'OrderCreated' },
+      ],
     });
   });
 
@@ -107,6 +123,122 @@ describeIfDb('DeadLetterRedriver (PostgreSQL 통합)', () => {
     expect(dispatched).toEqual(['m1', 'm2', 'm3']);
     expect(result).toEqual({ processed: 3, stoppedAt: null });
     expect(await statuses()).toEqual(['m1:redriven', 'm2:redriven', 'm3:redriven']);
+  });
+
+  it('취소가 생성보다 먼저 실패하면 보류된 생성을 먼저 처리하고 취소를 이어서 처리한다', async () => {
+    createBeforeCancel = true;
+    await store.recordFailure(
+      { ...msg('cancel-before-create'), eventType: 'OrderCancelled' },
+      Object.assign(new Error('Sales order order-A not found for OrderCancelled'), { name: 'NotFoundException' }),
+    );
+    await store.holdIfBlocked({ ...msg('create-after-cancel'), eventType: 'OrderCreated' });
+    const [head] = await db
+      .select({ id: dead_letters.id })
+      .from(dead_letters)
+      .where(and(eq(dead_letters.topic, TOPIC), eq(dead_letters.messageId, 'cancel-before-create')));
+
+    const result = await redriver.redrive(head.id, 'admin-1');
+
+    expect(result).toEqual({ processed: 2, stoppedAt: null });
+    expect(dispatched).toEqual(['create-after-cancel', 'cancel-before-create']);
+    expect(await statuses()).toEqual(['cancel-before-create:redriven', 'create-after-cancel:redriven']);
+  });
+
+  it('취소가 다른 오류로 실패했다면 생성 이벤트를 앞당기지 않는다', async () => {
+    await store.recordFailure(
+      { ...msg('cancel-before-create'), eventType: 'OrderCancelled' },
+      new Error('temporary failure'),
+    );
+    await store.holdIfBlocked({ ...msg('create-after-cancel'), eventType: 'OrderCreated' });
+    const [head] = await db.select({ id: dead_letters.id }).from(dead_letters).where(eq(dead_letters.topic, TOPIC));
+
+    await expect(redriver.redrive(head.id, 'admin-1')).resolves.toEqual({ processed: 2, stoppedAt: null });
+    expect(dispatched).toEqual(['cancel-before-create', 'create-after-cancel']);
+  });
+
+  it('취소와 생성 사이에 다른 보류 이벤트가 있으면 생성을 건너뛰어 앞당기지 않는다', async () => {
+    createBeforeCancel = true;
+    await store.recordFailure(
+      { ...msg('cancel-before-create'), eventType: 'OrderCancelled' },
+      Object.assign(new Error('Sales order order-A not found for OrderCancelled'), { name: 'NotFoundException' }),
+    );
+    await store.holdIfBlocked({ ...msg('middle-event'), eventType: 'OrderModified' });
+    await store.holdIfBlocked({ ...msg('create-after-cancel'), eventType: 'OrderCreated' });
+    const [head] = await db
+      .select({ id: dead_letters.id })
+      .from(dead_letters)
+      .where(and(eq(dead_letters.topic, TOPIC), eq(dead_letters.messageId, 'cancel-before-create')));
+
+    const result = await redriver.redrive(head.id, 'admin-1');
+
+    expect(result.processed).toBe(0);
+    expect(result.stoppedAt?.id).toBe(head.id);
+    expect(dispatched).toEqual(['cancel-before-create']);
+    expect(await statuses()).toEqual(['cancel-before-create:failed', 'middle-event:held', 'create-after-cancel:held']);
+  });
+
+  it('선행 생성 재실행이 실패하면 취소를 건드리지 않고 다음 재시도에서 둘 다 복구한다', async () => {
+    createBeforeCancel = true;
+    failOn.add('create-after-cancel');
+    await store.recordFailure(
+      { ...msg('cancel-before-create'), eventType: 'OrderCancelled' },
+      Object.assign(new Error('Sales order order-A not found for OrderCancelled'), { name: 'NotFoundException' }),
+    );
+    await store.holdIfBlocked({ ...msg('create-after-cancel'), eventType: 'OrderCreated' });
+    const [head] = await db.select({ id: dead_letters.id }).from(dead_letters).where(eq(dead_letters.topic, TOPIC));
+
+    const first = await redriver.redrive(head.id, 'admin-1');
+    expect(first.stoppedAt?.errorMessage).toBe('fail create-after-cancel');
+    expect(dispatched).toEqual(['create-after-cancel']);
+    expect(await statuses()).toEqual(['cancel-before-create:failed', 'create-after-cancel:failed']);
+
+    failOn.delete('create-after-cancel');
+    const second = await redriver.redrive(head.id, 'admin-1');
+    expect(second).toEqual({ processed: 2, stoppedAt: null });
+    expect(dispatched).toEqual(['create-after-cancel', 'create-after-cancel', 'cancel-before-create']);
+  });
+
+  it('선행 생성을 처리하는 동안 같은 순서의 다른 재실행은 겹치지 않는다', async () => {
+    createBeforeCancel = true;
+    await store.recordFailure(
+      { ...msg('cancel-before-create'), eventType: 'OrderCancelled' },
+      Object.assign(new Error('Sales order order-A not found for OrderCancelled'), { name: 'NotFoundException' }),
+    );
+    await store.holdIfBlocked({ ...msg('create-after-cancel'), eventType: 'OrderCreated' });
+    const [head] = await db
+      .select({ id: dead_letters.id })
+      .from(dead_letters)
+      .where(and(eq(dead_letters.topic, TOPIC), eq(dead_letters.messageId, 'cancel-before-create')));
+
+    let notifyStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      notifyStarted = resolve;
+    });
+    let releaseCreate!: () => void;
+    const createDone = new Promise<void>((resolve) => {
+      releaseCreate = resolve;
+    });
+    beforeCreateDispatch = async () => {
+      notifyStarted();
+      await createDone;
+    };
+
+    const first = redriver.redrive(head.id, 'admin-1');
+    await started;
+    const contenders = await Promise.allSettled([
+      redriver.redrive(head.id, 'admin-2'),
+      redriver.redrive(head.id, 'admin-3'),
+      redriver.redrive(head.id, 'admin-4'),
+    ]);
+    expect(contenders).toHaveLength(3);
+    for (const contender of contenders) {
+      expect(contender.status).toBe('rejected');
+      if (contender.status === 'rejected') expect(String(contender.reason)).toContain('진행 중');
+    }
+    releaseCreate();
+
+    await expect(first).resolves.toEqual({ processed: 2, stoppedAt: null });
+    expect(await statuses()).toEqual(['cancel-before-create:redriven', 'create-after-cancel:redriven']);
   });
 
   it('하나라도 실패하면 거기서 멈추고 그 행이 새 머리가 된다', async () => {

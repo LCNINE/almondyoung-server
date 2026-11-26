@@ -28,6 +28,7 @@ import {
   statusLabel,
   stopDetail,
 } from '../display';
+import { orderSequenceGuidance } from '../order-sequence-guidance';
 import { ConfirmAllDialog } from './confirm-all-dialog';
 import { DiscardDialog, type DiscardTarget } from './discard-dialog';
 import { ActionLog, ErrorBlock, Fields, JsonBlock } from './detail-parts';
@@ -235,6 +236,7 @@ function DeadLetterDetailView({
   if (detail.isError) return <p className="text-sm text-red-600">{loadErrorText(detail.error)}</p>;
   if (!detail.data) return <p className="text-sm text-muted-foreground">불러오는 중…</p>;
   const { row, sequence, actions } = detail.data;
+  const orderGuidance = orderSequenceGuidance(service, row, sequence);
 
   return (
     <div className="flex flex-col gap-3 rounded bg-muted/30 p-3">
@@ -250,6 +252,7 @@ function DeadLetterDetailView({
       {(row.errorName || row.errorMessage) && (
         <ErrorBlock text={[row.errorName, row.errorMessage].filter(Boolean).join(': ')} />
       )}
+      {orderGuidance && <p className="text-xs text-amber-800">{orderGuidance}</p>}
       {sequence.length > 1 && (
         <ul className="text-xs">
           {sequence.map((r) => (
