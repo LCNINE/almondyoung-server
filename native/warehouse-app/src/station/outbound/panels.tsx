@@ -3,6 +3,7 @@ import { Check, CircleHelp, Package, Printer, ScanLine, X } from 'lucide-react';
 import { Button } from '../../core/design/Button';
 import { cn } from '../../core/design/cn';
 import { SCAN_STORAGE_MESSAGE } from '../../core/hardware/scan/useWorkScanQueue';
+import { skuImageUrls } from '../../domains/inventory/SkuInfoSheet';
 import { formatTrackingNo, splitShareLines, type InspectionRow } from '../../domains/outbound/inspection';
 import type { SplitShare } from '../../domains/outbound/types';
 import type { LabelItemChange } from '../../domains/outbound/waybillLabel';
@@ -293,6 +294,18 @@ function PanelHead({ title, meta }: { title: string; meta?: string }) {
   );
 }
 
+function ProductThumb({ fileIds }: { fileIds: readonly string[] }) {
+  const [src] = skuImageUrls(fileIds);
+  const [failed, setFailed] = useState<string | null>(null);
+  const box = 'h-[53px] w-11 flex-none rounded-[7px] bg-[#f4f4f5]';
+
+  if (!src || failed === src) {
+    return <div aria-hidden="true" data-testid="line-thumb-empty" className={box} />;
+  }
+
+  return <img src={src} alt="" loading="lazy" onError={() => setFailed(src)} className={cn(box, 'object-cover')} />;
+}
+
 /** 이 상자에 담을 상품 `로케이션 | 상품 / 옵션 | 검수 / 주문 | 상태` — 다 찬 줄은 흐리게, 위치는 보여 주기만 */
 export function LineTable({ rows, currentLineId }: { rows: readonly InspectionRow[]; currentLineId: string | null }) {
   const ordered = rows.reduce((sum, row) => sum + row.ordered, 0);
@@ -324,7 +337,10 @@ export function LineTable({ rows, currentLineId }: { rows: readonly InspectionRo
                     <LocationCell locations={row.locations} />
                   </td>
                   <td className={TD}>
-                    <strong className="block text-sm leading-normal font-semibold">{row.name}</strong>
+                    <div className="flex items-center gap-3">
+                      <ProductThumb fileIds={row.imageFileIds} />
+                      <strong className="block text-sm leading-normal font-semibold">{row.name}</strong>
+                    </div>
                   </td>
                   <td className={cn(TD, 'text-right text-xl font-bold whitespace-nowrap tabular-nums')}>
                     {row.scanned} <span className="text-sm font-normal text-[#71717a]">/ {row.ordered}</span>

@@ -14,6 +14,7 @@ import { cancellationVoidKey, withdrawalVoidKey } from '../services/waybill-void
 import { loadPendingCancellations, PendingCancellationLine } from './pending-cancellations';
 import { loadSplitShares } from '../services/consolidation-shipment-reads';
 import type { ShipmentSplitShareDto } from '../dto/consolidation.dto';
+import { readSkuImageFileIds } from '../../inventory/sku-catalog/services/sku-image-files';
 
 // 보충 대기·배치 오케스트레이터·스펙이 이 경로로 가져다 쓴다 — 정본을 옮긴 뒤에도 그대로 둔다
 export { maskName, readDeliveryNote, readRecipientName } from './recipient-snapshot';
@@ -33,6 +34,7 @@ export interface ShipmentByWaybillLine {
   skuName: string;
   /** 이 SKU 에 등록된 바코드 — 기기가 찍은 바코드가 어느 줄인지 응답 없이도 알아보게(이름 표시용) */
   barcodes: string[];
+  imageFileIds: string[];
   qty: number;
   pickedQty: number;
   inspectedQty: number;
@@ -361,7 +363,13 @@ export class ShipmentWaybillReader {
       : [];
     const barcodesBySku = new Map<string, string[]>();
     for (const row of registered) barcodesBySku.set(row.skuId, [...(barcodesBySku.get(row.skuId) ?? []), row.barcode]);
-    return lines.map((line) => ({ ...line, barcodes: barcodesBySku.get(line.skuId) ?? [] }));
+    const imageFileIdsBySku = await readSkuImageFileIds(trx, skuIds);
+
+    return lines.map((line) => ({
+      ...line,
+      barcodes: barcodesBySku.get(line.skuId) ?? [],
+      imageFileIds: imageFileIdsBySku.get(line.skuId) ?? [],
+    }));
   }
 
   /**

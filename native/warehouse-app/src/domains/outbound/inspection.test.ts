@@ -154,6 +154,16 @@ describe('품목 표', () => {
     expect(inspectionTotals(rows)).toEqual({ scanned: 1, ordered: 7 });
   });
 
+  it('줄 사진 파일 id 를 그대로 싣고, 옛 core 처럼 없으면 빈 목록', () => {
+    const withImages = [line({ shipmentLineId: 'p', imageFileIds: ['f1', 'f2'] }), line({ shipmentLineId: 'q' })];
+    const rows = inspectionRows(withImages, progressOf({ lines: withImages }));
+
+    expect(rows.map((r) => [r.shipmentLineId, r.imageFileIds])).toEqual([
+      ['p', ['f1', 'f2']],
+      ['q', []],
+    ]);
+  });
+
   it('진행 시작값은 pickedQty 와 inspectedQty 중 큰 쪽(내려놨다 다시 연 박스)', () => {
     expect(progressOf({ lines: [line({ shipmentLineId: 'a', qty: 2, pickedQty: 0, inspectedQty: 2 })] })[0].pickedQty).toBe(2);
   });

@@ -1,10 +1,16 @@
 import { render, screen, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { BoxCard, LineTable } from './panels';
+
+vi.mock('../../app/config', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../app/config')>()),
+  filePublicBaseUrl: 'https://file.tenant-2.example',
+}));
 
 const row = (patch: Partial<Parameters<typeof LineTable>[0]['rows'][number]>) => ({
   shipmentLineId: 'l',
   name: '상품',
+  imageFileIds: [],
   locations: [],
   ordered: 1,
   scanned: 0,
@@ -41,6 +47,26 @@ describe('품목 표 위치 칸', () => {
   it('위치가 없으면(옛 core) 대시', () => {
     render(<LineTable currentLineId={null} rows={[row({ locations: [] })]} />);
     expect(screen.getByText('—')).toBeInTheDocument();
+  });
+});
+
+describe('품목 표 사진', () => {
+  it('사진이 있는 줄은 대표 사진을, 없는 줄은 회색 자리표시를 보인다', () => {
+    render(
+      <LineTable
+        currentLineId={null}
+        rows={[
+          row({ shipmentLineId: 'a', name: '컬러크림', imageFileIds: ['main-file', 'extra-file'] }),
+          row({ shipmentLineId: 'b', name: '헤어롤' }),
+        ]}
+      />
+    );
+    const [, withImage, without] = screen.getAllByRole('row');
+
+    expect(withImage.querySelector('img')?.getAttribute('src')).toBe('https://file.tenant-2.example/files/public/main-file');
+    expect(within(withImage).queryByTestId('line-thumb-empty')).toBeNull();
+    expect(without.querySelector('img')).toBeNull();
+    expect(within(without).getByTestId('line-thumb-empty')).toBeInTheDocument();
   });
 });
 
