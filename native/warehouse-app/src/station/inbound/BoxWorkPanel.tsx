@@ -32,7 +32,7 @@ export function BoxWorkPanel({
 }) {
   if (picking && !loading) {
     return (
-      <div className="min-h-0 flex-1 overflow-auto rounded-[10px] border border-[#D5D8DE] bg-white p-3">
+      <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-[#e4e4e7] bg-white p-3">
         <h3 className="mb-2 text-lg font-semibold">리스트에 없던 물건</h3>
         <AutoFocus>
           <SkuPicker onSelect={onPick} />

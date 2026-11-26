@@ -11,13 +11,13 @@ export function ScreenHeader({
   description,
 }: {
   title: string;
-  backTo: string;
+  backTo?: string;
   right?: ReactNode;
   description?: string;
 }) {
   const { hidesHomeBack } = useContext(ShellChromeContext);
   // 스테이션 셸에는 홈이 없다(탭 바가 홈) — 홈으로 가는 뒤로는 첫 탭으로 튀기만 한다.
-  const showBack = !(hidesHomeBack && backTo === '/');
+  const showBack = backTo !== undefined && !(hidesHomeBack && backTo === '/');
   return (
     <div className="flex items-center gap-2">
       {showBack && (

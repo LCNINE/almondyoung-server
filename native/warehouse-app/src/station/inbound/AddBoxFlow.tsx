@@ -42,7 +42,7 @@ export function ChooseShipmentForAdd({
   useStationActions([{ ...INBOUND_BOX_ACTIONS.back, enabled: true, run: onBack }]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-3 rounded-[10px] border border-[#D5D8DE] bg-white p-6">
+    <div className="flex h-full min-h-0 flex-col gap-3 rounded-xl border border-[#e4e4e7] bg-white p-6">
       <p className="text-xl font-semibold">{`${label} — 리스트에 없는 상자를 더할 선적을 고르세요`}</p>
       <PickList
         label="선적 고르기"
@@ -54,7 +54,7 @@ export function ChooseShipmentForAdd({
           <span className="flex items-center gap-3">
             <span className="text-lg font-semibold">{`${s.name}${arrivalText(s.expectedArrival)}`}</span>
             {s.status === 'closed' ? (
-              <span className="rounded-md bg-[#E4E6EA] px-2 py-1 text-base font-semibold text-[#535968]">끝남</span>
+              <span className="rounded-[5px] bg-[#eff1f2] px-2 py-[5px] text-xs font-semibold whitespace-nowrap text-[#68706d]">끝남</span>
             ) : null}
           </span>
         )}
@@ -127,7 +127,7 @@ function StatusLine({ tone, text }: { tone: 'alert' | 'notice'; text: string }) 
   return (
     <p
       role={tone === 'alert' ? 'alert' : 'status'}
-      className={cn('shrink-0 text-lg font-semibold', tone === 'alert' ? 'text-[#9E1320]' : 'text-[#5E3B00]')}
+      className={cn('shrink-0 text-lg font-semibold', tone === 'alert' ? 'text-[#aa4037]' : 'text-[#5E3B00]')}
     >
       {text}
     </p>

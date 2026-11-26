@@ -96,7 +96,7 @@ function HistoryHeader() {
   return (
     <ScreenHeader
       title="입고내역"
-      backTo="/inbound"
+      backTo={isStationDevice() ? undefined : '/inbound'}
       description="상품별 입고·적치·취소 수량을 확인하세요."
       right={<InboundTabs active="history" />}
     />

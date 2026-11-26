@@ -24,8 +24,7 @@ function localDateString(d: Date): string {
 const PANEL = 'min-w-0 overflow-hidden rounded-xl border border-[#e4e4e7] bg-white';
 const PANEL_HEAD =
   'flex items-center justify-between gap-2.5 border-b border-[#e4e4e7] px-[22px] py-[19px]';
-const ROW =
-  'flex items-center gap-3 border-b border-[#e4e4e7] py-[18px] last:border-b-0';
+const ROW = 'flex items-center gap-3 py-[18px]';
 const LINK_ROW = `${ROW} hover:bg-[#fafafa]`;
 const PILL =
   'inline-flex shrink-0 items-center rounded-[5px] bg-[#eff6ff] px-2 py-[5px] text-xs font-semibold whitespace-nowrap text-[#2563eb]';
@@ -134,7 +133,7 @@ export function ExpectedArrivalListScreen() {
         ) : list.length === 0 ? (
           <p className={STATUS}>입고 예정이 없어요.</p>
         ) : (
-          <ul className="px-5">
+          <ul className="divide-y divide-[#e4e4e7] px-5">
             {list.map((arrival) =>
               arrival.source === 'inbound_shipment' ? (
                 <li key={`shipment:${arrival.documentId}`}>

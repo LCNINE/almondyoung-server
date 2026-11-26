@@ -581,7 +581,7 @@ function QuickInboundScreenContent({ station }: { station: boolean }) {
   const header = (
     <ScreenHeader
       title="입고"
-      backTo="/inbound"
+      backTo={station ? undefined : '/inbound'}
       description="상품을 확인하고 수량을 담아 한 번에 등록하세요."
       right={<InboundTabs active="quick" />}
     />

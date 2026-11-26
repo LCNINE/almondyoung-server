@@ -171,11 +171,13 @@ it('F3 은 간편입고로 열리고, 세그먼트 세 칸으로 입고내역·�
   await waitFor(() => expect(router.state.location.pathname).toBe('/inbound/quick'));
   const segment = () => screen.getByRole('navigation', { name: '입고 화면' });
   await waitFor(() => expect(within(segment()).getByRole('link', { name: '간편입고' })).toHaveAttribute('aria-current', 'page'));
+  expect(screen.queryByRole('link', { name: '뒤로' })).toBeNull();
   expect(within(screen.getByRole('navigation', { name: '탭' })).getByRole('link', { name: /^입고/ })).toHaveAttribute('data-active', 'true');
 
   fireEvent.click(within(segment()).getByRole('link', { name: '입고내역' }));
   await waitFor(() => expect(router.state.location.pathname).toBe('/inbound/history'));
   await waitFor(() => expect(within(segment()).getByRole('link', { name: '입고내역' })).toHaveAttribute('aria-current', 'page'));
+  expect(screen.queryByRole('link', { name: '뒤로' })).toBeNull();
 
   fireEvent.click(within(segment()).getByRole('link', { name: '발주 입고' }));
   await waitFor(() => expect(router.state.location.pathname).toBe('/inbound'));
