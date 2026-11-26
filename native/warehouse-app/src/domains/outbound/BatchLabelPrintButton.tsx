@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Printer } from 'lucide-react';
 import { Button } from '../../core/design/Button';
 import { ConfirmDialog } from '../../core/design/ConfirmDialog';
 import { useApiClient } from '../../core/data/ApiClientProvider';
 import { localStoragePrefs, type DevicePrefs } from '../../core/data/devicePrefs';
 import { errorMessage } from '../../core/data/errorMessage';
+import { cn } from '../../core/design/cn';
 import { useUnsavedWork } from '../../core/operations/useUnsavedWork';
 import {
   NO_PRINTER_MESSAGE,
@@ -28,6 +30,7 @@ import {
 } from './waybillLabel';
 
 const SECONDARY = 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-50';
+const OUTLINE = 'gap-2 border border-[#e4e4e7] bg-white text-[#27272a] hover:bg-[#eff6ff] hover:brightness-100';
 
 type Phase =
   | { kind: 'idle' }
@@ -79,6 +82,9 @@ export function BatchLabelPrintButton({
   afterPrinted,
   autoPrint = false,
   onAutoPrintStarted,
+  label = '송장 인쇄',
+  outline = false,
+  className = 'mt-2',
 }: {
   batchId: string;
   prefs?: DevicePrefs;
@@ -92,6 +98,10 @@ export function BatchLabelPrintButton({
   /** 처음 그릴 때 바로 인쇄를 시작한다 — 「작업 시작하고 송장 인쇄」 뒤. 이미 나간 송장이 있으면 확인창을 띄운다 */
   autoPrint?: boolean;
   onAutoPrintStarted?: () => void;
+  label?: string;
+  /** 배치 현황 카드 — 주 단추 자리를 다른 단추가 차지해 인쇄는 늘 흰 단추로 둔다 */
+  outline?: boolean;
+  className?: string;
 }) {
   const api = useApiClient();
   const queryClient = useQueryClient();
@@ -242,15 +252,16 @@ export function BatchLabelPrintButton({
               : '인쇄가 끝날 때까지 이 화면을 떠나지 마세요.';
 
   return (
-    <div className="mt-2 space-y-1">
-      <div className="flex gap-2">
+    <div className={cn('space-y-1', className)}>
+      <div className="flex flex-wrap gap-2">
         <Button
           type="button"
-          className={showRetry ? SECONDARY : undefined}
+          className={outline ? OUTLINE : showRetry ? SECONDARY : undefined}
           disabled={disabled || phase.kind === 'running'}
           onClick={() => void prepare()}
         >
-          {phase.kind === 'running' ? `인쇄 중 ${phase.done}/${phase.total}` : '송장 인쇄'}
+          {outline ? <Printer className="h-4 w-4" aria-hidden /> : null}
+          {phase.kind === 'running' ? `인쇄 중 ${phase.done}/${phase.total}` : label}
         </Button>
         {phase.kind === 'running' && (
           <Button

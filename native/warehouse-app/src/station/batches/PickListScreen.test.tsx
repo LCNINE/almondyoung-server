@@ -193,4 +193,13 @@ describe('배치 피킹 목록', () => {
     );
     expect(router.state.location.state.batchId).toBe('b-1');
   });
+
+  it('머리 줄은 흰 보조 단추 배치 현황으로, 피킹 목록 제목, 파란 인쇄 단추', async () => {
+    setup();
+    const back = await screen.findByRole('button', { name: '배치 현황으로' });
+    expect(back.className).toContain('bg-white');
+    expect(screen.getByRole('heading', { level: 1, name: '피킹 목록' })).toBeInTheDocument();
+    const print = await screen.findByRole('button', { name: '인쇄' });
+    expect(print.className).toContain('bg-[#2563eb]');
+  });
 });

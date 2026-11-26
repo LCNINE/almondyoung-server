@@ -19,10 +19,19 @@ export function ReprintLabelButton({
   shipmentId,
   prefs = localStoragePrefs,
   print = printRaw,
+  label = '송장 재출력',
+  className = 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-50',
+  disabled = false,
+  onRunningChange,
 }: {
   shipmentId: string;
   prefs?: DevicePrefs;
   print?: PrintRaw;
+  label?: string;
+  className?: string;
+  /** 다른 인쇄가 돌고 있으면 부모가 막는다 — 프린터가 한 대라 라벨이 섞인다 */
+  disabled?: boolean;
+  onRunningChange?: (running: boolean) => void;
 }) {
   const api = useApiClient();
   const queryClient = useQueryClient();
@@ -32,7 +41,7 @@ export function ReprintLabelButton({
   const running = useRef(false);
 
   const run = async () => {
-    if (running.current) return;
+    if (running.current || disabled) return;
     const target = readLabelPrinter(prefs);
     if (!target) {
       setStatus({ kind: 'error', text: NO_PRINTER_MESSAGE });
@@ -40,6 +49,7 @@ export function ReprintLabelButton({
     }
     running.current = true;
     setBusy(true);
+    onRunningChange?.(true);
     setStatus(null);
     try {
       const label = await printOneLabel(
@@ -61,19 +71,15 @@ export function ReprintLabelButton({
     } finally {
       running.current = false;
       setBusy(false);
+      onRunningChange?.(false);
       void queryClient.invalidateQueries({ queryKey: ['waybill-label-states'] });
     }
   };
 
   return (
     <div className="space-y-1">
-      <Button
-        type="button"
-        className="border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
-        disabled={busy}
-        onClick={() => void run()}
-      >
-        송장 재출력
+      <Button type="button" className={className} disabled={busy || disabled} onClick={() => void run()}>
+        {label}
       </Button>
       {status && (
         <p role={status.kind === 'error' ? 'alert' : 'status'} className="text-sm">

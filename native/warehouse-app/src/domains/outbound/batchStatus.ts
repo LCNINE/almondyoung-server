@@ -110,8 +110,10 @@ export interface BoxRow {
   trackingNo: string;
   recipient: string;
   status: string;
-  /** alert = 송장 손볼 것, warn = 빠지는 중·결품 처리, work = 검수 중, idle = 대기 */
+  /** alert = 송장 손볼 것, warn = 빠지는 중·결품 처리·보충 대기, work = 검수 중, idle = 대기 */
   tone: 'alert' | 'warn' | 'work' | 'idle';
+  /** open = 출고 검수에서 상자를 연다, print = 이 상자 송장만 뽑는다 */
+  action: 'open' | 'print' | null;
 }
 
 const IN_WORK_STATUSES: ReadonlySet<string> = new Set(['picking', 'ready_to_pack', 'packing']);
@@ -123,19 +125,51 @@ const IN_WORK_STATUSES: ReadonlySet<string> = new Set(['picking', 'ready_to_pack
 export function boxRowOf(state: BatchLabelState): BoxRow | null {
   const base = { shipmentId: state.shipmentId, trackingNo: state.trackingNo ?? '', recipient: state.recipientMasked ?? '' };
 
-  if (state.cancelPending) return { ...base, status: '취소 대기', tone: 'alert' };
+  if (state.cancelPending) return { ...base, status: '취소 대기', tone: 'alert', action: null };
 
   if (state.trackingNo === undefined) return null;
   // 송장을 무효로 한 상자는 배치 시작을 막는다 — 목록에서 사라지면 요약 숫자와 어긋나 어느 상자인지 모른다
-  if (!state.trackingNo) return { ...base, status: '송장 필요', tone: 'alert' };
+  if (!state.trackingNo) return { ...base, status: '송장 필요', tone: 'alert', action: null };
 
-  if (state.state === 'withdrawing' || state.workItemStatus === 'withdrawing') return { ...base, status: '빠지는 중', tone: 'warn' };
-  if (state.state === 'never_printed') return { ...base, status: '미출력', tone: 'alert' };
-  if (state.state === 'reprint_required') return { ...base, status: '재출력', tone: 'alert' };
-  if (state.state === 'unavailable') return { ...base, status: '송장 확인', tone: 'alert' };
-  if (state.workItemStatus === 'short_pick_recovery') return { ...base, status: '결품 처리 중', tone: 'warn' };
-  if (state.workItemStatus && IN_WORK_STATUSES.has(state.workItemStatus)) return { ...base, status: '검수 중', tone: 'work' };
-  return { ...base, status: '대기', tone: 'idle' };
+  if (state.state === 'withdrawing' || state.workItemStatus === 'withdrawing')
+    return { ...base, status: '빠지는 중', tone: 'warn', action: 'open' };
+  if (state.state === 'never_printed') return { ...base, status: '미출력', tone: 'alert', action: 'print' };
+  if (state.state === 'reprint_required') return { ...base, status: '재출력', tone: 'alert', action: 'print' };
+  if (state.state === 'unavailable') return { ...base, status: '송장 확인', tone: 'alert', action: null };
+  if (state.workItemStatus === 'short_pick_recovery') return { ...base, status: '결품 처리 중', tone: 'warn', action: 'open' };
+  if (state.workItemStatus && IN_WORK_STATUSES.has(state.workItemStatus))
+    return { ...base, status: '검수 중', tone: 'work', action: 'open' };
+
+  return { ...base, status: '검수 대기', tone: 'idle', action: 'open' };
+}
+
+/** 결품을 다른 위치에서 채웠고 그 몫을 아직 안 집은 상자 — 송장 손볼 일이 없으면 보충 대기로 보인다 */
+export function withRefillPending(rows: readonly BoxRow[], pending: ReadonlySet<string>): BoxRow[] {
+  return rows.map((row) =>
+    pending.has(row.shipmentId) && (row.tone === 'work' || row.tone === 'idle') ? { ...row, status: '보충 대기', tone: 'warn' } : row
+  );
+}
+
+/** 배치 카드의 보충 대기 · 확인 필요. 끝났거나 빠진 상자는 세지 않는다 */
+export function boxAttentionOf(
+  items: readonly BatchWorkItem[],
+  rows: readonly BoxRow[],
+  pending: ReadonlySet<string>
+): { refill: number; attention: number } {
+  const refill = items.filter((item) => item.status !== 'completed' && item.status !== 'excluded' && pending.has(item.shipmentId)).length;
+
+  return { refill, attention: rows.filter((row) => row.tone === 'alert').length };
+}
+
+const seoulDay = (date: Date) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(date);
+
+/** 머리글의 오늘 N개 배치 — 목록에 있는 배치 중 오늘 만든 것. 만든 시각을 싣지 않는 옛 core 면 null */
+export function todayBatchCount(batches: readonly Pick<OutboundBatchSummary, 'createdAt'>[], now: Date): number | null {
+  if (batches.length > 0 && batches.every((batch) => batch.createdAt === undefined)) return null;
+
+  const today = seoulDay(now);
+
+  return batches.filter((batch) => batch.createdAt !== undefined && seoulDay(new Date(batch.createdAt)) === today).length;
 }
 
 /** 배치에서 빼야 끝나는 취소가 있는가 — 배치 현황이 빼기 안내를 띄운다 */

@@ -117,6 +117,8 @@ export interface OutboundBatchSummary {
   startedAt: string | null;
   /** 이 배치에서 빼는 중인 박스 수 — 배치 카드의 «빠지는 중 N». */
   withdrawingItems: number;
+  /** 만든 시각. 옛 core 면 없다 */
+  createdAt?: string;
 }
 
 export interface SimpleOutboundScanInput {
