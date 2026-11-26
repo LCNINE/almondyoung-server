@@ -12,7 +12,9 @@
 
 ## 도구
 - Blender: `"$BLENDER_PATH" -b --python-exit-code 1 -P iteration-N/build.py` (Windows PowerShell 에서는 `& $env:BLENDER_PATH -b --python-exit-code 1 -P ...`). 종료 코드가 0 이 아니면 실패다
-- 압축: `"$NODE_BIN" "$GLTF_TRANSFORM_CLI" optimize iteration-N/work/model-raw.glb iteration-N/model.glb --compress meshopt --texture-compress webp`
+- 압축은 두 단계다. 이 PC 의 gltf-transform 은 텍스처 변환 라이브러리(sharp)가 없을 수 있어 텍스처는 Blender 가 맡는다.
+  1. Blender 에서 내보낼 때 텍스처를 WebP 로: `bpy.ops.export_scene.gltf(filepath=..., export_format='GLB', export_image_format='WEBP', export_image_quality=85)` → `iteration-N/work/model-raw.glb`
+  2. 메시만 압축: `"$NODE_BIN" "$GLTF_TRANSFORM_CLI" optimize iteration-N/work/model-raw.glb iteration-N/model.glb --compress meshopt --texture-compress false`
 - Python 은 Blender 안의 Python(bpy)을 쓴다
 
 ## 금지
@@ -58,7 +60,7 @@
 - `build.py`: Blender 에서 실행한 Python 원본
 - `model.blend`
 - `model.glb`: 미터 단위, 텍스처 내장(외부 파일 참조 없음), +Y 위, 원점은 바닥 중앙
-  - 위 압축 명령으로 만든다. 2 MiB(2,097,152 바이트) 이하. 넘으면 텍스처 해상도를 줄이거나 PNG 를 JPEG(q88)로 바꿔 다시 만든다.
+  - 위 두 단계로 만든다. 2 MiB(2,097,152 바이트) 이하. 넘으면 Blender 에서 텍스처 해상도를 줄이거나 품질을 낮춰 다시 내보낸다.
 - `renders/0.png` ~ `renders/5.png`: 라이브 뷰어 조건으로 렌더한다. 배경 #c6c6c6, 카메라 극각 75°, 방위각 0/45/90/180/270 + 바로 아래, 각 1024px
 - `plan.md`
 - 워커가 이 폴더의 `model.glb` 를 실제 웹 뷰어(model-viewer)에 띄워 다시 확인한다. 거기서 안 보이면 실패다.

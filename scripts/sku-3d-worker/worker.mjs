@@ -2,9 +2,10 @@
 // 아몬드영 3D 작업실 홈 PC 워커. 서버에 HTTPS 로 접속해 작업을 가져가고, Codex CLI + Blender 로 만든 결과를 올린다.
 // 실행: node --env-file=worker.env --env-file=worker-key.env worker.mjs
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { createApi, isLeaseLost } from './api.mjs';
 import { codexArgs, runCodex } from './codex-run.mjs';
@@ -19,7 +20,7 @@ const JUDGE_FIX_TURNS = 1;
 
 const MIME = { '.glb': 'model/gltf-binary', '.png': 'image/png', '.py': 'text/plain', '.md': 'text/markdown', '.blend': 'application/x-blender' };
 
-export function buildPrompt({ kind, iteration, photoPaths, base }) {
+export function buildPrompt({ kind, iteration, photoPaths, base, changes }) {
   const lines = [
     '이 폴더의 AGENTS.md 지시를 처음부터 끝까지 따른다.',
     `이번 산출물 폴더는 iteration-${iteration} 이다. 모든 산출물을 그 안에 둔다.`,
@@ -36,9 +37,64 @@ export function buildPrompt({ kind, iteration, photoPaths, base }) {
     lines.push('첫 제작이다.');
   }
 
+  if (changes) {
+    lines.push(...changeLines(changes));
+  }
+
   lines.push('마지막 응답은 review.schema.json 형식의 JSON 하나로만 끝낸다.');
 
   return lines.filter(Boolean).join('\n');
+}
+
+// 기준 버전을 만든 뒤 바뀐 실측 자료를 Codex 에게 알린다
+export function changeLines(changes) {
+  const lines = ['기준 버전을 만든 뒤 실측 자료가 바뀌었다. 바뀐 자료에 맞춰 다시 맞춘다.'];
+
+  if (changes.addedPhotos.length > 0) {
+    lines.push(`- 새로 추가된 사진 ${changes.addedPhotos.length}장: 위 사진 목록에서 파일 이름에 이 id 가 든 것 (${changes.addedPhotos.join(', ')})`);
+  }
+
+  if (changes.removedPhotos.length > 0) {
+    lines.push(`- 지운 사진 ${changes.removedPhotos.length}장: 더 이상 쓰지 않는다(inputs/removed-photos 로 옮겼다)`);
+  }
+
+  if (changes.dimensions) {
+    const fmt = (d) => `${d.packageWidthMm}×${d.packageLengthMm}×${d.packageHeightMm}mm ${d.packageWeightG}g (기준 ${d.dimensionBasis})`;
+
+    lines.push(`- 치수: ${fmt(changes.dimensions.before)} → ${fmt(changes.dimensions.after)}`);
+  }
+
+  return lines;
+}
+
+// Codex 가 이 요청으로 끝냈다는 표시. 같은 요청의 재시도면 Codex 를 다시 부르지 않고 검증·업로드만 한다
+export const DONE_MARKER = '.codex-done.json';
+
+export function finishedFor(iterDir, job, request) {
+  const path = join(iterDir, DONE_MARKER);
+
+  if (!existsSync(path)) {
+    return false;
+  }
+
+  try {
+    const marker = JSON.parse(readFileSync(path, 'utf8'));
+
+    return marker.kind === job.kind && marker.request === (request ?? '');
+  } catch {
+    return false;
+  }
+}
+
+// gltf-transform 이 텍스처를 변환하려면 같은 설치에 sharp 가 있어야 한다
+export function hasSharp(gltfTransformCli) {
+  try {
+    createRequire(gltfTransformCli).resolve('sharp');
+
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function toolVersions(config) {
@@ -74,6 +130,19 @@ async function prepareFolder(api, job, inputs, config, assertLive) {
   copyFileSync(join(HERE, 'review.schema.json'), join(workshopDir, 'review.schema.json'));
   writeFileSync(join(workshopDir, 'inputs', 'product.json'), JSON.stringify(inputs.sku, null, 2));
   writeFileSync(join(iterDir, 'request.md'), inputs.request ?? '');
+
+  // 지금 사진 목록에 없는 사진은 치운다 — 지운 사진이 폴더에 남으면 Codex 가 헷갈린다
+  const current = new Set(inputs.photos.map((p) => p.fileId));
+  const removedDir = join(workshopDir, 'inputs', 'removed-photos');
+
+  for (const name of readdirSync(photosDir)) {
+    const fileId = /^\d+-([0-9a-f-]{36})\./.exec(name)?.[1];
+
+    if (fileId && !current.has(fileId)) {
+      mkdirSync(removedDir, { recursive: true });
+      renameSync(join(photosDir, name), join(removedDir, name));
+    }
+  }
 
   const photoPaths = [];
 
@@ -247,6 +316,11 @@ export async function runJob(job, { api, config, tools, signal }) {
           retryable: true,
         });
       }
+
+      writeFileSync(
+        join(iterDir, DONE_MARKER),
+        JSON.stringify({ jobId: job.id, kind: job.kind, request: inputs.request ?? '', at: new Date().toISOString() }),
+      );
     };
     const check = async () => {
       assertLive();
@@ -279,22 +353,34 @@ export async function runJob(job, { api, config, tools, signal }) {
       return { judged, viewer };
     };
 
-    events.push({ type: 'status', body: sessionId ? '같은 Codex 세션으로 고치기 시작했어요' : 'Codex 가 만들기 시작했어요' });
+    const reuse = finishedFor(iterDir, job, inputs.request);
 
-    await turn(
-      buildPrompt({
-        kind: job.kind,
-        iteration: inputs.iteration,
-        photoPaths: photoPaths.map((p) => relative(workshopDir, p)),
-        base: inputs.base,
-      }),
-      sessionId ? [] : photoPaths,
-    );
+    if (reuse) {
+      // 재시도인데 Codex 는 이미 이 요청으로 끝냈다 — Codex·Blender 를 다시 부르지 않고 있는 파일을 검증해 올린다
+      events.push({ type: 'status', body: '이미 만든 결과를 검증해서 다시 올려요. Codex 는 다시 돌리지 않아요' });
+    } else {
+      events.push({ type: 'status', body: sessionId ? '같은 Codex 세션으로 고치기 시작했어요' : 'Codex 가 만들기 시작했어요' });
+      await turn(
+        buildPrompt({
+          kind: job.kind,
+          iteration: inputs.iteration,
+          photoPaths: photoPaths.map((p) => relative(workshopDir, p)),
+          base: inputs.base,
+          changes: inputs.changes,
+        }),
+        sessionId ? [] : photoPaths,
+      );
+    }
 
     let { judged, viewer } = await check();
 
+    if (reuse && !judged.ok) {
+      // 검증·업로드 재시도에서는 Codex 로 넘어가지 않는다 — 이유를 남기고 멈춘다
+      throw Object.assign(new Error(`이미 만든 결과가 검증을 통과하지 못했어요: ${judged.reason}`), { retryable: false });
+    }
+
     // 명확한 제작 오류는 같은 세션에 한 번 더 고치게 한다 — 그래도 안 되면 실패로 남긴다
-    for (let fix = 0; fix < JUDGE_FIX_TURNS && !(judged.ok && viewer?.ok); fix += 1) {
+    for (let fix = 0; !reuse && fix < JUDGE_FIX_TURNS && !(judged.ok && viewer?.ok); fix += 1) {
       const reason = judged.ok ? `웹 뷰어(model-viewer)에서 모델이 보이지 않아요(상태: ${viewer?.state})` : judged.reason;
 
       events.push({ type: 'status', body: `자동 검사에서 걸려서 다시 고쳐요: ${reason.slice(0, 300)}` });
@@ -374,6 +460,10 @@ async function main() {
   }
 
   console.log(`워커 ${config.hostId} 시작 — 동시 생성 ${config.concurrency}, 도구 ${JSON.stringify(tools)}`);
+
+  if (!hasSharp(config.gltfTransformCli)) {
+    console.warn('알림: gltf-transform 옆에 sharp 가 없어 텍스처 변환(--texture-compress webp)은 안 된다. 지시문은 Blender 로 WebP 를 내보내게 돼 있어 제작에는 지장 없다');
+  }
 
   for (const sig of ['SIGINT', 'SIGTERM']) {
     process.on(sig, () => {

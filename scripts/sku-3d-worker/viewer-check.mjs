@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -76,62 +76,108 @@ const EDGE_FLAGS = [
   '--use-angle=swiftshader',
   '--enable-unsafe-swiftshader',
   '--window-size=800,800',
+  // 포트는 프로필의 DevToolsActivePort 로 읽는다
   '--remote-debugging-port=0',
 ];
 const VIEWER_WAIT_MS = 60_000;
 
 // 가상 시간(--virtual-time-budget)에서는 model-viewer 가 마지막 렌더 단계에서 멈춘다 — 실제 시간으로 기다리며 디버깅 포트로 판정을 읽는다
+async function waitForDevToolsPort(profile, timeoutMs, launchError) {
+  const file = join(profile, 'DevToolsActivePort');
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    if (launchError()) {
+      throw new Error(`브라우저를 띄우지 못했어요: ${launchError().message}`);
+    }
+
+    if (existsSync(file)) {
+      const port = Number(readFileSync(file, 'utf8').split(/\r?\n/)[0]);
+
+      if (port > 0) {
+        return port;
+      }
+    }
+
+    await new Promise((r) => setTimeout(r, 250));
+  }
+
+  throw new Error('브라우저 디버깅 포트를 찾지 못했어요');
+}
+
+function devtools(url) {
+  const ws = new WebSocket(url);
+  let id = 0;
+  const pending = new Map();
+
+  ws.onmessage = (event) => {
+    const message = JSON.parse(event.data);
+
+    pending.get(message.id)?.(message.result);
+    pending.delete(message.id);
+  };
+
+  const opened = new Promise((resolve, reject) => {
+    ws.onopen = resolve;
+    ws.onerror = () => reject(new Error('디버깅 연결 실패'));
+  });
+  const send = (method, params = {}) =>
+    new Promise((resolve) => {
+      id += 1;
+      pending.set(id, resolve);
+      ws.send(JSON.stringify({ id, method, params }));
+    });
+
+  return { opened, send, close: () => ws.close() };
+}
+
+// Windows Edge 는 실행 파일이 실제 브라우저를 따로 띄우고 바로 끝날 수 있다(종료 코드 0) —
+// 띄운 프로세스 생사에 기대지 않고 프로필의 DevToolsActivePort 로 포트를 찾고, 끝나면 디버깅 연결로 브라우저를 닫는다.
+// 가상 시간(--virtual-time-budget)은 model-viewer 가 마지막 렌더 단계에서 멈춰서 쓰지 않는다
 async function readViewerState(edgeBin, url, signal) {
   const profile = mkdtempSync(join(tmpdir(), 'sku3d-edge-'));
-  const browser = spawn(edgeBin, [...EDGE_FLAGS, `--user-data-dir=${profile}`, url], {
+  const launcher = spawn(edgeBin, [...EDGE_FLAGS, `--user-data-dir=${profile}`, url], {
     windowsHide: true,
     shell: false,
-    stdio: ['ignore', 'ignore', 'pipe'],
+    stdio: 'ignore',
   });
-  const stop = () => browser.kill();
+  let browserSocket = null;
+  let launchError = null;
 
-  signal?.addEventListener('abort', stop);
+  // 실행 파일이 없거나 못 띄우면 워커가 죽지 않게 받아서 검사 도구 실패로 돌린다
+  launcher.on('error', (error) => {
+    launchError = error;
+  });
 
   try {
-    const port = await new Promise((resolve, reject) => {
-      let text = '';
-      const timer = setTimeout(() => reject(new Error('브라우저 디버깅 포트를 열지 못했어요')), 30_000);
+    const port = await waitForDevToolsPort(profile, 30_000, () => launchError);
+    const version = await (await fetch(`http://127.0.0.1:${port}/json/version`)).json();
 
-      browser.stderr.on('data', (chunk) => {
-        text += chunk;
+    browserSocket = devtools(version.webSocketDebuggerUrl);
+    await browserSocket.opened;
 
-        const found = /DevTools listening on ws:\/\/[^:]+:(\d+)\//.exec(text);
+    let page = null;
 
-        if (found) {
-          clearTimeout(timer);
-          resolve(Number(found[1]));
-        }
-      });
-      browser.on('exit', (code) => reject(new Error(`브라우저가 바로 꺼졌어요(종료 코드 ${code}): ${text.slice(-300)}`)));
-    });
-    const pages = await (await fetch(`http://127.0.0.1:${port}/json`)).json();
-    const page = pages.find((p) => p.type === 'page');
-    const ws = new WebSocket(page.webSocketDebuggerUrl);
-    let id = 0;
-    const pending = new Map();
+    for (let i = 0; i < 40 && !page; i += 1) {
+      const pages = await (await fetch(`http://127.0.0.1:${port}/json`)).json();
 
-    ws.onmessage = (event) => {
-      const message = JSON.parse(event.data);
+      page = pages.find((p) => p.type === 'page' && p.url.startsWith('file:'));
 
-      pending.get(message.id)?.(message.result?.result?.value);
-      pending.delete(message.id);
-    };
-    await new Promise((resolve, reject) => {
-      ws.onopen = resolve;
-      ws.onerror = () => reject(new Error('디버깅 연결 실패'));
-    });
+      if (!page) {
+        await new Promise((r) => setTimeout(r, 250));
+      }
+    }
 
-    const evaluate = (expression) =>
-      new Promise((resolve) => {
-        id += 1;
-        pending.set(id, resolve);
-        ws.send(JSON.stringify({ id, method: 'Runtime.evaluate', params: { expression, returnByValue: true } }));
-      });
+    if (!page) {
+      throw new Error('검사 페이지가 열리지 않았어요');
+    }
+
+    const pageSocket = devtools(page.webSocketDebuggerUrl);
+
+    await pageSocket.opened;
+
+    const evaluate = async (expression) =>
+      (await pageSocket.send('Runtime.evaluate', { expression, returnByValue: true }))?.result?.value;
     const deadline = Date.now() + VIEWER_WAIT_MS;
     let state = 'pending';
 
@@ -148,13 +194,18 @@ async function readViewerState(edgeBin, url, signal) {
 
     const shot = state === 'pending' ? '' : ((await evaluate('document.body.dataset.shot')) ?? '');
 
-    ws.close();
+    pageSocket.close();
 
     return { state, shot };
   } finally {
-    signal?.removeEventListener('abort', stop);
-    stop();
-    rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    if (browserSocket) {
+      await Promise.race([browserSocket.send('Browser.close'), new Promise((r) => setTimeout(r, 3000))]);
+      browserSocket.close();
+    }
+
+    launcher.kill();
+    await new Promise((r) => setTimeout(r, 500));
+    rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
   }
 }
 

@@ -8,7 +8,7 @@ import { codexArgs, readCodexEvent, runCodex } from './codex-run.mjs';
 import { childEnv, loadConfig, PRODUCTION_SERVER_URL } from './env.mjs';
 import { externalUris, GLB_MAX_BYTES, glbJson, judgeOutputs, reviewProblem } from './judge.mjs';
 import { viewerHtml, viewerShotOf, viewerStateOf } from './viewer-check.mjs';
-import { buildPrompt, imageExtOf, runJob } from './worker.mjs';
+import { buildPrompt, changeLines, DONE_MARKER, finishedFor, hasSharp, imageExtOf, runJob } from './worker.mjs';
 
 function glb(json, padTo = 0) {
   const text = Buffer.from(JSON.stringify(json));
@@ -285,4 +285,108 @@ test('a stopped worker drops the job without reporting success or failure', asyn
 
   assert.ok(!api.calls.includes('complete'));
   assert.ok(!api.calls.some((c) => Array.isArray(c) && c[0] === 'fail'));
+});
+
+test('changeLines tells Codex what changed since the base version', () => {
+  const lines = changeLines({
+    addedPhotos: ['p-new'],
+    removedPhotos: ['p-old'],
+    dimensions: {
+      before: { packageWidthMm: 62, packageLengthMm: 36, packageHeightMm: 160, packageWeightG: 180, dimensionBasis: 'package' },
+      after: { packageWidthMm: 62, packageLengthMm: 36, packageHeightMm: 150, packageWeightG: 180, dimensionBasis: 'body' },
+    },
+  }).join('\n');
+
+  assert.match(lines, /새로 추가된 사진 1장.*p-new/);
+  assert.match(lines, /지운 사진 1장/);
+  assert.match(lines, /160mm.*→.*150mm/);
+});
+
+test('finishedFor matches only the same kind and request', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'done-'));
+
+  writeFileSync(join(dir, DONE_MARKER), JSON.stringify({ kind: 'revise', request: '뚜껑을 둥글게' }));
+  assert.equal(finishedFor(dir, { kind: 'revise' }, '뚜껑을 둥글게'), true);
+  assert.equal(finishedFor(dir, { kind: 'revise' }, '다른 요청'), false);
+  assert.equal(finishedFor(dir, { kind: 'create' }, '뚜껑을 둥글게'), false);
+  assert.equal(finishedFor(mkdtempSync(join(tmpdir(), 'none-')), { kind: 'create' }, ''), false);
+});
+
+test('hasSharp is false when sharp is not next to gltf-transform', () => {
+  assert.equal(hasSharp(join(mkdtempSync(join(tmpdir(), 'gt-')), 'cli.js')), false);
+});
+
+// 이미 끝난 결과가 있는 재시도: Codex 를 부르면 표시 파일이 생기는 가짜 Codex 로 확인한다
+function retrySetup({ valid }) {
+  const workRoot = mkdtempSync(join(tmpdir(), 'reuse-'));
+  const iterDir = join(workRoot, 'w', 'iteration-1');
+  const codexRan = join(workRoot, 'codex-ran');
+  const fakeCodex = join(workRoot, 'codex.mjs');
+  const validator = join(workRoot, 'validator.cjs');
+
+  mkdirSync(join(iterDir, 'renders'), { recursive: true });
+  writeFileSync(fakeCodex, `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(codexRan)}, 'x');`);
+  writeFileSync(validator, 'exports.validateBytes = async () => ({ validatorVersion: "fake", issues: { numErrors: 0, numWarnings: 0, messages: [] } });');
+  writeFileSync(join(iterDir, 'model.glb'), valid ? glb({ asset: { version: '2.0' } }) : Buffer.from('not a glb'));
+
+  for (let i = 0; i < 6; i += 1) {
+    writeFileSync(join(iterDir, 'renders', `${i}.png`), 'x');
+  }
+
+  writeFileSync(
+    join(iterDir, 'review.json'),
+    JSON.stringify({ summary: 's', verdict: 'ready_for_review', issues: [], proposals: [], autoFixes: [], unseenFaces: [], assumptions: [], needsPhotos: [], dimensionsUsed: { widthMm: 1, lengthMm: 1, heightMm: 1, basis: 'package' } }),
+  );
+  writeFileSync(join(iterDir, DONE_MARKER), JSON.stringify({ kind: 'create', request: '' }));
+
+  const before = readFileSync(join(iterDir, 'model.glb'));
+  const calls = [];
+  const api = {
+    heartbeat: async () => undefined,
+    events: async () => undefined,
+    inputs: async () => ({ iteration: 1, sku: {}, photos: [], request: '', base: null, changes: null, sessionId: 's-1' }),
+    download: async () => Buffer.alloc(0),
+    upload: async (_job, path) => {
+      calls.push(['upload', path.split(/[\\/]/).pop()]);
+
+      return { fileId: `f-${calls.length}` };
+    },
+    complete: async () => calls.push(['complete']),
+    fail: async (_job, error, retryable) => calls.push(['fail', error, retryable]),
+  };
+  const config = {
+    workRoot,
+    codexBin: process.execPath,
+    jobTimeoutMs: 10_000,
+    gltfValidatorModule: validator,
+    edgeBin: join(workRoot, 'no-edge.exe'),
+  };
+
+  return { api, config, calls, codexRan, iterDir, before, fakeCodex };
+}
+
+test('a retry with finished outputs only validates and uploads — Codex is not called and files stay', async () => {
+  const s = retrySetup({ valid: true });
+
+  await runJob({ id: 'j', workshopId: 'w', kind: 'create' }, { api: s.api, config: { ...s.config, codexBin: s.fakeCodex }, tools: {}, signal: new AbortController().signal });
+
+  assert.throws(() => readFileSync(s.codexRan));
+  assert.ok(s.calls.some((c) => c[0] === 'complete'));
+  assert.ok(s.calls.some((c) => c[0] === 'upload' && c[1] === 'model.glb'));
+  assert.deepEqual(readFileSync(join(s.iterDir, 'model.glb')), s.before);
+});
+
+test('a retry whose finished outputs fail validation stops without calling Codex', async () => {
+  const s = retrySetup({ valid: false });
+
+  await runJob({ id: 'j', workshopId: 'w', kind: 'create' }, { api: s.api, config: { ...s.config, codexBin: s.fakeCodex }, tools: {}, signal: new AbortController().signal });
+
+  assert.throws(() => readFileSync(s.codexRan));
+  assert.ok(!s.calls.some((c) => c[0] === 'complete'));
+
+  const failed = s.calls.find((c) => c[0] === 'fail');
+
+  assert.match(failed[1], /검증을 통과하지 못했어요/);
+  assert.equal(failed[2], false);
+  assert.deepEqual(readFileSync(join(s.iterDir, 'model.glb')), s.before);
 });
