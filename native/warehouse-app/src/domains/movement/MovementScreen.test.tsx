@@ -921,6 +921,61 @@ describe('MovementScreen A 작업대', () => {
     });
   }
 
+  it('응답 대기 중 사유를 켰다 끈 뒤 같은 이동을 다시 보내도 내역은 한 줄이다', async () => {
+    let release!: () => void;
+    const response = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const calls: Array<{ path: string; method?: string; body?: unknown }> = [];
+    renderScreen(
+      listingClient(calls, async () => {
+        await response;
+
+        return {};
+      })
+    );
+    await pickSource();
+    await moveToB0503();
+    await waitFor(() =>
+      expect(calls.some((call) => call.path === '/movement/move')).toBe(true)
+    );
+
+    const sheet = screen.getByRole('dialog', { name: '재고 이동' });
+
+    await userEvent.click(
+      within(sheet).getByRole('button', { name: '재배치' })
+    );
+    await userEvent.click(
+      within(sheet).getByRole('button', { name: '재배치' })
+    );
+    await act(async () => {
+      release();
+      await response;
+    });
+
+    const history = await screen.findByRole('region', {
+      name: '방금 이동한 내역',
+    });
+
+    expect(within(history).getAllByRole('listitem')).toHaveLength(1);
+    await waitFor(() => expect(submitButton()).toBeEnabled());
+
+    await userEvent.click(submitButton());
+    await userEvent.click(
+      within(screen.getByRole('dialog', { name: '이동 확인' })).getByRole(
+        'button',
+        { name: '이동' }
+      )
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('dialog', { name: '재고 이동' })
+      ).not.toBeInTheDocument()
+    );
+    expect(within(history).getAllByRole('listitem')).toHaveLength(1);
+  });
+
   it('검색어가 있어도 Esc 로 도착 목록을 닫는다', async () => {
     renderScreen(listingClient([]));
     await pickSource();

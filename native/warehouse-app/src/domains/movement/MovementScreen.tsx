@@ -882,10 +882,11 @@ function MovementScreenContent() {
 
             if (!mounted.current) return;
 
-            setHistory((list) => [
-              { ...submitted, time: clockLabel(new Date()) },
-              ...list,
-            ]);
+            setHistory((list) =>
+              list.some((row) => row.key === submitted.key)
+                ? list
+                : [{ ...submitted, time: clockLabel(new Date()) }, ...list]
+            );
             setLastDest(confirmedDest);
 
             if (revision !== intentRevision.current) return;
