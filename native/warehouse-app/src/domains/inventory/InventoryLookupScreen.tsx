@@ -192,7 +192,7 @@ export function InventoryLookupScreen() {
         }
       />
 
-      <div className="grid gap-[22px] min-[1000px]:grid-cols-[minmax(480px,1.6fr)_minmax(290px,0.9fr)]">
+      <div className="grid grid-cols-[minmax(480px,1.6fr)_minmax(290px,0.9fr)] gap-[22px] max-[960px]:grid-cols-[1.2fr_1fr] max-[700px]:grid-cols-1">
         <div className="flex min-w-0 flex-col gap-4">
           <form
             className="flex items-center gap-2 rounded-[10px] border border-[#e4e4e7] bg-white px-[15px] py-3 max-[900px]:p-2.5"

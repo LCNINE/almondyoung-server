@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { Printer } from 'lucide-react';
 import { useWarehouse } from '../../app/warehouse-context';
@@ -8,7 +9,13 @@ import { Button } from '../../core/design/Button';
 import { SkuLabelPrintPanel } from '../labels/SkuLabelPrintPanel';
 import { WarehousePicker } from '../warehouse/WarehousePicker';
 import { SkuThumbnail } from './SkuInfoSheet';
-import { useSkuDetail, useSkuStockSummary, useSkuWarehouseStock } from './useSkuDetail';
+import { StockHistoryPanel, stockStateLabel } from './StockHistoryPanel';
+import {
+  useSkuDetail,
+  useSkuStockSummary,
+  useSkuWarehouseStock,
+  useSystemLocations,
+} from './useSkuDetail';
 import type { SkuSearchItem, SkuStockSummary, StockDetailRow } from './types';
 
 type WarehouseStock = SkuStockSummary['warehouseStocks'][number];
@@ -63,7 +70,9 @@ export function SkuStockCard({
   const summary = useSkuStockSummary(skuId);
   const warehouseStock = useSkuWarehouseStock(skuId, warehouseId);
   const permissions = useWorkPermissions();
+  const systemLocations = useSystemLocations(warehouseId);
   const station = isStationDevice();
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   const permissionDenied = !permissions.isError && permissions.data?.stockAdjust === false;
 
@@ -75,6 +84,20 @@ export function SkuStockCard({
 
   // quantity 0 행은 현장에 의미가 없다 — 백엔드는 행 집합을 줄이지 않으므로 여기서 거른다.
   const rows: StockDetailRow[] = (warehouseStock.data?.details ?? []).filter((d) => d.quantity !== 0);
+  const inboundZoneIds = new Set(
+    (systemLocations.data?.items ?? [])
+      .filter((location) => location.systemRole === 'inbound_default')
+      .map((location) => location.id)
+  );
+  const locationNames = new Map<string, string>([
+    ...(systemLocations.data?.items ?? []).map((l): [string, string] => [l.id, l.displayName || l.code]),
+    ...(warehouseStock.data?.details ?? []).map((d): [string, string] => [d.locationId, d.locationName || d.locationCode]),
+  ]);
+  const locationKind = (row: StockDetailRow) => {
+    const place = inboundZoneIds.has(row.locationId) ? '적치 대기' : '보관 위치';
+
+    return row.stockState === 'ON_HAND' ? place : `${place} · ${stockStateLabel(row.stockState)}`;
+  };
 
   // 상단 숫자는 고른 창고 기준이다. 창고별 값과 합계를 한 응답에서 읽어 서로 어긋나지 않게 한다.
   const stocks = summary.data?.warehouseStocks ?? [];
@@ -188,7 +211,7 @@ export function SkuStockCard({
                   <strong className="block font-semibold text-[#27272a]">
                     {row.locationName || row.locationCode}
                   </strong>
-                  <small className="mt-1 block text-xs text-[#71717a]">{row.stockState}</small>
+                  <small className="mt-1 block text-xs text-[#71717a]">{locationKind(row)}</small>
                 </span>
                 <strong className="font-semibold text-[#27272a] tabular-nums">{`${row.quantity}개`}</strong>
                 <Link
@@ -213,8 +236,14 @@ export function SkuStockCard({
         </div>
       ) : null}
 
+      {historyOpen && isSet && warehouseId ? (
+        <div className="border-t border-[#e4e4e7] px-[22px] py-4">
+          <StockHistoryPanel skuId={skuId} warehouseId={warehouseId} locationNames={locationNames} />
+        </div>
+      ) : null}
+
       {station || isSet ? (
-        <div className="mt-auto flex gap-2 border-t border-[#e4e4e7] px-[22px] py-[18px] max-[900px]:px-[18px] max-[900px]:py-3">
+        <div className="mt-auto flex flex-wrap gap-2 border-t border-[#e4e4e7] px-[22px] py-[18px] max-[900px]:px-[18px] max-[900px]:py-3">
           {station ? (
             <Button
               type="button"
@@ -225,6 +254,16 @@ export function SkuStockCard({
             >
               <Printer className="h-5 w-5" aria-hidden />
               SKU 라벨
+            </Button>
+          ) : null}
+          {isSet ? (
+            <Button
+              type="button"
+              aria-expanded={historyOpen}
+              className={`flex-1 ${SECONDARY_BUTTON}`}
+              onClick={() => setHistoryOpen((open) => !open)}
+            >
+              수불 이력
             </Button>
           ) : null}
           {isSet ? (

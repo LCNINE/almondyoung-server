@@ -70,6 +70,29 @@ export interface StockDetailRow {
   quantity: number;
 }
 
+/** GET /locations/warehouses/:warehouseId?isSystem=true 의 한 행 중 현장에서 쓰는 필드만. */
+export interface SystemLocationItem {
+  id: string;
+  code: string;
+  displayName: string;
+  systemRole?: string | null;
+}
+
+/** GET /inventory/stocks/history 의 한 행(stock_events). 위치는 id 만 온다. */
+export interface StockHistoryEvent {
+  id: string;
+  transitionType: string;
+  fromWarehouseId: string | null;
+  fromLocationId: string | null;
+  fromState: string | null;
+  toWarehouseId: string | null;
+  toLocationId: string | null;
+  toState: string | null;
+  quantity: number;
+  occurredAt: string;
+  reason?: string | null;
+}
+
 export interface SkuWarehouseStock {
   summary: {
     currentQuantity: number;

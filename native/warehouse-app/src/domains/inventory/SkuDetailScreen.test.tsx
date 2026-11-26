@@ -207,8 +207,10 @@ describe('SkuDetailScreen', () => {
 
   it('같은 로케이션의 상태별 행을 각각 보여준다', async () => {
     renderScreen(clientFor(), { id: 'w-1', name: '본창고' });
-    expect(await screen.findByText('ON_HAND')).toBeInTheDocument();
-    expect(screen.getByText('DEFECTIVE')).toBeInTheDocument();
+    expect(await screen.findByText('보관 위치')).toBeInTheDocument();
+    expect(screen.getByText('보관 위치 · 불량')).toBeInTheDocument();
+    expect(screen.queryByText('ON_HAND')).not.toBeInTheDocument();
+    expect(screen.queryByText('DEFECTIVE')).not.toBeInTheDocument();
   });
 
   it('창고 미설정이면 위치별 대신 창고 선택을 보여준다', async () => {
