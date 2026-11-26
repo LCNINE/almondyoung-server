@@ -70,6 +70,15 @@ function ReturnPutawayContent({ warehouseId }: { warehouseId: string }) {
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [completed, setCompleted] = useState<CompletedPutaway[]>([]);
   const countedRequests = useRef(new Set<string>());
+  const mounted = useRef(true);
+
+  useEffect(() => {
+    mounted.current = true;
+
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   const queue = useWorkScanQueue<{ binBarcode: string; warehouseId: string; productBarcode: string; locationCode?: string }>(
     async (input, id) => {
@@ -83,9 +92,9 @@ function ReturnPutawayContent({ warehouseId }: { warehouseId: string }) {
         if (before.kind !== 'loading' && !countedRequests.current.has(id)) {
           countedRequests.current.add(id);
 
-          const entry = await completedFrom(api, before.bin.items, result.putAwayQty, input);
+          void completedFrom(api, before.bin.items, result.putAwayQty, input).then((entry) => {
+            if (!entry || !mounted.current) return;
 
-          if (entry) {
             setCompleted((list) => {
               const index = list.findIndex((row) => row.key === entry.key);
 
@@ -93,7 +102,7 @@ function ReturnPutawayContent({ warehouseId }: { warehouseId: string }) {
 
               return list.map((row, at) => (at === index ? { ...row, qty: row.qty + entry.qty } : row));
             });
-          }
+          });
         }
       } catch (error) {
         if (!(error instanceof ApiError && error.outcome === 'rejected')) {

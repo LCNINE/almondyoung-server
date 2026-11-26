@@ -334,6 +334,40 @@ describe('ReturnPutawayScreen', () => {
     expect(done).not.toHaveTextContent('노트');
   });
 
+  it('상품 조회가 늦어도 다음 스캔을 받고 조회가 끝나면 완료 내역이 나타난다', async () => {
+    const two = twin(2, 2);
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let posts = 0;
+    const { user } = mount(async (o) => {
+      if (o.method === 'POST') {
+        posts += 1;
+
+        return { ...putawayResult, items: [{ ...two.items[0], qty: 2 - posts }, two.items[1]] };
+      }
+
+      if (o.path.startsWith('/inventory/skus')) {
+        await gate;
+
+        return skuLookup(o.path);
+      }
+
+      return two;
+    });
+    await screen.findByRole('list', { name: '대기 상품' });
+    await user.click(screen.getByRole('button', { name: '스캔:880' }));
+    await waitFor(() => expect(posts).toBe(1));
+    await user.click(screen.getByRole('button', { name: '스캔:880' }));
+    await waitFor(() => expect(posts).toBe(2));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: '완료 내역' })).not.toBeInTheDocument();
+    release();
+    const done = await screen.findByRole('region', { name: '완료 내역' });
+    expect(done).toHaveTextContent('볼펜');
+  });
+
   it('완료 카드에서도 처리 내역 확인 안내와 버튼을 그대로 보인다', async () => {
     const runtime = createTestWorkRuntime({
       request: vi.fn().mockImplementation(async (o: Request) => {
