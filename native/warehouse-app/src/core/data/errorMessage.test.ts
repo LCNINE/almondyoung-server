@@ -11,6 +11,13 @@ describe('errorMessage', () => {
   it('maps a ConflictError to a retry message', () => {
     expect(errorMessage(new ConflictError('x'))).toMatch(/먼저 변경/);
   });
+  it('재고 조정이 주문 예약에 막히면 다시 하라고 하지 않고 서버가 말한 길을 보인다', () => {
+    const reserved =
+      '주문이 잡아 둔 재고라 줄일 수 없습니다(창고 재고 3, 줄일 수량 2, 주문 예약 2). 실물이 없으면 실사로 그 위치를 세어 맞추세요.';
+    expect(errorMessage(new ConflictError(reserved, 'Conflict'), 'adjust')).toBe(reserved);
+    expect(errorMessage(new ConflictError('version conflict', 'Conflict'), 'adjust')).toMatch(/먼저 변경/);
+    expect(errorMessage(new ConflictError(reserved, 'Conflict'), 'movement')).toMatch(/먼저 변경/);
+  });
   it('응답을 받지 못한 요청은 연결을 확인하라고 안내한다', () => {
     for (const context of [undefined, 'barcode', 'outbound'] as const)
       expect(errorMessage(new NetworkError(new TypeError('Failed to fetch')), context)).toBe(

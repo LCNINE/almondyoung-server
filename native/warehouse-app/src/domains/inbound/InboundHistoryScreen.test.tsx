@@ -267,6 +267,27 @@ it('keeps invalid diagnostic rows visible and valid neighboring actions availabl
   );
 });
 
+it('선반에 넣어 취소할 수 없는 입고는 실사로 맞추는 길을 함께 보인다', async () => {
+  const putaway = receipt('p', 'direct');
+  putaway.lines[0] = {
+    ...putaway.lines[0],
+    skuName: '적치한상품',
+    putawayFromOriginQty: 4,
+    canCancel: false,
+    cancelBlockReason: 'PUTAWAY_EXISTS',
+  } as (typeof putaway.lines)[0];
+  await mount((async () => ({
+    items: [putaway],
+    total: 1,
+    serverTime: new Date().toISOString(),
+  })) as ApiClient['request']);
+  expect(await screen.findByText(/적치한상품/)).toBeInTheDocument();
+  expect(screen.getByText(/이미 적치한 입고/)).toHaveTextContent(
+    '수량이 틀렸다면 F5 실사에서 그 선반을 세어 실물에 맞추고, 실사 완료는 물류 관리자에게 요청해 주세요.'
+  );
+  expect(screen.queryByRole('button', { name: /입고 취소/ })).toBeNull();
+});
+
 async function mountShipmentLine() {
   await mount((async (opts: Call) => {
     if (opts.path.startsWith('/inbound/receipts?')) {

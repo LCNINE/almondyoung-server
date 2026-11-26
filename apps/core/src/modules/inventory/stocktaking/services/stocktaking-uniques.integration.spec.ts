@@ -1,4 +1,5 @@
 import * as postgres from 'postgres';
+import { buildWiring } from '../../inbound/services/__fixtures__/inbound-harness';
 import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { eq } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
@@ -116,7 +117,7 @@ describeIfDb('stocktaking uniques (DB integration, rollback-only)', () => {
       const eventStore = new StockEventStore(dbService, sellable);
       const location = new LocationService(dbService);
       const command = new InventoryCommandService(dbService, eventStore, outbox, location);
-      const svc = new StocktakingService(dbService, command);
+      const svc = new StocktakingService(dbService, command, buildWiring(db).reservations);
       await svc.scanLocation({ sessionId: f.session.id, locationBarcode: f.location.code }, tx);
       await svc.scanLocation({ sessionId: f.session.id, locationBarcode: f.location.code }, tx);
       const lines = await tx

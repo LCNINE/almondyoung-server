@@ -163,7 +163,7 @@ describeIfDb('InventoryCommandService adjust (DB integration, rollback-only)', (
         status: 'confirmed',
       });
       await expect(command.adjustDown({ skuId: sku.id, warehouseId: warehouse.id, quantity: 5 }, tx)).rejects.toThrow(
-        /예약된 재고/,
+        /주문이 잡아 둔 재고/,
       );
       // 4 까지는 허용 (10-4=6 >= 6)
       await expect(

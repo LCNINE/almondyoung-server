@@ -468,14 +468,10 @@ export const useReservationSummary = (warehouseId: string) => {
 };
 
 // 재고 실사 관련 쿼리
-// NOTE: GET /stocktaking/sessions 목록 조회 엔드포인트가 서버에 미구현 — 빈 배열로 대체
-export const useStocktakingSessions = (
-  _query: StocktakingSessionQuery = {}
-) => {
+export const useStocktakingSessions = (query: StocktakingSessionQuery = {}) => {
   return useQuery({
-    queryKey: inventoryQueryKeys.stocktakingSessions(_query),
-    queryFn: (): Promise<{ sessions: never[]; total: number }> =>
-      Promise.resolve({ sessions: [], total: 0 }),
+    queryKey: inventoryQueryKeys.stocktakingSessions(query),
+    queryFn: () => stocktakingClient.listSessions(query),
   });
 };
 

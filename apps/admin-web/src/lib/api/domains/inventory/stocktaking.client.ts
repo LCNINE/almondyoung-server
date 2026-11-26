@@ -20,11 +20,32 @@ import type {
   CompleteStocktakingSessionRequest,
   ResetStocktakingCountRequest,
   ResetStocktakingCountResponse,
+  StocktakingSessionQuery,
+  StocktakingSessionListResponse,
 } from '../../../types/dto/inventory';
 
 const BASE = `${ALMONDYOUNG_API_BASE_URL}/stocktaking`;
 
 export const stocktakingClient = {
+  /** 서버는 쪽 번호(page)를 받고 { data, total } 을 준다. 모양이 다르면 «0건»이 아니라 실패다. */
+  listSessions: async (
+    query: StocktakingSessionQuery = {}
+  ): Promise<StocktakingSessionListResponse> => {
+    const limit = query.limit ?? 20;
+    const response = await client.get(`${BASE}/sessions`, {
+      params: {
+        warehouseId: query.warehouseId,
+        status: query.status,
+        page: Math.floor((query.offset ?? 0) / limit) + 1,
+        limit,
+      },
+    });
+    const body = response.data as { data?: unknown; total?: unknown } | null;
+    if (!Array.isArray(body?.data) || typeof body?.total !== 'number')
+      throw new Error('실사 목록을 읽지 못했어요. 새로고침해 주세요.');
+    return { sessions: body.data as StocktakingSessionDto[], total: body.total };
+  },
+
   createSession: async (
     data: CreateStocktakingSessionRequest
   ): Promise<StocktakingSessionDto> => {

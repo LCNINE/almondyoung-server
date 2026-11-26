@@ -32,6 +32,7 @@ import type {
 } from '@/lib/types/dto/inventory';
 import { toast } from 'sonner';
 import { usePermissionCheck } from '@/hooks/use-permission';
+import { reservationImpactLines } from '../../reservation-impact';
 
 type Props = {
   row: StocktakingSessionDto | null;
@@ -250,9 +251,20 @@ export function SessionDetailDrawer({ row, open, onOpenChange }: Props) {
           idempotencyKey: crypto.randomUUID(),
         },
       });
-      toast.success(
-        `실사가 완료됐어요. ${result.summary.adjustmentsApplied}개 상품의 수량을 반영했어요.`
+      const released = (result.reservationImpact ?? []).reduce(
+        (total, row) => total + row.orderCount,
+        0
       );
+      toast.success(
+        `실사가 완료됐어요. ${result.summary.adjustmentsApplied}개 상품의 수량을 반영했어요.${
+          released > 0 ? ` 주문 ${released}건이 다시 재고를 기다려요.` : ''
+        }`
+      );
+      const short = reservationImpactLines(
+        (result.reservationImpact ?? []).filter((row) => row.missingQty > 0),
+        review.preview
+      );
+      if (short.length > 0) toast.warning(short.join('\n'));
       onOpenChange(false);
     }, false);
 
@@ -576,6 +588,23 @@ export function SessionDetailDrawer({ row, open, onOpenChange }: Props) {
                           {item.delta})
                         </p>
                       ))
+                    )}
+                    {(reviewed.reservationImpact ?? []).length > 0 && (
+                      <div
+                        role="region"
+                        aria-label="다시 재고를 기다리는 주문"
+                        className="rounded-md bg-amber-50 p-2 text-amber-900 space-y-1"
+                      >
+                        <p className="font-medium">
+                          완료하면 주문 예약도 실물에 맞춰요
+                        </p>
+                        {reservationImpactLines(
+                          reviewed.reservationImpact ?? [],
+                          reviewed.preview
+                        ).map((line) => (
+                          <p key={line}>{line}</p>
+                        ))}
+                      </div>
                     )}
                   </div>
                 )}

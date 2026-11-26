@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto';
 import * as postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { wmsSchema, wmsTables } from '../../../schema/inventory.schema';
-import { dbServiceFor, makeInventoryCommandService } from '../../../inbound/services/__fixtures__/inbound-harness';
+import { dbServiceFor, makeInventoryCommandService, buildWiring } from '../../../inbound/services/__fixtures__/inbound-harness';
 import { InventoryIdempotencyService } from '../../../core/services/inventory-idempotency.service';
 import { StocktakingController } from '../../controllers/stocktaking.controller';
 import { StocktakingService } from '../stocktaking.service';
@@ -11,7 +11,7 @@ export function stocktakingHarness(url: string) {
   const sql = postgres(url, { max: 5 });
   const db = drizzle(sql, { schema: wmsSchema });
   const command = makeInventoryCommandService(db);
-  const service = new StocktakingService(dbServiceFor(db), command);
+  const service = new StocktakingService(dbServiceFor(db), command, buildWiring(db).reservations);
   const controller = new StocktakingController(service, new InventoryIdempotencyService(dbServiceFor(db)));
   const actor = { id: randomUUID() };
   async function seed(quantity = 5) {

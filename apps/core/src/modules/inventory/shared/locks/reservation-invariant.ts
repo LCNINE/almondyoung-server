@@ -35,7 +35,8 @@ export async function assertReservationInvariant(
   const { onHand, reserved } = await readWarehouseReservationBalance(trx, skuId, warehouseId);
   if (violatesReservationInvariant(onHand, reserved, removingQty)) {
     throw new ConflictException(
-      `예약된 재고는 감소/이동할 수 없습니다. 창고 ON_HAND ${onHand} − ${removingQty} < 예약 ${reserved}`,
+      `주문이 잡아 둔 재고라 줄일 수 없습니다(창고 재고 ${onHand}, 줄일 수량 ${removingQty}, 주문 예약 ${reserved}). ` +
+        '실물이 없으면 실사로 그 위치를 세어 맞추세요 — 잡아 둔 주문은 다시 재고를 기다립니다.',
     );
   }
 }

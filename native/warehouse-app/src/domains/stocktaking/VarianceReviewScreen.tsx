@@ -8,7 +8,8 @@ import { ConfirmDialog } from '../../core/design/ConfirmDialog';
 import { cn } from '../../core/design/cn';
 import { useStocktakingSession, useStocktakingVariances } from './queries';
 import { useGenerateAdjustments, useCompleteSession } from './mutations';
-import type { AdjustmentPreview } from './types';
+import type { AdjustmentPreview, ReservationImpact } from './types';
+import { reservationImpactLines } from './reservationImpact';
 
 function VarianceReviewScreenContent({ sessionId }: { sessionId: string }) {
   const navigate = useNavigate();
@@ -18,6 +19,7 @@ function VarianceReviewScreenContent({ sessionId }: { sessionId: string }) {
   const complete = useCompleteSession();
 
   const [preview, setPreview] = useState<AdjustmentPreview[] | null>(null);
+  const [impact, setImpact] = useState<ReservationImpact[]>([]);
   const [approval, setApproval] = useState<{
     token: string;
     signature: string;
@@ -50,18 +52,21 @@ function VarianceReviewScreenContent({ sessionId }: { sessionId: string }) {
   useEffect(() => {
     if (!fresh || approval?.signature !== signature) {
       setPreview(null);
+      setImpact([]);
       setApproval(null);
       setConfirming(false);
     }
   }, [fresh, signature]);
   async function review() {
     setPreview(null);
+    setImpact([]);
     setApproval(null);
     const reviewedSignature = signature;
     try {
       const result = await generate.mutateAsync(sessionId);
       if (!result.previewToken) return;
       setPreview(result.preview);
+      setImpact(result.reservationImpact ?? []);
       setApproval({ token: result.previewToken, signature: reviewedSignature });
     } catch {
       /* Domain message below explains why review is unavailable. */
@@ -204,6 +209,18 @@ function VarianceReviewScreenContent({ sessionId }: { sessionId: string }) {
         </section>
       ) : null}
 
+      {preview !== null && impact.length > 0 ? (
+        <section
+          aria-label="다시 재고를 기다리는 주문"
+          className="space-y-1 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
+        >
+          <h2 className="font-semibold">완료하면 주문 예약도 실물에 맞춰요</h2>
+          {reservationImpactLines(impact, preview).map((line) => (
+            <p key={line}>{line}</p>
+          ))}
+        </section>
+      ) : null}
+
       {editable ? (
         <Button
           type="button"
@@ -218,7 +235,11 @@ function VarianceReviewScreenContent({ sessionId }: { sessionId: string }) {
       <ConfirmDialog
         open={confirming}
         title="실사 완료"
-        message={`${preview?.length ?? 0}건의 조정이 원장에 적용돼요. 되돌릴 수 없어요.`}
+        message={`${preview?.length ?? 0}건의 조정이 원장에 적용돼요.${
+          impact.some((row) => row.quantity > 0)
+            ? ' 줄어든 재고를 잡고 있던 주문은 다시 재고를 기다려요.'
+            : ''
+        } 되돌릴 수 없어요.`}
         confirmLabel="완료"
         danger
         onCancel={() => setConfirming(false)}

@@ -1274,6 +1274,18 @@ export interface GenerateAdjustmentsResponse {
   adjustmentsCreated: number;
   eventsPosted: number;
   message: string;
+  /** 완료하면 줄어드는 재고를 잡은 주문 예약을 놓는다 — 옛 서버는 보내지 않는다 */
+  reservationImpact?: StocktakingReservationImpact[];
+}
+
+export interface StocktakingReservationImpact {
+  skuId: string;
+  /** 예약을 놓고 다시 재고를 기다리게 되는 주문 수와 수량 */
+  orderCount: number;
+  quantity: number;
+  /** 출고 준비에 들어가 놓지 못하는 수량과 그 주문 */
+  missingQty: number;
+  heldBy: { orderNo: string | null; quantity: number }[];
 }
 
 export interface CompleteStocktakingSessionResponse {
@@ -1285,6 +1297,7 @@ export interface CompleteStocktakingSessionResponse {
     discrepanciesFound: number;
     adjustmentsApplied: number;
   };
+  reservationImpact?: StocktakingReservationImpact[];
 }
 
 export interface CompleteStocktakingSessionRequest {

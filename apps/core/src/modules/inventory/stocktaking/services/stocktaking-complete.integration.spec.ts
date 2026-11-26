@@ -1,4 +1,5 @@
 import { outboxPublisherFor } from '../../../fulfillment/outbox/__support__/outbox-publisher.factory';
+import { buildWiring } from '../../inbound/services/__fixtures__/inbound-harness';
 import { INVENTORY_STREAM } from '@packages/event-contracts/streams';
 import { BadRequestException } from '@nestjs/common';
 import * as postgres from 'postgres';
@@ -36,7 +37,7 @@ describeIfDb('stocktaking complete (DB integration, rollback-only)', () => {
     const eventStore = new StockEventStore(dbService, sellable);
     const location = new LocationService(dbService);
     command = new InventoryCommandService(dbService, eventStore, outbox, location);
-    svc = new StocktakingService(dbService, command);
+    svc = new StocktakingService(dbService, command, buildWiring(db).reservations);
   });
   afterAll(async () => {
     await sql.end();

@@ -128,7 +128,7 @@ describeIfDb('Inbound origin protection at the stock write boundary', () => {
               variance: -6,
               status: 'counted',
             });
-            return new StocktakingService(dbService, command).completeSession(session.id, sp);
+            return new StocktakingService(dbService, command, buildWiring(db).reservations).completeSession(session.id, sp);
           }
           if (path === 'transferShip')
             return command.transferShip({ ...common, fromWarehouseId: f.warehouse.id, fromLocationId: f.origin }, sp);
