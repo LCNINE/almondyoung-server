@@ -221,16 +221,11 @@ export function PutawayQueueScreen({
 
   const binQuery = useMyReturnBin(warehouseId);
   const binItems = binQuery.data?.items ?? [];
-  const returnQty =
-    binItems.reduce((sum, item) => sum + item.qty, 0) +
-    returnItems.reduce((sum, item) => sum + item.quantity, 0);
-  const returnGoodsSettled = !supported || filtered || returnGoods.isSuccess;
-  const returnEmpty =
-    binQuery.isSuccess &&
-    returnGoodsSettled &&
-    !returnGoods.isError &&
-    binItems.length === 0 &&
-    returnItems.length === 0;
+  const binQty = binItems.reduce((sum, item) => sum + item.qty, 0);
+  const returnGoodsQty = returnItems.reduce(
+    (sum, item) => sum + item.quantity,
+    0
+  );
 
   if (!isSet) {
     return (
@@ -309,7 +304,7 @@ export function PutawayQueueScreen({
         </p>
       ) : null}
 
-      <div className="grid grid-cols-1 items-start gap-5 max-[900px]:gap-3 min-[901px]:grid-cols-3">
+      <div className="grid grid-cols-1 items-stretch gap-5 max-[900px]:gap-3 min-[901px]:grid-cols-3">
         <section aria-label="입고 기본존" className={COLUMN}>
           <h3 className={COLUMN_HEAD}>
             입고 기본존{' '}
@@ -438,7 +433,7 @@ export function PutawayQueueScreen({
           <h3 className={COLUMN_HEAD}>
             선반 복귀 대기{' '}
             {binQuery.isSuccess ? (
-              <span className={COUNT_BADGE}>{returnQty}</span>
+              <span className={COUNT_BADGE}>{binQty}</span>
             ) : null}
           </h3>
           {binItems.map((item) => (
@@ -468,64 +463,6 @@ export function PutawayQueueScreen({
               </small>
             </Link>
           ))}
-          {returnItems.length > 0 && returnGoods.data ? (
-            <section aria-label="반품 양품">
-              <h4 className="mb-2.5 text-xs font-semibold text-[#71717a]">
-                반품 양품 — {returnGoods.data.locationCode}에서 선반으로
-              </h4>
-              <ul>
-                {returnItems.map((item) => (
-                  <li key={item.skuId}>
-                    <button
-                      type="button"
-                      className={cn(CARD, 'block w-full p-[18px] text-left disabled:opacity-60')}
-                      disabled={returnGoods.isFetching}
-                      onClick={() => {
-                        clearScanFeedback();
-                        setReturnTarget({
-                          ...item,
-                          returnLocationId: returnGoods.data.locationId,
-                          returnLocationCode: returnGoods.data.locationCode,
-                        });
-                      }}
-                    >
-                      <span className="flex items-center justify-between gap-2">
-                        <strong className="min-w-0 truncate text-sm font-semibold text-[#27272a]">
-                          {item.skuName}
-                        </strong>
-                        <span className={cn(PILL, 'bg-[#eff6ff] text-[#2563eb]')}>
-                          양품 {item.quantity}
-                        </span>
-                      </span>
-                      <span className="mt-[15px] flex items-center justify-between text-xs text-[#71717a]">
-                        <span>
-                          {item.usualLocationCode
-                            ? `평소 선반 ${item.usualLocationCode}`
-                            : '평소 선반 없음'}
-                        </span>
-                        <ArrowRight
-                          className="h-4 w-4 text-[#2563eb]"
-                          aria-hidden
-                        />
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ) : null}
-          {returnGoods.isError && !filtered ? (
-            <div role="alert" className="mb-2.5 text-[13px] text-[#aa4037]">
-              반품 양품을 불러오지 못했어요. {errorMessage(returnGoods.error)}{' '}
-              <button
-                type="button"
-                className="underline"
-                onClick={() => void returnGoods.refetch()}
-              >
-                다시 확인
-              </button>
-            </div>
-          ) : null}
           {binQuery.isLoading ? (
             <p className={EMPTY_NOTE}>불러오는 중…</p>
           ) : null}
@@ -542,7 +479,7 @@ export function PutawayQueueScreen({
               </button>
             </div>
           ) : null}
-          {returnEmpty ? (
+          {binQuery.isSuccess && binItems.length === 0 ? (
             <p className="px-2.5 py-[25px] text-xs text-[#71717a]">
               복귀 대기 상품이 없습니다.
             </p>
@@ -580,6 +517,69 @@ export function PutawayQueueScreen({
           </ul>
         </section>
       </div>
+
+      {returnItems.length > 0 && returnGoods.data ? (
+        <section aria-label="반품 양품" className={COLUMN}>
+          <h3 className={COLUMN_HEAD}>
+            반품 양품 — {returnGoods.data.locationCode}에서 선반으로{' '}
+            <span className={COUNT_BADGE}>{returnGoodsQty}</span>
+          </h3>
+          <ul className="grid grid-cols-1 gap-x-5 min-[901px]:grid-cols-3">
+            {returnItems.map((item) => (
+              <li key={item.skuId}>
+                <button
+                  type="button"
+                  className={cn(
+                    CARD,
+                    'block w-full p-[18px] text-left disabled:opacity-60'
+                  )}
+                  disabled={returnGoods.isFetching}
+                  onClick={() => {
+                    clearScanFeedback();
+                    setReturnTarget({
+                      ...item,
+                      returnLocationId: returnGoods.data.locationId,
+                      returnLocationCode: returnGoods.data.locationCode,
+                    });
+                  }}
+                >
+                  <span className="flex items-center justify-between gap-2">
+                    <strong className="min-w-0 truncate text-sm font-semibold text-[#27272a]">
+                      {item.skuName}
+                    </strong>
+                    <span className={cn(PILL, 'bg-[#eff6ff] text-[#2563eb]')}>
+                      양품 {item.quantity}
+                    </span>
+                  </span>
+                  <span className="mt-[15px] flex items-center justify-between text-xs text-[#71717a]">
+                    <span>
+                      {item.usualLocationCode
+                        ? `평소 선반 ${item.usualLocationCode}`
+                        : '평소 선반 없음'}
+                    </span>
+                    <ArrowRight
+                      className="h-4 w-4 text-[#2563eb]"
+                      aria-hidden
+                    />
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+      {returnGoods.isError && !filtered ? (
+        <div role="alert" className={ERROR_BOX}>
+          반품 양품을 불러오지 못했어요. {errorMessage(returnGoods.error)}{' '}
+          <button
+            type="button"
+            className="underline"
+            onClick={() => void returnGoods.refetch()}
+          >
+            다시 확인
+          </button>
+        </div>
+      ) : null}
 
       {/* 화면 순서대로 넘긴다 — 100줄이 넘으면 화면 앞쪽 100줄만 본다 */}
       <ReadyShipmentsSection

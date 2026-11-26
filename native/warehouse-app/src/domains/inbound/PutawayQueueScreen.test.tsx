@@ -1477,6 +1477,40 @@ describe('적치 보드', () => {
     ).toBeInTheDocument();
   });
 
+  it('반품 양품은 선반 복귀 대기 칸에 섞지 않고 보드 아래 따로 센다', async () => {
+    renderScreen(SELECTED, {
+      returnGoods: {
+        locationId: 'loc-return',
+        locationCode: 'zone-return-default',
+        warehouseId: 'w-1',
+        items: [
+          {
+            skuId: 's-9',
+            skuCode: 'PAD-01',
+            skuName: '마우스패드',
+            quantity: 2,
+            usualLocationId: null,
+            usualLocationCode: null,
+          },
+        ],
+      },
+    });
+    const group = await screen.findByRole('region', { name: '반품 양품' });
+    expect(
+      within(group).getByRole('heading', {
+        name: '반품 양품 — zone-return-default에서 선반으로 2',
+      })
+    ).toBeInTheDocument();
+    const returns = screen.getByRole('region', { name: '선반 복귀 대기' });
+    expect(returns).not.toContainElement(group);
+    expect(
+      await within(returns).findByRole('heading', { name: '선반 복귀 대기 0' })
+    ).toBeInTheDocument();
+    expect(
+      within(returns).getByText('복귀 대기 상품이 없습니다.')
+    ).toBeInTheDocument();
+  });
+
   it('로케이션 라벨 버튼은 로케이션 라벨 화면으로 간다', async () => {
     renderScreen(SELECTED);
     await userEvent.click(

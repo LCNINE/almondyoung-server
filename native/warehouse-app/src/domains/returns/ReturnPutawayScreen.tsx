@@ -1,4 +1,5 @@
 import { Link } from '@tanstack/react-router';
+import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { useWarehouse } from '../../app/warehouse-context';
 import { useApiClient } from '../../core/data/ApiClientProvider';
@@ -14,6 +15,7 @@ import { WarehousePicker } from '../warehouse/WarehousePicker';
 import { afterPutaway, returnLocations, type PutawayStep } from './returnPutaway';
 import { fetchMyReturnBin, putawayReturn, type PutawayResult } from './returnBinApi';
 import { WorkArea } from '../../core/operations/WorkBoundary';
+import { MY_RETURN_BIN_KEY } from './myReturnBin';
 
 interface CompletedPutaway {
   key: string;
@@ -36,6 +38,7 @@ function completedFrom(result: PutawayResult): CompletedPutaway | null {
 
 function ReturnPutawayContent({ warehouseId }: { warehouseId: string }) {
   const api = useApiClient();
+  const queryClient = useQueryClient();
   const [step, setStep] = useState<PutawayStep>({ kind: 'loading' });
   const stepRef = useRef(step);
   stepRef.current = step;
@@ -51,6 +54,7 @@ function ReturnPutawayContent({ warehouseId }: { warehouseId: string }) {
         const entry = completedFrom(result);
 
         setStep(afterPutaway({ ...result.returnBin, items: result.items }, result.items));
+        void queryClient.invalidateQueries({ queryKey: [MY_RETURN_BIN_KEY, input.warehouseId] });
         setNotice(result.items.length ? { kind: 'ok', text: '넣었어요. 다음 상품을 스캔해 주세요.' } : null);
 
         if (entry && !countedRequests.current.has(id)) {

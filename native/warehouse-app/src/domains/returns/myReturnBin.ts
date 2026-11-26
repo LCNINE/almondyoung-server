@@ -10,6 +10,7 @@ export function useMyReturnBin(warehouseId: string | null) {
   return useQuery({
     queryKey: [MY_RETURN_BIN_KEY, warehouseId],
     enabled: warehouseId !== null,
+    refetchOnMount: 'always',
     queryFn: () => fetchMyReturnBin(api, warehouseId ?? ''),
   });
 }
