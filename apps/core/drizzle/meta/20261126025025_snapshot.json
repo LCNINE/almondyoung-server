@@ -1,6 +1,6 @@
 {
-  "id": "8e576786-cdb9-4318-87d5-b3a3b9735f6b",
-  "prevId": "a6bacd5c-5235-4ac6-b675-59abc228aaa4",
+  "id": "7631012d-5402-4c0a-a613-006d6ae30caa",
+  "prevId": "83365693-604a-4570-b77d-9acfc8a4320d",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -27972,7 +27972,9 @@
         "waybill_void",
         "waybill_reissue",
         "stock_priority",
-        "stock_priority_cancel"
+        "stock_priority_cancel",
+        "direct_delivery",
+        "direct_delivery_return"
       ]
     },
     "public.shipment_status": {
