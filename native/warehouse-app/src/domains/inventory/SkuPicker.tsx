@@ -50,7 +50,7 @@ export function SkuPicker({
     result.isError;
 
   return (
-    <section className="space-y-2 rounded border p-3">
+    <section className="space-y-2 rounded-xl border border-[#e4e4e7] bg-white p-4">
       <form
         className="flex gap-2"
         onSubmit={(e) => {
@@ -70,7 +70,7 @@ export function SkuPicker({
           value={term}
           onChange={(e) => setTerm(e.target.value)}
           placeholder="상품명·코드 검색"
-          className="min-w-0 flex-1 rounded border px-3 py-2"
+          className="min-w-0 flex-1 rounded-lg border border-[#e4e4e7] bg-white px-3 py-2.5 text-sm text-[#27272a]"
         />
         <Button type="submit" disabled={disabled || !term.trim()}>
           검색
@@ -96,8 +96,8 @@ export function SkuPicker({
             key={sku.id}
             className={
               disabled
-                ? 'flex items-center justify-between gap-2 border-b py-2'
-                : 'flex cursor-pointer items-center justify-between gap-2 border-b px-1 py-2 hover:bg-gray-50'
+                ? 'flex items-center justify-between gap-2 border-b border-[#e4e4e7] py-2'
+                : 'flex cursor-pointer items-center justify-between gap-2 border-b border-[#e4e4e7] px-1 py-2 hover:bg-[#eff6ff]'
             }
             onClick={() => {
               if (!disabled) {
@@ -114,7 +114,7 @@ export function SkuPicker({
               <SkuThumbnail fileIds={sku.imageFileIds} className="size-12 flex-none" />
               <span className="min-w-0">
                 {sku.name}
-                <span className="block text-xs text-gray-500">
+                <span className="block text-xs text-[#71717a]">
                   {sku.code}
                   {sku.optionKey ? ` · ${sku.optionKey}` : ''}
                 </span>

@@ -169,8 +169,8 @@ function AdjustStockScreenContent({
     return (
       <div className="space-y-4">
         <ScreenHeader title={title} backTo={backTo} />
-        <div className="space-y-3 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-4">
-          <p className="text-sm text-gray-600">창고를 먼저 선택해 주세요.</p>
+        <div className="space-y-3 rounded-xl border border-dashed border-[#e4e4e7] bg-white p-4">
+          <p className="text-sm text-[#52525b]">창고를 먼저 선택해 주세요.</p>
           <WarehousePicker />
         </div>
       </div>
@@ -181,11 +181,11 @@ function AdjustStockScreenContent({
     return (
       <div className="space-y-5">
         <ScreenHeader title={title} backTo={backTo} />
-        <h2 className="text-lg font-semibold text-gray-900">
+        <h2 className="text-lg font-bold text-[#27272a]">
           제조 완료를 등록했어요
         </h2>
-        <div className="space-y-2 rounded-lg border border-gray-200 bg-white p-3">
-          <p className="font-semibold text-gray-800">{result.productName}</p>
+        <div className="space-y-2 rounded-xl border border-[#e4e4e7] bg-white p-5">
+          <p className="font-semibold text-[#27272a]">{result.productName}</p>
           <p>{result.locationCode}</p>
           <p className="text-lg font-semibold">
             {result.before} → {result.after}
@@ -208,37 +208,37 @@ function AdjustStockScreenContent({
       <ScreenHeader title={title} backTo={backTo} />
 
       {permissionDenied && (
-        <p role="alert" className="text-sm text-red-600">
+        <p role="alert" className="text-sm text-[#aa4037]">
           {STOCK_ADJUST_PERMISSION_MESSAGE}
         </p>
       )}
 
       {detail.data ? (
-        <div className="rounded-lg border border-gray-200 bg-white p-3">
-          <div className="font-semibold text-gray-800">{detail.data.name}</div>
-          <div className="font-mono text-xs text-gray-500">
+        <div className="rounded-xl border border-[#e4e4e7] bg-white px-5 py-4">
+          <div className="font-semibold text-[#27272a]">{detail.data.name}</div>
+          <div className="font-mono text-xs text-[#71717a]">
             {detail.data.code}
           </div>
         </div>
       ) : null}
 
-      <section className="space-y-2">
-        <h2 className="text-sm font-semibold text-gray-700">로케이션</h2>
+      <section className="space-y-3 rounded-xl border border-[#e4e4e7] bg-white p-5">
+        <h2 className="text-[13px] font-bold text-[#27272a]">로케이션</h2>
         {selected ? (
-          <div className="flex items-center gap-3 rounded-lg border border-blue-500 bg-blue-50 p-3">
-            <span className="flex-1 font-medium text-gray-800">
+          <div className="flex items-center gap-3 rounded-xl border border-[#2563eb] bg-[#eff6ff] px-4 py-3">
+            <span className="flex-1 font-medium text-[#27272a]">
               {selected.code}
             </span>
-            <span className="text-xs text-gray-500">현재 ON_HAND</span>
+            <span className="text-xs text-[#71717a]">현재 ON_HAND</span>
             <span
               data-testid="current-onhand"
-              className="text-lg font-semibold text-gray-900"
+              className="text-lg font-bold text-[#27272a]"
             >
               {currentOnHand}
             </span>
             <button
               type="button"
-              className="text-xs text-blue-700 underline"
+              className="text-xs text-[#2563eb] underline"
               onClick={() => {
                 autoSelectionChecked.current = true;
                 setPrevious({ id: selected.id, auto: autoSelected });
@@ -258,7 +258,7 @@ function AdjustStockScreenContent({
               <input
                 id="loc-search"
                 aria-label="로케이션 검색"
-                className="min-w-0 flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm"
+                className="min-w-0 flex-1 rounded-lg border border-[#e4e4e7] bg-white px-3 py-2.5 text-sm text-[#27272a]"
                 placeholder="로케이션 바코드를 스캔하거나 코드를 입력하세요"
                 value={term}
                 onChange={(e) => setTerm(e.target.value)}
@@ -278,21 +278,21 @@ function AdjustStockScreenContent({
               )}
             </div>
             {search.isError ? (
-              <p role="alert" className="text-sm text-red-600">
+              <p role="alert" className="text-sm text-[#aa4037]">
                 {errorMessage(search.error, 'location')}
               </p>
             ) : null}
             {search.isPlaceholderData ? (
               // 창고를 바꾸면 새 요청이 도는 동안 이전 창고의 결과가 placeholder 로 남는다.
               // 그 행을 그대로 보여주면 다른 창고의 locationId 를 고를 수 있어 렌더를 막는다.
-              <p className="text-sm text-gray-500">불러오는 중…</p>
+              <p className="text-sm text-[#71717a]">불러오는 중…</p>
             ) : (
               <ul className="space-y-1">
                 {(search.data?.items ?? []).map((loc) => (
                   <li key={loc.id}>
                     <button
                       type="button"
-                      className="w-full rounded-md border border-gray-200 bg-white p-3 text-left active:bg-gray-50"
+                      className="w-full rounded-xl border border-[#e4e4e7] bg-white px-4 py-3 text-left hover:bg-[#eff6ff]"
                       onClick={() => {
                         setPrevious(null);
                         setLocationId(loc.id);
@@ -307,29 +307,29 @@ function AdjustStockScreenContent({
           </>
         )}
         {selected && autoSelected && (
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-[#71717a]">
             재고가 있는 위치가 한 곳이라 먼저 골라 뒀어요.
           </p>
         )}
       </section>
 
-      <section className="space-y-2">
-        <h2 className="text-sm font-semibold text-gray-700">
+      <section className="space-y-3 rounded-xl border border-[#e4e4e7] bg-white p-5">
+        <h2 className="text-[13px] font-bold text-[#27272a]">
           {isManufacture ? '만든 수량' : '맞출 수량'}
         </h2>
         <div
           data-testid="adjust-quantity"
           className={cn(
-            'rounded-lg border p-3 text-center text-2xl font-semibold',
-            delta > 0 && 'border-green-500 bg-green-50 text-green-700',
-            delta < 0 && 'border-red-500 bg-red-50 text-red-700',
-            delta === 0 && 'border-gray-200 bg-white text-gray-400'
+            'rounded-xl border p-3 text-center text-2xl font-semibold',
+            delta > 0 && 'border-[#2f7a3b] bg-[#eef7ef] text-[#2f7a3b]',
+            delta < 0 && 'border-[#aa4037] bg-[#fcebe8] text-[#aa4037]',
+            delta === 0 && 'border-[#e4e4e7] bg-white text-[#a1a1aa]'
           )}
         >
           {isManufacture ? (delta > 0 ? `+${delta}` : delta) : counted ? count : currentOnHand}
         </div>
         {!isManufacture && counted && (
-          <p data-testid="adjust-change" className="text-center text-sm text-gray-600">
+          <p data-testid="adjust-change" className="text-center text-sm text-[#52525b]">
             {currentOnHand} → {count} ({delta > 0 ? `+${delta}` : delta})
           </p>
         )}
@@ -341,7 +341,7 @@ function AdjustStockScreenContent({
           }}
           keyboard={!confirming && !adjust.isPending}
         />
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-[#71717a]">
           {isManufacture
             ? '늘리기만 할 수 있어요. 줄여야 하면 재고 조회에서 재고 조정을 쓰세요.'
             : '이 위치에 지금 실제로 있는 수량을 그대로 넣으세요.'}
@@ -349,10 +349,10 @@ function AdjustStockScreenContent({
       </section>
 
       {isManufacture ? (
-        <p className="text-sm text-gray-700">사유 제조</p>
+        <p className="text-sm text-[#52525b]">사유 제조</p>
       ) : (
-        <section className="space-y-2">
-          <h2 className="text-sm font-semibold text-gray-700">사유</h2>
+        <section className="space-y-3 rounded-xl border border-[#e4e4e7] bg-white p-5">
+          <h2 className="text-[13px] font-bold text-[#27272a]">사유</h2>
           <div className="flex flex-wrap gap-2">
             {ADJUST_REASONS.map((r) => (
               <button
@@ -362,8 +362,8 @@ function AdjustStockScreenContent({
                 className={cn(
                   'rounded-full border px-3 py-1.5 text-sm',
                   reason === r
-                    ? 'border-blue-500 bg-blue-50 text-blue-700'
-                    : 'border-gray-300 bg-white text-gray-700'
+                    ? 'border-[#2563eb] bg-[#eff6ff] text-[#2563eb]'
+                    : 'border-[#e4e4e7] bg-white text-[#52525b]'
                 )}
               >
                 {r}
@@ -373,7 +373,7 @@ function AdjustStockScreenContent({
           {reason === OTHER ? (
             <input
               aria-label="사유 직접 입력"
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+              className="w-full rounded-lg border border-[#e4e4e7] bg-white px-3 py-2.5 text-sm text-[#27272a]"
               placeholder="사유를 입력하세요"
               value={otherReason}
               onChange={(e) => setOtherReason(e.target.value)}
@@ -383,7 +383,7 @@ function AdjustStockScreenContent({
       )}
 
       {adjust.isError ? (
-        <p role="alert" className="text-sm text-red-600">
+        <p role="alert" className="text-sm text-[#aa4037]">
           {errorMessage(adjust.error, 'adjust')}
         </p>
       ) : null}

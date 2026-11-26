@@ -96,31 +96,31 @@ export function ManufactureSelectScreen() {
         <ScreenHeader title="제조 완료 등록" backTo="/inventory" />
 
         {permissionDenied && (
-          <p role="alert" className="text-sm text-red-600">
+          <p role="alert" className="text-sm text-[#aa4037]">
             {STOCK_ADJUST_PERMISSION_MESSAGE}
           </p>
         )}
 
         {!isSet ? (
-          <div className="space-y-3 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-4">
-            <p className="text-sm text-gray-600">창고를 먼저 선택해 주세요.</p>
+          <div className="space-y-3 rounded-xl border border-dashed border-[#e4e4e7] bg-white p-4">
+            <p className="text-sm text-[#52525b]">창고를 먼저 선택해 주세요.</p>
             <WarehousePicker />
           </div>
         ) : (
           <>
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-[#52525b]">
               만든 상품의 바코드를 스캔하세요.
             </p>
 
             {scanNotice && (
-              <p role="status" className="text-sm text-amber-700">
+              <p role="status" className="text-sm text-[#9a681c]">
                 {scanNotice}
               </p>
             )}
 
             {scanHits.length > 1 && (
               <section className="space-y-2">
-                <h2 className="text-sm font-semibold text-gray-700">
+                <h2 className="text-[13px] font-bold text-[#27272a]">
                   스캔한 바코드의 상품
                 </h2>
                 <ul className="space-y-1">
@@ -129,13 +129,13 @@ export function ManufactureSelectScreen() {
                       <button
                         type="button"
                         disabled={blocked}
-                        className="w-full rounded-md border border-gray-200 bg-white p-3 text-left active:bg-gray-50"
+                        className="w-full rounded-xl border border-[#e4e4e7] bg-white px-4 py-3 text-left hover:bg-[#eff6ff]"
                         onClick={() => selectSku(hit)}
                       >
-                        <span className="block font-medium text-gray-800">
+                        <span className="block font-medium text-[#27272a]">
                           {hit.name}
                         </span>
-                        <span className="block font-mono text-xs text-gray-500">
+                        <span className="block font-mono text-xs text-[#71717a]">
                           {hit.code}
                         </span>
                       </button>
