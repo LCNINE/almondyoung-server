@@ -304,6 +304,20 @@ describe('서버 도달 기록(상태바 «서버»)', () => {
     await expect(api.request({ path: '/x' })).rejects.toBeInstanceOf(ApiError);
     expect(currentServerReach()).toBe('up');
   });
+
+  it('다른 서버를 부르는 클라이언트는 기록하지 않는다', async () => {
+    const api = createApiClient({
+      baseUrl: 'https://user.test',
+      getToken: async () => 't',
+      authMode: 'bearer',
+      reportReach: false,
+      doFetch: vi.fn().mockRejectedValue(new TypeError('network')) as never,
+    });
+
+    expect(currentServerReach()).toBe('up');
+    await expect(api.request({ path: '/x' })).rejects.toBeInstanceOf(NetworkError);
+    expect(currentServerReach()).toBe('up');
+  });
 });
 
 it('403 본문의 요구 권한을 오류에 싣고 확정 거절로 분류한다', async () => {

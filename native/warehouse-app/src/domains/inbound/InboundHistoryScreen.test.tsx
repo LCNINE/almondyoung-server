@@ -19,6 +19,8 @@ import { SessionProvider } from '../../app/session-context';
 import { WarehouseProvider } from '../../app/warehouse-context';
 import type { ApiClient } from '../../core/data/httpClient';
 import { InboundHistoryScreen } from './InboundHistoryScreen';
+import { StaffNamesClientProvider, SYSTEM_ACTOR_ID } from './staffNames';
+import { ApiError } from '../../core/data/httpClient';
 const station = vi.hoisted(() => ({ on: false }));
 vi.mock('../../app/station', () => ({ isStationDevice: () => station.on }));
 const session = {
@@ -30,7 +32,15 @@ const session = {
   subscribe: () => () => {},
 };
 type Call = { path: string; method?: string; body?: unknown };
-async function mount(request: ApiClient['request']) {
+const noStaffNames: ApiClient = {
+  request: async () => {
+    throw new Error('staff names unavailable');
+  },
+};
+async function mount(
+  request: ApiClient['request'],
+  staffNames: ApiClient = noStaffNames
+) {
   const runtime = createTestWorkRuntime({
     request: async (r) => {
       if (!r.path.startsWith('/inbound/lines/')) return request(r);
@@ -77,9 +87,11 @@ async function mount(request: ApiClient['request']) {
         }
       >
         <TestWorkProvider runtime={runtime}>
-          <WarehouseProvider prefs={prefs}>
-            <RouterProvider router={router} />
-          </WarehouseProvider>
+          <StaffNamesClientProvider client={staffNames}>
+            <WarehouseProvider prefs={prefs}>
+              <RouterProvider router={router} />
+            </WarehouseProvider>
+          </StaffNamesClientProvider>
         </TestWorkProvider>
       </QueryClientProvider>
     </SessionProvider>
@@ -394,4 +406,88 @@ it('입고 취소 버튼은 마우스를 올려도 빨간 배경이 되지 않�
   });
   expect(cancel).toHaveClass('hover:bg-white');
   expect(cancel.className).not.toMatch(/hover:bg-(red|\[#a)/);
+});
+
+const STAFF_A = '11111111-1111-4111-8111-111111111111';
+const STAFF_B = '22222222-2222-4222-8222-222222222222';
+
+function receiptsBy(actors: (string | null)[]) {
+  return actors.map((actorId, i) => ({
+    ...receipt(`r${i}`, 'direct'),
+    occurredAt: `2026-11-25T0${i}:00:00.000Z`,
+    actorId,
+    lines: [{ ...line('d', 'direct'), id: `l${i}` }],
+  }));
+}
+
+it('입고내역 줄마다 작업자 이름을 한 번의 묶음 조회로 보이고 자동 처리는 자동이다', async () => {
+  const items = receiptsBy([STAFF_B, STAFF_A, SYSTEM_ACTOR_ID, STAFF_A]);
+  const staffCalls: string[] = [];
+  await mount(
+    (async () => ({
+      items,
+      total: items.length,
+      serverTime: new Date().toISOString(),
+    })) as ApiClient['request'],
+    {
+      request: (async (opts: Call) => {
+        staffCalls.push(opts.path);
+
+        return {
+          success: true,
+          data: [
+            { id: STAFF_A, name: '김입고' },
+            { id: STAFF_B, name: '박적치' },
+          ],
+        };
+      }) as ApiClient['request'],
+    }
+  );
+
+  const first = await screen.findByRole('listitem', {
+    name: '2026.11.25 09:00 입고내역',
+  });
+  await waitFor(() =>
+    expect(first).toHaveTextContent('박적치 · 시험창고 · 직접')
+  );
+  expect(
+    screen.getByRole('listitem', { name: '2026.11.25 10:00 입고내역' })
+  ).toHaveTextContent('김입고 · 시험창고');
+  expect(
+    screen.getByRole('listitem', { name: '2026.11.25 11:00 입고내역' })
+  ).toHaveTextContent('자동 · 시험창고');
+  expect(staffCalls).toEqual([
+    `/admin/staff/names?ids=${STAFF_A},${STAFF_B}`,
+  ]);
+});
+
+it.each([
+  ['권한 없음', new ApiError('GET → 403', 403, 'FORBIDDEN')],
+  ['연결 실패', new Error('network')],
+])('작업자 이름 조회가 %s 이어도 입고내역은 그대로 보이고 이름 자리는 빈 표시다', async (_, failure) => {
+  const items = receiptsBy([STAFF_A, null]);
+  await mount(
+    (async () => ({
+      items,
+      total: items.length,
+      serverTime: new Date().toISOString(),
+    })) as ApiClient['request'],
+    {
+      request: async () => {
+        throw failure;
+      },
+    }
+  );
+
+  const record = await screen.findByRole('listitem', {
+    name: '2026.11.25 09:00 입고내역',
+  });
+  expect(record).toHaveTextContent('— · 시험창고');
+  expect(record).toHaveTextContent('1종 · 입고 4개');
+  expect(
+    screen.getByRole('listitem', { name: '2026.11.25 10:00 입고내역' })
+  ).toHaveTextContent('— · 시험창고');
+  expect(
+    within(record).getByRole('button', { name: '직접상품 입고 취소' })
+  ).toBeInTheDocument();
 });

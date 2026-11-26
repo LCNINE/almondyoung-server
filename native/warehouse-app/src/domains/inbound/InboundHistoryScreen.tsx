@@ -27,6 +27,7 @@ import {
 } from './receiptHistory';
 import { cn } from '../../core/design/cn';
 import { InboundTabs } from './InboundTabs';
+import { useStaffNames } from './staffNames';
 import type { ReceiptSource } from './types';
 
 const SOURCE: Record<ReceiptSource, string> = {
@@ -158,6 +159,9 @@ function HistoryContent({
     offset,
   ]);
   const data = shown?.signature === signature ? shown.data : null;
+  const workerName = useStaffNames(
+    data?.items.map((receipt) => receipt.actorId) ?? []
+  );
   const current =
     !!data &&
     shown?.offset === offset &&
@@ -324,7 +328,8 @@ function HistoryContent({
                           </time>
                         </h3>
                         <p className="mt-1.5 text-[11px] text-[#71717a]">
-                          {warehouseName} · {sources}
+                          {workerName(receipt.actorId)} · {warehouseName} ·{' '}
+                          {sources}
                         </p>
                       </div>
                       <div className="flex items-center gap-[15px] text-xs text-[#71717a] max-[900px]:gap-2">

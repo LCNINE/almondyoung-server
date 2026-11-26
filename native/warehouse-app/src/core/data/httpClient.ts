@@ -250,8 +250,10 @@ export function createApiClient(deps: {
   getToken: () => Promise<string>;
   authMode: 'bearer' | 'cookie';
   doFetch?: typeof tauriFetch;
+  reportReach?: boolean;
 }): ApiClient {
   const doFetch = deps.doFetch ?? tauriFetch;
+  const reportReach = deps.reportReach ?? true;
 
   async function once(opts: {
     method: string;
@@ -280,10 +282,11 @@ export function createApiClient(deps: {
           opts.bodyJson ??
           (opts.body !== undefined ? JSON.stringify(opts.body) : undefined),
       });
-      reportServerReach('up');
+      if (reportReach) reportServerReach('up');
+
       return res;
     } catch (error) {
-      reportServerReach('down');
+      if (reportReach) reportServerReach('down');
       throw new NetworkError(error);
     } finally {
       clearTimeout(timeout);
