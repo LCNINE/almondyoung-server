@@ -109,7 +109,8 @@ export function AppSidebar({
   onMenuChange,
 }: AppSidebarProps) {
   const router = useRouter();
-  const { setOpen, peek, setPeeking } = useSidebar();
+  const { state, peek, setPeeking } = useSidebar();
+  const [flyoutMenu, setFlyoutMenu] = useState<string | null>(null);
   const pathname = usePathname();
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
   const [browsingAll, setBrowsingAll] = useState(false);
@@ -207,7 +208,8 @@ export function AppSidebar({
 
   const isHome = pathname === '/';
   // 권한으로 하위 메뉴가 하나도 안 남은 메뉴(권한 없는 화면에 직접 들어온 경우)는 빈 제목 대신 전체 목록을 보인다.
-  const showAll = peek || browsingAll || isHome || !currentMenu || (permissionsReady && visibleChildren.length === 0);
+  // 접혔을 때도 펼쳐 보일 때와 같은 목록을 그린다. 펼치는 순간 버튼을 새로 그리면 커서 밑 메뉴의 hover 를 놓친다.
+  const showAll = state === 'collapsed' || browsingAll || isHome || !currentMenu || (permissionsReady && visibleChildren.length === 0);
 
   return (
     <Sidebar collapsible="icon" className="border-r">
@@ -248,28 +250,31 @@ export function AppSidebar({
 
                 return (
                   <SidebarMenuItem key={menu.id}>
-                    {peek ? (
-                      <HoverCard openDelay={150} closeDelay={100}>
-                        <HoverCardTrigger asChild>{button}</HoverCardTrigger>
-                        <HoverCardContent
-                          side="right"
-                          align="start"
-                          sideOffset={9}
-                          className="max-h-[80vh] w-56 overflow-y-auto p-2"
-                        >
-                          <p className="px-2 pb-2 text-sm font-semibold">{menu.title}</p>
-                          <FlyoutItems
-                            items={filterMenuItems(menu.children, permissions)}
-                            onItemClick={(item) => {
-                              setPeeking(false);
-                              onItemClick(item);
-                            }}
-                          />
-                        </HoverCardContent>
-                      </HoverCard>
-                    ) : (
-                      button
-                    )}
+                    <HoverCard
+                      openDelay={150}
+                      closeDelay={100}
+                      open={peek && flyoutMenu === menu.id}
+                      onOpenChange={(open) =>
+                        setFlyoutMenu((current) => (open ? menu.id : current === menu.id ? null : current))
+                      }
+                    >
+                      <HoverCardTrigger asChild>{button}</HoverCardTrigger>
+                      <HoverCardContent
+                        side="right"
+                        align="start"
+                        sideOffset={9}
+                        className="max-h-[80vh] w-56 overflow-y-auto p-2"
+                      >
+                        <p className="px-2 pb-2 text-sm font-semibold">{menu.title}</p>
+                        <FlyoutItems
+                          items={filterMenuItems(menu.children, permissions)}
+                          onItemClick={(item) => {
+                            setPeeking(false);
+                            onItemClick(item);
+                          }}
+                        />
+                      </HoverCardContent>
+                    </HoverCard>
                   </SidebarMenuItem>
                 );
               })}
@@ -295,10 +300,9 @@ export function AppSidebar({
                     tooltip={{ children: menu.title, hidden: false }}
                     aria-label={menu.title}
                     isActive={activeMenu === menu.id}
-                    onClick={() =>
-                      // 지금 메뉴의 아이콘은 첫 페이지로 보내지 않고 접힌 하위 메뉴만 펼친다
-                      activeMenu === menu.id ? setOpen(true) : goToMenu(menu.id)
-                    }
+                    onClick={() => {
+                      if (activeMenu !== menu.id) goToMenu(menu.id);
+                    }}
                     className="size-8 justify-center p-0"
                   >
                     <IconComponent name={menu.icon} className="size-4" />
