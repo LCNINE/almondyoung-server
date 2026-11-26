@@ -20,6 +20,7 @@ import type { Session } from '../../core/auth/session';
 import { ScanProvider, useScanBus } from '../../core/hardware/scan/ScanProvider';
 import { createTestWorkRuntime, TestWorkProvider } from '../inbound/__fixtures__/workRuntime';
 import { ReturnPutawayScreen } from './ReturnPutawayScreen';
+import { MY_RETURN_BIN_KEY } from './myReturnBin';
 
 const session = {
   bootstrap: async () => {},
@@ -48,7 +49,11 @@ function ScanButton({ code }: { code: string }) {
 
 type Request = { method?: string; path: string; body?: unknown; idempotencyKey?: string };
 
-function mount(request: (o: Request) => Promise<unknown>, runtime?: ReturnType<typeof createTestWorkRuntime>) {
+function mount(
+  request: (o: Request) => Promise<unknown>,
+  runtime?: ReturnType<typeof createTestWorkRuntime>,
+  queryClient = new QueryClient(),
+) {
   const client: ApiClient = { request: vi.fn().mockImplementation(request) };
   const prefs = createMemoryPrefs({ 'almondwms.warehouse': JSON.stringify({ id: 'wh', name: '창고' }) });
   const rootRoute = createRootRoute({ component: () => <Outlet /> });
@@ -73,7 +78,7 @@ function mount(request: (o: Request) => Promise<unknown>, runtime?: ReturnType<t
   const wrapper = ({ children }: { children: ReactNode }) => (
     <SessionProvider session={session}>
       <WarehouseProvider prefs={prefs}>
-        <QueryClientProvider client={new QueryClient()}>
+        <QueryClientProvider client={queryClient}>
           {runtime ? (
             <TestWorkProvider runtime={runtime}>
               <ScanProvider>{children}</ScanProvider>
@@ -120,6 +125,25 @@ async function scanProduct(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe('ReturnPutawayScreen', () => {
+  it('넣고 나면 적치 보드가 보는 내 선반 복귀 대기를 다시 읽게 한다', async () => {
+    const queryClient = new QueryClient();
+    queryClient.setQueryData([MY_RETURN_BIN_KEY, 'wh'], BIN);
+    const { user } = mount(
+      async (o) => {
+        if (o.method === 'POST') return putawayResult;
+        if (o.path === '/return-bins/mine?warehouseId=wh') return BIN;
+        throw new Error(`unexpected ${o.path}`);
+      },
+      undefined,
+      queryClient,
+    );
+    expect(queryClient.getQueryState([MY_RETURN_BIN_KEY, 'wh'])?.isInvalidated).toBe(false);
+
+    await scanProduct(user);
+    expect(await screen.findByText('선반 복귀 완료')).toBeInTheDocument();
+    expect(queryClient.getQueryState([MY_RETURN_BIN_KEY, 'wh'])?.isInvalidated).toBe(true);
+  });
+
   it('loads my bin on open and puts away a product without scanning a bin or location', async () => {
     const calls: Request[] = [];
     const { user } = mount(async (o) => {

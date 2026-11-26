@@ -1,7 +1,7 @@
 import type { ReviewRow } from '../../domains/inbound-shipment/boxDraft';
 import { fmt } from './boxRows';
 
-const CARD = 'rounded-[10px] border border-[#D5D8DE] bg-white';
+const CARD = 'rounded-xl border border-[#e4e4e7] bg-white';
 
 /**
  * 확정 확인(스펙 §5.5) — 이 상자만 덮는 줄 중 리스트와 다른 줄, 범위 줄 전부(이 상자 몫은 비교할 수 없어 넣은 값을 다시 보인다),
@@ -16,7 +16,7 @@ export function BoxReview({ label, rows }: { label: string; rows: ReviewRow[] })
       ) : (
         <ul className="flex flex-col">
           {rows.map((row, index) => (
-            <li key={index} className="flex items-baseline justify-between gap-6 border-b border-[#E4E6EA] py-3 text-xl">
+            <li key={index} className="flex items-baseline justify-between gap-6 border-b border-[#e4e4e7] py-3 text-xl">
               <span className="font-semibold">{nameOf(row)}</span>
               <span className="font-mono">{valueOf(row)}</span>
             </li>

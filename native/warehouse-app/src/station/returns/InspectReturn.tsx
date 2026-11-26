@@ -30,8 +30,8 @@ type Armed = 'confirm' | 'discard' | null;
 
 const UNCERTAIN_MESSAGE = '결과를 확인하지 못했어요 — F10 다시 보내기';
 const COLUMN_LABEL: Record<InspectionColumn, string> = { rejected: '불량', held: '보류' };
-const CARD = 'rounded-[10px] border border-[#D5D8DE] bg-white';
-const TH = 'border-b border-[#D5D8DE] bg-[#F6F7F8] px-4 py-2.5 text-left text-[13px] font-semibold text-[#535968]';
+const CARD = 'rounded-xl border border-[#e4e4e7] bg-white';
+const TH = 'border-b border-[#e4e4e7] bg-[#fafafa] px-4 py-2.5 text-left text-[13px] font-semibold text-[#71717a]';
 
 /**
  * 검수(N7) — 도착한 것을 불량·보류로 나누고 F10 두 번으로 확정한다(되돌릴 수 없다: 원장 이동 + 환불 요청·교환품 출고 지시 또는 CS 확인).
@@ -285,9 +285,9 @@ function CellPanel({ label, value }: { label: string; value: number }) {
     <div
       role="status"
       aria-label={label}
-      className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 rounded-[10px] border border-[#D5D8DE] bg-white p-6 text-center"
+      className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 rounded-xl border border-[#e4e4e7] bg-white p-6 text-center"
     >
-      <div className="text-[30px] font-bold text-[#1D5BD8]">{label}</div>
+      <div className="text-[30px] font-bold text-[#2563eb]">{label}</div>
       <div className="font-mono text-[120px] font-semibold leading-none">{value}</div>
     </div>
   );
@@ -327,8 +327,8 @@ function InspectRow({
       data-active={activeColumn === col ? 'true' : undefined}
       className={cn(
         'px-4 text-right font-mono text-2xl font-semibold',
-        value === 0 && 'text-[#A3A9B4]',
-        activeColumn === col && 'outline outline-2 -outline-offset-2 outline-[#1D5BD8]'
+        value === 0 && 'text-[#a1a1aa]',
+        activeColumn === col && 'outline outline-2 -outline-offset-2 outline-[#2563eb]'
       )}
     >
       {value}
@@ -339,11 +339,11 @@ function InspectRow({
       ref={ref}
       data-item-id={itemId}
       aria-selected={selected}
-      className={cn('h-[72px] border-b border-[#E4E6EA] text-[17px]', selected && 'bg-[#FFF1C7]')}
+      className={cn('h-[72px] border-b border-[#f0f0f2] text-[17px]', selected && 'bg-[#eff6ff]')}
     >
       <td className="px-4">
         <div className="font-semibold">{name}</div>
-        {product ? <div className="text-sm text-[#535968]">{product}</div> : null}
+        {product ? <div className="text-sm text-[#71717a]">{product}</div> : null}
         <ShelfCode code={shelfCode} />
       </td>
       <td data-col="arrived" className="px-4 text-right font-mono">

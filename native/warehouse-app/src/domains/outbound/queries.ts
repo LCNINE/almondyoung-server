@@ -56,3 +56,18 @@ export function useOutboundBatches(
     },
   });
 }
+
+export function useBatchesCreatedSince(warehouseId: string | null, createdFrom: string, refetchInterval = 30_000) {
+  const api = useApiClient();
+
+  return useQuery({
+    queryKey: ['outbound-batches', warehouseId, 'since', createdFrom],
+    enabled: warehouseId !== null,
+    refetchInterval,
+    queryFn: () => {
+      const qs = new URLSearchParams({ warehouseId: warehouseId ?? '', createdFrom });
+
+      return api.request<OutboundBatchSummary[]>({ path: `/outbound-batches/v2?${qs.toString()}` });
+    },
+  });
+}

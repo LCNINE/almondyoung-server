@@ -21,12 +21,16 @@ const submitSearch = (value: string) => {
 };
 
 describe('도착 대기 목록', () => {
-  it('머리글을 두고 행마다 반품·교환을 구분한다', async () => {
-    setupReturns({ returns: [{ ...AWAITING, kind: 'exchange' }, PARTIAL] });
+  it('카드 제목과 행마다 사진 자리·반품 종류·검수 단추를 둔다', async () => {
+    setupReturns({ returns: [{ ...AWAITING, kind: 'exchange' }, PARTIAL, READY] });
     await listed();
-    expect(screen.getByText('주문번호').parentElement).toHaveTextContent('주문번호종류받는 분사유상품수량단계');
+    expect(screen.getByRole('heading', { level: 2, name: '검수 대기' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: '도착 대기' })).toBeInTheDocument();
     expect(row(AWAITING.orderNo).querySelector('[data-col="kind"]')).toHaveTextContent('교환');
     expect(row(PARTIAL.orderNo).querySelector('[data-col="kind"]')).toHaveTextContent('반품');
+    expect(row(READY.orderNo).querySelector('[data-slot="thumbnail"]')).not.toBeNull();
+    expect(within(row(READY.orderNo)).getByText('검수')).toBeInTheDocument();
+    expect(within(row(READY.orderNo)).getByText(READY.orderNo)).toBeInTheDocument();
   });
 
   it.each([
@@ -61,6 +65,62 @@ describe('도착 대기 목록', () => {
     expect(screen.queryByText('김민영')).toBeNull();
     expect(within(row('O-1002')).getByText('헤어클립 집게핀 외 1건')).toBeInTheDocument();
     expect(screen.queryByText(/외 \d+건 — 검색하세요/)).toBeNull();
+  });
+
+  it('제목과 설명, 검수 대기 건수를 보인다', async () => {
+    setupReturns();
+    await listed();
+
+    expect(screen.getByRole('heading', { level: 1, name: '반품' })).toBeInTheDocument();
+    expect(screen.getByText('돌아온 상품의 상태와 수량을 확인하세요.')).toBeInTheDocument();
+    expect(screen.getByText('1건')).toBeInTheDocument();
+  });
+
+  it('검색해도 검수 대기 건수는 걸러지지 않은 전체 기준이다', async () => {
+    setupReturns({ returns: [READY, { ...READY, id: 'cr-9', orderNo: 'O-1009', customerName: '최하늘' }] });
+    await listed();
+    expect(screen.getByText('2건')).toBeInTheDocument();
+
+    press('F9');
+    submitSearch('최하늘');
+
+    await waitFor(() => expect(orderNos()).toEqual(['O-1009']));
+    expect(screen.getByText('2건')).toBeInTheDocument();
+  });
+
+  it('도착 대기 행만 걸리는 검색에도 검수 대기 카드와 건수가 남는다', async () => {
+    setupReturns();
+    await listed();
+
+    press('F9');
+    submitSearch('김민');
+
+    await waitFor(() => expect(orderNos()).toEqual(['O-1001']));
+    const readyHeader = screen.getByRole('heading', { level: 2, name: '검수 대기' }).parentElement;
+    if (!readyHeader) throw new Error('ready card header not found');
+    expect(within(readyHeader).getByText('1건')).toBeInTheDocument();
+    expect(screen.getByText('검색한 검수 대기 반품이 없어요.')).toBeInTheDocument();
+  });
+
+  it('걸리는 반품이 없는 검색에도 검수 대기 건수가 남는다', async () => {
+    setupReturns();
+    await listed();
+
+    press('F9');
+    submitSearch('없는사람');
+
+    expect(await screen.findByText('찾는 반품이 없어요')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: '검수 대기' })).toBeInTheDocument();
+    expect(screen.getByText('1건')).toBeInTheDocument();
+    expect(screen.getByText('검색한 검수 대기 반품이 없어요.')).toBeInTheDocument();
+  });
+
+  it('한 번에 다 못 불러오면 검수 대기 건수에 이상을 붙인다', async () => {
+    const { server } = setupReturns();
+    server.config.limit = 1;
+    await listed();
+
+    expect(screen.getByText('1건 이상')).toBeInTheDocument();
   });
 
   it('목록이 비면 한 줄', async () => {

@@ -4,7 +4,7 @@ import {
   receiptFixture,
 } from './__fixtures__/workRuntime';
 import { expect, it, vi } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
@@ -352,6 +352,17 @@ it('shipment receipt line on station shows box without line cancel or handheld h
   ).not.toBeInTheDocument();
   expect(screen.queryByText('스테이션에서 취소해요')).not.toBeInTheDocument();
   station.on = false;
+});
+it('on station the header has no back link, on handheld it goes back to the purchase-order list', async () => {
+  station.on = true;
+  await mountShipmentLine();
+  await screen.findByText(/11월 2차 배편 · 상자 L7/);
+  expect(screen.queryByRole('link', { name: '뒤로' })).toBeNull();
+  station.on = false;
+  cleanup();
+  await mountShipmentLine();
+  await screen.findByText(/11월 2차 배편 · 상자 L7/);
+  expect(screen.getByRole('link', { name: '뒤로' })).toHaveAttribute('href', '/inbound');
 });
 it('on station the shipment box line links to that box', async () => {
   station.on = true;

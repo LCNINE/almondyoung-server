@@ -43,8 +43,8 @@ const KEY_HINTS: readonly KeyHint[] = [
 
 const UNCERTAIN_MESSAGE = '결과를 확인하지 못했어요 — F10 다시 보내기';
 const INSPECTION_UNCERTAIN = '검수 결과를 확인하지 못했어요 — 다시 열어 확인하세요';
-const CARD = 'rounded-[10px] border border-[#D5D8DE] bg-white';
-const TH = 'border-b border-[#D5D8DE] bg-[#F6F7F8] px-4 py-2.5 text-left text-[13px] font-semibold text-[#535968]';
+const CARD = 'rounded-xl border border-[#e4e4e7] bg-white';
+const TH = 'border-b border-[#e4e4e7] bg-[#fafafa] px-4 py-2.5 text-left text-[13px] font-semibold text-[#71717a]';
 
 /**
  * 소포 세기(N5·N6) — 소포 하나를 세어 F10 으로 도착을 확정한다. 반품을 열 때마다 새로 마운트되고(부모의 key),
@@ -313,7 +313,7 @@ export function ParcelWork({
             <div className={cn(CARD, 'flex shrink-0 flex-col gap-2.5 p-[18px]')}>
               <h2 className="font-mono text-[30px] font-semibold">{view.order.orderNo}</h2>
               <ReturnReasonBand view={view} />
-              {prior ? <p className="text-base font-semibold text-[#7A4B00]">이미 받은 소포가 있어요</p> : null}
+              {prior ? <p className="text-base font-semibold text-[#9a681c]">이미 받은 소포가 있어요</p> : null}
             </div>
             {big ? <BigPanel content={big} /> : <CountPanel total={total} />}
           </>
@@ -356,9 +356,9 @@ function CountPanel({ total }: { total: number }) {
     <div
       role="status"
       aria-label="이번 소포"
-      className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 rounded-[10px] border border-[#D5D8DE] bg-white p-6 text-center"
+      className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 rounded-xl border border-[#e4e4e7] bg-white p-6 text-center"
     >
-      <div className="text-[30px] font-bold text-[#1D5BD8]">이번 소포</div>
+      <div className="text-[30px] font-bold text-[#2563eb]">이번 소포</div>
       <div className="font-mono text-[120px] font-semibold leading-none">{total}</div>
     </div>
   );
@@ -392,20 +392,20 @@ function ParcelRow({
       data-item-id={itemId}
       aria-selected={selected}
       className={cn(
-        'h-[72px] border-b border-[#E4E6EA] text-[17px]',
-        remaining === 0 && 'text-[#6B717D]',
-        selected && 'bg-[#FFF1C7]'
+        'h-[72px] border-b border-[#f0f0f2] text-[17px]',
+        remaining === 0 && 'text-[#71717a]',
+        selected && 'bg-[#eff6ff]'
       )}
     >
       <td className="px-4">
         <div className="font-semibold">{name}</div>
-        {product ? <div className="text-sm text-[#535968]">{product}</div> : null}
+        {product ? <div className="text-sm text-[#71717a]">{product}</div> : null}
         <ShelfCode code={shelfCode} />
       </td>
       <td data-col="remaining" className="px-4 text-right font-mono">
         {remaining}
       </td>
-      <td data-col="parcel" className={cn('px-4 text-right font-mono text-2xl font-semibold', parcel === 0 && 'text-[#A3A9B4]')}>
+      <td data-col="parcel" className={cn('px-4 text-right font-mono text-2xl font-semibold', parcel === 0 && 'text-[#a1a1aa]')}>
         {parcel}
       </td>
     </tr>

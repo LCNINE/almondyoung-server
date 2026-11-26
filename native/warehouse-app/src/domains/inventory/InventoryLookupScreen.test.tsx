@@ -126,7 +126,7 @@ describe('InventoryLookupScreen', () => {
     await user.type(await screen.findByPlaceholderText(/검색/), '없는상품');
     await user.click(screen.getByRole('button', { name: '검색' }));
 
-    expect(await screen.findByText('결과가 없어요.')).toBeInTheDocument();
+    expect(await screen.findByText('일치하는 상품이 없어요.')).toBeInTheDocument();
   });
 
   it('검색칸에 친 바코드가 한 건이면 상세로 이동한다', async () => {
@@ -219,7 +219,7 @@ describe('InventoryLookupScreen', () => {
     await user.click(screen.getByRole('button', { name: '검색' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/서버/);
-    expect(screen.queryByText('결과가 없어요.')).toBeNull();
+    expect(screen.queryByText('일치하는 상품이 없어요.')).toBeNull();
   });
 
   it('검색칸 바코드 조회가 실패하면 이름 검색으로 넘기지 않고 알린다 — 다시 확인하면 이어 간다', async () => {
@@ -240,7 +240,7 @@ describe('InventoryLookupScreen', () => {
     expect(alert).toHaveTextContent('검색하지 못했어요: 8801234567890');
     expect(alert).toHaveTextContent(/서버/);
     expect(request.mock.calls.some(([o]) => o.path.startsWith('/inventory/skus/search/advanced'))).toBe(false);
-    expect(screen.queryByText('결과가 없어요.')).toBeNull();
+    expect(screen.queryByText('일치하는 상품이 없어요.')).toBeNull();
 
     down = false;
     await user.click(within(alert).getByRole('button', { name: '다시 확인' }));

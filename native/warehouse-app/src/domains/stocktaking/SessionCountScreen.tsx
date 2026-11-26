@@ -30,6 +30,7 @@ import type {
   ScanLocationItem,
   ScanLocationResult,
   ScanProductResult,
+  StocktakingStatus,
 } from './types';
 
 class UnsentCountScanError extends Error {}
@@ -247,7 +248,8 @@ function SessionCountScreenContent({ sessionId }: { sessionId: string }) {
   return (
     <div className="space-y-4">
       <ScreenHeader
-        title={detail.data?.sessionName ?? '실사'}
+        title="실사"
+        description="실물 수량을 입력하고 장부와의 차이를 검토하세요."
         backTo="/stocktaking"
         right={
           progress ? (
@@ -261,7 +263,7 @@ function SessionCountScreenContent({ sessionId }: { sessionId: string }) {
         <p role="alert">{errorMessage(detail.error, 'stocktaking')}</p>
       )}
       {notice && (
-        <p role="status" className="text-sm text-amber-700">
+        <p role="status" className="text-sm text-[#9a681c]">
           {notice}
         </p>
       )}
@@ -280,115 +282,133 @@ function SessionCountScreenContent({ sessionId }: { sessionId: string }) {
           )}
         </p>
       )}
-      {!place ? (
-        <section className="space-y-3">
-          <div className="rounded-xl border border-dashed border-blue-300 bg-blue-50 p-8 text-center">
-            <p>로케이션 바코드를 스캔하세요</p>
-            <p>스캔하면 그 위치의 상품이 나와요.</p>
-          </div>
-          <form
-            className="flex gap-2"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (manualCode.trim() && !busy)
-                acceptScan(manualCode.trim(), true);
-            }}
-          >
-            <label htmlFor="loc-manual" className="sr-only">
-              로케이션 코드 직접 입력
-            </label>
-            <input
-              id="loc-manual"
-              className="flex-1 rounded-md border px-3 py-2"
-              placeholder="코드 직접 입력"
-              value={manualCode}
-              disabled={busy}
-              onChange={(e) => setManualCode(e.target.value)}
-            />
-            <Button type="submit" disabled={busy || !draft.ready}>
-              열기
-            </Button>
-          </form>
-          {locationSearch.isError && (
-            <p role="alert">로케이션을 찾지 못했어요.</p>
-          )}
-          <ul>
-            {(locationSearch.data?.items ?? []).map((location) => (
-              <li key={location.id}>
-                <Button
-                  disabled={
-                    busy ||
-                    !manualCode.trim() ||
-                    locationSearch.isFetching ||
-                    locationSearch.isPlaceholderData ||
-                    locationSearch.isError ||
-                    !draft.ready
-                  }
-                  onClick={() => acceptScan(location.code, true)}
-                >
-                  {location.code} 열기
-                </Button>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : (
-        <section className="space-y-3">
-          <div className="flex items-center gap-2">
-            <span className="flex-1 rounded-lg border border-blue-500 bg-blue-50 px-3 py-2">
-              {place.locationCode}
+      <section className="rounded-xl border border-[#e4e4e7] bg-white">
+        <div className="flex items-center justify-between gap-3 border-b border-[#e4e4e7] px-5 py-4">
+          <h2 className="text-base font-semibold text-[#27272a]">
+            {detail.data?.sessionName ?? '실사'}
+          </h2>
+          {detail.data ? (
+            <span className="inline-flex items-center rounded-[5px] bg-[#eff6ff] px-2 py-[5px] text-[11px] font-semibold whitespace-nowrap text-[#2563eb]">
+              {SESSION_STATUS_LABEL[detail.data.status]}
             </span>
-            <Button disabled={busy} onClick={() => void changeLocation()}>
-              다른 로케이션
-            </Button>
-          </div>
-          <p className="text-xs text-gray-500">
-            상품 바코드를 스캔하면 1개씩 올라가요. 박스 단위는 수량 입력을
-            쓰세요.
-          </p>
-          <BarcodeInput
-            label="실사 상품 바코드"
-            disabled={busy || !draft.ready}
-            onSubmit={(code) => acceptScan(code)}
-          />
-          <Button
-            disabled={busy || !draft.ready}
-            onClick={() => setAdding(true)}
-          >
-            상품 추가
-          </Button>
-          <fieldset disabled={busy}>
-            <ul className="space-y-2">
-              {place.expectedItems.map((item) => (
-                <li key={item.lineId}>
-                  <LineRow
-                    item={item}
-                    onEdit={() => {
-                      if (item.lineRevision === undefined) {
-                        setNotice('최신 수량을 확인해 주세요.');
-                        return;
+          ) : null}
+        </div>
+        <div className="p-4">
+          {!place ? (
+            <section className="space-y-3">
+              <div className="rounded-xl border border-dashed border-[#2563eb] bg-[#eff6ff] p-8 text-center text-[#27272a]">
+                <p>로케이션 바코드를 스캔하세요</p>
+                <p>스캔하면 그 위치의 상품이 나와요.</p>
+              </div>
+              <form
+                className="flex gap-2"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  if (manualCode.trim() && !busy)
+                    acceptScan(manualCode.trim(), true);
+                }}
+              >
+                <label htmlFor="loc-manual" className="sr-only">
+                  로케이션 코드 직접 입력
+                </label>
+                <input
+                  id="loc-manual"
+                  className="flex-1 rounded-lg border border-[#e4e4e7] bg-white px-3 py-2.5"
+                  placeholder="코드 직접 입력"
+                  value={manualCode}
+                  disabled={busy}
+                  onChange={(e) => setManualCode(e.target.value)}
+                />
+                <Button type="submit" disabled={busy || !draft.ready}>
+                  열기
+                </Button>
+              </form>
+              {locationSearch.isError && (
+                <p role="alert">로케이션을 찾지 못했어요.</p>
+              )}
+              <ul>
+                {(locationSearch.data?.items ?? []).map((location) => (
+                  <li key={location.id}>
+                    <Button
+                      disabled={
+                        busy ||
+                        !manualCode.trim() ||
+                        locationSearch.isFetching ||
+                        locationSearch.isPlaceholderData ||
+                        locationSearch.isError ||
+                        !draft.ready
                       }
-                      setEditing({
-                        lineId: item.lineId,
-                        skuName: item.skuName,
-                        value: String(item.countedQuantity ?? 0),
-                        revision: item.lineRevision,
-                      });
-                    }}
-                  />
-                  <Button
-                    className="mt-1 text-xs"
-                    disabled={item.lineRevision === undefined}
-                    onClick={() => setResetting(item)}
-                  >
-                    다시 세기
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          </fieldset>
-        </section>
-      )}
+                      onClick={() => acceptScan(location.code, true)}
+                    >
+                      {location.code} 열기
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : (
+            <section className="space-y-3">
+              <div className="flex items-center gap-2">
+                <span className="flex-1 rounded-lg border border-[#2563eb] bg-[#eff6ff] px-3 py-2 font-semibold text-[#27272a]">
+                  {place.locationCode}
+                </span>
+                <Button disabled={busy} onClick={() => void changeLocation()}>
+                  다른 로케이션
+                </Button>
+              </div>
+              <p className="text-xs text-[#71717a]">
+                상품 바코드를 스캔하면 1개씩 올라가요. 박스 단위는 수량 입력을
+                쓰세요.
+              </p>
+              <p className="text-xs text-[#71717a]">
+                미입력과 실물 수량 0개를 구분합니다.
+              </p>
+              <BarcodeInput
+                label="실사 상품 바코드"
+                disabled={busy || !draft.ready}
+                onSubmit={(code) => acceptScan(code)}
+              />
+              <Button
+                disabled={busy || !draft.ready}
+                onClick={() => setAdding(true)}
+              >
+                상품 추가
+              </Button>
+              <fieldset disabled={busy}>
+                <ul className="divide-y divide-[#e4e4e7]">
+                  {place.expectedItems.map((item) => (
+                    <li key={item.lineId} className="py-3">
+                      <LineRow
+                        locationCode={place.locationCode}
+                        item={item}
+                        onEdit={() => {
+                          if (item.lineRevision === undefined) {
+                            setNotice('최신 수량을 확인해 주세요.');
+                            return;
+                          }
+                          setEditing({
+                            lineId: item.lineId,
+                            skuName: item.skuName,
+                            value: String(item.countedQuantity ?? 0),
+                            revision: item.lineRevision,
+                          });
+                        }}
+                      />
+                      <Button
+                        className="mt-1 text-xs"
+                        disabled={item.lineRevision === undefined}
+                        onClick={() => setResetting(item)}
+                      >
+                        다시 세기
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              </fieldset>
+            </section>
+          )}
+        </div>
+      </section>
       <Link to="/stocktaking/$sessionId/variances" params={{ sessionId }}>
         <Button disabled={busy} className="w-full py-3">
           차이 확인 →
@@ -491,41 +511,47 @@ function SessionCountScreenContent({ sessionId }: { sessionId: string }) {
   );
 }
 
+const SESSION_STATUS_LABEL: Record<StocktakingStatus, string> = {
+  draft: '대기',
+  in_progress: '진행 중',
+  completed: '완료',
+  cancelled: '취소됨',
+};
+
 function LineRow({
   item,
+  locationCode,
   onEdit,
 }: {
   item: ScanLocationItem;
+  locationCode: string;
   onEdit: () => void;
 }) {
   const counted = item.countedQuantity;
   const diff = counted === null ? null : counted - item.expectedQuantity;
   return (
-    <div className="flex items-center gap-3 rounded-lg border border-gray-200 bg-white p-3">
-      <span className="flex-1">
-        <span className="block font-medium text-gray-800">{item.skuName}</span>
-        <span className="block font-mono text-xs text-gray-500">
+    <div className="flex items-center gap-3">
+      <span className="w-20 shrink-0 text-sm font-semibold text-[#27272a]">
+        {locationCode}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block font-medium text-[#27272a]">{item.skuName}</span>
+        <span className="block font-mono text-xs text-[#71717a]">
           {item.skuCode}
         </span>
-      </span>
-      <span className="text-center">
-        <span className="block text-xs text-gray-500">예상</span>
-        <span className="block text-sm text-gray-700">
-          {item.expectedQuantity}
-        </span>
-      </span>
-      <span className="text-center">
-        <span className="block text-xs text-gray-500">카운트</span>
-        <span
-          data-testid={`count-${item.lineId}`}
-          className={cn(
-            'block text-lg font-semibold',
-            counted === null && 'text-gray-400',
-            diff !== null && diff === 0 && 'text-gray-900',
-            diff !== null && diff !== 0 && 'text-red-600'
-          )}
-        >
-          {counted === null ? '—' : counted}
+        <span className="block text-xs text-[#71717a]">
+          장부 {item.expectedQuantity}개 ·{' '}
+          {counted === null ? null : '센 수량 '}
+          <span
+            data-testid={`count-${item.lineId}`}
+            className={cn(
+              counted === null && 'text-[#8b8b95]',
+              diff !== null && diff === 0 && 'font-semibold text-[#27272a]',
+              diff !== null && diff !== 0 && 'font-semibold text-[#aa4037]'
+            )}
+          >
+            {counted === null ? '아직 세지 않음' : `${counted}개`}
+          </span>
         </span>
       </span>
       <Button
@@ -534,7 +560,7 @@ function LineRow({
         className="px-3 py-1.5 text-xs"
         onClick={onEdit}
       >
-        수량
+        수량 입력
       </Button>
     </div>
   );
@@ -611,10 +637,10 @@ function QuantityDialog({
         onKeyDown={handlePanelKeyDown}
         className="w-full max-w-sm space-y-3 rounded-xl bg-white p-5 shadow-lg outline-none"
       >
-        <h2 className="text-base font-semibold text-gray-900">
+        <h2 className="text-base font-semibold text-[#27272a]">
           {editing.skuName}
         </h2>
-        <div className="rounded-lg border border-gray-200 p-3 text-center text-2xl font-semibold text-gray-900">
+        <div className="rounded-lg border border-[#e4e4e7] p-3 text-center text-2xl font-semibold text-[#27272a]">
           {editing.value}
         </div>
         <fieldset disabled={pending}>
@@ -632,7 +658,7 @@ function QuantityDialog({
         <div className="flex gap-2">
           <Button
             type="button"
-            className="flex-1 border border-gray-300 bg-white text-gray-800 hover:bg-gray-50"
+            className="flex-1 border border-[#e4e4e7] bg-white text-[#27272a] hover:bg-[#eff6ff] hover:brightness-100"
             onClick={onCancel}
           >
             취소

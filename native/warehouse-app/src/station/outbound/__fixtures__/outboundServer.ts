@@ -48,6 +48,8 @@ export interface FakeBox {
   cancelWaiting?: Array<{ shipmentLineId: string; qty: number }>;
   /** 나눈 상자 — legacy 면 응답에 싣지 않는다 */
   split?: SplitShare | null;
+  /** 있으면 배치 박스 목록에 주문 번호·택배사·상품 종 수를 싣는다 */
+  orderNos?: string[];
   lines: FakeLine[];
 }
 
@@ -69,6 +71,13 @@ export interface OutboundServerConfig {
   refillsFail: boolean;
   batches: { picking: OutboundBatchSummary[]; created: OutboundBatchSummary[] };
   batchesFail: boolean;
+  /** createdFrom 조회 응답. null 이면 진행 중·시작 전 목록을 합쳐 준다 */
+  batchesSince: OutboundBatchSummary[] | null;
+  batchesSinceFail: boolean;
+  /** 배치 박스 송장 상태 조회를 실패시킨다(503) */
+  labelStatesFail: boolean;
+  /** 응답 전에 기다린다 — 요청 사이의 순서를 테스트가 고른다 */
+  beforeReply: ((req: Req) => Promise<void> | void) | null;
   /** 이 상태의 배치 목록만 실패시킨다(503) */
   batchesFailStatus: 'created' | 'picking' | null;
   /** 배치 박스 목록에 작업 상태·송장번호·받는 분을 싣지 않는 옛 core */
@@ -117,6 +126,10 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
     refillsFail: false,
     batches: { picking: [], created: [] },
     batchesFail: false,
+    batchesSince: null,
+    batchesSinceFail: false,
+    labelStatesFail: false,
+    beforeReply: null,
     batchesFailStatus: null,
     legacyBatchStates: false,
     returnBinFail: false,
@@ -387,6 +400,7 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
   async function request<T>(o: Req): Promise<T> {
     if (offline) throw new NetworkError(new TypeError('Failed to fetch'));
     requests.push(o);
+    if (config.beforeReply) await config.beforeReply(o);
     const method = o.method ?? 'GET';
     const [path, query = ''] = o.path.split('?');
     const params = new URLSearchParams(query);
@@ -455,6 +469,10 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
     if (path === '/outbound-batches/v2') {
       if (listGate) await listGate;
       if (config.batchesFail) throw new ApiError(`GET ${o.path} → 503`, 503);
+      if (params.has('createdFrom')) {
+        if (config.batchesSinceFail) throw new ApiError(`GET ${o.path} → 503`, 503);
+        return reply(config.batchesSince ?? [...config.batches.picking, ...config.batches.created]);
+      }
       if (config.batchesFailStatus === params.get('status')) throw new ApiError(`GET ${o.path} → 503`, 503);
       return reply(params.get('status') === 'created' ? config.batches.created : config.batches.picking);
     }
@@ -474,6 +492,7 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
           .map((b) => ({ id: `wi-${b.shipmentId}`, shipmentId: b.shipmentId, status: workItemStatusOf(b) }))
       );
     const states = /^\/outbound-batches\/([^/]+)\/waybill-label-states$/.exec(path);
+    if (states && config.labelStatesFail) throw new ApiError(`GET ${o.path} → 503`, 503);
     if (states)
       return reply(
         boxes
@@ -486,7 +505,14 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
             issue: null,
             ...(config.legacyBatchStates
               ? {}
-              : { workItemStatus: workItemStatusOf(b), trackingNo: b.trackingNo, recipientMasked: b.recipient ?? '김*영' }),
+              : {
+                  workItemStatus: workItemStatusOf(b),
+                  trackingNo: b.trackingNo,
+                  recipientMasked: b.recipient ?? '김*영',
+                  ...(b.orderNos
+                    ? { orderNos: b.orderNos, carrier: 'HANJIN', skuKinds: new Set(b.lines.map((l) => l.skuId)).size }
+                    : {}),
+                }),
           }))
       );
     throw new Error(`Unexpected request ${method} ${o.path}`);

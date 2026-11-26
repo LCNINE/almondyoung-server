@@ -27,6 +27,46 @@ import {
   ReturnPutawaySheet,
   type ReturnPutawayTarget,
 } from './ReturnPutawaySheet';
+import { Link } from '@tanstack/react-router';
+import { ArrowRight, Check, Printer } from 'lucide-react';
+import { cn } from '../../core/design/cn';
+import { SkuThumbnail } from '../inventory/SkuInfoSheet';
+import { useMyReturnBin } from '../returns/myReturnBin';
+
+const DESCRIPTION = '입고된 상품과 출고 상자에서 꺼낸 상품을 선반에 놓으세요.';
+const COLUMN = 'min-w-0 rounded-xl bg-[#f4f4f5] p-5 max-[900px]:p-3.5';
+const COLUMN_HEAD =
+  'mb-[18px] flex items-center gap-2 text-[15px] font-semibold text-[#27272a]';
+const COUNT_BADGE =
+  'rounded-[5px] bg-[#eff6ff] px-[7px] py-1 text-xs font-normal text-[#2563eb]';
+const CARD =
+  'mb-2.5 rounded-[9px] border border-[#e4e4e7] bg-white hover:border-[#2563eb]';
+const THUMB = 'h-[53px] w-11 flex-none rounded-[7px] bg-[#f4f4f5]';
+const PILL =
+  'inline-flex shrink-0 items-center rounded-[5px] px-2 py-[5px] text-[11px] font-semibold whitespace-nowrap';
+const OUTLINE_BUTTON =
+  'inline-flex items-center justify-center gap-2 rounded-lg border border-[#e4e4e7] bg-white px-4 py-[11px] text-sm font-semibold whitespace-nowrap text-[#27272a] hover:bg-[#eff6ff] hover:brightness-100';
+const ERROR_BOX =
+  'rounded-[10px] border border-[#efcbc4] bg-[#fff4f1] px-4 py-3 text-[13px] text-[#aa4037]';
+const EMPTY_NOTE = 'px-2.5 py-[25px] text-xs text-[#71717a]';
+
+interface CompletedPutaway {
+  id: number;
+  kind: 'inbound' | 'return';
+  skuName: string;
+  qty: number;
+  locationCode: string;
+  time: string;
+}
+
+function clockTime(date: Date): string {
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Seoul',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).format(date);
+}
 
 const DAY_OPTIONS: Array<{ value: PutawayDays; label: string }> = [
   { value: 1, label: '최근 1일' },
@@ -81,6 +121,27 @@ export function PutawayQueueScreen({
   const [cancelTarget, setCancelTarget] = useState<CancelReceiptTarget | null>(
     null
   );
+  const [completed, setCompleted] = useState<CompletedPutaway[]>([]);
+  const completedId = useRef(0);
+
+  function addCompleted(
+    kind: CompletedPutaway['kind'],
+    skuName: string,
+    qty: number,
+    locationCode: string
+  ) {
+    completedId.current += 1;
+    const entry = {
+      id: completedId.current,
+      kind,
+      skuName,
+      qty,
+      locationCode,
+      time: clockTime(new Date()),
+    };
+
+    setCompleted((list) => [entry, ...list]);
+  }
   // 반품 양품은 입고와 따로 반품 자리 재고 기준으로 본다 — 상품·원위치로 좁힌 화면에서는 숨긴다.
   const returnGoods = useReturnGoods(warehouseId, supported && !filtered);
   // 다시 읽기에 실패하면 남아 있는 옛 줄로 시트를 열지 않는다
@@ -113,6 +174,9 @@ export function PutawayQueueScreen({
     setCancelTarget(null);
     setLastDest(null);
   }, [warehouseId, skuId, originLocationId]);
+  useEffect(() => {
+    setCompleted([]);
+  }, [warehouseId]);
 
   const resetBarcode = byBarcode.reset;
   const clearScanFeedback = useCallback(() => {
@@ -155,12 +219,20 @@ export function PutawayQueueScreen({
     });
   });
 
+  const binQuery = useMyReturnBin(warehouseId);
+  const binItems = binQuery.data?.items ?? [];
+  const binQty = binItems.reduce((sum, item) => sum + item.qty, 0);
+  const returnGoodsQty = returnItems.reduce(
+    (sum, item) => sum + item.quantity,
+    0
+  );
+
   if (!isSet) {
     return (
-      <div className="space-y-4">
-        <ScreenHeader title="적치" backTo="/" />
-        <div className="space-y-3 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-4">
-          <p className="text-sm text-gray-600">창고를 먼저 선택해 주세요.</p>
+      <div className="space-y-5">
+        <ScreenHeader title="적치·이동" backTo="/" description={DESCRIPTION} />
+        <div className="space-y-3 rounded-xl border border-[#e4e4e7] bg-white p-5">
+          <p className="text-[13px] text-[#71717a]">창고를 먼저 선택해 주세요.</p>
           <WarehousePicker />
         </div>
       </div>
@@ -168,68 +240,309 @@ export function PutawayQueueScreen({
   }
 
   return (
-    <div className="space-y-4">
-      {/* 로딩 중엔 아직 진짜 건수를 모른다 — "0건"으로 보이면 다 봤다는 오해를 준다. */}
+    <div className="space-y-5">
       <ScreenHeader
-        title="적치"
+        title="적치·이동"
         backTo="/"
+        description={DESCRIPTION}
         right={
-          queue.isSuccess
-            ? `${items.length}${queue.data?.truncated ? '건+' : '건'}`
-            : undefined
+          <Link to="/putaway/location-labels" className={OUTLINE_BUTTON}>
+            <Printer className="h-4 w-4" aria-hidden />
+            로케이션 라벨
+          </Link>
         }
       />
 
-      {!filtered && (
-        <div className="flex gap-2">
-          {DAY_OPTIONS.map((o) => (
-            <button
-              key={String(o.value)}
-              type="button"
-              aria-pressed={days === o.value}
-              className={
-                days === o.value
-                  ? 'rounded-md border border-blue-500 bg-blue-50 px-3 py-1.5 text-sm text-blue-700'
-                  : 'rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700'
-              }
-              onClick={() => setDays(o.value)}
-            >
-              {o.label}
-            </button>
-          ))}
-        </div>
-      )}
-      {filtered && <p>선택한 상품과 원위치의 전체 기간 입고예요.</p>}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        {!filtered && (
+          <div
+            role="group"
+            aria-label="입고 기간"
+            className="flex gap-0.5 rounded-lg bg-[#ededee] p-1"
+          >
+            {DAY_OPTIONS.map((o) => (
+              <button
+                key={String(o.value)}
+                type="button"
+                aria-pressed={days === o.value}
+                className={cn(
+                  'rounded-[5px] px-3.5 py-[7px] text-[13px] whitespace-nowrap text-[#71717a]',
+                  days === o.value &&
+                    'bg-white font-semibold text-[#27272a] shadow-[0_1px_3px_#0000000c]'
+                )}
+                onClick={() => setDays(o.value)}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+        )}
+        {filtered && (
+          <p className="text-[13px] text-[#27272a]">
+            선택한 상품과 원위치의 전체 기간 입고예요.
+          </p>
+        )}
+        <p className="text-[13px] text-[#71717a]">
+          상품 바코드를 스캔하거나 목록에서 고르세요.
+        </p>
+      </div>
       {!supported && (
-        <p role="alert">앱과 서버 업데이트를 확인한 뒤 다시 시도해 주세요.</p>
+        <p role="alert" className={ERROR_BOX}>
+          앱과 서버 업데이트를 확인한 뒤 다시 시도해 주세요.
+        </p>
       )}
-      <p className="text-sm text-gray-500">
-        상품 바코드를 스캔하거나 목록에서 고르세요.
-      </p>
 
       <SaveToast toast={toast.toast} />
       {notice ? (
-        <p role="status" className="text-sm text-amber-700">
+        <p role="status" className="text-[13px] text-[#9a681c]">
           {notice}
         </p>
       ) : null}
       {byBarcode.isError ? (
-        <p role="alert" className="text-sm text-red-600">
+        <p role="alert" className="text-[13px] text-[#aa4037]">
           {errorMessage(byBarcode.error, 'barcode')}
         </p>
       ) : null}
 
+      <div className="grid grid-cols-1 items-stretch gap-5 max-[900px]:gap-3 min-[901px]:grid-cols-3">
+        <section aria-label="입고 기본존" className={COLUMN}>
+          <h3 className={COLUMN_HEAD}>
+            입고 기본존{' '}
+            {queue.isSuccess ? (
+              <span className={COUNT_BADGE}>
+                {`${items.length}${queue.data?.truncated ? '+' : ''}`}
+              </span>
+            ) : null}
+          </h3>
+          {queue.isError ? (
+            <p role="alert" className="mb-2.5 text-[13px] text-[#aa4037]">
+              {errorMessage(queue.error, 'putaway')}
+            </p>
+          ) : null}
+          {queue.isLoading ? (
+            <p className={EMPTY_NOTE}>불러오는 중…</p>
+          ) : null}
+          {queue.isSuccess && !queue.isFetching && items.length === 0 ? (
+            <p className={EMPTY_NOTE}>
+              {returnItems.length > 0
+                ? '입고 적치 대기는 없어요.'
+                : '적치할 항목이 없어요.'}
+              {days === 'all' ? '' : ' 기간 필터를 넓혀 보세요.'}
+            </p>
+          ) : null}
+          <WaitingOrdersFailed failed={waiting.failed} />
+          {items.length > 0 && (
+            <ul>
+              {items.map((item) => (
+                <li key={item.lineId} className={cn(CARD, 'overflow-hidden')}>
+                  <button
+                    type="button"
+                    className="block w-full p-[18px] text-left disabled:opacity-60"
+                    disabled={
+                      !supported ||
+                      !isActionablePutaway(item) ||
+                      queue.isFetching
+                    }
+                    onClick={() => {
+                      // 낡은 "적치 대기 없음" 안내와 미등록 바코드 오류 배너는 이 탭으로
+                      // 더는 사실이 아니게 된다.
+                      clearScanFeedback();
+                      select(item);
+                    }}
+                  >
+                    <span className="flex items-center gap-3">
+                      <SkuThumbnail fileIds={item.imageFileIds} className={THUMB} />
+                      <span className="min-w-0 flex-1">
+                        <strong
+                          id={`putaway-${item.lineId}`}
+                          className="block truncate text-sm font-semibold text-[#27272a]"
+                        >
+                          {item.skuName}
+                        </strong>
+                        <small className="mt-1 block text-xs text-[#71717a]">
+                          잔여 {item.pendingQty}개
+                        </small>
+                        <WaitingOrdersNote waiting={waiting.of(item.skuId)} />
+                        {!item.canPutaway && (
+                          <span className="mt-1 block text-xs text-[#9a681c]">
+                            입고내역과 원위치를 확인해 주세요.
+                          </span>
+                        )}
+                      </span>
+                    </span>
+                    <span className="mt-[15px] flex items-center justify-between gap-2 text-xs text-[#71717a]">
+                      <span className="min-w-0">
+                        {item.usualLocationCode ? (
+                          <span className="block truncate">
+                            자주 놓는 위치{' '}
+                            <strong className="font-semibold text-[#27272a]">
+                              {item.usualLocationCode}
+                            </strong>
+                          </span>
+                        ) : null}
+                        <span className="block truncate">
+                          {item.originLocationCode ?? '원위치 확인 필요'} ·{' '}
+                          {formatTime(item.receivedAt)}
+                        </span>
+                      </span>
+                      <ArrowRight
+                        className="h-4 w-4 shrink-0 text-[#2563eb]"
+                        aria-hidden
+                      />
+                    </span>
+                  </button>
+                  <div className="flex justify-end border-t border-[#e4e4e7] px-3 py-1">
+                    <button
+                      type="button"
+                      aria-describedby={`putaway-${item.lineId}`}
+                      className="px-2 py-1 text-xs text-[#71717a] underline disabled:opacity-50"
+                      disabled={!supported || queue.isFetching}
+                      onClick={() => {
+                        clearScanFeedback();
+                        setCancelTarget(item);
+                      }}
+                    >
+                      잘못 입고 · 취소
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+          {queue.hasNextPage && !queue.isFetchNextPageError ? (
+            <Button
+              className={cn('w-full', OUTLINE_BUTTON)}
+              onClick={() => void queue.fetchNextPage()}
+              disabled={queue.isFetching}
+            >
+              {queue.isFetchingNextPage ? '불러오는 중…' : '더 보기'}
+            </Button>
+          ) : null}
+          {queue.isError ? (
+            <Button
+              className={cn('w-full', OUTLINE_BUTTON)}
+              onClick={() =>
+                void (queue.isFetchNextPageError
+                  ? queue.fetchNextPage()
+                  : queue.refetch())
+              }
+              disabled={queue.isFetching}
+            >
+              다시 확인
+            </Button>
+          ) : null}
+          {queue.data?.truncated && !queue.hasNextPage ? (
+            <p className="mt-2.5 text-xs text-[#9a681c]">
+              나머지 적치 대기를 확인하려면 관리자에게 앱과 서버 업데이트를
+              요청해 주세요.
+            </p>
+          ) : null}
+        </section>
+
+        <section aria-label="선반 복귀 대기" className={COLUMN}>
+          <h3 className={COLUMN_HEAD}>
+            선반 복귀 대기{' '}
+            {binQuery.isSuccess ? (
+              <span className={COUNT_BADGE}>{binQty}</span>
+            ) : null}
+          </h3>
+          {binItems.map((item) => (
+            <Link
+              key={`${item.skuId}|${item.sourceLocationId}`}
+              to="/returns/putaway"
+              aria-label={`${item.skuName} ${item.qty}개 선반 복귀`}
+              className={cn(CARD, 'block p-[18px]')}
+            >
+              <small className="block text-xs text-[#71717a]">
+                출고 상자에서 꺼낸 상품
+              </small>
+              <strong className="mt-2.5 mb-[5px] block text-sm font-semibold text-[#27272a]">
+                {item.skuName} · {item.qty}개
+              </strong>
+              <span className="mt-[15px] flex items-center justify-between text-xs text-[#71717a]">
+                <span>
+                  복귀 선반{' '}
+                  <strong className="font-semibold text-[#27272a]">
+                    {item.locationCode}
+                  </strong>
+                </span>
+                <ArrowRight className="h-4 w-4 text-[#2563eb]" aria-hidden />
+              </span>
+              <small className="mt-3 block text-xs text-[#71717a]">
+                선반에 놓고 상품 바코드 스캔
+              </small>
+            </Link>
+          ))}
+          {binQuery.isLoading ? (
+            <p className={EMPTY_NOTE}>불러오는 중…</p>
+          ) : null}
+          {binQuery.isError ? (
+            <div role="alert" className="mb-2.5 text-[13px] text-[#aa4037]">
+              선반 복귀 대기를 불러오지 못했어요.{' '}
+              {errorMessage(binQuery.error, 'return-putaway')}{' '}
+              <button
+                type="button"
+                className="underline"
+                onClick={() => void binQuery.refetch()}
+              >
+                다시 불러오기
+              </button>
+            </div>
+          ) : null}
+          {binQuery.isSuccess && binItems.length === 0 ? (
+            <p className="px-2.5 py-[25px] text-xs text-[#71717a]">
+              복귀 대기 상품이 없습니다.
+            </p>
+          ) : null}
+          <Link
+            to="/returns/putaway"
+            className="inline-flex w-full items-center gap-1.5 pt-0.5 pl-0.5 text-xs text-[#2563eb]"
+          >
+            선반 복귀 작업 열기 →
+          </Link>
+        </section>
+
+        <section aria-label="적치 완료" className={COLUMN}>
+          <h3 className={COLUMN_HEAD}>
+            적치 완료{' '}
+            <span className={COUNT_BADGE}>{completed.length}</span>
+          </h3>
+          <ul aria-label="적치 완료 상품">
+            {completed.map((entry) => (
+              <li key={entry.id} className={cn(CARD, 'p-[18px]')}>
+                <small className="block text-xs text-[#71717a]">
+                  {entry.kind === 'return' ? '반품 양품 적치' : '입고 적치'}
+                </small>
+                <strong className="mt-2.5 mb-[5px] block text-sm font-semibold text-[#27272a]">
+                  {entry.skuName} · {entry.qty}개
+                </strong>
+                <span className="mt-[15px] flex items-center justify-between text-xs text-[#71717a]">
+                  <span>
+                    도착 위치 {entry.locationCode} · {entry.time}
+                  </span>
+                  <Check className="h-4 w-4 text-[#2563eb]" aria-hidden />
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      </div>
+
       {returnItems.length > 0 && returnGoods.data ? (
-        <section aria-label="반품 양품" className="space-y-2">
-          <h2 className="text-sm font-semibold text-gray-700">
-            반품 양품 — {returnGoods.data.locationCode}에서 선반으로
-          </h2>
-          <ul className="space-y-2">
+        <section aria-label="반품 양품" className={COLUMN}>
+          <h3 className={COLUMN_HEAD}>
+            반품 양품 — {returnGoods.data.locationCode}에서 선반으로{' '}
+            <span className={COUNT_BADGE}>{returnGoodsQty}</span>
+          </h3>
+          <ul className="grid grid-cols-1 gap-x-5 min-[901px]:grid-cols-3">
             {returnItems.map((item) => (
               <li key={item.skuId}>
                 <button
                   type="button"
-                  className="flex w-full items-center gap-3 rounded-lg border border-emerald-200 bg-white p-3 text-left active:bg-gray-50"
+                  className={cn(
+                    CARD,
+                    'block w-full p-[18px] text-left disabled:opacity-60'
+                  )}
                   disabled={returnGoods.isFetching}
                   onClick={() => {
                     clearScanFeedback();
@@ -240,18 +553,24 @@ export function PutawayQueueScreen({
                     });
                   }}
                 >
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate font-medium text-gray-800">
+                  <span className="flex items-center justify-between gap-2">
+                    <strong className="min-w-0 truncate text-sm font-semibold text-[#27272a]">
                       {item.skuName}
+                    </strong>
+                    <span className={cn(PILL, 'bg-[#eff6ff] text-[#2563eb]')}>
+                      양품 {item.quantity}
                     </span>
-                    <span className="block text-xs text-gray-500">
+                  </span>
+                  <span className="mt-[15px] flex items-center justify-between text-xs text-[#71717a]">
+                    <span>
                       {item.usualLocationCode
                         ? `평소 선반 ${item.usualLocationCode}`
                         : '평소 선반 없음'}
                     </span>
-                  </span>
-                  <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">
-                    양품 {item.quantity}
+                    <ArrowRight
+                      className="h-4 w-4 text-[#2563eb]"
+                      aria-hidden
+                    />
                   </span>
                 </button>
               </li>
@@ -260,7 +579,7 @@ export function PutawayQueueScreen({
         </section>
       ) : null}
       {returnGoods.isError && !filtered ? (
-        <div role="alert" className="text-sm text-red-600">
+        <div role="alert" className={ERROR_BOX}>
           반품 양품을 불러오지 못했어요. {errorMessage(returnGoods.error)}{' '}
           <button
             type="button"
@@ -272,116 +591,11 @@ export function PutawayQueueScreen({
         </div>
       ) : null}
 
-      {queue.isError ? (
-        <p role="alert" className="text-sm text-red-600">
-          {errorMessage(queue.error, 'putaway')}
-        </p>
-      ) : null}
-      {queue.isLoading ? (
-        <p className="text-sm text-gray-500">불러오는 중…</p>
-      ) : null}
-      {queue.isSuccess && !queue.isFetching && items.length === 0 ? (
-        <p className="text-sm text-gray-500">
-          {returnItems.length > 0
-            ? '입고 적치 대기는 없어요.'
-            : '적치할 항목이 없어요.'}
-          {days === 'all' ? '' : ' 기간 필터를 넓혀 보세요.'}
-        </p>
-      ) : null}
-      <WaitingOrdersFailed failed={waiting.failed} />
-      {items.length > 0 && (
-        <ul className="space-y-2">
-          {items.map((item) => (
-            <li
-              key={item.lineId}
-              className="rounded-lg border border-gray-200 bg-white"
-            >
-              <button
-                type="button"
-                className="flex w-full items-center gap-3 rounded-lg p-3 text-left active:bg-gray-50"
-                disabled={
-                  !supported || !isActionablePutaway(item) || queue.isFetching
-                }
-                onClick={() => {
-                  // 낡은 "적치 대기 없음" 안내와 미등록 바코드 오류 배너는 이 탭으로
-                  // 더는 사실이 아니게 된다.
-                  clearScanFeedback();
-                  select(item);
-                }}
-              >
-                <span className="min-w-0 flex-1">
-                  <span
-                    id={`putaway-${item.lineId}`}
-                    className="block truncate font-medium text-gray-800"
-                  >
-                    {item.skuName}
-                  </span>
-                  <span className="block text-xs text-gray-500">
-                    {item.originLocationCode ?? '원위치 확인 필요'} ·{' '}
-                    {formatTime(item.receivedAt)}
-                  </span>
-                  <WaitingOrdersNote waiting={waiting.of(item.skuId)} />
-                  {!item.canPutaway && (
-                    <span className="block text-sm text-amber-700">
-                      입고내역과 원위치를 확인해 주세요.
-                    </span>
-                  )}
-                </span>
-                <span className="shrink-0 rounded-full bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700">
-                  잔여 {item.pendingQty}
-                </span>
-              </button>
-              <div className="flex justify-end border-t border-gray-100 px-3 py-1">
-                <button
-                  type="button"
-                  aria-describedby={`putaway-${item.lineId}`}
-                  className="px-2 py-1 text-sm text-gray-600 underline disabled:opacity-50"
-                  disabled={!supported || queue.isFetching}
-                  onClick={() => {
-                    clearScanFeedback();
-                    setCancelTarget(item);
-                  }}
-                >
-                  잘못 입고 · 취소
-                </button>
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-
       {/* 화면 순서대로 넘긴다 — 100줄이 넘으면 화면 앞쪽 100줄만 본다 */}
       <ReadyShipmentsSection
         warehouseId={warehouseId}
         receiptLineIds={items.map((item) => item.lineId)}
       />
-
-      {queue.hasNextPage && !queue.isFetchNextPageError ? (
-        <Button
-          onClick={() => void queue.fetchNextPage()}
-          disabled={queue.isFetching}
-        >
-          {queue.isFetchingNextPage ? '불러오는 중…' : '더 보기'}
-        </Button>
-      ) : null}
-      {queue.isError ? (
-        <Button
-          onClick={() =>
-            void (queue.isFetchNextPageError
-              ? queue.fetchNextPage()
-              : queue.refetch())
-          }
-          disabled={queue.isFetching}
-        >
-          다시 확인
-        </Button>
-      ) : null}
-      {queue.data?.truncated && !queue.hasNextPage ? (
-        <p className="text-xs text-amber-700">
-          나머지 적치 대기를 확인하려면 관리자에게 앱과 서버 업데이트를 요청해
-          주세요.
-        </p>
-      ) : null}
 
       {scan && warehouseId ? (
         <PutawayScanResults
@@ -413,6 +627,7 @@ export function PutawayQueueScreen({
           onDone={(dest, quantity, usualShelfSet) => {
             clearScanFeedback();
             setReturnTarget(null);
+            addCompleted('return', returnTarget.skuName, quantity, dest.code);
             setNotice(
               `${returnTarget.skuName} ${quantity}개를 ${dest.code}에 넣었어요.` +
                 (usualShelfSet ? ` ${usualShelfNotice(dest.code)}` : '')
@@ -446,10 +661,11 @@ export function PutawayQueueScreen({
             clearScanFeedback();
             setTarget(null);
           }}
-          onDone={(dest, _quantity, usualShelfSet) => {
+          onDone={(dest, quantity, usualShelfSet) => {
             clearScanFeedback();
             setLastDest(dest);
             setTarget(null);
+            addCompleted('inbound', target.skuName, quantity, dest.code);
             if (usualShelfSet) setNotice(usualShelfNotice(dest.code));
             // 잔량이 남으면 무효화된 큐가 줄어든 수량으로 다시 내려준다.
           }}

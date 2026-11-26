@@ -68,6 +68,7 @@ describe('useAdjustStock', () => {
     const keys = invalidate.mock.calls.map((c) => JSON.stringify(c[0]));
     expect(keys.some((k) => k.includes('sku-warehouse-stock'))).toBe(true);
     expect(keys.some((k) => k.includes('sku-stock-summary'))).toBe(true);
+    expect(keys).toContain(JSON.stringify({ queryKey: ['sku-stock-history', 'sku-1', 'w-1'] }));
   });
 });
 

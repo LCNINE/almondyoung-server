@@ -9,7 +9,9 @@ import {
   inboundPendingQuantitySql,
   inboundReceiptInvalidSql,
 } from '../../shared/availability/inbound-origin-availability';
-import { PutawayPendingListDto } from '../dto/putaway-pending.dto';
+import { PutawayPendingItemDto, PutawayPendingListDto } from '../dto/putaway-pending.dto';
+import { readSkuImageFileIds } from '../../sku-catalog/services/sku-image-files';
+import { readUsualShelves, UsualShelf } from '../../core/services/usual-shelf';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -59,6 +61,21 @@ function decodeCursor(token: string, scope: string, days?: number): PendingCurso
   } catch {
     throw new BadRequestException('Invalid cursor for this putaway query');
   }
+}
+
+type PendingItemBase = Omit<PutawayPendingItemDto, 'imageFileIds' | 'usualLocationCode'>;
+
+/** 같은 SKU 의 사진과 이 창고의 평소 선반을 줄마다 붙인다. 모르는 SKU 는 빈 사진·평소 선반 없음. */
+export function withSkuFacts(
+  items: readonly PendingItemBase[],
+  imageFileIdsBySku: ReadonlyMap<string, string[]>,
+  usualBySku: ReadonlyMap<string, UsualShelf>,
+): PutawayPendingItemDto[] {
+  return items.map((item) => ({
+    ...item,
+    imageFileIds: imageFileIdsBySku.get(item.skuId) ?? [],
+    usualLocationCode: usualBySku.get(item.skuId)?.usualLocationCode ?? null,
+  }));
 }
 
 /**
@@ -119,6 +136,10 @@ export class InboundPutawayReader {
       const limited = truncated ? rows.slice(0, PENDING_LIMIT) : rows;
 
       const last = limited[limited.length - 1];
+      const pageSkuIds = limited.map((row) => row.skuId);
+      const imageFileIdsBySku = await readSkuImageFileIds(trx, pageSkuIds);
+      const usualBySku = await readUsualShelves(trx, pageSkuIds, warehouseId);
+
       return {
         nextCursor: truncated
           ? Buffer.from(
@@ -127,22 +148,26 @@ export class InboundPutawayReader {
           : null,
         total: limited.length,
         truncated,
-        items: limited.map((row) => {
-          const { canPutaway, putawayBlockReason } = receiptStateFromFacts(row);
-          return {
-            lineId: row.lineId,
-            source: row.source,
-            canPutaway,
-            putawayBlockReason,
-            skuId: row.skuId,
-            skuName: row.skuName,
-            skuCode: row.skuCode,
-            pendingQty: Number(row.pendingQty),
-            originLocationId: row.originLocationId,
-            originLocationCode: row.originLocationCode,
-            receivedAt: new Date(row.receivedAt).toISOString(),
-          };
-        }),
+        items: withSkuFacts(
+          limited.map((row) => {
+            const { canPutaway, putawayBlockReason } = receiptStateFromFacts(row);
+            return {
+              lineId: row.lineId,
+              source: row.source,
+              canPutaway,
+              putawayBlockReason,
+              skuId: row.skuId,
+              skuName: row.skuName,
+              skuCode: row.skuCode,
+              pendingQty: Number(row.pendingQty),
+              originLocationId: row.originLocationId,
+              originLocationCode: row.originLocationCode,
+              receivedAt: new Date(row.receivedAt).toISOString(),
+            };
+          }),
+          imageFileIdsBySku,
+          usualBySku,
+        ),
       };
     }, tx);
   }

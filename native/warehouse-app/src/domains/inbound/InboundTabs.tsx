@@ -4,9 +4,10 @@ import { cn } from '../../core/design/cn';
 const TABS = [
   { to: '/inbound/quick', label: '간편입고', value: 'quick' },
   { to: '/inbound/history', label: '입고내역', value: 'history' },
+  { to: '/inbound', label: '발주 입고', value: 'orders' },
 ] as const;
 
-export function InboundTabs({ active }: { active: 'quick' | 'history' }) {
+export function InboundTabs({ active }: { active: (typeof TABS)[number]['value'] }) {
   return (
     <nav
       aria-label="입고 화면"

@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Printer } from 'lucide-react';
 import { Button } from '../../core/design/Button';
 import { ConfirmDialog } from '../../core/design/ConfirmDialog';
 import { useApiClient } from '../../core/data/ApiClientProvider';
 import { localStoragePrefs, type DevicePrefs } from '../../core/data/devicePrefs';
 import { errorMessage } from '../../core/data/errorMessage';
+import { cn } from '../../core/design/cn';
 import { useUnsavedWork } from '../../core/operations/useUnsavedWork';
 import {
   NO_PRINTER_MESSAGE,
@@ -27,7 +29,9 @@ import {
   type BatchPrintResult,
 } from './waybillLabel';
 
+const PRINTER_BUSY_MESSAGE = '다른 송장을 인쇄하고 있어요. 그 인쇄가 끝나면 이어서 인쇄해요.';
 const SECONDARY = 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-50';
+const OUTLINE = 'gap-2 border border-[#e4e4e7] bg-white text-[#27272a] hover:bg-[#eff6ff] hover:brightness-100';
 
 type Phase =
   | { kind: 'idle' }
@@ -79,6 +83,10 @@ export function BatchLabelPrintButton({
   afterPrinted,
   autoPrint = false,
   onAutoPrintStarted,
+  label = '송장 인쇄',
+  outline = false,
+  className = 'mt-2',
+  lock,
 }: {
   batchId: string;
   prefs?: DevicePrefs;
@@ -92,6 +100,10 @@ export function BatchLabelPrintButton({
   /** 처음 그릴 때 바로 인쇄를 시작한다 — 「작업 시작하고 송장 인쇄」 뒤. 이미 나간 송장이 있으면 확인창을 띄운다 */
   autoPrint?: boolean;
   onAutoPrintStarted?: () => void;
+  label?: string;
+  outline?: boolean;
+  className?: string;
+  lock?: { acquire(): boolean; release(): void };
 }) {
   const api = useApiClient();
   const queryClient = useQueryClient();
@@ -109,6 +121,7 @@ export function BatchLabelPrintButton({
   // 지금 건은 끝까지 가고 다음 건부터 멈춘다(보낸 라벨을 되돌릴 수는 없다).
   const stopRequested = useRef(false);
   const [stopping, setStopping] = useState(false);
+  const waitingFor = useRef<'auto' | 'manual' | null>(null);
   useUnsavedWork(phase.kind === 'running');
 
   const lastResult = phase.kind === 'done' ? phase.result : null;
@@ -170,12 +183,20 @@ export function BatchLabelPrintButton({
       busy.current = false;
     }
     // 판정을 받는 동안 다른 배치로 옮겼으면 화면에 없는 배치의 송장을 뽑지 않는다
-    if (direct && mounted.current) await start(direct);
+    if (direct && mounted.current) await start(direct, true);
   };
 
-  const start = async (shipmentIds: string[]) => {
+  const start = async (shipmentIds: string[], auto = false) => {
     const target = readLabelPrinter(prefs);
-    if (!target || busy.current || disabled) return;
+    if (!target || busy.current) return;
+    if (!lock && disabled) return;
+    // 다른 송장이 프린터를 쓰는 중이면 그 인쇄가 끝난 뒤 판정부터 다시 받는다
+    if (lock && !lock.acquire()) {
+      waitingFor.current = auto ? 'auto' : 'manual';
+      setPhase({ kind: 'idle' });
+      setNotice(PRINTER_BUSY_MESSAGE);
+      return;
+    }
     busy.current = true;
     stopRequested.current = false;
     setStopping(false);
@@ -200,6 +221,7 @@ export function BatchLabelPrintButton({
       setNotice(errorMessage(error));
     } finally {
       busy.current = false;
+      lock?.release();
       onRunningChange?.(false);
       void queryClient.invalidateQueries({ queryKey: statesKey });
     }
@@ -212,6 +234,14 @@ export function BatchLabelPrintButton({
       mounted.current = false;
     };
   }, []);
+  useEffect(() => {
+    if (disabled || waitingFor.current === null) return;
+    const auto = waitingFor.current === 'auto';
+    waitingFor.current = null;
+    void prepare(false, auto);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 막혔던 인쇄는 막힘이 풀릴 때 한 번
+  }, [disabled]);
+
   // 한 번만 — 다시 그려져도(배치를 오갔다 돌아와도) 또 뽑지 않게 부모가 autoPrint 를 거둔다
   const autoStarted = useRef(false);
   useEffect(() => {
@@ -242,15 +272,16 @@ export function BatchLabelPrintButton({
               : '인쇄가 끝날 때까지 이 화면을 떠나지 마세요.';
 
   return (
-    <div className="mt-2 space-y-1">
-      <div className="flex gap-2">
+    <div className={cn('space-y-1', className)}>
+      <div className="flex flex-wrap gap-2">
         <Button
           type="button"
-          className={showRetry ? SECONDARY : undefined}
+          className={outline ? OUTLINE : showRetry ? SECONDARY : undefined}
           disabled={disabled || phase.kind === 'running'}
           onClick={() => void prepare()}
         >
-          {phase.kind === 'running' ? `인쇄 중 ${phase.done}/${phase.total}` : '송장 인쇄'}
+          {outline ? <Printer className="h-4 w-4" aria-hidden /> : null}
+          {phase.kind === 'running' ? `인쇄 중 ${phase.done}/${phase.total}` : label}
         </Button>
         {phase.kind === 'running' && (
           <Button

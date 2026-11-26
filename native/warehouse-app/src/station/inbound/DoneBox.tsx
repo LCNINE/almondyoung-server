@@ -35,7 +35,7 @@ export function DoneBox({
     <div
       role="status"
       aria-label="확정"
-      className="flex shrink-0 flex-col gap-2 rounded-[10px] border-2 border-[#8CC8A4] bg-[#E3F4EA] px-[22px] py-4"
+      className="flex shrink-0 flex-col gap-2 rounded-xl border-2 border-[#8CC8A4] bg-[#E3F4EA] px-[22px] py-4"
     >
       <div className="flex items-center gap-[18px]">
         <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#1E7A46] text-white">
@@ -45,7 +45,7 @@ export function DoneBox({
       </div>
       {result.shipmentStatus === 'closed' ? <p className="text-lg font-semibold text-[#145232]">이 선적의 상자를 다 받았어요</p> : null}
       {cancel.status ? (
-        <p className={cn('text-lg font-semibold', cancel.status.tone === 'alert' ? 'text-[#9E1320]' : 'text-[#5E3B00]')}>
+        <p className={cn('text-lg font-semibold', cancel.status.tone === 'alert' ? 'text-[#aa4037]' : 'text-[#5E3B00]')}>
           {cancel.status.text}
         </p>
       ) : null}

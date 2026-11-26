@@ -12,13 +12,13 @@ export function StockCell({ item }: { item: SkuSearchItem }) {
       <span
         className={cn(
           'font-medium',
-          isOut ? 'text-red-600' : isLow ? 'text-amber-600' : 'text-gray-800'
+          isOut ? 'text-[#aa4037]' : isLow ? 'text-[#9a681c]' : 'text-[#27272a]'
         )}
       >
         {stock}
       </span>
-      {isOut && <span className="ml-1 text-xs text-red-600">품절</span>}
-      {isLow && <span className="ml-1 text-xs text-amber-600">부족</span>}
+      {isOut && <span className="ml-1 text-xs text-[#aa4037]">품절</span>}
+      {isLow && <span className="ml-1 text-xs text-[#9a681c]">부족</span>}
     </div>
   );
 }

@@ -101,27 +101,28 @@ function VarianceReviewScreenContent({ sessionId }: { sessionId: string }) {
     <div className="space-y-4">
       <ScreenHeader
         title="차이 확인"
+        description="장부와 센 수량의 차이를 검토한 뒤 원장에 적용하세요."
         backTo="/stocktaking"
         right={detail.data ? <span>{detail.data.sessionName}</span> : null}
       />
 
       {variances.isError ? (
-        <p role="alert" className="text-sm text-red-600">
+        <p role="alert" className="text-sm text-[#aa4037]">
           {errorMessage(variances.error, 'stocktaking')}
         </p>
       ) : null}
       {generate.isError || complete.isError ? (
-        <p role="alert" className="text-sm text-red-600">
+        <p role="alert" className="text-sm text-[#aa4037]">
           {errorMessage(generate.error ?? complete.error, 'stocktaking')}
         </p>
       ) : null}
 
       {variances.isLoading ? (
-        <p className="text-sm text-gray-500">불러오는 중…</p>
+        <p className="text-sm text-[#71717a]">불러오는 중…</p>
       ) : null}
 
       {noVariance ? (
-        <p className="rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-800">
+        <p className="rounded-xl border border-[#e4e4e7] bg-white p-4 text-sm text-[#2f7a3b]">
           차이가 없어요. 적용할 조정이 없습니다.
         </p>
       ) : (
@@ -129,25 +130,25 @@ function VarianceReviewScreenContent({ sessionId }: { sessionId: string }) {
           {rows.map((v) => (
             <li
               key={v.lineId}
-              className="flex items-center gap-3 rounded-lg border border-gray-200 bg-white p-3"
+              className="flex items-center gap-3 rounded-xl border border-[#e4e4e7] bg-white p-4"
             >
               <span className="flex-1">
-                <span className="block font-medium text-gray-800">
+                <span className="block font-medium text-[#27272a]">
                   {v.skuName}
                 </span>
-                <span className="block text-xs text-gray-500">
+                <span className="block text-xs text-[#71717a]">
                   <span>{v.locationCode ?? '위치 미지정'}</span> · {v.skuCode}
                 </span>
               </span>
               <span className="text-center">
-                <span className="block text-xs text-gray-500">예상</span>
-                <span className="block text-sm text-gray-700">
+                <span className="block text-xs text-[#71717a]">예상</span>
+                <span className="block text-sm text-[#27272a]">
                   {v.expectedQuantity}
                 </span>
               </span>
               <span className="text-center">
-                <span className="block text-xs text-gray-500">카운트</span>
-                <span className="block text-sm text-gray-700">
+                <span className="block text-xs text-[#71717a]">카운트</span>
+                <span className="block text-sm text-[#27272a]">
                   {v.countedQuantity ?? '—'}
                 </span>
               </span>
@@ -155,7 +156,7 @@ function VarianceReviewScreenContent({ sessionId }: { sessionId: string }) {
                 data-testid={`variance-${v.lineId}`}
                 className={cn(
                   'w-12 text-right text-lg font-semibold',
-                  (v.variance ?? 0) > 0 ? 'text-green-700' : 'text-red-600'
+                  (v.variance ?? 0) > 0 ? 'text-[#2f7a3b]' : 'text-[#aa4037]'
                 )}
               >
                 {(v.variance ?? 0) > 0 ? `+${v.variance}` : v.variance}
@@ -168,7 +169,7 @@ function VarianceReviewScreenContent({ sessionId }: { sessionId: string }) {
       {editable && !noVariance ? (
         <Button
           type="button"
-          className="w-full py-3 border border-gray-300 bg-white text-gray-800 hover:bg-gray-50"
+          className="w-full py-3 border border-[#e4e4e7] bg-white text-[#27272a] hover:bg-[#eff6ff] hover:brightness-100"
           disabled={generate.isPending || !fresh}
           onClick={() => void review()}
         >
@@ -178,26 +179,26 @@ function VarianceReviewScreenContent({ sessionId }: { sessionId: string }) {
 
       {preview !== null ? (
         <section className="space-y-2">
-          <h2 className="text-sm font-semibold text-gray-700">
+          <h2 className="text-sm font-semibold text-[#27272a]">
             적용될 조정 {preview.length}건
           </h2>
           {preview.length === 0 ? (
-            <p className="text-sm text-gray-500">적용할 조정이 없어요.</p>
+            <p className="text-sm text-[#71717a]">적용할 조정이 없어요.</p>
           ) : (
             <ul className="space-y-1">
               {preview.map((p) => (
                 <li
                   key={p.lineId}
-                  className="flex items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm"
+                  className="flex items-center gap-3 rounded-xl border border-[#e4e4e7] bg-[#fafafa] p-3 text-sm"
                 >
-                  <span className="flex-1 text-gray-700">
+                  <span className="flex-1 text-[#27272a]">
                     현재 {p.currentOnHand} → 카운트 {p.countedQuantity}
                   </span>
                   <span
                     data-testid={`preview-${p.lineId}`}
                     className={cn(
                       'font-semibold',
-                      p.delta > 0 ? 'text-green-700' : 'text-red-600'
+                      p.delta > 0 ? 'text-[#2f7a3b]' : 'text-[#aa4037]'
                     )}
                   >
                     {p.delta > 0 ? `+${p.delta}` : p.delta}
@@ -212,7 +213,7 @@ function VarianceReviewScreenContent({ sessionId }: { sessionId: string }) {
       {preview !== null && impact.length > 0 ? (
         <section
           aria-label="다시 재고를 기다리는 주문"
-          className="space-y-1 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
+          className="space-y-1 rounded-xl border border-[#e8d9b5] bg-[#fff8e8] p-3 text-sm text-[#9a681c]"
         >
           <h2 className="font-semibold">완료하면 주문 예약도 실물에 맞춰요</h2>
           {reservationImpactLines(impact, preview).map((line) => (

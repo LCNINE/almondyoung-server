@@ -109,9 +109,13 @@ export interface BoxRow {
   shipmentId: string;
   trackingNo: string;
   recipient: string;
+  orderNos: string[];
+  carrier: string | null;
+  skuKinds: number | null;
   status: string;
   /** alert = 송장 손볼 것, warn = 빠지는 중·결품 처리, work = 검수 중, idle = 대기 */
-  tone: 'alert' | 'warn' | 'work' | 'idle';
+  tone: 'alert' | 'warn' | 'work' | 'idle' | 'off';
+  action: 'open' | 'print' | null;
 }
 
 const IN_WORK_STATUSES: ReadonlySet<string> = new Set(['picking', 'ready_to_pack', 'packing']);
@@ -121,21 +125,62 @@ const IN_WORK_STATUSES: ReadonlySet<string> = new Set(['picking', 'ready_to_pack
  * 취소 대기 박스는 송장이 없어도 그린다 — 빼기 전까지 취소가 끝나지 않는데 목록에서 안 보이면 «대기» 숫자만 남는다
  */
 export function boxRowOf(state: BatchLabelState): BoxRow | null {
-  const base = { shipmentId: state.shipmentId, trackingNo: state.trackingNo ?? '', recipient: state.recipientMasked ?? '' };
+  const base = {
+    shipmentId: state.shipmentId,
+    trackingNo: state.trackingNo ?? '',
+    recipient: state.recipientMasked ?? '',
+    orderNos: state.orderNos ?? [],
+    carrier: state.carrier ?? null,
+    skuKinds: state.skuKinds ?? null,
+  };
 
-  if (state.cancelPending) return { ...base, status: '취소 대기', tone: 'alert' };
+  if (state.cancelPending) return { ...base, status: '취소 대기', tone: 'alert', action: null };
 
   if (state.trackingNo === undefined) return null;
   // 송장을 무효로 한 상자는 배치 시작을 막는다 — 목록에서 사라지면 요약 숫자와 어긋나 어느 상자인지 모른다
-  if (!state.trackingNo) return { ...base, status: '송장 필요', tone: 'alert' };
+  if (!state.trackingNo) return { ...base, status: '송장 필요', tone: 'alert', action: null };
 
-  if (state.state === 'withdrawing' || state.workItemStatus === 'withdrawing') return { ...base, status: '빠지는 중', tone: 'warn' };
-  if (state.state === 'never_printed') return { ...base, status: '미출력', tone: 'alert' };
-  if (state.state === 'reprint_required') return { ...base, status: '재출력', tone: 'alert' };
-  if (state.state === 'unavailable') return { ...base, status: '송장 확인', tone: 'alert' };
-  if (state.workItemStatus === 'short_pick_recovery') return { ...base, status: '결품 처리 중', tone: 'warn' };
-  if (state.workItemStatus && IN_WORK_STATUSES.has(state.workItemStatus)) return { ...base, status: '검수 중', tone: 'work' };
-  return { ...base, status: '대기', tone: 'idle' };
+  if (state.state === 'not_started') return { ...base, status: '시작 전', tone: 'off', action: null };
+  if (state.state === 'withdrawing' || state.workItemStatus === 'withdrawing')
+    return { ...base, status: '빠지는 중', tone: 'warn', action: 'open' };
+  if (state.state === 'never_printed') return { ...base, status: '미출력', tone: 'alert', action: 'print' };
+  if (state.state === 'reprint_required') return { ...base, status: '재출력', tone: 'alert', action: 'print' };
+  if (state.state === 'unavailable') return { ...base, status: '송장 확인', tone: 'alert', action: null };
+  if (state.workItemStatus === 'short_pick_recovery') return { ...base, status: '결품 처리 중', tone: 'warn', action: 'open' };
+  if (state.workItemStatus && IN_WORK_STATUSES.has(state.workItemStatus))
+    return { ...base, status: '검수 중', tone: 'work', action: 'open' };
+
+  return { ...base, status: '검수 대기', tone: 'idle', action: 'open' };
+}
+
+export function withRefillPending(rows: readonly BoxRow[], pending: ReadonlySet<string>): BoxRow[] {
+  return rows.map((row) =>
+    pending.has(row.shipmentId) && (row.tone === 'work' || row.tone === 'idle') ? { ...row, status: '보충 대기', tone: 'warn' } : row
+  );
+}
+
+export function refillCountOf(items: readonly BatchWorkItem[], pending: ReadonlySet<string>): number {
+  return items.filter((item) => item.status !== 'completed' && item.status !== 'excluded' && pending.has(item.shipmentId)).length;
+}
+
+export function attentionCountOf(rows: readonly BoxRow[]): number {
+  return rows.filter((row) => row.tone === 'alert').length;
+}
+
+const seoulDay = (date: Date) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(date);
+
+export function seoulDayStart(now: Date): string {
+  return new Date(`${seoulDay(now)}T00:00:00+09:00`).toISOString();
+}
+
+export function todayBatchCount(batches: readonly Pick<OutboundBatchSummary, 'createdAt' | 'status'>[], now: Date): number | null {
+  if (batches.length > 0 && batches.every((batch) => batch.createdAt === undefined)) return null;
+
+  const today = seoulDay(now);
+
+  return batches.filter(
+    (batch) => batch.status !== 'canceled' && batch.createdAt !== undefined && seoulDay(new Date(batch.createdAt)) === today
+  ).length;
 }
 
 /** 배치에서 빼야 끝나는 취소가 있는가 — 배치 현황이 빼기 안내를 띄운다 */
@@ -143,7 +188,7 @@ export function hasCancelPending(states: readonly BatchLabelState[]): boolean {
   return states.some((state) => state.cancelPending === true);
 }
 
-const TONE_ORDER: Record<BoxRow['tone'], number> = { alert: 0, warn: 1, work: 2, idle: 3 };
+const TONE_ORDER: Record<BoxRow['tone'], number> = { alert: 0, warn: 1, work: 2, idle: 3, off: 4 };
 
 /** 손이 가야 하는 박스가 위로 — 같은 무리 안에서는 송장번호 순 */
 export function sortBoxRows(rows: readonly BoxRow[]): BoxRow[] {

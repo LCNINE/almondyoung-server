@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '../../core/design/Button';
 import { useApiClient } from '../../core/data/ApiClientProvider';
+import { useUnsavedWork } from '../../core/operations/useUnsavedWork';
 import { localStoragePrefs, type DevicePrefs } from '../../core/data/devicePrefs';
 import {
   NO_PRINTER_MESSAGE,
@@ -19,10 +20,20 @@ export function ReprintLabelButton({
   shipmentId,
   prefs = localStoragePrefs,
   print = printRaw,
+  label = '송장 재출력',
+  className = 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-50',
+  disabled = false,
+  lock,
+  holdScreen = false,
 }: {
   shipmentId: string;
   prefs?: DevicePrefs;
   print?: PrintRaw;
+  label?: string;
+  className?: string;
+  disabled?: boolean;
+  lock?: { acquire(): boolean; release(): void };
+  holdScreen?: boolean;
 }) {
   const api = useApiClient();
   const queryClient = useQueryClient();
@@ -30,14 +41,16 @@ export function ReprintLabelButton({
   const [status, setStatus] = useState<Status | null>(null);
   // state 는 다음 렌더에야 보인다 — 같은 틱의 연타는 ref 로 막아야 같은 번호 라벨이 두 장 안 나온다.
   const running = useRef(false);
+  useUnsavedWork(holdScreen && busy);
 
   const run = async () => {
-    if (running.current) return;
+    if (running.current || disabled) return;
     const target = readLabelPrinter(prefs);
     if (!target) {
       setStatus({ kind: 'error', text: NO_PRINTER_MESSAGE });
       return;
     }
+    if (lock && !lock.acquire()) return;
     running.current = true;
     setBusy(true);
     setStatus(null);
@@ -61,19 +74,15 @@ export function ReprintLabelButton({
     } finally {
       running.current = false;
       setBusy(false);
+      lock?.release();
       void queryClient.invalidateQueries({ queryKey: ['waybill-label-states'] });
     }
   };
 
   return (
     <div className="space-y-1">
-      <Button
-        type="button"
-        className="border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
-        disabled={busy}
-        onClick={() => void run()}
-      >
-        송장 재출력
+      <Button type="button" className={className} disabled={busy || disabled} onClick={() => void run()}>
+        {label}
       </Button>
       {status && (
         <p role={status.kind === 'error' ? 'alert' : 'status'} className="text-sm">

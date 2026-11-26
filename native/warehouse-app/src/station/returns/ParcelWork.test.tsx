@@ -83,8 +83,8 @@ describe('반품 사유와 메모', () => {
     await openReturn('O-1002');
 
     expect(within(region()).getByText('오배송 · 판매자 부담')).toHaveClass(
-      'bg-[#FFF1C7]',
-      'text-[#5E3B00]'
+      'bg-[#fff7e6]',
+      'text-[#9a681c]'
     );
     expect(
       within(region()).getByText(`메모: ${PARTIAL.note}`)
@@ -102,8 +102,8 @@ describe('반품 사유와 메모', () => {
       await openReturn('O-1002');
 
       expect(within(region()).getByText('단순 변심 · 고객 부담')).toHaveClass(
-        'bg-[#EDEEF0]',
-        'text-[#3F4450]'
+        'bg-[#f4f4f5]',
+        'text-[#27272a]'
       );
       expect(within(region()).queryByText(/^메모:/)).toBeNull();
     }

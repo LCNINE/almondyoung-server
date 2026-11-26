@@ -10,14 +10,14 @@ export function ReturnReasonBand({ view }: { view: ReturnView }) {
       <div
         className={cn(
           'rounded-md px-3 py-2.5 text-base font-semibold',
-          seller ? 'bg-[#FFF1C7] text-[#5E3B00]' : 'bg-[#EDEEF0] text-[#3F4450]'
+          seller ? 'bg-[#fff7e6] text-[#9a681c]' : 'bg-[#f4f4f5] text-[#27272a]'
         )}
       >
         {RETURN_REASON_LABELS.get(view.reason) ?? view.reason} ·{' '}
         {seller ? '판매자 부담' : '고객 부담'}
       </div>
       {view.note ? (
-        <div className="text-base text-[#3F4450]">메모: {view.note}</div>
+        <div className="text-base text-[#27272a]">메모: {view.note}</div>
       ) : null}
     </>
   );

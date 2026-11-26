@@ -551,4 +551,22 @@ describeIfDb('InboundPutawayReader.listPending (PostgreSQL integration)', () => 
       expect(all.total).toBe(1);
     });
   });
+  it('줄마다 SKU 사진과 이 창고의 평소 선반 코드를 싣는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { warehouse, sku } = await seed(tx);
+      const shelf = await seedPlainZone(tx, warehouse.id);
+      const uploadId = randomUUID();
+      await tx.update(wmsTables.skus).set({ primaryLocationId: shelf.id }).where(eq(wmsTables.skus.id, sku.id));
+      await tx.insert(wmsTables.skuImages).values({ skuId: sku.id, uploadId, isPrimary: true, sortOrder: 0 });
+      await svc.simpleInbound(
+        { warehouseId: warehouse.id, items: [{ skuId: sku.id, quantity: 3 }], idempotencyKey: randomUUID() },
+        tx,
+      );
+
+      const page = await reader.listPending({ warehouseId: warehouse.id }, tx);
+
+      expect(page.items).toHaveLength(1);
+      expect(page.items[0]).toMatchObject({ imageFileIds: [uploadId], usualLocationCode: shelf.code });
+    });
+  });
 });

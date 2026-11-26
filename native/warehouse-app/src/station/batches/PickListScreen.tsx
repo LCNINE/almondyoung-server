@@ -1,4 +1,5 @@
 import { useNavigate } from '@tanstack/react-router';
+import { ChevronLeft, Printer } from 'lucide-react';
 import { loadFailed } from '../../core/data/loadFailed';
 import { Button } from '../../core/design/Button';
 import { LoadFailure } from '../../core/design/LoadFailure';
@@ -9,8 +10,8 @@ import {
   type BatchPickList,
 } from '../../domains/outbound/pickList';
 
-const SECONDARY =
-  'border border-gray-300 bg-white text-gray-700 hover:bg-gray-50';
+const OUTLINE =
+  'gap-2 border border-[#e4e4e7] bg-white text-[#27272a] hover:bg-[#eff6ff] hover:brightness-100';
 const TH =
   'border-b-2 border-[#15171C] px-3 py-2 text-left text-[14px] font-semibold';
 const TD = 'border-b border-[#C3C8D2] px-3 py-2.5';
@@ -42,18 +43,23 @@ export function PickListScreen({ batchId }: { batchId: string }) {
 
   return (
     <div className="mx-auto max-w-[210mm] space-y-3">
-      <div className="flex items-center gap-2 print:hidden">
-        <Button type="button" className={SECONDARY} onClick={back}>
+      <div className="flex items-center gap-3 print:hidden">
+        <Button type="button" className={OUTLINE} onClick={back}>
+          <ChevronLeft className="h-4 w-4" aria-hidden />
           배치 현황으로
         </Button>
-        <h1 className="flex-1 text-lg font-semibold">피킹 목록</h1>
+        <h1 className="flex-1 text-[23px] leading-[1.3] font-bold tracking-[-0.8px] text-[#27272a]">
+          피킹 목록
+        </h1>
         {list.data && list.data.rows.length > 0 && !failed ? (
           // 다시 받는 동안은 막는다 — 화면을 떠난 사이 바뀐 목록을 옛것으로 뽑지 않게
           <Button
             type="button"
             disabled={checking}
+            className="gap-2"
             onClick={() => window.print()}
           >
+            <Printer className="h-4 w-4" aria-hidden />
             {checking ? '목록 확인 중…' : '인쇄'}
           </Button>
         ) : null}
@@ -82,7 +88,7 @@ export function PickListScreen({ batchId }: { batchId: string }) {
           </div>
         </>
       ) : list.isPending && !failed ? (
-        <p className="p-3 text-lg text-[#535968]">
+        <p className="p-3 text-[13px] text-[#71717a]">
           피킹 목록을 불러오고 있어요.
         </p>
       ) : null}
@@ -94,7 +100,7 @@ function PickListSheet({ list, at }: { list: BatchPickList; at: number }) {
   if (list.startedAt === null)
     return (
       <p className="p-3 text-lg text-[#535968]">
-        작업을 시작해야 피킹 목록이 생겨요. 배치 현황에서 «작업 시작»을 눌러
+        작업을 시작해야 피킹 목록이 생겨요. 배치 현황에서 배치 시작을 눌러
         주세요.
       </p>
     );

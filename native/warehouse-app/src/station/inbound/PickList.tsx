@@ -62,8 +62,8 @@ export function PickList<T>({
               pick(index);
             }}
             className={cn(
-              'grid w-full grid-cols-[48px_minmax(0,1fr)] items-center gap-3 border-b border-[#E4E6EA] px-4 py-3 text-left',
-              index === cursor && 'bg-[#E3ECFC]'
+              'grid w-full grid-cols-[48px_minmax(0,1fr)] items-center gap-3 border-b border-[#e4e4e7] px-4 py-3 text-left',
+              index === cursor && 'bg-[#eff6ff]'
             )}
           >
             <span className="font-mono text-2xl font-semibold">{index + 1}</span>

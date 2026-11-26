@@ -9,7 +9,7 @@ import {
 import { ModuleRef } from '@nestjs/core';
 import { ApplicationException, ConflictError } from '@app/shared';
 import { DbService, InjectTypedDb } from '@app/db';
-import { and, asc, desc, eq, inArray, isNull, ne, notInArray, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, ne, notInArray, or, sql } from 'drizzle-orm';
 import {
   ClaimBatchWorkItemDto,
   CreateOutboundBatchV2Dto,
@@ -898,14 +898,19 @@ export class OutboundBatchOrchestrator {
   }
 
   async listBatches(
-    filters: { warehouseId?: string; status?: string },
+    filters: { warehouseId?: string; status?: string; createdFrom?: Date },
     tx?: DbTx,
   ): Promise<OutboundBatchV2ListItemDto[]> {
     return this.dbService.run(async (trx) => {
       const batches = await trx
         .select()
         .from(wmsTables.outboundBatches)
-        .where(filters.warehouseId ? eq(wmsTables.outboundBatches.warehouseId, filters.warehouseId) : undefined)
+        .where(
+          and(
+            filters.warehouseId ? eq(wmsTables.outboundBatches.warehouseId, filters.warehouseId) : undefined,
+            filters.createdFrom ? gte(wmsTables.outboundBatches.createdAt, filters.createdFrom) : undefined,
+          ),
+        )
         .orderBy(desc(wmsTables.outboundBatches.createdAt), desc(wmsTables.outboundBatches.id));
       if (!batches.length) return [];
 

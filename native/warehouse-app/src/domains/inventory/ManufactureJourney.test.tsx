@@ -232,14 +232,14 @@ describe('제조 완료 등록 여정 (스테이션)', () => {
 
     renderApp(core.client);
 
-    const lookup = await screen.findByPlaceholderText('상품명·코드·바코드 검색');
+    const lookup = await screen.findByPlaceholderText('상품명 · 코드 · 바코드 검색');
 
     await userEvent.type(lookup, '터번');
     await openManufactureTab();
     await userEvent.type(screen.getByPlaceholderText('상품명·코드 검색'), '펌제');
     await userEvent.click(subTab('재고 조회'));
 
-    expect(await screen.findByPlaceholderText('상품명·코드·바코드 검색')).toHaveValue('터번');
+    expect(await screen.findByPlaceholderText('상품명 · 코드 · 바코드 검색')).toHaveValue('터번');
 
     await userEvent.click(subTab('제조 완료'));
 

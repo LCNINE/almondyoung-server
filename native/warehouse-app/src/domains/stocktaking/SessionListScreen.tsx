@@ -18,12 +18,18 @@ const STATUS_LABEL: Record<StocktakingStatus, string> = {
   cancelled: '취소됨',
 };
 
+const DESCRIPTION = '실물 수량을 입력하고 장부와의 차이를 검토하세요.';
+
 const STATUS_CLASS: Record<StocktakingStatus, string> = {
-  draft: 'bg-gray-100 text-gray-700',
-  in_progress: 'bg-blue-100 text-blue-700',
-  completed: 'bg-green-100 text-green-700',
-  cancelled: 'bg-gray-100 text-gray-400',
+  draft: 'bg-[#f4f4f5] text-[#71717a]',
+  in_progress: 'bg-[#eff6ff] text-[#2563eb]',
+  completed: 'bg-[#edf7ed] text-[#2f7a3b]',
+  cancelled: 'bg-[#f4f4f5] text-[#8b8b95]',
 };
+
+const PANEL = 'rounded-xl border border-[#e4e4e7] bg-white';
+const OUTLINE_BUTTON =
+  'border border-[#e4e4e7] bg-white text-[#27272a] hover:bg-[#eff6ff] hover:brightness-100';
 
 /** 오늘 날짜를 기본 세션명으로. 현장에서 타이핑을 최소화한다. */
 function defaultSessionName(): string {
@@ -60,9 +66,9 @@ export function SessionListScreen() {
   if (!isSet) {
     return (
       <div className="space-y-4">
-        <ScreenHeader title="실사" backTo="/" />
-        <div className="space-y-3 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-4">
-          <p className="text-sm text-gray-600">창고를 먼저 선택해 주세요.</p>
+        <ScreenHeader title="실사" description={DESCRIPTION} backTo="/" />
+        <div className="space-y-3 rounded-xl border border-dashed border-[#e4e4e7] bg-white p-4">
+          <p className="text-sm text-[#71717a]">창고를 먼저 선택해 주세요.</p>
           <WarehousePicker />
         </div>
       </div>
@@ -73,23 +79,23 @@ export function SessionListScreen() {
 
   return (
     <div className="space-y-4">
-      <ScreenHeader title="실사" backTo="/" />
+      <ScreenHeader title="실사" description={DESCRIPTION} backTo="/" />
 
       {creating ? (
-        <div className="space-y-2 rounded-lg border border-gray-200 bg-white p-3">
-          <label htmlFor="session-name" className="block text-sm font-medium text-gray-700">
+        <div className="space-y-2 rounded-xl border border-[#e4e4e7] bg-white p-4">
+          <label htmlFor="session-name" className="block text-sm font-medium text-[#27272a]">
             실사 이름
           </label>
           <input
             id="session-name"
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+            className="w-full rounded-lg border border-[#e4e4e7] bg-white px-3 py-2.5 text-sm text-[#27272a]"
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
           />
           <div className="flex gap-2">
             <Button
               type="button"
-              className="flex-1 border border-gray-300 bg-white text-gray-800 hover:bg-gray-50"
+              className={cn('flex-1', OUTLINE_BUTTON)}
               onClick={() => setCreating(false)}
             >
               그만두기
@@ -120,47 +126,50 @@ export function SessionListScreen() {
       )}
 
       {sessions.isError ? (
-        <p role="alert" className="text-sm text-red-600">
+        <p role="alert" className="text-sm text-[#aa4037]">
           {errorMessage(sessions.error, 'stocktaking')}
         </p>
       ) : null}
       {create.isError || start.isError || cancel.isError ? (
-        <p role="alert" className="text-sm text-red-600">
+        <p role="alert" className="text-sm text-[#aa4037]">
           {errorMessage(create.error ?? start.error ?? cancel.error, 'stocktaking')}
         </p>
       ) : null}
 
-      {sessions.isLoading ? <p className="text-sm text-gray-500">불러오는 중…</p> : null}
+      {sessions.isLoading ? <p className="text-sm text-[#71717a]">불러오는 중…</p> : null}
 
       {!sessions.isLoading && list.length === 0 ? (
-        <p className="text-sm text-gray-500">이 창고에 실사 기록이 없어요.</p>
+        <p className="text-sm text-[#71717a]">이 창고에 실사 기록이 없어요.</p>
       ) : null}
 
       <ul className="space-y-2">
         {list.map((s) => (
-          <li key={s.id} className="rounded-lg border border-gray-200 bg-white">
+          <li key={s.id} className={PANEL}>
             <button
               type="button"
-              className="flex w-full items-center gap-3 p-3 text-left active:bg-gray-50"
+              className="flex w-full items-center gap-3 rounded-xl p-4 text-left hover:bg-[#eff6ff]"
               onClick={() => void open(s)}
             >
               <span className="flex-1">
-                <span className="block font-semibold text-gray-800">{s.sessionName}</span>
-                <span className="block text-xs text-gray-500">
+                <span className="block font-semibold text-[#27272a]">{s.sessionName}</span>
+                <span className="block text-xs text-[#71717a]">
                   {new Date(s.createdAt).toLocaleDateString('ko-KR')}
                 </span>
               </span>
               <span
-                className={cn('rounded-full px-2 py-0.5 text-xs font-medium', STATUS_CLASS[s.status])}
+                className={cn(
+                  'inline-flex items-center rounded-[5px] px-2 py-[5px] text-[11px] font-semibold whitespace-nowrap',
+                  STATUS_CLASS[s.status]
+                )}
               >
                 {STATUS_LABEL[s.status]}
               </span>
             </button>
             {s.status === 'in_progress' ? (
-              <div className="border-t border-gray-100 px-3 py-2 text-right">
+              <div className="border-t border-[#e4e4e7] px-4 py-2 text-right">
                 <button
                   type="button"
-                  className="text-xs text-red-600 underline"
+                  className="text-xs text-[#aa4037] underline"
                   onClick={() => setCancelTarget(s)}
                 >
                   {s.sessionName} 취소

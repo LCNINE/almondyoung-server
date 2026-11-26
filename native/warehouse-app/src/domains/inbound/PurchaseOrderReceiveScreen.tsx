@@ -501,7 +501,7 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
     activeItem && canDiscardInput ? (
       <Button
         type="button"
-        className="border border-gray-300 bg-white text-gray-800 hover:bg-gray-50"
+        className="border border-[#e4e4e7] bg-white text-[#27272a] hover:bg-[#eff6ff] hover:brightness-100"
         onClick={() => void discardDraftInput()}
       >
         입력 취소
@@ -509,7 +509,7 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
     ) : null;
   const sheetStatus = !arrivalsReady ? (
     arrivals.isError ? (
-      <div className="space-y-2 rounded-md bg-red-50 p-3 text-sm text-red-700">
+      <div className="space-y-2 rounded-[10px] bg-[#fcebe8] px-4 py-3 text-[13px] text-[#aa4037]">
         <p role="alert">발주 정보를 확인하지 못했어요.</p>
         <div className="flex gap-2">
           <Button type="button" onClick={() => void arrivals.refetch()}>
@@ -519,13 +519,13 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
         </div>
       </div>
     ) : (
-      <div className="space-y-2 rounded-md bg-gray-50 p-3 text-sm text-gray-700">
+      <div className="space-y-2 rounded-[10px] border border-[#e4e4e7] bg-white px-4 py-3 text-[13px] text-[#71717a]">
         <p role="status">발주 정보를 확인하고 있어요.</p>
         {discardInput}
       </div>
     )
   ) : activeStateChanged ? (
-    <div className="space-y-2 rounded-md bg-amber-50 p-3 text-sm text-amber-800">
+    <div className="space-y-2 rounded-[10px] bg-[#fff1d9] px-4 py-3 text-[13px] text-[#925e13]">
       <p role="alert">발주 상태가 바뀌었어요. 입고내역을 확인해 주세요.</p>
       <div className="flex gap-2">
         <Button type="button" onClick={() => void arrivals.refetch()}>
@@ -537,7 +537,7 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
   ) : draft.value.submitted ? (
     <p
       role="status"
-      className="rounded-md bg-gray-50 p-3 text-sm text-gray-700"
+      className="rounded-[10px] border border-[#e4e4e7] bg-white px-4 py-3 text-[13px] text-[#71717a]"
     >
       저장된 입고 요청을 같은 내용으로 다시 확인해 주세요.
     </p>
@@ -545,19 +545,22 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
 
   if (!isSet) {
     return (
-      <div className="space-y-4">
-        <ScreenHeader title="발주 입고" backTo="/inbound" />
-        <p className="text-sm text-gray-600">창고를 먼저 선택해 주세요.</p>
+      <div className="space-y-[22px]">
+        <ScreenHeader title="발주 입고" backTo="/inbound" description={PO_DESCRIPTION} />
+        <p className="rounded-xl border border-[#e4e4e7] bg-white px-[22px] py-[19px] text-[13px] text-[#71717a]">
+          창고를 먼저 선택해 주세요.
+        </p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4" aria-busy={!draft.ready || !reconciled}>
+    <div className="space-y-[22px]" aria-busy={!draft.ready || !reconciled}>
       <SaveToast toast={toast.toast} />
       <ScreenHeader
         title={purchaseOrder?.supplier?.name ?? '발주 입고'}
         backTo="/inbound"
+        description={PO_DESCRIPTION}
       />
 
       {draft.error ? (
@@ -567,15 +570,15 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
       {notice ? (
         <p
           role="alert"
-          className="rounded-md bg-amber-50 p-2 text-sm text-amber-800"
+          className="rounded-[10px] bg-[#fff1d9] px-4 py-3 text-[13px] text-[#925e13]"
         >
           {notice}
         </p>
       ) : null}
 
       {fresh ? (
-        <div className="space-y-2 rounded-lg border border-green-300 bg-green-50 p-3">
-          <p className="text-sm text-green-900">
+        <div className="space-y-3 rounded-xl border border-[#e4e4e7] bg-white p-[22px]">
+          <p className="text-[13px] font-semibold text-[#27272a]">
             {receipt.ready && receipt.state ? (
               receipt.state.canceledQty > 0 ||
               receipt.state.receiptStatus === 'voided' ? (
@@ -610,7 +613,7 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
             receipt.state.originLocationId ? (
               <Button
                 type="button"
-                className="flex-1 py-1.5 text-xs"
+                className="flex-1 py-[7px] text-xs"
                 disabled={!reconciled || !!draft.error}
                 onClick={() => {
                   if (receipt.state?.originLocationId)
@@ -637,7 +640,7 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
             {receipt.ready && receipt.state?.canCancel && !cancelConfirm ? (
               <Button
                 type="button"
-                className="flex-1 border border-red-300 bg-white py-1.5 text-xs text-red-700 hover:bg-red-50"
+                className="flex-1 border border-[#efcbc4] bg-white py-[7px] text-xs text-[#aa4037] hover:bg-[#fcebe8] hover:brightness-100"
                 onClick={() => setCancelConfirm(true)}
               >
                 취소
@@ -645,7 +648,7 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
             ) : null}
             <Button
               type="button"
-              className="flex-1 border border-gray-300 bg-white py-1.5 text-xs text-gray-700 hover:bg-gray-50"
+              className="flex-1 border border-[#e4e4e7] bg-white py-[7px] text-xs text-[#27272a] hover:bg-[#eff6ff] hover:brightness-100"
               onClick={() => setFresh(null)}
             >
               닫기
@@ -665,51 +668,58 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
             </p>
           )}
           {cancel.isError ? (
-            <p role="alert" className="text-xs text-red-700">
+            <p role="alert" className="text-xs text-[#aa4037]">
               {errorMessage(cancel.error, 'inbound-cancel')}
             </p>
           ) : null}
         </div>
       ) : null}
 
-      <section className="space-y-2">
-        <h2 className="text-sm font-semibold text-gray-700">발주 품목</h2>
+      <section className={PO_PANEL}>
+        <div className={PO_PANEL_HEAD}>
+          <h2 className="text-[15px] font-semibold">발주 품목</h2>
+          {lines.length > 0 ? (
+            <span className="rounded-[5px] bg-[#eff6ff] px-[7px] py-1 text-xs text-[#2563eb]">
+              {lines.length}건
+            </span>
+          ) : null}
+        </div>
         <WaitingOrdersFailed failed={waiting.failed} />
         {!activeItem && !arrivalsReady ? (
-          sheetStatus
+          <div className="p-5">{sheetStatus}</div>
         ) : arrivals.isError ? (
-          <p role="alert" className="text-sm text-red-600">
+          <p role="alert" className={`${PO_STATUS} text-[#aa4037]`}>
             {errorMessage(arrivals.error, 'po-receive')}
           </p>
         ) : arrivals.isLoading ? (
-          <p className="text-sm text-gray-500">불러오는 중…</p>
+          <p className={PO_STATUS}>불러오는 중…</p>
         ) : lines.length === 0 ? (
-          <p className="text-sm text-gray-500">남은 발주 품목이 없어요.</p>
+          <p className={PO_STATUS}>남은 발주 품목이 없어요.</p>
         ) : (
-          <ul className="space-y-2">
+          <ul className="divide-y divide-[#e4e4e7] px-5">
             {lines.map((item) => (
               <li
                 key={item.skuId}
-                className="flex items-center gap-3 rounded-lg border border-gray-200 bg-white p-3"
+                className="flex items-center gap-3 py-[18px]"
               >
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium text-gray-800">
+                  <strong className="block truncate text-[13px] leading-[1.6] font-semibold text-[#27272a]">
                     {item.skuName}
-                  </span>
-                  <span className="block font-mono text-xs text-gray-500">
+                  </strong>
+                  <small className="mt-1 block font-mono text-xs text-[#71717a]">
                     {item.skuCode}
-                  </span>
-                  <span className="block text-xs text-gray-500">
-                    발주 {item.orderedQty} · 입고 {item.receivedQty} · 남은{' '}
-                    {item.outstandingQty}
-                  </span>
+                  </small>
+                  <small className="mt-1 block text-xs text-[#71717a]">
+                    발주 {item.orderedQty} · 입고 {item.receivedQty}
+                  </small>
                   <WaitingOrdersNote waiting={waiting.of(item.skuId)} />
                 </span>
+                <span className={PO_PILL}>남은 {item.outstandingQty}</span>
                 {/* 시트가 열려 있는 동안은 숨긴다 — 시트의 [입고] 버튼과 접근성 이름이
                     겹쳐서 role 쿼리가 모호해지고, 어차피 한 번에 한 항목만 다룬다. */}
                 {!active ? (
                   <Button
-                    className="shrink-0 px-3 py-1.5 text-xs"
+                    className="shrink-0 px-2.5 py-[7px] text-xs"
                     onClick={() => {
                       if (
                         !draft.ready ||
@@ -898,6 +908,14 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
     </div>
   );
 }
+
+const PO_DESCRIPTION = '발주 품목을 스캔하고 받은 수량을 등록하세요.';
+const PO_PANEL = 'min-w-0 overflow-hidden rounded-xl border border-[#e4e4e7] bg-white';
+const PO_PANEL_HEAD =
+  'flex items-center justify-between gap-2.5 border-b border-[#e4e4e7] px-[22px] py-[19px]';
+const PO_STATUS = 'px-5 py-[18px] text-[13px] text-[#71717a]';
+const PO_PILL =
+  'inline-flex shrink-0 items-center rounded-[5px] bg-[#eff6ff] px-2 py-[5px] text-xs font-semibold whitespace-nowrap text-[#2563eb]';
 
 export function PurchaseOrderReceiveScreen(
   props: Parameters<typeof PurchaseOrderReceiveScreenContent>[0]

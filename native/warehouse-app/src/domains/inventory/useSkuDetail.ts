@@ -1,6 +1,39 @@
 import { useQuery } from '@tanstack/react-query';
 import { useApiClient } from '../../core/data/ApiClientProvider';
-import type { SkuDetail, SkuStockSummary, SkuWarehouseStock } from './types';
+import type {
+  SkuDetail,
+  SkuStockSummary,
+  SkuWarehouseStock,
+  StockHistoryEvent,
+  SystemLocationItem,
+} from './types';
+
+/** GET /locations/warehouses/:warehouseId?isSystem=true — 입고 기본존 같은 시스템 위치. */
+export function useSystemLocations(warehouseId: string | null) {
+  const api = useApiClient();
+  return useQuery({
+    queryKey: ['system-locations', warehouseId],
+    enabled: warehouseId !== null,
+    queryFn: () =>
+      api.request<{ items: SystemLocationItem[]; total: number }>({
+        path: `/locations/warehouses/${warehouseId}?isSystem=true&limit=100`,
+      }),
+  });
+}
+
+/** GET /inventory/stocks/history?skuId=&warehouseId= — 오래된 것부터 온다. */
+export function useSkuStockHistory(skuId: string, warehouseId: string | null, enabled: boolean) {
+  const api = useApiClient();
+  return useQuery({
+    queryKey: ['sku-stock-history', skuId, warehouseId],
+    enabled: enabled && warehouseId !== null,
+    refetchOnMount: 'always',
+    queryFn: () =>
+      api.request<StockHistoryEvent[]>({
+        path: `/inventory/stocks/history?${new URLSearchParams({ skuId, warehouseId: warehouseId ?? '' }).toString()}`,
+      }),
+  });
+}
 
 /** GET /inventory/skus/:id */
 export function useSkuDetail(skuId: string) {

@@ -4,8 +4,8 @@ import { isRangeLine, type BoxDraft } from '../../domains/inbound-shipment/boxDr
 import type { BoxLine } from '../../domains/inbound-shipment/types';
 import { coverRange, fmt, rowKey, type BoxRow, type GridValues } from './boxRows';
 
-const CARD = 'rounded-[10px] border border-[#D5D8DE] bg-white';
-const TH = 'border-b border-[#D5D8DE] bg-[#F6F7F8] px-4 py-2.5 text-left text-[13px] font-semibold text-[#535968]';
+const CARD = 'rounded-xl border border-[#e4e4e7] bg-white';
+const TH = 'border-b border-[#e4e4e7] bg-[#fafafa] px-4 py-3 text-left text-[11px] font-medium whitespace-nowrap text-[#71717a]';
 
 type CellState = 'blank' | 'counted' | 'list';
 
@@ -53,7 +53,7 @@ function GridRow({ row, draft, selected }: { row: BoxRow; draft: GridValues; sel
       ref={ref}
       data-row={rowKey(row)}
       aria-selected={selected}
-      className={cn('h-[64px] border-b border-[#E4E6EA] text-[17px]', selected && 'bg-[#FFF1C7]')}
+      className={cn('h-[64px] border-b border-[#e4e4e7] text-[17px]', selected && 'bg-[#eff6ff]')}
     >
       {row.kind === 'line' ? <LineCells line={row.line} /> : <UnplannedCells item={row.item} />}
       <td
@@ -63,13 +63,13 @@ function GridRow({ row, draft, selected }: { row: BoxRow; draft: GridValues; sel
         aria-label={state === 'blank' ? '빈칸' : state === 'list' ? `리스트대로 ${value}` : `센 수량 ${value}`}
         className={cn(
           'px-4 text-right font-mono text-2xl font-semibold',
-          state === 'blank' && 'bg-[#F1F2F4]',
-          state === 'list' && 'text-[#123E99]',
-          selected && 'outline outline-2 -outline-offset-2 outline-[#1D5BD8]'
+          state === 'blank' && 'bg-[#f4f4f5]',
+          state === 'list' && 'text-[#2563eb]',
+          selected && 'outline outline-2 -outline-offset-2 outline-[#2563eb]'
         )}
       >
         {value ?? ''}
-        {state === 'list' ? <span className="ml-1 text-lg text-[#1D5BD8]">≡</span> : null}
+        {state === 'list' ? <span className="ml-1 text-lg text-[#2563eb]">≡</span> : null}
       </td>
     </tr>
   );
@@ -80,11 +80,11 @@ function LineCells({ line }: { line: BoxLine }) {
     <>
       <td className="px-4">
         <div className="font-semibold">{line.option ? `${line.productName} · ${line.option}` : line.productName}</div>
-        {line.remark ? <div className="text-sm text-[#535968]">{line.remark}</div> : null}
+        {line.remark ? <div className="text-sm text-[#71717a]">{line.remark}</div> : null}
       </td>
       <td className="px-4 text-[15px]">
         {line.kind === 'free' ? (
-          <span className="text-[#535968]">자유 줄</span>
+          <span className="text-[#71717a]">자유 줄</span>
         ) : line.sku ? (
           <>
             <span className="font-mono">{line.sku.code}</span> {line.sku.name}
@@ -99,7 +99,7 @@ function LineCells({ line }: { line: BoxLine }) {
             <div>
               {coverRange(line)} 합계 {line.expectedQty === null ? '—' : fmt(line.expectedQty)}
             </div>
-            <div className="text-sm text-[#535968]">다른 상자 {fmt(line.alreadyCountedInOtherBoxes)}</div>
+            <div className="text-sm text-[#71717a]">다른 상자 {fmt(line.alreadyCountedInOtherBoxes)}</div>
           </>
         ) : line.expectedQty === null ? (
           '—'

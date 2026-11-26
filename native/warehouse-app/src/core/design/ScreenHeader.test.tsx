@@ -49,4 +49,10 @@ describe('ScreenHeader', () => {
     expect(screen.getAllByRole('link', { name: '뒤로' })).toHaveLength(1);
     expect(screen.getByRole('link', { name: '뒤로' })).toHaveAttribute('href', '/inbound');
   });
+
+  it('backTo 가 없으면 뒤로를 그리지 않는다', async () => {
+    renderAt(<ScreenHeader title="입고" />);
+    expect(await screen.findByRole('heading', { name: '입고' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: '뒤로' })).toBeNull();
+  });
 });

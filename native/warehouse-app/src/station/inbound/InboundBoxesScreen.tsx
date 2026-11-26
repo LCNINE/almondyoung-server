@@ -3,6 +3,7 @@ import { useWarehouse } from '../../app/warehouse-context';
 import { useApiClient } from '../../core/data/ApiClientProvider';
 import { errorMessage } from '../../core/data/errorMessage';
 import { cn } from '../../core/design/cn';
+import { ScreenHeader } from '../../core/design/ScreenHeader';
 import { useWorkPermissions } from '../../core/operations/useWorkCapabilities';
 import { listShipments, openBox } from '../../domains/inbound-shipment/api';
 import type { BoxCandidate, BoxView, ReceiveBoxResult } from '../../domains/inbound-shipment/types';
@@ -236,12 +237,15 @@ function InboundBoxes({ warehouseId, initial }: { warehouseId: string; initial?:
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
+      <div className="mb-2.5 shrink-0">
+        <ScreenHeader title="선적 상자 입고" backTo="/inbound" description="상자 이름으로 찾아 수량을 세고 확정하세요." />
+      </div>
       {notice ? (
         <p
           role={notice.tone === 'error' ? 'alert' : 'status'}
           className={cn(
-            'shrink-0 rounded-[10px] px-4 py-3 text-lg font-semibold',
-            notice.tone === 'error' ? 'bg-[#FDE8EA] text-[#9E1320]' : 'bg-[#E3ECFC] text-[#123E99]'
+            'shrink-0 rounded-xl px-4 py-3 text-lg font-semibold',
+            notice.tone === 'error' ? 'bg-[#fcebe8] text-[#aa4037]' : 'bg-[#eff6ff] text-[#2563eb]'
           )}
         >
           {notice.text}

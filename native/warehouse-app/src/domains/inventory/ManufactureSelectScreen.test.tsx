@@ -143,7 +143,7 @@ describe('ManufactureSelectScreen', () => {
     const client = makeClient(async () => []);
     const { router } = renderScreen(client, { appRoutes: true });
 
-    await screen.findByRole('heading', { name: '재고조회' });
+    await screen.findByRole('heading', { name: '재고 조회' });
     await act(async () => {
       await router.navigate({ to: '/inventory/manufacture' });
     });

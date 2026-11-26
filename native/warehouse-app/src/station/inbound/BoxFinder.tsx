@@ -121,7 +121,7 @@ export function WaitingForBox({
   useStationActions(actions);
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-4 rounded-[10px] border border-[#D5D8DE] bg-white p-6">
+    <div className="flex h-full min-h-0 flex-col gap-4 rounded-xl border border-[#e4e4e7] bg-white p-6">
       <div className="flex items-center gap-4">
         <p className="text-xl font-semibold">상자 이름을 입력하거나 스캔하세요</p>
         {draft !== null ? (
@@ -138,24 +138,24 @@ export function WaitingForBox({
               autoComplete="off"
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
-              className="w-[260px] rounded-md border border-[#D5D8DE] bg-white px-3 py-2 font-mono text-2xl"
+              className="w-[260px] rounded-md border border-[#e4e4e7] bg-white px-3 py-2 font-mono text-2xl"
             />
           </form>
         ) : null}
       </div>
       {missing !== null ? (
-        <p role="status" className="text-lg font-semibold text-[#7A4B00]">
+        <p role="status" className="text-lg font-semibold text-[#925e13]">
           이 이름의 상자가 열린 선적에 없어요
         </p>
       ) : null}
       <section className="min-h-0 flex-1 overflow-auto">
         <h3 className="mb-2 text-lg font-semibold">열린 선적</h3>
         {shipments.isError ? (
-          <p role="alert" className="font-semibold text-[#9E1320]">
+          <p role="alert" className="font-semibold text-[#aa4037]">
             {errorMessage(shipments.error)}
           </p>
         ) : null}
-        {shipments.data && shipments.data.length === 0 ? <p className="text-[#535968]">열린 선적이 없어요</p> : null}
+        {shipments.data && shipments.data.length === 0 ? <p className="text-[#71717a]">열린 선적이 없어요</p> : null}
         <ul className="space-y-1">
           {(shipments.data ?? []).map((s) => (
             <li key={s.id} className="text-lg">{`${s.name}${arrivalText(s.expectedArrival)} · 상자 ${s.boxCount}`}</li>
@@ -167,7 +167,7 @@ export function WaitingForBox({
 }
 
 function Tag({ text }: { text: string }) {
-  return <span className="rounded-md bg-[#E4E6EA] px-2 py-1 text-base font-semibold text-[#535968]">{text}</span>;
+  return <span className="rounded-[5px] bg-[#eff1f2] px-2 py-[5px] text-xs font-semibold whitespace-nowrap text-[#68706d]">{text}</span>;
 }
 
 /**
@@ -190,7 +190,7 @@ export function ChooseBox({
   useStationActions([{ ...INBOUND_BOX_ACTIONS.back, enabled: true, run: onBack }]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-3 rounded-[10px] border border-[#D5D8DE] bg-white p-6">
+    <div className="flex h-full min-h-0 flex-col gap-3 rounded-xl border border-[#e4e4e7] bg-white p-6">
       <p className="text-xl font-semibold">{`${label} 이 선적 ${candidates.length}곳에 있어요. 고르세요.`}</p>
       <PickList
         label="선적 고르기"
@@ -204,7 +204,7 @@ export function ChooseBox({
               {c.shipmentStatus === 'closed' ? <Tag text="끝남" /> : null}
               {c.status === 'received' ? <Tag text="확정됨" /> : null}
             </span>
-            <span className="text-base text-[#535968]">{c.previewItems.join(', ')}</span>
+            <span className="text-base text-[#71717a]">{c.previewItems.join(', ')}</span>
           </>
         )}
       />

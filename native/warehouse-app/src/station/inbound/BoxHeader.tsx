@@ -6,10 +6,10 @@ export function BoxHeader({ box }: { box: BoxView }) {
   const day = arrivalDay(box.expectedArrival);
   const text = `${box.shipmentName} · 상자 ${box.label}${day ? ` · ${day} 도착` : ''}`;
   return (
-    <header className="flex shrink-0 items-center gap-3 rounded-[10px] border border-[#D5D8DE] bg-white px-4 py-3">
+    <header className="flex shrink-0 items-center gap-3 rounded-xl border border-[#e4e4e7] bg-white px-4 py-3">
       <h2 className="text-2xl font-semibold">{text}</h2>
       {box.shipmentStatus === 'closed' ? (
-        <span className="rounded-md bg-[#E4E6EA] px-2 py-1 text-base font-semibold text-[#535968]">끝남</span>
+        <span className="rounded-[5px] bg-[#eff1f2] px-2 py-[5px] text-xs font-semibold whitespace-nowrap text-[#68706d]">끝남</span>
       ) : null}
     </header>
   );

@@ -130,8 +130,8 @@ function Returns({ warehouseId }: { warehouseId: string }) {
         <p
           role={notice.tone === 'error' ? 'alert' : 'status'}
           className={cn(
-            'shrink-0 rounded-[10px] px-4 py-3 text-lg font-semibold',
-            notice.tone === 'error' ? 'bg-[#FDE8EA] text-[#9E1320]' : 'bg-[#E3ECFC] text-[#123E99]'
+            'shrink-0 rounded-[10px] px-4 py-3 text-[13px] font-semibold',
+            notice.tone === 'error' ? 'border border-[#efcbc4] bg-[#fff4f1] text-[#aa4037]' : 'border border-[#e4e4e7] bg-[#eff6ff] text-[#2563eb]'
           )}
         >
           {notice.text}
