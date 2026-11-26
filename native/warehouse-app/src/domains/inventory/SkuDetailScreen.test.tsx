@@ -108,6 +108,7 @@ function clientFor(overrides: Record<string, unknown> = {}): ApiClient {
     '/inventory/skus/sku-1': DETAIL,
     '/inventory/skus/sku-1/stock-summary': SUMMARY,
     '/inventory/stocks/sku/sku-1/warehouse/w-1': WAREHOUSE_STOCK,
+    '/locations/warehouses/w-1?isSystem=true&limit=100': { items: [], total: 0 },
     ...overrides,
   };
   return {

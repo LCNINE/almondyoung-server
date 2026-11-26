@@ -27,6 +27,7 @@ export function useSkuStockHistory(skuId: string, warehouseId: string | null, en
   return useQuery({
     queryKey: ['sku-stock-history', skuId, warehouseId],
     enabled: enabled && warehouseId !== null,
+    refetchOnMount: 'always',
     queryFn: () =>
       api.request<StockHistoryEvent[]>({
         path: `/inventory/stocks/history?${new URLSearchParams({ skuId, warehouseId: warehouseId ?? '' }).toString()}`,

@@ -7,7 +7,7 @@ vi.mock('../../app/config', async (importOriginal) => ({
   filePublicBaseUrl: 'https://file.tenant-2.example',
 }));
 import type { ReactNode } from 'react';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
@@ -124,11 +124,18 @@ const HISTORY = [
 
 const HISTORY_PATH = '/inventory/stocks/history?skuId=sku-1&warehouseId=w-1';
 
-function clientFor(items: unknown[] = ITEMS, history: () => Promise<unknown> = async () => HISTORY): ApiClient {
+const SYSTEM_PATH = '/locations/warehouses/w-1?isSystem=true&limit=100';
+
+function clientFor(
+  items: unknown[] = ITEMS,
+  history: () => Promise<unknown> = async () => HISTORY,
+  systemLocations: () => Promise<unknown> = async () => TABLE[SYSTEM_PATH]
+): ApiClient {
   return {
     request: (async (opts: { path: string }) => {
       if (opts.path.startsWith('/inventory/skus?barcode=')) return [];
       if (opts.path === HISTORY_PATH) return history();
+      if (opts.path === SYSTEM_PATH) return systemLocations();
       if (opts.path.startsWith('/inventory/skus/search/advanced')) return { items, total: items.length };
       if (!(opts.path in TABLE)) throw new Error(`GET ${opts.path} → 404`);
 
@@ -323,5 +330,63 @@ describe('InventoryLookupScreen 목록과 상세 카드', () => {
     down = false;
     await user.click(within(panel).getByRole('button', { name: '다시 확인' }));
     expect(await within(panel).findByText('이 창고의 수불 이력이 없어요.')).toBeInTheDocument();
+  });
+
+  it('시스템 위치를 불러오는 동안에는 적치 대기·보관 위치를 단정하지 않는다', async () => {
+    renderLookup(clientFor(ITEMS, async () => HISTORY, () => new Promise(() => {})));
+    const user = await searchFor('셔츠');
+    await user.click(await screen.findByRole('button', { name: '코튼셔츠 재고 상세' }));
+
+    const card = await screen.findByRole('complementary', { name: '상품 재고' });
+    await within(card).findByText('3개');
+    expect(within(card).queryByText(/보관 위치|적치 대기/)).not.toBeInTheDocument();
+    const defective = within(card).getByText('2개').closest('li')!;
+    expect(within(defective).getByText('불량')).toBeInTheDocument();
+  });
+
+  it('시스템 위치를 못 불러오면 위치 구분 없이 알리고 다시 확인하면 구분을 보인다', async () => {
+    let down = true;
+    renderLookup(
+      clientFor(ITEMS, async () => HISTORY, async () => {
+        if (down) throw new Error(`GET ${SYSTEM_PATH} → 500`);
+
+        return TABLE[SYSTEM_PATH];
+      })
+    );
+    const user = await searchFor('셔츠');
+    await user.click(await screen.findByRole('button', { name: '코튼셔츠 재고 상세' }));
+
+    const card = await screen.findByRole('complementary', { name: '상품 재고' });
+    const alert = await within(card).findByRole('alert');
+    expect(alert).toHaveTextContent('적치 대기 위치를 확인하지 못했어요.');
+    await within(card).findByText('3개');
+    for (const row of within(card).getAllByRole('listitem')) {
+      expect(row).not.toHaveTextContent(/보관 위치|적치 대기/);
+    }
+
+    down = false;
+    await user.click(within(alert).getByRole('button', { name: '다시 확인' }));
+    const inbound = within(card).getByText('입고 기본존').closest('li')!;
+    expect(await within(inbound).findByText('적치 대기')).toBeInTheDocument();
+    expect(within(card).queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('수불 이력을 다시 열면 이력을 새로 불러온다', async () => {
+    let history: unknown[] = [HISTORY[0]];
+    renderLookup(clientFor(ITEMS, async () => history));
+    const user = await searchFor('셔츠');
+    await user.click(await screen.findByRole('button', { name: '코튼셔츠 재고 상세' }));
+
+    const card = await screen.findByRole('complementary', { name: '상품 재고' });
+    const toggle = within(card).getByRole('button', { name: '수불 이력' });
+    await user.click(toggle);
+    let panel = await within(card).findByRole('region', { name: '수불 이력' });
+    expect(await within(panel).findAllByRole('listitem')).toHaveLength(1);
+
+    await user.click(toggle);
+    history = HISTORY;
+    await user.click(toggle);
+    panel = await within(card).findByRole('region', { name: '수불 이력' });
+    await waitFor(() => expect(within(panel).getAllByRole('listitem')).toHaveLength(3));
   });
 });

@@ -6,6 +6,7 @@ import { isStationDevice } from '../../app/station';
 import { useWorkPermissions } from '../../core/operations/useWorkCapabilities';
 import { errorMessage, STOCK_ADJUST_PERMISSION_MESSAGE } from '../../core/data/errorMessage';
 import { Button } from '../../core/design/Button';
+import { LoadFailure } from '../../core/design/LoadFailure';
 import { SkuLabelPrintPanel } from '../labels/SkuLabelPrintPanel';
 import { WarehousePicker } from '../warehouse/WarehousePicker';
 import { SkuThumbnail } from './SkuInfoSheet';
@@ -94,9 +95,14 @@ export function SkuStockCard({
     ...(warehouseStock.data?.details ?? []).map((d): [string, string] => [d.locationId, d.locationName || d.locationCode]),
   ]);
   const locationKind = (row: StockDetailRow) => {
-    const place = inboundZoneIds.has(row.locationId) ? '적치 대기' : '보관 위치';
+    const place = systemLocations.isSuccess
+      ? inboundZoneIds.has(row.locationId)
+        ? '적치 대기'
+        : '보관 위치'
+      : null;
+    const state = row.stockState === 'ON_HAND' ? null : stockStateLabel(row.stockState);
 
-    return row.stockState === 'ON_HAND' ? place : `${place} · ${stockStateLabel(row.stockState)}`;
+    return [place, state].filter((part) => part !== null).join(' · ');
   };
 
   // 상단 숫자는 고른 창고 기준이다. 창고별 값과 합계를 한 응답에서 읽어 서로 어긋나지 않게 한다.
@@ -187,6 +193,16 @@ export function SkuStockCard({
       <section className="px-[22px] py-5 max-[900px]:px-5 max-[900px]:py-3.5">
         <h3 className="mb-[9px] text-[13px] font-bold text-[#27272a]">위치별 재고</h3>
 
+        {isSet && systemLocations.isError ? (
+          <LoadFailure
+            className="mb-2 text-xs"
+            message="적치 대기 위치를 확인하지 못했어요."
+            error={systemLocations.error}
+            retrying={systemLocations.isFetching}
+            onRetry={() => void systemLocations.refetch()}
+          />
+        ) : null}
+
         {!isSet ? (
           <div className="space-y-3 rounded-xl border border-dashed border-[#e4e4e7] bg-[#fafafa] p-4">
             <p className="text-sm text-[#52525b]">창고를 먼저 선택하면 위치별 재고를 볼 수 있어요.</p>
@@ -211,7 +227,9 @@ export function SkuStockCard({
                   <strong className="block font-semibold text-[#27272a]">
                     {row.locationName || row.locationCode}
                   </strong>
-                  <small className="mt-1 block text-xs text-[#71717a]">{locationKind(row)}</small>
+                  {locationKind(row) ? (
+                    <small className="mt-1 block text-xs text-[#71717a]">{locationKind(row)}</small>
+                  ) : null}
                 </span>
                 <strong className="font-semibold text-[#27272a] tabular-nums">{`${row.quantity}개`}</strong>
                 <Link

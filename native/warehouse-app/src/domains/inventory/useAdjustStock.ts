@@ -44,9 +44,10 @@ export function useAdjustStock() {
         summary,
       });
     },
-    onSuccess: () => {
+    onSuccess: (_data, input) => {
       void qc.invalidateQueries({ queryKey: ['sku-warehouse-stock'] });
       void qc.invalidateQueries({ queryKey: ['sku-stock-summary'] });
+      void qc.invalidateQueries({ queryKey: ['sku-stock-history', input.skuId, input.warehouseId] });
     },
   });
 }
