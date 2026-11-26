@@ -255,6 +255,12 @@ function CaptureHistory() {
                     >
                       수정
                     </Link>
+                    <Link
+                      href={`/mobile/sku-3d-workshop/${encodeURIComponent(item.skuId)}?back=${encodeURIComponent(here)}`}
+                      className="flex h-10 flex-1 items-center justify-center rounded-lg border border-gray-300 text-sm font-medium text-gray-800"
+                    >
+                      3D 작업실
+                    </Link>
                     {item.canCancel ? (
                       <button
                         type="button"

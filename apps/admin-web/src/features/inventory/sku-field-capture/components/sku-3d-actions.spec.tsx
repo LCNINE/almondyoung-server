@@ -12,13 +12,11 @@ import { toast } from 'sonner';
 import { useCan } from '@/hooks/use-permission';
 import { uploadFileToFileService } from '@/lib/api/domains/files/upload.client';
 import { sku3dModelsClient } from '@/lib/api/domains/inventory/sku-3d-models.client';
-import { skuFieldCaptureClient } from '@/lib/api/domains/inventory/sku-field-capture.client';
 import { CustomError } from '@/lib/api/customError';
 import type {
   FieldCaptureDetailDto,
   Sku3dModelDto,
 } from '@/lib/types/dto/inventory';
-import { fieldCaptureKeys } from '../field-capture-model';
 import { Sku3dActions } from './sku-3d-actions';
 
 jest.mock('@/hooks/use-permission', () => ({ useCan: jest.fn() }));
@@ -28,9 +26,6 @@ jest.mock('@/lib/api/domains/files/upload.client', () => ({
 }));
 jest.mock('@/lib/api/domains/inventory/sku-3d-models.client', () => ({
   sku3dModelsClient: { list: jest.fn(), register: jest.fn() },
-}));
-jest.mock('@/lib/api/domains/inventory/sku-field-capture.client', () => ({
-  skuFieldCaptureClient: { getDetail: jest.fn() },
 }));
 jest.mock('@/const/api-const', () => ({
   FILE_SERVICE_BASE_URL: '/api/proxy/file',
@@ -69,14 +64,13 @@ const model: Sku3dModelDto = {
 };
 let queryClient: QueryClient;
 
-function renderActions(dims = detail) {
+function renderActions() {
   return render(
     <QueryClientProvider client={queryClient}>
       <Sku3dActions
         skuId={detail.skuId}
         code={detail.code}
         name={detail.name}
-        dims={dims}
       />
     </QueryClientProvider>
   );
@@ -94,35 +88,6 @@ function chooseFile(file: File) {
   return input;
 }
 
-function stubPhotoDownloads() {
-  const clicked: { href: string; download: string }[] = [];
-  const fetchPhoto = jest.fn(async () => ({
-    ok: true,
-    blob: async () => new Blob(['x'], { type: 'image/jpeg' }),
-  }));
-
-  Object.defineProperty(globalThis, 'fetch', {
-    configurable: true,
-    writable: true,
-    value: fetchPhoto,
-  });
-  Object.defineProperty(URL, 'createObjectURL', {
-    configurable: true,
-    value: jest.fn(() => 'blob:photo'),
-  });
-  Object.defineProperty(URL, 'revokeObjectURL', {
-    configurable: true,
-    value: jest.fn(),
-  });
-  jest.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
-    this: HTMLAnchorElement
-  ) {
-    clicked.push({ href: this.href, download: this.download });
-  });
-
-  return { clicked, fetchPhoto };
-}
-
 beforeEach(() => {
   jest.clearAllMocks();
   queryClient = new QueryClient({
@@ -131,7 +96,6 @@ beforeEach(() => {
   jest.mocked(useCan).mockReturnValue({ status: 'ready', allowed: true });
   jest.mocked(sku3dModelsClient.list).mockResolvedValue([]);
   jest.mocked(sku3dModelsClient.register).mockResolvedValue(model);
-  jest.mocked(skuFieldCaptureClient.getDetail).mockResolvedValue(detail);
   jest.mocked(uploadFileToFileService).mockResolvedValue({
     id: 'glb-2',
     url: '/file',
@@ -140,10 +104,6 @@ beforeEach(() => {
     status: 'confirmed',
     isPublic: true,
   });
-  window.localStorage.setItem(
-    'sku-field-capture:downloads-folder',
-    '/Users/tester/Downloads'
-  );
 });
 
 afterEach(() => {
@@ -251,126 +211,18 @@ it.each(['loading', 'error', 'denied'])(
   }
 );
 
-it.each([0, null])(
-  'disables handoff for a missing measurement (%s) and encodes the detail link',
-  async (value) => {
-    renderActions({ ...detail, packageWidthMm: value });
-    await screen.findByText('3D 없음');
-
-    expect(
-      screen
-        .getByRole('button', { name: '지피티로 가기' })
-        .hasAttribute('disabled')
-    ).toBe(true);
-    expect(
-      screen.getByRole('link', { name: '상세' }).getAttribute('href')
-    ).toBe('/inventory/skus?code=SKU%2F1');
-  }
-);
-
-it('blocks handoff when the fetched detail no longer has photos', async () => {
-  jest
-    .mocked(skuFieldCaptureClient.getDetail)
-    .mockResolvedValue({ ...detail, photos: [] });
+it('opens the 3D workshop for this SKU instead of handing photos to a local app', async () => {
   renderActions();
-  fireEvent.click(screen.getByRole('button', { name: '지피티로 가기' }));
+  await screen.findByText('3D 없음');
 
-  await waitFor(() =>
-    expect(toast.error).toHaveBeenCalledWith('찍은 사진이 없어요')
+  const link = screen.getByRole('link', { name: '3D 작업실' });
+
+  expect(link.getAttribute('href')).toBe(
+    '/mobile/sku-3d-workshop/sku-1?back=%2Finventory%2Fsku-field-capture'
   );
-  expect(toast.success).not.toHaveBeenCalled();
-});
-
-it('opens the ChatGPT app with the photo folder and prompt, then downloads the photos in order', async () => {
-  const { clicked, fetchPhoto } = stubPhotoDownloads();
-
-  renderActions();
-  fireEvent.click(screen.getByRole('button', { name: '지피티로 가기' }));
-
-  await waitFor(() =>
-    expect(toast.success).toHaveBeenCalledWith(
-      'ChatGPT 앱을 열고 사진 2장을 내려받았어요',
-      { description: '앱에서 전송을 눌러 주세요' }
-    )
+  expect(screen.queryByRole('button', { name: '지피티로 가기' })).toBeNull();
+  expect(document.body.innerHTML).not.toContain('codex://');
+  expect(screen.getByRole('link', { name: '상세' }).getAttribute('href')).toBe(
+    '/inventory/skus?code=SKU%2F1'
   );
-
-  const app = new URL(clicked[0]!.href);
-
-  expect(app.protocol).toBe('codex:');
-  expect(app.searchParams.get('path')).toBe('/Users/tester/Downloads');
-  expect(app.searchParams.get('prompt')).toContain(
-    '이 폴더의 SKU/1-1 ~ SKU/1-2 상품 사진 2장'
-  );
-  expect(app.searchParams.get('prompt')).toContain('가로: 120mm');
-  expect(fetchPhoto.mock.calls).toEqual(
-    [1, 2].map((i) => [
-      `${window.location.origin}/api/proxy/file/files/public/f${i}`,
-      { cache: 'no-store' },
-    ])
-  );
-  expect(clicked.slice(1).map(({ download }) => download)).toEqual([
-    'SKU/1-1.jpeg',
-    'SKU/1-2.jpeg',
-  ]);
-});
-
-it('asks for the downloads folder once and remembers it', async () => {
-  window.localStorage.clear();
-  const ask = jest
-    .spyOn(window, 'prompt')
-    .mockReturnValueOnce(null)
-    .mockReturnValueOnce(' /Users/me/Downloads ');
-  stubPhotoDownloads();
-  renderActions();
-
-  fireEvent.click(screen.getByRole('button', { name: '지피티로 가기' }));
-  expect(skuFieldCaptureClient.getDetail).not.toHaveBeenCalled();
-
-  fireEvent.click(screen.getByRole('button', { name: '지피티로 가기' }));
-  await waitFor(() => expect(toast.success).toHaveBeenCalled());
-
-  fireEvent.click(screen.getByRole('button', { name: '지피티로 가기' }));
-  await waitFor(() => expect(toast.success).toHaveBeenCalledTimes(2));
-
-  expect(ask).toHaveBeenCalledTimes(2);
-  expect(
-    window.localStorage.getItem('sku-field-capture:downloads-folder')
-  ).toBe('/Users/me/Downloads');
-});
-
-it('refetches cached detail and hands off the fresh measurements and photos', async () => {
-  queryClient.setDefaultOptions({
-    queries: { retry: false, staleTime: 300_000 },
-  });
-  queryClient.setQueryData(fieldCaptureKeys.detail(detail.skuId), detail);
-  jest.mocked(skuFieldCaptureClient.getDetail).mockResolvedValue({
-    ...detail,
-    packageWidthMm: 240,
-  });
-  const { clicked } = stubPhotoDownloads();
-  renderActions();
-
-  fireEvent.click(screen.getByRole('button', { name: '지피티로 가기' }));
-  await waitFor(() => expect(toast.success).toHaveBeenCalled());
-
-  expect(skuFieldCaptureClient.getDetail).toHaveBeenCalledTimes(1);
-  expect(new URL(clicked[0]!.href).searchParams.get('prompt')).toContain(
-    '가로: 240mm'
-  );
-});
-
-it('reports a failed photo download', async () => {
-  const { fetchPhoto } = stubPhotoDownloads();
-
-  fetchPhoto.mockResolvedValueOnce({
-    ok: false,
-    blob: async () => new Blob([]),
-  });
-  renderActions();
-  fireEvent.click(screen.getByRole('button', { name: '지피티로 가기' }));
-
-  await waitFor(() =>
-    expect(toast.error).toHaveBeenCalledWith('ChatGPT 앱으로 넘기지 못했어요')
-  );
-  expect(toast.success).not.toHaveBeenCalled();
 });

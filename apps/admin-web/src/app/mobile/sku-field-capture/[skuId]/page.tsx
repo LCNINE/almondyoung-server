@@ -1,6 +1,7 @@
 'use client';
 
 import { Suspense, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Loader2 } from 'lucide-react';
@@ -181,6 +182,12 @@ function CaptureForm({ detail }: { detail: FieldCaptureDetailDto }) {
           {detail.completion && (
             <p className="mt-1 text-sm font-semibold text-green-700">{completedByText(detail.completion)}</p>
           )}
+          <Link
+            href={`/mobile/sku-3d-workshop/${encodeURIComponent(skuId)}?back=${encodeURIComponent(`${BASE}/${skuId}`)}`}
+            className="mt-2 inline-flex h-10 items-center rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-800"
+          >
+            3D 작업실
+          </Link>
         </div>
 
         <section className="space-y-2 rounded-xl border border-gray-200 bg-white p-4">

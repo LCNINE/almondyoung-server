@@ -7,7 +7,17 @@ export function mountModelViewer(
     alt,
     onLoad,
     onError,
-  }: { src: string; alt: string; onLoad: () => void; onError: () => void }
+    autoRotate = true,
+    touchAction,
+  }: {
+    src: string;
+    alt: string;
+    onLoad: () => void;
+    onError: () => void;
+    autoRotate?: boolean;
+    // pan-y: 가로 드래그는 회전, 세로 드래그는 페이지 스크롤, 두 손가락은 확대
+    touchAction?: 'pan-y' | 'none';
+  }
 ): () => void {
   // 업로드 GLB 는 meshopt 로 압축돼 있어 첫 모델 전에 디코더를 지정해야 한다
   ModelViewerElement.meshoptDecoderLocation =
@@ -17,7 +27,15 @@ export function mountModelViewer(
   const viewer = document.createElement('model-viewer') as ModelViewerElement;
 
   viewer.setAttribute('camera-controls', '');
-  viewer.setAttribute('auto-rotate', '');
+
+  if (autoRotate) {
+    viewer.setAttribute('auto-rotate', '');
+  }
+
+  if (touchAction) {
+    viewer.setAttribute('touch-action', touchAction);
+  }
+
   viewer.setAttribute('camera-orbit', '0deg 75deg 150%');
   viewer.setAttribute('max-camera-orbit', 'auto auto 300%');
   viewer.setAttribute('alt', alt);
