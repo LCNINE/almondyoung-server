@@ -36,7 +36,7 @@ export const metadata: Metadata = getSEOTags({
   extraTags: {
     manifest: "/site.webmanifest",
     icons: {
-      shortcut: "https://almondyoung.com/favicon.ico",
+      shortcut: "https://almondyoung.com/favicon.ico?v=2",
     },
   },
 })

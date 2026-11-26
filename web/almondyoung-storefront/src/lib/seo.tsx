@@ -20,7 +20,7 @@ const DEFAULT_SEO = {
 
 // 링크 공유 카드(카톡·슬랙·트위터)에 뜨는 대표 이미지.
 const DEFAULT_OG_IMAGE = {
-  url: "/og-image.jpg",
+  url: "/og-image-2026.jpg",
   width: 1200,
   height: 630,
   alt: "아몬드영 — 세상의 모든 미용재료가 있는 곳",
