@@ -7,6 +7,10 @@ const REGION = process.env.NEXT_PUBLIC_DEFAULT_REGION || "kr"
 
 export const dynamic = "force-dynamic"
 
+// middleware 가 /r/<코드> 를 /api/sms-link?code=<코드> 로 rewrite 해서 온다.
+// ⚠️ 로컬 `next dev`(webpack·Turbopack 둘 다)에서는 rewrite 가 붙인 쿼리가 여기까지 오지 않는다 — request.url 이
+// 원래 주소(/r/<코드>)라 code 가 비고 홈으로 간다(2026-11 실측). 라이브(OpenNext)는 쿼리가 온다(라이브 클릭 기록으로 확인).
+// 로컬에서 확인할 땐 /api/sms-link?code=<코드> 를 직접 연다.
 export async function GET(request: NextRequest) {
   const home = new URL(`/${REGION}`, request.nextUrl.origin)
   const code = request.nextUrl.searchParams.get("code")
