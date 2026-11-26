@@ -9,7 +9,7 @@ import { childEnv, loadConfig, PRODUCTION_SERVER_URL } from './env.mjs';
 import { externalUris, GLB_MAX_BYTES, glbJson, judgeOutputs, reviewProblem } from './judge.mjs';
 import { viewerHtml, viewerShotOf, viewerStateOf } from './viewer-check.mjs';
 import { buildPrompt, changeLines, DONE_MARKER, finishedFor, hasSharp, imageExtOf, runJob } from './worker.mjs';
-import { denyPathsFor, probeScript, probeVerdict, profilePath, sandboxConfigToml } from './isolation.mjs';
+import { denyPathsFor, probeScript, probeVerdict, profilePath, sandboxArgs, sandboxConfigToml } from './isolation.mjs';
 
 function glb(json, padTo = 0) {
   const text = Buffer.from(JSON.stringify(json));
@@ -469,7 +469,14 @@ test('probes print only a verdict, never file contents', () => {
   assert.doesNotMatch(args.at(-1), /Get-Content|ReadAllText/);
   assert.equal(probeVerdict('PROBE_DENIED'), 'denied');
   assert.equal(probeVerdict('noise PROBE_ALLOWED'), 'allowed');
-  assert.equal(probeVerdict(''), 'denied');
+  assert.equal(probeVerdict(''), 'error');
+  assert.equal(probeVerdict('error: the following required arguments were not provided'), 'error');
+});
+
+test('sandbox probe names the job profile and working dir explicitly', () => {
+  assert.deepEqual(sandboxArgs('C:\\jobs\\w1', ['powershell.exe', '-c', 'x']), [
+    'sandbox', '-P', 'sku3d-job', '-C', 'C:\\jobs\\w1', '--', 'powershell.exe', '-c', 'x',
+  ]);
 });
 
 test('profile paths use forward slashes even for Windows paths', () => {
