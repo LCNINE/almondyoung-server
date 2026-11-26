@@ -84,6 +84,7 @@ describe('mapRealtimePageTypes', () => {
       '주문작성',
       '결제완료',
       '게시판',
+      '아몬드템플릿',
     ]);
     expect(result.find((type) => type.key === 'view_item')).toMatchObject({ mobile: 30, desktop: 10, total: 42 });
     expect(result.find((type) => type.key === 'view_home')).toMatchObject({ mobile: 5, desktop: 0, total: 5 });

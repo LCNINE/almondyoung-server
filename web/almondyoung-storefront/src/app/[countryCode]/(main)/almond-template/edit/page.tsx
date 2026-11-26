@@ -2,6 +2,7 @@ import { templateProductOf } from "@/domains/almond-template/lib/template-produc
 import { listAlmondTemplates } from "@/lib/api/ugc/almond-templates"
 import { AlmondTemplateEditor } from "@/domains/almond-template/components/editor"
 import { notFound } from "next/navigation"
+import { TemplateViewTracker } from "@/components/analytics/template-view-tracker"
 
 type Props = {
   searchParams: Promise<{
@@ -27,15 +28,20 @@ export default async function EditAlmondTemplatePage({ searchParams }: Props) {
   const templates = await listAlmondTemplates().catch(() => [])
   const templateProduct = templateProductOf(product, templates)
   if (!templateProduct) notFound()
+  const viewed = templates.find((item) => item.id === template)
+
   return (
-    <AlmondTemplateEditor
-      productId={product}
-      templateProduct={templateProduct}
-      variantId={variant}
-      size={size}
-      templateId={template}
-      savedId={saved}
-      mode="customer"
-    />
+    <>
+      {viewed && <TemplateViewTracker id={viewed.id} name={viewed.title} />}
+      <AlmondTemplateEditor
+        productId={product}
+        templateProduct={templateProduct}
+        variantId={variant}
+        size={size}
+        templateId={template}
+        savedId={saved}
+        mode="customer"
+      />
+    </>
   )
 }

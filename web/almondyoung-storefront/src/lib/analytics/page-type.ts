@@ -22,5 +22,6 @@ export function pageTypeEvent(pathname: string): string | null {
   if (LIST_SEGMENTS.has(segment)) return "view_item_list"
   if (segment === "cart") return "view_cart"
   if (BOARD_SEGMENTS.has(segment)) return "view_board"
+  if (segment === "almond-template") return "view_almond_template"
   return null
 }

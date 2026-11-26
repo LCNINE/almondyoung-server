@@ -58,6 +58,7 @@ export const REALTIME_PAGE_TYPES = [
   { key: 'view_checkout', label: '주문작성' },
   { key: 'view_order_complete', label: '결제완료' },
   { key: 'view_board', label: '게시판' },
+  { key: 'view_almond_template', label: '아몬드템플릿' },
 ] as const;
 
 /** eventName × deviceCategory 행을 화면 종류별 모바일·PC·합계로 접는다. 행이 없는 화면은 0 으로 채운다. */

@@ -10,6 +10,12 @@ describe("pageTypeEvent", () => {
     expect(pageTypeEvent("/kr/search")).toBe("view_item_list")
     expect(pageTypeEvent("/kr/cart")).toBe("view_cart")
     expect(pageTypeEvent("/kr/shop-trade/abc")).toBe("view_board")
+    expect(pageTypeEvent("/kr/almond-template/landing")).toBe(
+      "view_almond_template"
+    )
+    expect(pageTypeEvent("/kr/almond-template/edit")).toBe(
+      "view_almond_template"
+    )
     expect(pageTypeEvent("/kr/checkout")).toBe("view_checkout")
     expect(pageTypeEvent("/kr/checkout/success/intent_1")).toBe(
       "view_order_complete"
