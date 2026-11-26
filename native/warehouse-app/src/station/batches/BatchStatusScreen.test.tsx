@@ -584,4 +584,63 @@ describe('F2 배치 현황(스펙 §8, 목업 ⑤)', () => {
     await router.navigate({ to: '/outbound' });
     await waitFor(() => expect(router.state.location.pathname).toBe('/outbound'));
   });
+
+  it('배치 시작 뒤 자동 인쇄가 판정을 받는 사이 상자 인쇄가 시작되면 일괄 인쇄는 겹쳐 돌지 않고, 끝난 뒤 판정부터 다시 받는다', async () => {
+    const gate = gatedPrint();
+    const BOX4: FakeBox = { ...UNPRINTED_BOX3, shipmentId: 's-4', trackingNo: '421033881931', lines: [{ id: 'l-40', skuId: 'sku-40', name: '브러시', qty: 1, barcode: '8801040' }] };
+    const { server, print } = setupBatches({
+      picking: [],
+      created: [{ ...NEW_B3, totalItems: 2, totalBoxes: 2 }],
+      boxes: [UNPRINTED_BOX3, BOX4],
+      print: gate.print,
+    });
+    let started = false;
+    let workItemsSinceStart = 0;
+    const items: { release: (() => void) | null } = { release: null };
+    server.config.beforeReply = (req) => {
+      if (req.path === '/picking/v2/starts') started = true;
+      if (!started || req.path !== '/outbound-batches/b-3/work-items') return;
+      workItemsSinceStart += 1;
+      if (workItemsSinceStart === 2) return new Promise<void>((resolve) => (items.release = resolve));
+    };
+
+    fireEvent.click(await screen.findByRole('button', { name: '배치 시작' }));
+    await waitFor(() => expect(items.release).not.toBeNull());
+    const boxes = screen.getByRole('list', { name: '박스' });
+    const [row] = within(boxes).getAllByRole('button', { name: '출력 확인' });
+    fireEvent.click(row);
+    await waitFor(() => expect(print).toHaveBeenCalledTimes(1));
+
+    items.release?.();
+    expect(await screen.findByText('다른 송장을 인쇄하고 있어요. 그 인쇄가 끝나면 이어서 인쇄해요.')).toBeInTheDocument();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(print).toHaveBeenCalledTimes(1);
+    expect(server.confirmedPrints).toEqual([]);
+
+    gate.releaseNext();
+    await waitFor(() => expect(server.confirmedPrints).toEqual(['s-3']));
+    expect(await screen.findByText(/이미 인쇄한 송장이 1건 있어요/)).toBeInTheDocument();
+    expect(print).toHaveBeenCalledTimes(1);
+  });
+
+  it('보충 대기·송장 상태를 받는 동안은 숫자 대신 확인 중이라고 보인다', async () => {
+    const { server } = setupBatches();
+    const held: { release: (() => void) | null } = { release: null };
+    server.config.beforeReply = (req) => {
+      if (req.path.startsWith('/outbound-refills/pending') || req.path.endsWith('/waybill-label-states'))
+        return new Promise<void>((resolve) => {
+          const prev = held.release;
+          held.release = () => {
+            prev?.();
+            resolve();
+          };
+        });
+    };
+    await screen.findByRole('region', { name: '배치 상세' });
+    await waitFor(() => expect(detail()).toHaveTextContent('보충 대기 확인 중 · 확인 필요 확인 중'));
+    expect(detail()).not.toHaveTextContent('보충 대기 0');
+    server.config.beforeReply = null;
+    held.release?.();
+    await waitFor(() => expect(detail()).toHaveTextContent('보충 대기 0 · 확인 필요 0'));
+  });
 });

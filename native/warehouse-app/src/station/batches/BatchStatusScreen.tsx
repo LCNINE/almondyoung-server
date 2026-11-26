@@ -228,14 +228,10 @@ function BatchStatus({ warehouseId, prefs, print }: { warehouseId: string; prefs
           afterPrinted="이제 F1 출고 검수에서 송장을 찍으세요."
           autoPrint={autoPrintFor === selected.id}
           onAutoPrintStarted={() => setAutoPrintFor(null)}
+          lock={{ acquire: () => acquirePrint(BATCH_PRINT), release: () => releasePrint(BATCH_PRINT) }}
           onRunningChange={(running) => {
-            if (!running) {
-              releasePrint(BATCH_PRINT);
-
-              return;
-            }
-            writeLastBatch(prefs, { id: selected.id, batchNumber: selected.batchNumber, name: batchNameOf(selected) });
-            acquirePrint(BATCH_PRINT);
+            if (running)
+              writeLastBatch(prefs, { id: selected.id, batchNumber: selected.batchNumber, name: batchNameOf(selected) });
           }}
         />
         <Button type="button" disabled>

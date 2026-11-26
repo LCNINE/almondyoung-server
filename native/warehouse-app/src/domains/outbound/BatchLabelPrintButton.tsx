@@ -29,6 +29,7 @@ import {
   type BatchPrintResult,
 } from './waybillLabel';
 
+const PRINTER_BUSY_MESSAGE = '다른 송장을 인쇄하고 있어요. 그 인쇄가 끝나면 이어서 인쇄해요.';
 const SECONDARY = 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-50';
 const OUTLINE = 'gap-2 border border-[#e4e4e7] bg-white text-[#27272a] hover:bg-[#eff6ff] hover:brightness-100';
 
@@ -85,6 +86,7 @@ export function BatchLabelPrintButton({
   label = '송장 인쇄',
   outline = false,
   className = 'mt-2',
+  lock,
 }: {
   batchId: string;
   prefs?: DevicePrefs;
@@ -101,6 +103,7 @@ export function BatchLabelPrintButton({
   label?: string;
   outline?: boolean;
   className?: string;
+  lock?: { acquire(): boolean; release(): void };
 }) {
   const api = useApiClient();
   const queryClient = useQueryClient();
@@ -118,6 +121,7 @@ export function BatchLabelPrintButton({
   // 지금 건은 끝까지 가고 다음 건부터 멈춘다(보낸 라벨을 되돌릴 수는 없다).
   const stopRequested = useRef(false);
   const [stopping, setStopping] = useState(false);
+  const waitingFor = useRef<'auto' | 'manual' | null>(null);
   useUnsavedWork(phase.kind === 'running');
 
   const lastResult = phase.kind === 'done' ? phase.result : null;
@@ -179,12 +183,20 @@ export function BatchLabelPrintButton({
       busy.current = false;
     }
     // 판정을 받는 동안 다른 배치로 옮겼으면 화면에 없는 배치의 송장을 뽑지 않는다
-    if (direct && mounted.current) await start(direct);
+    if (direct && mounted.current) await start(direct, true);
   };
 
-  const start = async (shipmentIds: string[]) => {
+  const start = async (shipmentIds: string[], auto = false) => {
     const target = readLabelPrinter(prefs);
-    if (!target || busy.current || disabled) return;
+    if (!target || busy.current) return;
+    if (!lock && disabled) return;
+    // 다른 송장이 프린터를 쓰는 중이면 그 인쇄가 끝난 뒤 판정부터 다시 받는다
+    if (lock && !lock.acquire()) {
+      waitingFor.current = auto ? 'auto' : 'manual';
+      setPhase({ kind: 'idle' });
+      setNotice(PRINTER_BUSY_MESSAGE);
+      return;
+    }
     busy.current = true;
     stopRequested.current = false;
     setStopping(false);
@@ -209,6 +221,7 @@ export function BatchLabelPrintButton({
       setNotice(errorMessage(error));
     } finally {
       busy.current = false;
+      lock?.release();
       onRunningChange?.(false);
       void queryClient.invalidateQueries({ queryKey: statesKey });
     }
@@ -221,6 +234,14 @@ export function BatchLabelPrintButton({
       mounted.current = false;
     };
   }, []);
+  useEffect(() => {
+    if (disabled || waitingFor.current === null) return;
+    const auto = waitingFor.current === 'auto';
+    waitingFor.current = null;
+    void prepare(false, auto);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 막혔던 인쇄는 막힘이 풀릴 때 한 번
+  }, [disabled]);
+
   // 한 번만 — 다시 그려져도(배치를 오갔다 돌아와도) 또 뽑지 않게 부모가 autoPrint 를 거둔다
   const autoStarted = useRef(false);
   useEffect(() => {

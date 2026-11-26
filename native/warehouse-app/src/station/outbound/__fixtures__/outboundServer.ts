@@ -76,6 +76,8 @@ export interface OutboundServerConfig {
   batchesSinceFail: boolean;
   /** 배치 박스 송장 상태 조회를 실패시킨다(503) */
   labelStatesFail: boolean;
+  /** 응답 전에 기다린다 — 요청 사이의 순서를 테스트가 고른다 */
+  beforeReply: ((req: Req) => Promise<void> | void) | null;
   /** 이 상태의 배치 목록만 실패시킨다(503) */
   batchesFailStatus: 'created' | 'picking' | null;
   /** 배치 박스 목록에 작업 상태·송장번호·받는 분을 싣지 않는 옛 core */
@@ -127,6 +129,7 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
     batchesSince: null,
     batchesSinceFail: false,
     labelStatesFail: false,
+    beforeReply: null,
     batchesFailStatus: null,
     legacyBatchStates: false,
     returnBinFail: false,
@@ -397,6 +400,7 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
   async function request<T>(o: Req): Promise<T> {
     if (offline) throw new NetworkError(new TypeError('Failed to fetch'));
     requests.push(o);
+    if (config.beforeReply) await config.beforeReply(o);
     const method = o.method ?? 'GET';
     const [path, query = ''] = o.path.split('?');
     const params = new URLSearchParams(query);
