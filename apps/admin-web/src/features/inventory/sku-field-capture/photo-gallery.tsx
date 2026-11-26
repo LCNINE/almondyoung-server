@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
-import { useSearchParams } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { ChevronLeft, ChevronRight, Search } from 'lucide-react';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { skuFieldCaptureClient } from '@/lib/api/domains/inventory/sku-field-capture.client';
@@ -25,13 +25,42 @@ const PERIODS: { value: HistoryPeriod; label: string }[] = [
   { value: 'all', label: '전체' },
 ];
 
+function isPeriod(v: string | null): v is HistoryPeriod {
+  return PERIODS.some((p) => p.value === v);
+}
+
 export function FieldCapturePhotoGallery() {
-  const initialQ = useSearchParams().get('q')?.trim() ?? '';
-  const [period, setPeriod] = useState<HistoryPeriod>(
-    initialQ ? 'all' : 'today'
+  const router = useRouter();
+  const pathname = usePathname();
+  const params = useSearchParams();
+  const [initialQ] = useState(() => params.get('q')?.trim() ?? '');
+  const urlPeriod = params.get('period');
+  const [period, setPeriodState] = useState<HistoryPeriod>(
+    isPeriod(urlPeriod) ? urlPeriod : initialQ ? 'all' : 'today'
   );
   const [text, setText] = useState(initialQ);
-  const [q, setQ] = useState(initialQ);
+  const [q, setQState] = useState(initialQ);
+
+  // 다른 화면에 갔다가 뒤로 와도 검색 조건이 남도록 주소에 적어 둔다
+  const syncUrl = (nextQ: string, nextPeriod: HistoryPeriod) => {
+    const next = new URLSearchParams(params.toString());
+
+    if (nextQ) next.set('q', nextQ);
+    else next.delete('q');
+
+    next.set('period', nextPeriod);
+    router.replace(`${pathname}?${next.toString()}`, { scroll: false });
+  };
+
+  const setPeriod = (v: HistoryPeriod) => {
+    setPeriodState(v);
+    syncUrl(q, v);
+  };
+
+  const setQ = (v: string) => {
+    setQState(v);
+    syncUrl(v, period);
+  };
   const sectionRef = useRef<HTMLElement>(null);
   const scrolledRef = useRef(false);
   const [openId, setOpenId] = useState<string | null>(null);
