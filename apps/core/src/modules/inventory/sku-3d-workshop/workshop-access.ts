@@ -19,7 +19,7 @@ export function workshopActorOf(user: WorkshopUser, checkpoints: PermissionCheck
     userId,
     label: user.name || user.login_id || user.email || userId,
     canManage: checkpoints.check('sku_3d_workshop.manage', subject, ['inventory.model_workshop.manage']),
-    canPublish: checkpoints.check('sku_3d_workshop.publish', subject, ['inventory.master.write']),
+    canPublish: checkpoints.check('sku_3d_workshop.publish', subject, ['inventory.model_workshop.publish']),
   };
 }
 

@@ -34,7 +34,7 @@
 - `inventory.model_workshop.read`: 내 작업실 보기(상세·이벤트·파일). 부여: admin + 현장 작업자(LOGISTICS).
 - `inventory.model_workshop.write`: 열기·치수 확인·채팅·승인 요청. read 필요. 부여: admin + LOGISTICS.
 - `inventory.model_workshop.manage`: 남의 작업실 열람. read 필요. 부여: admin.
-- 승인·공개: `inventory.model_workshop.write` + `inventory.master.write`(기존 publish 와 같은 문).
+- `inventory.model_workshop.publish`: 내 작업실 버전 승인·공개. read 필요. 부여: admin + LOGISTICS(현장 작업자도 직접 공개). 재고 기준정보 관리(`inventory.master.write`)는 주지 않는다.
 - userId·tenantId 는 토큰에서만 읽는다. 작업실 접근 = owner 본인 또는 manage 보유자. 파일 서명 URL 도 이 검사를 거친 core 만 발급한다.
 - 워커 키는 자기 테넌트 DB 의 대기열·작업 입력·결과 업로드만 한다. 승인·공개 불가.
 

@@ -298,6 +298,16 @@ export const PERMISSION_CATALOG = [
       requires: ['inventory.model_workshop.read'],
     },
   ),
+  permission(
+    'inventory.model_workshop.publish',
+    '3D 모델 공개',
+    '내 3D 작업실에서 확인한 버전을 승인해 쇼핑몰에 공개한다',
+    {
+      owners: ['core'],
+      grant: ADMIN_LOGISTICS,
+      requires: ['inventory.model_workshop.read'],
+    },
+  ),
   permission('inventory.model_workshop.manage', '3D 작업실 전체 보기', '다른 작업자의 3D 작업실도 본다', {
     owners: ['core'],
     grant: ADMIN,

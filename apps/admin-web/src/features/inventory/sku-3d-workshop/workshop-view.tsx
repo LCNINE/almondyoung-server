@@ -61,7 +61,7 @@ export function WorkshopView({
   const queryClient = useQueryClient();
   const workshopId = detail.workshop.id;
   const canWrite = useCan(['inventory.model_workshop.write']);
-  const canPublish = useCan(['inventory.master.write']);
+  const canPublish = useCan(['inventory.model_workshop.publish']);
   const writeAllowed = canWrite.status === 'ready' && canWrite.allowed;
   const publishAllowed =
     writeAllowed && canPublish.status === 'ready' && canPublish.allowed;
@@ -107,7 +107,10 @@ export function WorkshopView({
       sku3dWorkshopClient.approve(workshopId, revision.id, revision.glbSha256),
     meta: {
       permission: {
-        allOf: [['inventory.model_workshop.write'], ['inventory.master.write']],
+        allOf: [
+          ['inventory.model_workshop.write'],
+          ['inventory.model_workshop.publish'],
+        ],
       },
     },
     onSuccess: async (_result, revision) => {
@@ -275,7 +278,7 @@ export function WorkshopView({
         )}
         {shown && !publishAllowed && canPublish.status === 'ready' && (
           <p className="text-xs text-gray-500">
-            쇼핑몰 반영은 재고 기준정보 관리 권한이 있어야 해요
+            쇼핑몰 반영은 3D 모델 공개 권한이 있어야 해요
           </p>
         )}
       </section>

@@ -101,7 +101,7 @@ export class Sku3dWorkshopPublisher {
     assertOwner(row.workshop, actor);
 
     if (!actor.canPublish) {
-      throw new ForbiddenError('쇼핑몰 공개 권한이 없어요');
+      throw new ForbiddenError('3D 모델 공개 권한이 없어요');
     }
 
     return row;
