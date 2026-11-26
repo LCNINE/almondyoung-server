@@ -1,5 +1,6 @@
 'use client';
 
+import { DirectDeliveryAwaitingLine } from '@/features/order/one-order-direct/direct-delivery-awaiting-line';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
@@ -569,6 +570,7 @@ function PreparationWarehouse({
                 {targetNotice}
               </p>
             ) : null}
+            <DirectDeliveryAwaitingLine warehouseId={warehouseId} />
             <BucketTable
               summary={summary.data}
               busy={busy}

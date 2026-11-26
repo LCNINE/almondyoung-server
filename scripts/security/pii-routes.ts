@@ -17,6 +17,7 @@ export const PII_ROUTES: readonly string[] = [
   'core GET /admin/print-orders/:id/customer-file',
   'core GET /cs-cases',
   'core GET /cs-cases/:id',
+  'core GET /direct-delivery/shipments/:id',
   'core GET /direct-ship/handoffs/:handoffId/sheet',
   'core POST /direct-ship/suppliers/:supplierId/handoffs',
   'core GET /event-failures/dead-letters/:id',
@@ -133,6 +134,7 @@ export const PII_REVEAL_ROUTES: readonly string[] = [
  * 전부 원문이 간다. admin-web 화면표의 `recipientCoversAll` 이 이것으로 검사된다. 선언과 양쪽으로 맞아야 한다.
  */
 export const PII_RECIPIENT_ROUTES: readonly string[] = [
+  'core GET /direct-delivery/shipments/:id',
   'core GET /direct-ship/handoffs/:handoffId/sheet',
   'core GET /fulfillment-operations/:operationId',
   'core GET /fulfillments',

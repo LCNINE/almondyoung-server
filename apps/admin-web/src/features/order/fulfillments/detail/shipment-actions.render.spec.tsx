@@ -333,7 +333,14 @@ it('상자 작업 버튼과 창은 내부 용어 없이 하는 일로 부른다'
 
   expect(
     screen.getAllByRole('button').map((button) => button.textContent)
-  ).toEqual(['분할', '수령인 변경', '계획 확정', '합포장', '출고 되돌리기']);
+  ).toEqual([
+    '분할',
+    '수령인 변경',
+    '계획 확정',
+    '합포장',
+    '공급처 직배송',
+    '출고 되돌리기',
+  ]);
 
   await userEvent.click(screen.getByRole('button', { name: '수령인 변경' }));
   let dialog = screen.getByRole('dialog');

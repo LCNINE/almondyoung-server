@@ -11,7 +11,9 @@ export type ReasonedOperationType =
   | 'waybill_void'
   | 'waybill_reissue'
   | 'stock_priority'
-  | 'stock_priority_cancel';
+  | 'stock_priority_cancel'
+  | 'direct_delivery'
+  | 'direct_delivery_return';
 
 export type RequestChannel = 'kakao' | 'phone' | 'store_inquiry' | 'marketplace_inquiry' | 'other';
 
@@ -80,6 +82,17 @@ export const SHIPMENT_OPERATION_REASONS: Record<ReasonedOperationType, ReadonlyA
   stock_priority_cancel: [
     { code: 'no_longer_urgent', label: '먼저 보낼 필요가 없어짐', customerRequest: false },
     { code: 'set_by_mistake', label: '잘못 지정함', customerRequest: false },
+    { code: 'other', label: '기타', customerRequest: false },
+  ],
+  direct_delivery: [
+    { code: 'out_of_stock_supplier_ships', label: '재고가 없어 공급처가 고객에게 바로 보냄', customerRequest: false },
+    { code: 'customer_urgent', label: '고객이 급하게 보내 달라고 요청', customerRequest: true },
+    { code: 'other', label: '기타', customerRequest: false },
+  ],
+  direct_delivery_return: [
+    { code: 'supplier_cannot_ship', label: '공급처가 보내지 못함', customerRequest: false },
+    { code: 'stock_arrived', label: '재고가 들어와 창고에서 보냄', customerRequest: false },
+    { code: 'tracking_mistake', label: '송장을 잘못 넣어 되돌림', customerRequest: false },
     { code: 'other', label: '기타', customerRequest: false },
   ],
 };

@@ -90,6 +90,10 @@ import { StockPriorityController } from './controllers/stock-priority.controller
 import { StockPriorityManager } from './stock-priority/stock-priority.manager';
 import { StockPriorityReader } from './stock-priority/stock-priority.reader';
 import { StockPriorityService } from './stock-priority/stock-priority.service';
+import { DirectDeliveryController } from './controllers/direct-delivery.controller';
+import { OneOrderDirectManager } from './supplier-shipment/one-order-direct/one-order-direct.manager';
+import { OneOrderDirectReader } from './supplier-shipment/one-order-direct/one-order-direct.reader';
+import { OneOrderDirectService } from './supplier-shipment/one-order-direct/one-order-direct.service';
 import { RefillPendingReader } from './reader/refill-pending.reader';
 import { OutboundRefillController } from './controllers/outbound-refill.controller';
 import { DraftBoxAmender } from './draft-box/draft-box-amender';
@@ -169,6 +173,7 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     WaitingOrdersController,
     ReadyShipmentsController,
     StockPriorityController,
+    DirectDeliveryController,
     PickingV2Controller,
     PickingCommandV2Controller,
     ToteController,
@@ -255,6 +260,9 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     StockPriorityReader,
     StockPriorityManager,
     StockPriorityService,
+    OneOrderDirectReader,
+    OneOrderDirectManager,
+    OneOrderDirectService,
     RefillPendingReader,
     DraftBoxAmender,
     LineCompositionEditReader,

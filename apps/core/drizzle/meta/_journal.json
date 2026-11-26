@@ -1205,6 +1205,13 @@
       "when": 1795511083893,
       "tag": "20261124090443_add-sales-order-contacts",
       "breakpoints": true
+    },
+    {
+      "idx": 172,
+      "version": "7",
+      "when": 1795655515964,
+      "tag": "20261126011155_add-direct-delivery-operation-types",
+      "breakpoints": true
     }
   ]
 }

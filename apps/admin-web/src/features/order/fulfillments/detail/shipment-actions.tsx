@@ -1,5 +1,7 @@
 'use client';
 
+import { DirectDeliveryTrigger } from '@/features/order/one-order-direct/direct-delivery-button';
+import { useDirectDeliveryTakeover } from '@/lib/services/orders/direct-delivery';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
@@ -550,6 +552,13 @@ export function ShipmentActions({
           >
             합포장
           </Button>
+        )}
+        {shipment.status === 'draft' && canRun(useDirectDeliveryTakeover) && (
+          <DirectDeliveryTrigger
+            shipmentId={shipment.id}
+            orderText="이 상자"
+            label={isSupplier ? '송장 넣기·창고로 되돌리기' : '공급처 직배송'}
+          />
         )}
         {canRecall && (
           <Button

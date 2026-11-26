@@ -81,6 +81,8 @@ const OPERATION_TYPE: Record<string, string> = {
   waybill_reissue: '송장 재발급',
   stock_priority: '우선할당',
   stock_priority_cancel: '우선할당 취소',
+  direct_delivery: '공급처 직배송으로 넘김',
+  direct_delivery_return: '창고 출고로 되돌림',
 };
 
 /** 우선할당은 받은 상자와 내준 상자에 같은 기록이 남는다 — 내준 쪽은 따로 부른다 */
