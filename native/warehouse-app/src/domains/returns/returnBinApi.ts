@@ -17,6 +17,16 @@ export interface ReturnBinContents {
   items: ReturnBinItem[];
 }
 
+export interface PutawayResult {
+  returnBin: { id: string; barcode: string; warehouseId: string };
+  putAwayQty: number;
+  skuId?: string;
+  skuCode?: string;
+  skuName?: string;
+  locationCode?: string;
+  items: ReturnBinItem[];
+}
+
 export function fetchMyReturnBin(api: ApiClient, warehouseId: string): Promise<ReturnBinContents> {
   const qs = new URLSearchParams({ warehouseId });
   return api.request<ReturnBinContents>({ path: `/return-bins/mine?${qs.toString()}` });
@@ -25,7 +35,7 @@ export function fetchMyReturnBin(api: ApiClient, warehouseId: string): Promise<R
 export function putawayReturn(
   api: ApiClient,
   input: { binBarcode: string; warehouseId: string; productBarcode: string; locationCode?: string; idempotencyKey: string },
-): Promise<{ returnBin: { id: string; barcode: string; warehouseId: string }; putAwayQty: number; items: ReturnBinItem[] }> {
+): Promise<PutawayResult> {
   return api.request({
     method: 'POST',
     path: `/return-bins/${encodeURIComponent(input.binBarcode)}/putaways`,

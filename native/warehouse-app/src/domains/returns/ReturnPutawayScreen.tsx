@@ -3,8 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useWarehouse } from '../../app/warehouse-context';
 import { useApiClient } from '../../core/data/ApiClientProvider';
 import { errorMessage } from '../../core/data/errorMessage';
-import { ApiError, type ApiClient } from '../../core/data/httpClient';
-import type { SkuSearchItem } from '../inventory/types';
+import { ApiError } from '../../core/data/httpClient';
 import { Button } from '../../core/design/Button';
 import { cn } from '../../core/design/cn';
 import { ScreenHeader } from '../../core/design/ScreenHeader';
@@ -13,7 +12,7 @@ import { useScanner } from '../../core/hardware/scan/useScanner';
 import { SCAN_STORAGE_MESSAGE, useWorkScanQueue } from '../../core/hardware/scan/useWorkScanQueue';
 import { WarehousePicker } from '../warehouse/WarehousePicker';
 import { afterPutaway, returnLocations, type PutawayStep } from './returnPutaway';
-import { fetchMyReturnBin, putawayReturn, type ReturnBinItem } from './returnBinApi';
+import { fetchMyReturnBin, putawayReturn, type PutawayResult } from './returnBinApi';
 import { WorkArea } from '../../core/operations/WorkBoundary';
 
 interface CompletedPutaway {
@@ -26,39 +25,13 @@ interface CompletedPutaway {
 
 const DESCRIPTION = '상품을 원래 선반에 놓고 바코드를 스캔하세요.';
 
-async function completedFrom(
-  api: ApiClient,
-  before: ReturnBinItem[],
-  putAwayQty: number,
-  input: { productBarcode: string; locationCode?: string },
-): Promise<CompletedPutaway | null> {
+function completedFrom(result: PutawayResult): CompletedPutaway | null {
+  const { skuId, skuName, skuCode, locationCode, putAwayQty } = result;
+
+  if (!skuId || !skuName || !locationCode) return null;
   if (!Number.isSafeInteger(putAwayQty) || putAwayQty <= 0) return null;
 
-  try {
-    const skus = await api.request<SkuSearchItem[]>({
-      path: `/inventory/skus?barcode=${encodeURIComponent(input.productBarcode)}`,
-    });
-
-    if (!Array.isArray(skus) || skus.length !== 1) return null;
-
-    const matches = before.filter(
-      (item) => item.skuId === skus[0].id && (input.locationCode === undefined || item.locationCode === input.locationCode),
-    );
-
-    if (matches.length !== 1) return null;
-
-    const [item] = matches;
-
-    return {
-      key: `${item.skuId}|${item.locationCode}`,
-      skuName: item.skuName,
-      skuCode: item.skuCode,
-      locationCode: item.locationCode,
-      qty: putAwayQty,
-    };
-  } catch {
-    return null;
-  }
+  return { key: `${skuId}|${locationCode}`, skuName, skuCode: skuCode ?? '', locationCode, qty: putAwayQty };
 }
 
 function ReturnPutawayContent({ warehouseId }: { warehouseId: string }) {
@@ -70,38 +43,24 @@ function ReturnPutawayContent({ warehouseId }: { warehouseId: string }) {
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [completed, setCompleted] = useState<CompletedPutaway[]>([]);
   const countedRequests = useRef(new Set<string>());
-  const mounted = useRef(true);
-
-  useEffect(() => {
-    mounted.current = true;
-
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
 
   const queue = useWorkScanQueue<{ binBarcode: string; warehouseId: string; productBarcode: string; locationCode?: string }>(
     async (input, id) => {
       try {
         const result = await putawayReturn(api, { ...input, idempotencyKey: id });
-        const before = stepRef.current;
+        const entry = completedFrom(result);
 
         setStep(afterPutaway({ ...result.returnBin, items: result.items }, result.items));
         setNotice(result.items.length ? { kind: 'ok', text: '넣었어요. 다음 상품을 스캔해 주세요.' } : null);
 
-        if (before.kind !== 'loading' && !countedRequests.current.has(id)) {
+        if (entry && !countedRequests.current.has(id)) {
           countedRequests.current.add(id);
+          setCompleted((list) => {
+            const index = list.findIndex((row) => row.key === entry.key);
 
-          void completedFrom(api, before.bin.items, result.putAwayQty, input).then((entry) => {
-            if (!entry || !mounted.current) return;
+            if (index === -1) return [...list, entry];
 
-            setCompleted((list) => {
-              const index = list.findIndex((row) => row.key === entry.key);
-
-              if (index === -1) return [...list, entry];
-
-              return list.map((row, at) => (at === index ? { ...row, qty: row.qty + entry.qty } : row));
-            });
+            return list.map((row, at) => (at === index ? { ...row, qty: row.qty + entry.qty } : row));
           });
         }
       } catch (error) {

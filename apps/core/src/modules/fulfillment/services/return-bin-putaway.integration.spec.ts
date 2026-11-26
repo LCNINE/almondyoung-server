@@ -90,7 +90,7 @@ describeIfDb('되돌림 적치 (스펙 §8, PR 3)', () => {
         tx,
       );
 
-      expect(result).toMatchObject({ putAwayQty: 3, items: [] });
+      expect(result).toMatchObject({ putAwayQty: 3, skuId: a.skuId, locationCode: location.code, items: [] });
       expect((await sessionOf(tx, sessionA)).status).toBe('settled');
       expect((await sessionOf(tx, sessionB)).status).toBe('settled');
       expect((await sessionOf(tx, sessionA)).returnedQty).toBe(2);
