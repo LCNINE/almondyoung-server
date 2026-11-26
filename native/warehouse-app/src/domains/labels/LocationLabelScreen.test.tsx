@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { useEffect } from 'react';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import { createMemoryHistory, createRootRoute, createRoute, createRouter, RouterProvider } from '@tanstack/react-router';
 import { ScanProvider, useScanBus } from '../../core/hardware/scan/ScanProvider';
@@ -42,14 +43,17 @@ const RACK_CELLS = {
   ],
   total: 3,
 };
+let rackTotal = 3;
 const OK: LabelBatch = { format: 'zpl', data: '^XA^XZ', labels: 4, skipped: [] };
 
 let lastSearchPath = '';
 const rackQueryPaths: string[] = [];
+const commandCodes: string[] = [];
 let busEmit: (code: string) => void = () => {};
 function BusProbe() {
   const bus = useScanBus();
   busEmit = (code) => bus.emit({ code, source: 'hid', at: 1 });
+  useEffect(() => bus.setCommandHandler((code) => commandCodes.push(code)), [bus]);
   return null;
 }
 
@@ -60,7 +64,7 @@ function setup(batch: LabelBatch = OK) {
     if (o.path.startsWith('/locations/warehouses/w-1?')) {
       if (o.path.includes('rackNumber=')) {
         rackQueryPaths.push(o.path);
-        return RACK_CELLS;
+        return { ...RACK_CELLS, total: rackTotal };
       }
       lastSearchPath = o.path;
       return FOUND;
@@ -130,7 +134,8 @@ describe('LocationLabelScreen', () => {
     rackQueryPaths.length = 0;
     const { labelCalls } = setup();
     await pickRack();
-    expect(await screen.findByText('A-07-03')).toBeInTheDocument();
+    expect((await screen.findAllByText('A-07-03')).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('1장')).toHaveLength(3);
     expect(screen.getByText('총 3장')).toBeInTheDocument();
     expect(rackQueryPaths).toHaveLength(1);
     expect(rackQueryPaths[0]).toContain('columnName=A');
@@ -138,6 +143,23 @@ describe('LocationLabelScreen', () => {
     await userEvent.click(screen.getByRole('button', { name: '랙 전체 출력' }));
     await screen.findByText('라벨 4장을 보냈어요');
     expect(labelCalls).toEqual([{ rackId: 'r-1' }]);
+  });
+
+  it('입력칸에 친 명령 바코드는 검색이 아니라 셸 명령으로 간다', async () => {
+    commandCodes.length = 0;
+    setup();
+    await find('%90%03');
+    expect(commandCodes).toEqual(['%90%03']);
+    expect(lastSearchPath).not.toContain('%90');
+  });
+
+  it('랙 칸이 100개를 넘으면 미리보기가 일부임을 알린다', async () => {
+    rackTotal = 150;
+    setup();
+    await pickRack();
+    expect(await screen.findByText('전체 150칸 중 3칸 미리보기')).toBeInTheDocument();
+    expect(screen.getByText('총 150장')).toBeInTheDocument();
+    rackTotal = 3;
   });
 
   it('헤더에 라벨 프린터 이름을 보인다', async () => {
@@ -154,7 +176,7 @@ describe('LocationLabelScreen', () => {
     expect(screen.getByText('고른 칸 2개')).toBeInTheDocument();
     expect(screen.getByText('총 2장')).toBeInTheDocument();
     const preview = within(screen.getByRole('region', { name: '출력 미리보기' }));
-    const codes = preview.getAllByRole('listitem').map((li) => li.textContent);
+    const codes = preview.getAllByRole('listitem').map((li) => li.querySelector('strong')?.textContent);
     expect(codes).toEqual(['M-07-01', 'M-07-꼭대기']);
   });
 

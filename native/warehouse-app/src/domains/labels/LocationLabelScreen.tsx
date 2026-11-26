@@ -7,7 +7,10 @@ import { errorMessage } from '../../core/data/errorMessage';
 import { Button } from '../../core/design/Button';
 import { cn } from '../../core/design/cn';
 import { ScreenHeader } from '../../core/design/ScreenHeader';
-import { useScanner } from '../../core/hardware/scan/useScanner';
+import { isCommandCode } from '../../core/hardware/scan/commandPrefix';
+import { useScanEmit, useScanner } from '../../core/hardware/scan/useScanner';
+import { Barcode } from '../../station/Barcode';
+import { encodeCode128B } from '../../station/code128';
 import {
   NO_LABEL_PRINTER_MESSAGE,
   PRINTER_FAILURE_MESSAGE,
@@ -56,7 +59,8 @@ export function LocationLabelScreen({
   print?: PrintRaw;
 }) {
   const api = useApiClient();
-  const { warehouseId, isSet } = useWarehouse();
+  const { warehouseId, warehouseName, isSet } = useWarehouse();
+  const emit = useScanEmit();
   const racks = useRacks(warehouseId);
   const { run, busy } = usePrintLabels(prefs, print);
   const [mode, setMode] = useState<'rack' | 'picked'>('rack');
@@ -73,6 +77,7 @@ export function LocationLabelScreen({
   const sortedPicked = [...picked].sort((a, b) => a.code.localeCompare(b.code));
   const previewCodes = mode === 'rack' ? (rackLocations.data?.codes ?? []) : sortedPicked.map((x) => x.code);
   const total = mode === 'rack' ? (rackLocations.data?.total ?? 0) : picked.length;
+  const truncated = mode === 'rack' && total > previewCodes.length;
   const canPrint = mode === 'rack' ? rackId !== '' && !rackLocations.isError : picked.length > 0;
 
   // 스캔은 포커스가 어디 있든 검색어가 된다 — 명령 바코드는 셸이 가져가 여기 오지 않는다.
@@ -98,8 +103,13 @@ export function LocationLabelScreen({
   const submitDraft = () => {
     const value = draft.trim();
     if (value === '') return;
-    setTerm(value);
     setDraft('');
+    if (isCommandCode(value)) {
+      emit({ code: value, source: 'hid', at: Date.now() });
+      return;
+    }
+
+    setTerm(value);
   };
 
   const printCurrent = () => (mode === 'rack' ? send({ rackId }) : send({ locationIds: picked.map((p) => p.id) }));
@@ -123,7 +133,7 @@ export function LocationLabelScreen({
         right={<span className="text-xs text-[#71717a]">{`라벨 프린터 · ${printerName}`}</span>}
       />
 
-      <div className="grid shrink-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)] items-stretch gap-[22px] max-[700px]:grid-cols-1 max-[700px]:gap-[18px]">
+      <div className="grid shrink-0 grid-cols-[minmax(280px,0.9fr)_minmax(400px,1.2fr)] items-stretch gap-6 max-[1000px]:grid-cols-2 max-[1000px]:gap-[18px] max-[700px]:grid-cols-1 max-[700px]:gap-[18px]">
         <section aria-label="출력 대상" className={PANEL}>
           <div className={PANEL_HEAD}>
             <div role="group" aria-label="출력 방식" className="flex gap-0.5 rounded-lg bg-[#ededee] p-1">
@@ -172,6 +182,19 @@ export function LocationLabelScreen({
                     <br />
                     선택한 랙에 속한 모든 칸을 한 장씩 출력합니다.
                   </p>
+                  {(rackLocations.data?.codes ?? []).length > 0 ? (
+                    <ul className="mt-6 max-h-[330px] overflow-auto border-t border-[#e4e4e7]">
+                      {(rackLocations.data?.codes ?? []).map((code) => (
+                        <li
+                          key={code}
+                          className="flex justify-between border-b border-[#e4e4e7] py-[15px] text-[13px]"
+                        >
+                          <strong className="font-medium">{code}</strong>
+                          <span className="text-xs text-[#71717a]">1장</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
                 </>
               )
             ) : (
@@ -266,6 +289,10 @@ export function LocationLabelScreen({
                   className="rounded border border-[#d4d4d8] bg-white px-2 py-3.5 text-center text-[#27272a]"
                 >
                   <strong className="text-xl tracking-[0.4px] whitespace-nowrap">{code}</strong>
+                  <div className="mx-auto mt-3 mb-1.5 max-w-[180px]">
+                    <CodeBars code={code} />
+                  </div>
+                  <span className="text-[10px] text-[#71717a]">{warehouseName}</span>
                 </li>
               ))}
             </ul>
@@ -274,6 +301,12 @@ export function LocationLabelScreen({
               왼쪽에서 랙이나 로케이션을 선택하세요.
             </div>
           )}
+
+          {truncated ? (
+            <p className="px-[22px] py-2.5 text-[11px] text-[#71717a]">
+              {`전체 ${total}칸 중 ${previewCodes.length}칸 미리보기`}
+            </p>
+          ) : null}
 
           <div className="mt-auto border-t border-[#e4e4e7] p-[22px]">
             <div className="mb-[17px] flex items-center justify-between text-[13px]">
@@ -293,6 +326,14 @@ export function LocationLabelScreen({
       {outcome ? <OutcomeText outcome={outcome} /> : null}
     </div>
   );
+}
+
+function CodeBars({ code }: { code: string }) {
+  try {
+    return <Barcode bits={encodeCode128B(code)} label={`${code} 바코드`} height={36} />;
+  } catch {
+    return null;
+  }
 }
 
 function SkipList({ skipped, picked }: { skipped: LabelBatch['skipped']; picked: Picked[] }) {
