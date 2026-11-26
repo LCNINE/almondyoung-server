@@ -63,11 +63,28 @@ test('codexArgs never uses --last or --ephemeral and resumes the exact session',
     assert.equal(args.at(-1), '-');
   }
 
+  assert.equal(first.at(-2), '--');
+
   assert.deepEqual(first.slice(0, 1), ['exec']);
   assert.ok(first.includes('-i'));
   assert.deepEqual(resume.slice(0, 2), ['exec', 'resume']);
   assert.equal(resume.at(-2), '019a-session');
   assert.ok(!resume.includes('-i'));
+});
+
+test('codexArgs separates variadic image paths from the stdin prompt', () => {
+  const base = { workdir: 'C:/jobs/w', schemaPath: 'C:/jobs/w/s.json', lastMessagePath: 'C:/jobs/w/i/review.json' };
+
+  for (const images of [[], ['C:/jobs/w/inputs/photos/01 a.jpg'], ['a.jpg', 'b.png', 'c.webp']]) {
+    const args = codexArgs({ ...base, sessionId: null, images });
+
+    assert.deepEqual(args.slice(-2), ['--', '-']);
+    assert.equal(args.filter((a) => a === '-i').length, images.length);
+
+    for (const image of images) {
+      assert.equal(args[args.indexOf(image) - 1], '-i');
+    }
+  }
 });
 
 test('readCodexEvent picks session and progress lines', () => {

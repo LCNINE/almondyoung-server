@@ -19,7 +19,8 @@ export function codexArgs({ sessionId, workdir, schemaPath, lastMessagePath, ima
     return ['exec', 'resume', ...common, sessionId, '-'];
   }
 
-  return ['exec', ...common, '-C', workdir, ...images.flatMap((image) => ['-i', image]), '-'];
+  // -i 는 값을 여러 개 받는다 — -- 로 끊지 않으면 stdin 표식(-)까지 이미지 경로로 삼킨다
+  return ['exec', ...common, '-C', workdir, ...images.flatMap((image) => ['-i', image]), '--', '-'];
 }
 
 // codex exec --json 한 줄에서 워커가 쓰는 것만 뽑는다
@@ -76,6 +77,11 @@ export function killTree(child) {
 
 // 프롬프트는 stdin 으로만 넣는다 — 작업자 문장을 명령줄에 붙이지 않는다
 export function runCodex({ bin, args, cwd, env, prompt, timeoutMs, onEvent, signal }) {
+  // 이미 취소된 요청이면 자식 프로세스를 아예 만들지 않는다
+  if (signal?.aborted) {
+    return Promise.resolve({ code: null, aborted: true, stderr: '' });
+  }
+
   return new Promise((resolve) => {
     const child = spawn(bin, args, { cwd, env, shell: false, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
     let stderr = '';
@@ -100,13 +106,6 @@ export function runCodex({ bin, args, cwd, env, prompt, timeoutMs, onEvent, sign
     }, timeoutMs);
 
     signal?.addEventListener('abort', abort);
-
-    // 이미 취소된 신호로 불렸으면 띄우자마자 끈다
-    if (signal?.aborted) {
-      abort();
-
-      return;
-    }
 
     createInterface({ input: child.stdout }).on('line', (line) => {
       const event = readCodexEvent(line);
