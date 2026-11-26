@@ -134,7 +134,10 @@ describe('LocationLabelScreen', () => {
     rackQueryPaths.length = 0;
     const { labelCalls } = setup();
     await pickRack();
-    expect((await screen.findAllByText('A-07-03')).length).toBeGreaterThan(0);
+    await screen.findAllByText('A-07-03');
+    const previewRegion = within(screen.getByRole('region', { name: '출력 미리보기' }));
+    expect(previewRegion.getByText('A-07-03')).toBeInTheDocument();
+    expect(previewRegion.getByRole('img', { name: 'A-07-03 바코드' })).toHaveAttribute('width', '100%');
     expect(screen.getAllByText('1장')).toHaveLength(3);
     expect(screen.getByText('총 3장')).toBeInTheDocument();
     expect(rackQueryPaths).toHaveLength(1);
@@ -147,10 +150,12 @@ describe('LocationLabelScreen', () => {
 
   it('입력칸에 친 명령 바코드는 검색이 아니라 셸 명령으로 간다', async () => {
     commandCodes.length = 0;
+    lastSearchPath = '';
     setup();
     await find('%90%03');
     expect(commandCodes).toEqual(['%90%03']);
-    expect(lastSearchPath).not.toContain('%90');
+    expect(lastSearchPath).toBe('');
+    expect(screen.getByLabelText('로케이션 코드')).toHaveValue('');
   });
 
   it('랙 칸이 100개를 넘으면 미리보기가 일부임을 알린다', async () => {

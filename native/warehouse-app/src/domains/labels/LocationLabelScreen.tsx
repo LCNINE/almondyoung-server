@@ -330,7 +330,7 @@ export function LocationLabelScreen({
 
 function CodeBars({ code }: { code: string }) {
   try {
-    return <Barcode bits={encodeCode128B(code)} label={`${code} 바코드`} height={36} />;
+    return <Barcode bits={encodeCode128B(code)} label={`${code} 바코드`} height={36} fluid />;
   } catch {
     return null;
   }
