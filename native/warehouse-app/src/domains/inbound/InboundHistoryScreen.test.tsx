@@ -358,3 +358,40 @@ it('on handheld the shipment box line is plain text, not a link', async () => {
     screen.queryByRole('link', { name: /11월 2차 배편 · 상자 L7/ })
   ).toBeNull();
 });
+
+it('입고내역은 내부 입고 번호와 줄 번호를 보이지 않고 시간·창고·상품별 수량·상태를 보인다', async () => {
+  const item = {
+    ...receipt('d', 'direct'),
+    id: 'rcpt-7f3a9c21',
+    occurredAt: '2026-11-25T05:07:00.000Z',
+    lines: [{ ...line('d', 'direct'), id: 'rline-55b0e1' }],
+  };
+  await mount((async () => ({
+    items: [item],
+    total: 1,
+    serverTime: new Date().toISOString(),
+  })) as ApiClient['request']);
+  const record = await screen.findByRole('listitem', {
+    name: '2026.11.25 14:07 입고내역',
+  });
+  expect(record).toHaveTextContent('시험창고');
+  expect(record).toHaveTextContent('1종 · 입고 4개');
+  expect(within(record).getByText('직접상품')).toBeInTheDocument();
+  expect(within(record).getByText('입고 완료')).toBeInTheDocument();
+  expect(within(record).getByText('적치 대기')).toBeInTheDocument();
+  expect(document.body.textContent).not.toContain('rcpt-7f3a9c21');
+  expect(document.body.textContent).not.toContain('rline-55b0e1');
+});
+
+it('입고 취소 버튼은 마우스를 올려도 빨간 배경이 되지 않는다', async () => {
+  await mount((async () => ({
+    items: [receipt('d', 'direct')],
+    total: 1,
+    serverTime: new Date().toISOString(),
+  })) as ApiClient['request']);
+  const cancel = await screen.findByRole('button', {
+    name: '직접상품 입고 취소',
+  });
+  expect(cancel).toHaveClass('hover:bg-white');
+  expect(cancel.className).not.toMatch(/hover:bg-(red|\[#a)/);
+});

@@ -49,7 +49,7 @@ function ReservationNote({
 }) {
   if (value.missingQty > 0)
     return (
-      <div role="alert" className="space-y-1 text-sm text-red-700">
+      <div role="alert" className="space-y-1 text-[13px] text-[#aa4037]">
         <p>
           이미 출고 준비 중인 주문이 이 재고를 잡고 있어 지금은 취소할 수
           없어요. 관리자에게 아래 주문의 송장을 무효화하고 출고 배치에서 빼
@@ -69,7 +69,7 @@ function ReservationNote({
     );
   if (value.orderCount === 0) return null;
   return (
-    <p className="text-sm text-amber-800">
+    <p className="text-[13px] text-[#9a681c]">
       이 재고를 잡아 둔 주문 {value.orderCount}건({value.quantity}개)은 다시
       재고를 기다려요.
     </p>
@@ -168,39 +168,61 @@ function CancelReceiptContent({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#18181b55] p-4">
       <section
         role="dialog"
         aria-modal="true"
         aria-label="입고 취소 확인"
-        className="max-h-[90vh] w-full max-w-md space-y-3 overflow-y-auto rounded-xl bg-white p-5"
+        className="max-h-[90vh] w-full max-w-[440px] space-y-3 overflow-y-auto rounded-2xl border border-[#e4e4e7] bg-white p-7 text-[#27272a] shadow-[0_20px_80px_#18181b30] max-[600px]:p-[23px]"
         onKeyDown={(event) => preventScanEnterActivation(event.nativeEvent)}
       >
-        <h2 className="font-semibold">입고 취소 확인</h2>
+        <h2 className="mb-[22px] text-[22px] font-bold max-[600px]:text-xl">
+          입고 취소 확인
+        </h2>
         <div>
-          <p className="font-medium text-gray-800">
+          <p className="text-base font-semibold">
             {target.skuName}
             {state ? ` ${state.quantity}개` : ''}
           </p>
-          <p className="text-sm text-gray-600">
-            {receivedLabel(target.receivedAt)} 입고 ·{' '}
-            {target.originLocationCode ?? '원위치 확인 필요'}
-          </p>
         </div>
+        <dl className="my-6 flex flex-col gap-2.5">
+          <div className="flex items-baseline text-[13px]">
+            <dt className="w-[90px] shrink-0 text-[#71717a]">입고 일시</dt>
+            <dd className="tabular-nums">{receivedLabel(target.receivedAt)}</dd>
+          </div>
+          <div className="flex items-baseline text-[13px]">
+            <dt className="w-[90px] shrink-0 text-[#71717a]">원위치</dt>
+            <dd>{target.originLocationCode ?? '원위치 확인 필요'}</dd>
+          </div>
+          {state ? (
+            <div className="flex items-baseline text-[13px]">
+              <dt className="w-[90px] shrink-0 text-[#71717a]">취소 수량</dt>
+              <dd>
+                <strong>{state.quantity}개 전체</strong>
+              </dd>
+            </div>
+          ) : null}
+        </dl>
         {busy ? (
-          <p role="status">취소하고 있어요.</p>
+          <p role="status" className="text-[13px] text-[#71717a]">
+            취소하고 있어요.
+          </p>
         ) : receipt.error ? (
           <div className="space-y-2">
-            <p role="alert">{receiptFeedback(receipt.error, 'inbound')}</p>
+            <p role="alert" className="text-[13px] text-[#aa4037]">
+              {receiptFeedback(receipt.error, 'inbound')}
+            </p>
             <Button onClick={() => void receipt.refresh().catch(() => {})}>
               다시 확인
             </Button>
           </div>
         ) : !receipt.ready ? (
-          <p role="status">입고 상태를 확인하고 있어요.</p>
+          <p role="status" className="text-[13px] text-[#71717a]">
+            입고 상태를 확인하고 있어요.
+          </p>
         ) : null}
         {boxReceipt ? (
-          <p role="alert" className="text-sm text-red-700">
+          <p role="alert" className="text-[13px] leading-[1.8] text-[#aa4037]">
             선적 상자로 받은 입고예요. 상자째 취소해 주세요 —{' '}
             <Link to="/inbound/history" className="underline">
               입고내역
@@ -208,22 +230,22 @@ function CancelReceiptContent({
             의 이 입고에 상자가 적혀 있어요.
           </p>
         ) : blocked ? (
-          <p role="alert" className="text-sm text-red-700">
+          <p role="alert" className="text-[13px] leading-[1.8] text-[#aa4037]">
             {blocked}
           </p>
         ) : state ? (
           <>
             {fromEarlierDay && (
-              <p className="font-semibold text-amber-800">
+              <p className="text-[13px] font-semibold text-[#9a681c]">
                 오늘 입고한 건이 아니에요. 입고한 날짜를 확인해 주세요.
               </p>
             )}
-            <p className="text-sm text-gray-700">
+            <p className="text-[13px] leading-[1.8] text-[#71717a]">
               이 창고 재고에서 {state.quantity}개가 모두 빠져요. 실제로 들어온
               물건이 아닐 때만 취소해 주세요.
             </p>
             {target.source === 'purchase_order' && (
-              <p className="text-sm text-gray-700">
+              <p className="text-[13px] leading-[1.8] text-[#71717a]">
                 발주 미입고 수량이 복원됩니다.
               </p>
             )}
@@ -236,20 +258,20 @@ function CancelReceiptContent({
           </>
         ) : null}
         {notice && (
-          <p role="status" className="text-sm text-amber-800">
+          <p role="status" className="text-[13px] text-[#9a681c]">
             {notice}
           </p>
         )}
-        <div className="flex gap-2">
+        <div className="mt-6 flex gap-2">
           <Button
-            className="flex-1 border border-gray-300 bg-white text-gray-800 hover:bg-gray-50"
+            className="flex-1 border border-[#e4e4e7] bg-white py-[13px] text-[#27272a] hover:bg-[#eff6ff] hover:brightness-100"
             disabled={busy}
             onClick={onClose}
           >
             돌아가기
           </Button>
           <Button
-            className="flex-1"
+            className="flex-1 border border-[#efcbc4] bg-white py-[13px] text-[#aa4037] hover:bg-[#eff6ff] hover:brightness-100"
             disabled={busy || !receipt.ready || !cancelable}
             onClick={() => void confirm()}
           >
