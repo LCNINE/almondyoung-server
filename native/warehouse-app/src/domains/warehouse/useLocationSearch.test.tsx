@@ -220,6 +220,31 @@ describe('useLocationSearch', () => {
     expect(request).not.toHaveBeenCalled();
   });
 
+  it('listWhenEmpty 면 검색어 없이 창고 위치 목록을 부른다', async () => {
+    const request = vi.fn(async (_opts: { path: string }) => ({
+      items: [],
+      total: 0,
+    }));
+    const client: ApiClient = {
+      request: request as unknown as ApiClient['request'],
+    };
+
+    const { result } = renderHook(
+      () =>
+        useLocationSearch('w-1', '  ', 'movement-destination', {
+          listWhenEmpty: true,
+        }),
+      { wrapper: wrapperFor(client) }
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    const url = new URL(`http://test${request.mock.calls[0][0].path}`);
+    expect(url.pathname).toBe('/locations/warehouses/w-1');
+    expect(url.searchParams.get('search')).toBeNull();
+    expect(url.searchParams.get('limit')).toBe('100');
+    expect(url.searchParams.get('isActive')).toBe('true');
+  });
+
   it('검색어가 공백이면 호출하지 않는다', () => {
     const request = vi.fn(async (_opts: { path: string }) => ({
       items: [],
