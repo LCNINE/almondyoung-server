@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useApiClient } from '../../core/data/ApiClientProvider';
 import type { MoveInput } from './types';
+import type { WithSummary } from '../../core/operations/pendingWork';
 
 export const MOVE_REASONS = ['재배치', '통합', '분산', '기타'] as const;
 
@@ -12,7 +13,7 @@ export function useMoveStock() {
   const api = useApiClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: MoveInput) =>
+    mutationFn: (input: WithSummary<MoveInput>) =>
       api.request<{ usualShelfSkuIds?: string[] }>({
         method: 'POST',
         path: '/movement/move',
@@ -31,6 +32,8 @@ export function useMoveStock() {
           ],
         },
         idempotencyKey: input.idempotencyKey,
+        summary: input.summary,
+        screen: input.screen,
       }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['location-contents'] });

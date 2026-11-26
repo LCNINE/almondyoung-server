@@ -51,6 +51,48 @@ describe('durable requests', () => {
     expect(stock).toBe(2);
     expect(sent).toEqual(['one', 'one']);
   });
+  it('표시 이름은 기기 기록에만 남고 서버로 보내는 본문·재시도 본문에는 없다', async () => {
+    const sent: Array<Parameters<ApiClient['request']>[0]> = [];
+    let first = true;
+    const api: ApiClient = {
+      request: async <T>(o: Parameters<ApiClient['request']>[0]) => {
+        sent.push(o);
+        if (first) {
+          first = false;
+          throw new TypeError('lost response');
+        }
+        return { ok: true } as T;
+      },
+    };
+    const store = createOperationStore(crypto.randomUUID());
+    const runner = createOperationRunner({
+      api,
+      store,
+      getScope: async () => 'actor|server',
+      wait: async () => {},
+    });
+    await runner.request({
+      method: 'POST',
+      path: '/inventory/stocks/adjust',
+      body: {
+        skuId: 's',
+        warehouseId: 'w',
+        locationId: 'l',
+        delta: 2,
+        reason: 'found',
+      },
+      idempotencyKey: 'named',
+      summary: '데모 상품 11 +2개',
+    });
+    expect(await store.get('named')).toMatchObject({
+      summary: '데모 상품 11 +2개',
+    });
+    expect(sent).toHaveLength(2);
+    for (const request of sent) {
+      expect(request).not.toHaveProperty('summary');
+      expect(JSON.stringify(request.body)).not.toContain('데모 상품');
+    }
+  });
   it('storage failure prevents sending', async () => {
     const api: ApiClient = { request: vi.fn() };
     const store = createOperationStore(crypto.randomUUID());
@@ -428,8 +470,8 @@ it('keeps adjustment uncertainty when a network loss is followed by 403', async 
   expect(workStatus(runner.getSnapshot(), Date.now())).toMatchObject({
     blocksWork: true,
   });
-  expect(workStatus(runner.getSnapshot(), Date.now()).message).toContain(
-    '권한이 없어 처리 결과를 확인하지 못했어요'
+  expect(workStatus(runner.getSnapshot(), Date.now()).message).toMatch(
+    /권한이 없어 재고 조정 1건.*의 처리 결과를 확인하지 못했어요/
   );
   expect(unsentCount(runner.getSnapshot(), Date.now())).toBe(1);
 

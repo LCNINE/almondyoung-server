@@ -11,6 +11,7 @@ import { preventScanEnterActivation } from '../../core/hardware/scan/hidScanBoun
 import { useLocationSearch } from '../warehouse/useLocationSearch';
 import type { LocationItem } from '../warehouse/types';
 import { usePutaway } from './mutations';
+import { workSummary } from '../../core/operations/pendingWork';
 import type { PutawayTarget } from './types';
 import { RememberUsualToggle } from './RememberUsualToggle';
 import { useWaitingOrders } from './waitingOrders';
@@ -165,6 +166,7 @@ function PutawaySheetContent({
         // 켰을 때만 보낸다 — 이 필드를 모르는 서버가 지운 채 저장한 요청과 재시도의 지문이 갈리지 않게.
         rememberAsUsual: canRemember && remember ? true : undefined,
         idempotencyKey,
+        summary: workSummary([{ name: target.skuName, quantity }]),
       });
       if (
         identity === activeIdentity.current &&

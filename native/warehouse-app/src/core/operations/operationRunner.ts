@@ -285,6 +285,8 @@ export function createOperationRunner(deps: {
       method: o.method ?? 'POST',
       bodyJson: JSON.stringify(body),
       createdAt: Date.now(),
+      ...(o.summary ? { summary: o.summary } : {}),
+      ...(o.screen ? { screen: o.screen } : {}),
     });
     if (op.status === 'confirmed') return op.result as T;
     if (op.status === 'rejected') throw storedRejection(op);

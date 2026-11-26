@@ -1,6 +1,15 @@
 import { createContext, useContext } from 'react';
 import type { StoredOperation } from './operationStore';
 import { isBoxCheck, shipmentOf } from './boxChecks';
+import { workNameOf, type PendingWorkPath } from './pendingWork';
+
+/** 라우터 안의 다리(`WorkNavigationBridge`)가 넘기는 지금 경로와 이동 */
+export interface WorkNavigator {
+  pathname: string;
+  station: boolean;
+  /** 옮겼으면 true — 지금 화면이 저장 안 한 입력으로 이동을 막으면 false */
+  go(to: PendingWorkPath): Promise<boolean>;
+}
 
 export interface WorkAreaState {
   operations: StoredOperation[];
@@ -8,6 +17,8 @@ export interface WorkAreaState {
   problem: boolean;
   restoring: boolean;
   recheck(): Promise<void>;
+  /** 라우터 안의 다리만 쓴다 — 경계가 아닌 값(테스트 등)에는 없어도 된다 */
+  registerNavigator?(navigator: WorkNavigator | null): void;
 }
 
 export const AreaContext = createContext<WorkAreaState>({
@@ -29,22 +40,6 @@ export function useUnresolvedWork() {
     unknown: problem || restoring,
     recheck,
   };
-}
-
-// 기기에 남는 작업은 실행기가 저장해 두는 쓰기 경로뿐이다 — 출고 상자 경로는 따로 본다
-const WORK_NAMES: Array<[prefixes: string[], name: string]> = [
-  [['/inbound/putaway', '/movement/'], '적치·이동'],
-  [['/inbound/', '/purchase-orders/', '/inventory/inbound-shipments/'], '입고'],
-  [['/inventory/stocks/adjust'], '재고 조정'],
-  [['/stocktaking/'], '실사'],
-];
-
-function workNameOf(path: string): string | null {
-  return (
-    WORK_NAMES.find(([prefixes]) =>
-      prefixes.some((p) => path.startsWith(p))
-    )?.[1] ?? null
-  );
 }
 
 /**

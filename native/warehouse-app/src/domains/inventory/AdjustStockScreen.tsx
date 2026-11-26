@@ -432,6 +432,7 @@ function AdjustStockScreenContent({
               delta,
               reason: effectiveReason,
               idempotencyKey,
+              summary: `${submittedResult.productName} ${delta > 0 ? '+' : ''}${delta}개`,
             },
             {
               onSuccess: () => {

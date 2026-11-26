@@ -21,6 +21,7 @@ import { WarehousePicker } from '../warehouse/WarehousePicker';
 import { useLocationContents } from './useLocationContents';
 import { useMoveStock, MOVE_REASONS } from './useMoveStock';
 import type { LocationContentItem } from './types';
+import { workSummary } from '../../core/operations/pendingWork';
 import type { LocationItem } from '../warehouse/types';
 
 const OTHER = '기타';
@@ -575,6 +576,9 @@ function MovementScreenContent() {
                 quantity: qty,
                 reason: effectiveReason || undefined,
                 idempotencyKey,
+                summary: workSummary([
+                  { name: activeItem.skuName, quantity: qty },
+                ]),
               },
               {
                 onSuccess: () => {

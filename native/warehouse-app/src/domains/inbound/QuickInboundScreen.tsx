@@ -30,6 +30,7 @@ import { WarehousePicker } from '../warehouse/WarehousePicker';
 import { useSkuByBarcode } from '../inventory/useSkuByBarcode';
 import { scanIncrement } from './packingUnit';
 import { useSimpleInbound } from './mutations';
+import { workSummary } from '../../core/operations/pendingWork';
 import { usualShelfNotice } from './RememberUsualToggle';
 import {
   playInboundSaved,
@@ -454,6 +455,9 @@ function QuickInboundScreenContent({ station }: { station: boolean }) {
           quantity: r.quantity,
         })),
         idempotencyKey,
+        summary: workSummary(
+          cart.map((r) => ({ name: r.skuName, quantity: r.quantity }))
+        ),
       },
       {
         onError: () => playInboundSaveFailed(),

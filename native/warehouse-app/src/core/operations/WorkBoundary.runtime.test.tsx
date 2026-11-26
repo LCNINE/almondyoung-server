@@ -20,7 +20,16 @@ import { SessionProvider } from '../../app/session-context';
 import { ApiClientProvider, useApiClient } from '../data/ApiClientProvider';
 import { apiBaseUrl } from '../../app/config';
 import { createOperationStore } from './operationStore';
-import { WorkArea } from './WorkBoundary';
+import { WorkArea, WorkNavigationBridge } from './WorkBoundary';
+import { useUnsavedWork } from './useUnsavedWork';
+import {
+  Outlet,
+  RouterProvider,
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+} from '@tanstack/react-router';
 
 const DEFAULT_OPERATION_DB = 'almondwms-work-v2';
 const openDatabases = new Set<IDBDatabase>();
@@ -231,6 +240,117 @@ it('rechecks readiness on reconnect after a transient IndexedDB failure', async 
   );
 });
 
+function UnsavedPage() {
+  useUnsavedWork(true);
+  return <p>입력 중인 화면</p>;
+}
+
+function renderWithRouter(start: string, station: boolean) {
+  const root = createRootRoute({
+    component: () => (
+      <>
+        <WorkNavigationBridge station={station} />
+        <Outlet />
+      </>
+    ),
+  });
+  const page = (path: string, text: string) =>
+    createRoute({ getParentRoute: () => root, path, component: () => <p>{text}</p> });
+  const router = createRouter({
+    routeTree: root.addChildren([
+      page('/outbound', '출고 검수 화면'),
+      page('/inbound/quick', '간편입고 화면'),
+      createRoute({
+        getParentRoute: () => root,
+        path: '/movement',
+        component: UnsavedPage,
+      }),
+    ]),
+    history: createMemoryHistory({ initialEntries: [start] }),
+  });
+  renderBoundary(<RouterProvider router={router} />);
+}
+
+async function rememberUncertainInbound() {
+  const store = createOperationStore();
+  await store.begin({
+    id: 'inbound-denied',
+    scope: JSON.stringify([apiBaseUrl, 'worker']),
+    resource: '/inbound/simple:warehouse-1',
+    method: 'POST',
+    path: '/inbound/simple',
+    bodyJson: JSON.stringify({
+      warehouseId: 'warehouse-1',
+      items: [{ skuId: 'sku-1', quantity: 3 }],
+      idempotencyKey: 'inbound-denied',
+    }),
+    createdAt: Date.now(),
+    summary: '데모 상품 11 ×3',
+  });
+  await store.finish('inbound-denied', 'uncertain');
+  // 서버는 이 입고를 받지 못한다 — 결과를 모른 채 남는다
+  const readiness = fetchHandler;
+  fetchHandler = async (...args) => {
+    if (String(args[0]).endsWith('/inbound/simple'))
+      throw new TypeError('connection lost');
+    return readiness(...args);
+  };
+}
+
+it('다른 화면에서 막혀도 남은 작업의 이름을 말하고 그 작업 화면으로 한 번에 간다', async () => {
+  await rememberUncertainInbound();
+  renderWithRouter('/outbound', true);
+  await act(async () => {
+    await session.login();
+  });
+
+  expect(
+    await screen.findByText(
+      '입고 1건(데모 상품 11 ×3)의 처리 여부를 확인하고 있어요. 이 입고를 다시 등록하지 마세요.'
+    )
+  ).toBeInTheDocument();
+  await userEvent.click(
+    screen.getByRole('button', { name: 'F3 입고 화면으로 가기' })
+  );
+  expect(await screen.findByText('간편입고 화면')).toBeInTheDocument();
+  // 이미 그 화면이면 가는 단추는 없고 확인 단추는 남는다
+  expect(
+    screen.queryByRole('button', { name: /화면으로 가기/ })
+  ).toBeNull();
+  expect(
+    screen.getByRole('button', { name: '처리 내역 확인' })
+  ).toBeInTheDocument();
+});
+
+it('지금 화면이 저장 안 한 입력으로 이동을 막으면 그 이유를 안내에 쓴다', async () => {
+  await rememberUncertainInbound();
+  renderWithRouter('/movement', true);
+  await act(async () => {
+    await session.login();
+  });
+
+  await userEvent.click(
+    await screen.findByRole('button', { name: 'F3 입고 화면으로 가기' })
+  );
+  expect(
+    await screen.findByText(
+      '옮기지 못했어요. 이 화면에 저장하지 않은 입력이 있었어요 — 입력을 마치거나 지운 뒤 다시 눌러 주세요.'
+    )
+  ).toBeInTheDocument();
+  expect(screen.getByText('입력 중인 화면')).toBeInTheDocument();
+});
+
+it('핸드헬드에서는 기능키 없이 화면 이름으로 간다', async () => {
+  await rememberUncertainInbound();
+  renderWithRouter('/outbound', false);
+  await act(async () => {
+    await session.login();
+  });
+  expect(
+    await screen.findByRole('button', { name: '입고 화면으로 가기' })
+  ).toBeInTheDocument();
+});
+
 it('preserves an uncertain outbound operation when login restores saved work', async () => {
   const scope = JSON.stringify([apiBaseUrl, 'worker']);
   const store = createOperationStore();
@@ -269,7 +389,7 @@ it('preserves an uncertain outbound operation when login restores saved work', a
     await screen.findByRole('button', { name: '확인할 일 1' })
   ).toBeInTheDocument();
   expect(
-    screen.queryByText('처리 여부를 확인하고 있어요. 이 상품은 다시 찍지 마세요.')
+    screen.queryByText(/처리 여부를 확인하고 있어요/)
   ).toBeNull();
   expect(screen.getByText('출고 실행').closest('[inert]')).not.toBeNull();
   expect(screen.getByText('다른 박스 찾기').closest('[inert]')).toBeNull();
