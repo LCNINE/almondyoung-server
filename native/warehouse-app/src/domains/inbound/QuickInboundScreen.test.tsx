@@ -1101,8 +1101,11 @@ it('담은 상품은 방금 담은 것이 맨 위에 오고, 등록 버튼에 �
   const rows = within(cart).getAllByRole('listitem');
   expect(rows[0]).toHaveTextContent('면바지');
   expect(rows[1]).toHaveTextContent('코튼셔츠');
-  expect(
-    screen.getByRole('button', { name: '2종 3개 입고 등록' })
-  ).toBeEnabled();
+  // 담은 상품을 기기에 저장한 뒤에 등록 버튼이 켜진다
+  await waitFor(() =>
+    expect(
+      screen.getByRole('button', { name: '2종 3개 입고 등록' })
+    ).toBeEnabled()
+  );
   expect(screen.getByText('담은 상품 2종 · 3개')).toBeInTheDocument();
 });
