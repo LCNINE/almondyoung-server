@@ -21,6 +21,9 @@ import { ApiError, type ApiClient } from '../../core/data/httpClient';
 import type { Session } from '../../core/auth/session';
 import { AdjustStockScreen } from './AdjustStockScreen';
 
+const station = vi.hoisted(() => ({ on: false }));
+vi.mock('../../app/station', () => ({ isStationDevice: () => station.on }));
+
 // 실제 이동을 검증하는 테스트가 하나 있고(브리프의 나머지 테스트는 전부 실이동
 // 없이 통과해야 한다), 그와 별개로 "같은 마운트에서 두 번째 제출"을 타이밍에
 // 기대지 않고 확정적으로 재현해야 하는 테스트가 하나 있다. useNavigate 를
@@ -1037,4 +1040,23 @@ it('권한 조회가 실패해도 제출하고 서버 403은 같은 권한 문�
     '재고 조정 권한이 없어요. 관리자에게 요청해 주세요.'
   );
   expect(screen.queryByText('다시 로그인')).not.toBeInTheDocument();
+});
+
+describe('AdjustStockScreen 조정 버튼 배치', () => {
+  afterEach(() => {
+    station.on = false;
+  });
+
+  it('핸드헬드에서는 폭을 꽉 채운다', async () => {
+    renderScreen(makeClient([]));
+    expect(await screen.findByRole('button', { name: '조정하기' })).toHaveClass('w-full');
+  });
+
+  it('스테이션에서는 오른쪽 정렬한 보통 크기다', async () => {
+    station.on = true;
+    renderScreen(makeClient([]));
+    const button = await screen.findByRole('button', { name: '조정하기' });
+    expect(button).not.toHaveClass('w-full');
+    expect(button.closest('div')).toHaveClass('justify-end');
+  });
 });

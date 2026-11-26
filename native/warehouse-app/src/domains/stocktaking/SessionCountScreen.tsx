@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { ApiError } from '../../core/data/httpClient';
 import { errorMessage } from '../../core/data/errorMessage';
+import { isStationDevice } from '../../app/station';
 import { Button } from '../../core/design/Button';
 import { ScreenHeader } from '../../core/design/ScreenHeader';
 import { QuantityInput, parseQuantity } from '../../core/design/QuantityInput';
@@ -50,6 +51,7 @@ interface EditingLine {
   revision: number;
 }
 function SessionCountScreenContent({ sessionId }: { sessionId: string }) {
+  const station = isStationDevice();
   const runtime = useWorkRuntime();
   const detail = useStocktakingSession(sessionId);
   const scanLocation = useScanLocation(),
@@ -409,11 +411,13 @@ function SessionCountScreenContent({ sessionId }: { sessionId: string }) {
           )}
         </div>
       </section>
-      <Link to="/stocktaking/$sessionId/variances" params={{ sessionId }}>
-        <Button disabled={busy} className="w-full py-3">
-          차이 확인 →
-        </Button>
-      </Link>
+      <div className={station ? 'flex justify-end' : undefined}>
+        <Link to="/stocktaking/$sessionId/variances" params={{ sessionId }}>
+          <Button disabled={busy} className={station ? undefined : 'w-full py-3'}>
+            차이 확인 →
+          </Button>
+        </Link>
+      </div>
       {resetting && (
         <div
           role="dialog"

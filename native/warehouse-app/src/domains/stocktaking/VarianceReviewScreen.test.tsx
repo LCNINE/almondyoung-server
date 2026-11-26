@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { ReactNode } from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -16,6 +16,9 @@ import { ApiClientProvider } from '../../core/data/ApiClientProvider';
 import type { ApiClient } from '../../core/data/httpClient';
 import type { Session } from '../../core/auth/session';
 import { VarianceReviewScreen } from './VarianceReviewScreen';
+
+const station = vi.hoisted(() => ({ on: false }));
+vi.mock('../../app/station', () => ({ isStationDevice: () => station.on }));
 
 const session = {
   bootstrap: async () => {},
@@ -390,5 +393,27 @@ describe('VarianceReviewScreen', () => {
         expect(screen.getByRole('button', { name: /실사 완료/ })).toBeEnabled()
       );
     });
+  });
+});
+
+describe('VarianceReviewScreen 버튼 배치', () => {
+  afterEach(() => {
+    station.on = false;
+  });
+
+  it('핸드헬드에서는 두 버튼 모두 폭을 꽉 채운다', async () => {
+    renderScreen([]);
+    expect(await screen.findByRole('button', { name: /실사 완료/ })).toHaveClass('w-full');
+    expect(screen.getByRole('button', { name: '조정 미리보기' })).toHaveClass('w-full');
+  });
+
+  it('스테이션에서는 두 버튼 모두 오른쪽 정렬한 보통 크기다', async () => {
+    station.on = true;
+    renderScreen([]);
+    for (const name of [/실사 완료/, '조정 미리보기']) {
+      const button = await screen.findByRole('button', { name });
+      expect(button).not.toHaveClass('w-full');
+      expect(button.closest('div')).toHaveClass('justify-end');
+    }
   });
 });

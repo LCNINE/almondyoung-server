@@ -5,7 +5,7 @@ import {
   OperationContext,
   type WorkRuntime,
 } from '../../core/operations/OperationContext';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { ReactNode } from 'react';
 import {
   act,
@@ -34,6 +34,9 @@ import { ConflictError } from '../../core/data/httpClient';
 import type { ApiClient } from '../../core/data/httpClient';
 import type { Session } from '../../core/auth/session';
 import { SessionCountScreen } from './SessionCountScreen';
+
+const station = vi.hoisted(() => ({ on: false }));
+vi.mock('../../app/station', () => ({ isStationDevice: () => station.on }));
 
 const session = {
   bootstrap: async () => {},
@@ -860,4 +863,23 @@ it('다른 PC에서 추가된 상품과 충돌하면 기존 실사 총수량을 
     '9'
   );
   expect(calls.filter((c) => c.method === 'PUT')).toHaveLength(0);
+});
+
+describe('SessionCountScreen 차이 확인 버튼 배치', () => {
+  afterEach(() => {
+    station.on = false;
+  });
+
+  it('핸드헬드에서는 폭을 꽉 채운다', async () => {
+    renderScreen([]);
+    expect(await screen.findByRole('button', { name: /차이 확인/ })).toHaveClass('w-full');
+  });
+
+  it('스테이션에서는 오른쪽 정렬한 보통 크기다', async () => {
+    station.on = true;
+    renderScreen([]);
+    const button = await screen.findByRole('button', { name: /차이 확인/ });
+    expect(button).not.toHaveClass('w-full');
+    expect(button.closest('div')).toHaveClass('justify-end');
+  });
 });

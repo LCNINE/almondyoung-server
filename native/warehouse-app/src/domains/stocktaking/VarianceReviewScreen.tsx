@@ -2,6 +2,7 @@ import { WorkArea } from '../../core/operations/WorkBoundary';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { errorMessage } from '../../core/data/errorMessage';
+import { isStationDevice } from '../../app/station';
 import { Button } from '../../core/design/Button';
 import { ScreenHeader } from '../../core/design/ScreenHeader';
 import { ConfirmDialog } from '../../core/design/ConfirmDialog';
@@ -13,6 +14,7 @@ import { reservationImpactLines } from './reservationImpact';
 
 function VarianceReviewScreenContent({ sessionId }: { sessionId: string }) {
   const navigate = useNavigate();
+  const station = isStationDevice();
   const detail = useStocktakingSession(sessionId);
   const variances = useStocktakingVariances(sessionId);
   const generate = useGenerateAdjustments();
@@ -167,14 +169,19 @@ function VarianceReviewScreenContent({ sessionId }: { sessionId: string }) {
       )}
 
       {editable && !noVariance ? (
-        <Button
-          type="button"
-          className="w-full py-3 border border-[#e4e4e7] bg-white text-[#27272a] hover:bg-[#eff6ff] hover:brightness-100"
-          disabled={generate.isPending || !fresh}
-          onClick={() => void review()}
-        >
-          조정 미리보기
-        </Button>
+        <div className={station ? 'flex justify-end' : undefined}>
+          <Button
+            type="button"
+            className={cn(
+              station ? undefined : 'w-full py-3',
+              'border border-[#e4e4e7] bg-white text-[#27272a] hover:bg-[#eff6ff] hover:brightness-100'
+            )}
+            disabled={generate.isPending || !fresh}
+            onClick={() => void review()}
+          >
+            조정 미리보기
+          </Button>
+        </div>
       ) : null}
 
       {preview !== null ? (
@@ -223,14 +230,16 @@ function VarianceReviewScreenContent({ sessionId }: { sessionId: string }) {
       ) : null}
 
       {editable ? (
-        <Button
-          type="button"
-          className="w-full py-3"
-          disabled={!canComplete || complete.isPending}
-          onClick={() => setConfirming(true)}
-        >
-          실사 완료 · 원장 적용
-        </Button>
+        <div className={station ? 'flex justify-end' : undefined}>
+          <Button
+            type="button"
+            className={station ? undefined : 'w-full py-3'}
+            disabled={!canComplete || complete.isPending}
+            onClick={() => setConfirming(true)}
+          >
+            실사 완료 · 원장 적용
+          </Button>
+        </div>
       ) : null}
 
       <ConfirmDialog
