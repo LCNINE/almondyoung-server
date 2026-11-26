@@ -5,22 +5,17 @@ import { createOperationStore } from '../../core/operations/operationStore';
 import type { FakeBox } from './__fixtures__/outboundServer';
 import { BOX1, BOX2, flash, openBox, press, scan, setupInspection } from './__fixtures__/renderStation';
 
-const WITHDRAWING: FakeBox = {
-  ...BOX1,
-  labelState: 'withdrawing',
-  removals: [
-    {
-      shipmentLineId: 'l-2',
-      skuId: 'sku-2',
-      skuCode: 'sku-2',
-      skuName: '헤어클립 집게핀',
-      sourceLocationId: 'loc-B-11-1',
-      locationCode: 'B-11-1',
-      boxQty: 2,
-      cartQty: 0,
-    },
-  ],
+const HAIRCLIP_REMOVAL = {
+  shipmentLineId: 'l-2',
+  skuId: 'sku-2',
+  skuCode: 'sku-2',
+  skuName: '헤어클립 집게핀',
+  sourceLocationId: 'loc-B-11-1',
+  locationCode: 'B-11-1',
+  boxQty: 2,
+  cartQty: 0,
 };
+const WITHDRAWING: FakeBox = { ...BOX1, labelState: 'withdrawing', removals: [HAIRCLIP_REMOVAL] };
 const SLOW = { timeout: 4000 };
 const list = () => screen.getByRole('list', { name: '뺄 상품' });
 const recent = () => screen.getByRole('list', { name: '최근 스캔' });
@@ -46,6 +41,50 @@ describe('뺄 상품(스펙 §6.2 withdrawing)', () => {
     expect(server.box('421033881907')?.withdrawn).toBe(true);
     // 박스가 빠지면 상태바 배치 분모가 바로 줄도록 배치 항목을 다시 읽는다
     await waitFor(() => expect(batchReads(server)).toBeGreaterThan(before));
+  });
+
+  it('꺼낸 상품은 최근 목록에 «되돌림»으로 적는다 — 검수의 «+1» 과 헷갈리지 않게', async () => {
+    await setupInspection({ boxes: [WITHDRAWING] });
+    await openBox('421033881907');
+    await screen.findByText('뺄 상품을 찍어 주세요');
+    scan('8801002');
+    const row = (await within(recent()).findByText('헤어클립 집게핀')).closest('li');
+    expect(row).not.toBeNull();
+    expect(within(row as HTMLElement).getByText('되돌림')).toBeInTheDocument();
+    expect(within(row as HTMLElement).getByText('−1')).toBeInTheDocument();
+    expect(within(row as HTMLElement).queryByText('+1')).toBeNull();
+  });
+
+  it('꺼낸 뒤 기기 저장이 실패해 같은 스캔을 다시 보내도 «되돌림»은 한 줄만 남는다', async () => {
+    const box: FakeBox = { ...WITHDRAWING, removals: [{ ...HAIRCLIP_REMOVAL, boxQty: 3 }] };
+    const { server, runtime } = await setupInspection({ boxes: [box] });
+    await openBox('421033881907');
+    await screen.findByText('뺄 상품을 찍어 주세요');
+    const original = runtime.store.draft.bind(runtime.store);
+    let failClear = true;
+    vi.spyOn(runtime.store, 'draft').mockImplementation(async (id, update) => {
+      if (id.includes(':scan:') && update && failClear) {
+        const before = await original(id);
+        const after = update(before as never) as unknown[] | undefined;
+        if (Array.isArray(before) && Array.isArray(after) && after.length < before.length) {
+          failClear = false;
+          throw new Error('disk full');
+        }
+      }
+      return original(id, update as never);
+    });
+    scan('8801002');
+    await waitFor(() => expect(within(list()).getByText('2')).toBeInTheDocument());
+    await act(async () => screen.getByRole('button', { name: '처리 내역 확인' }).click());
+    await waitFor(() => expect(screen.queryByRole('button', { name: '처리 내역 확인' })).toBeNull());
+    expect(within(recent()).getAllByText('헤어클립 집게핀')).toHaveLength(1);
+    // 다시 보낸 요청은 같은 키 — 서버는 저장된 결과를 돌려준다(이 가짜 서버는 키를 거르지 않는다)
+    const keys = server.requests
+      .filter((r) => r.path.endsWith('/return-bin-removals'))
+      .map((r) => r.idempotencyKey);
+    expect(keys).toHaveLength(2);
+    expect(keys[0]).toBeTruthy();
+    expect(keys[1]).toBe(keys[0]);
   });
 
   it('응답에 뺀 상품 이름이 없으면(옛 core) 바코드를 적는다', async () => {

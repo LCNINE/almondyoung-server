@@ -41,6 +41,8 @@ export function WithdrawWork({
   const api = useApiClient();
   const [removals, setRemovals] = useState<WithdrawalRemoval[]>(box.removals);
   const done = useRef(false);
+  // 꺼낸 뒤 기기 저장이 실패하면 같은 스캔이 같은 키로 다시 온다 — 최근 목록에는 한 번만 적는다
+  const noted = useRef(new Set<string>());
   const queue = useWorkScanQueue<{ barcode: string }>(async (input, id) => {
     // 박스를 다 뺀 스캔 뒤에 줄 서 있던 스캔 — 보내지 않되, 손에 든 상품을 바구니에 넣지 않게 알린다
     if (done.current) {
@@ -50,7 +52,10 @@ export function WithdrawWork({
     try {
       const result = await removeToReturnBin(api, { shipmentId: box.shipmentId, ...input, idempotencyKey: id });
       setRemovals(result.removals);
-      onRemoved(result.removedSkuName ?? input.barcode);
+      if (!noted.current.has(id)) {
+        noted.current.add(id);
+        onRemoved(result.removedSkuName ?? input.barcode);
+      }
       if (result.exited) {
         done.current = true;
         onDone(box, result.exitTo);

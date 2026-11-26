@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { Check, CircleHelp, Package, Printer, ScanLine, X } from 'lucide-react';
+import { Check, CircleHelp, Package, Printer, ScanLine, Undo2, X } from 'lucide-react';
 import { Button } from '../../core/design/Button';
 import { cn } from '../../core/design/cn';
 import { SCAN_STORAGE_MESSAGE } from '../../core/hardware/scan/useWorkScanQueue';
@@ -403,6 +403,7 @@ export function ChangeTable({ changes }: { changes: readonly LabelItemChange[] }
 const RECENT_ICON: Record<RecentKind, typeof Check> = {
   waybill: ScanLine,
   scan: Check,
+  returned: Undo2,
   shipped: Package,
   printed: Printer,
   error: X,
@@ -411,6 +412,7 @@ const RECENT_ICON: Record<RecentKind, typeof Check> = {
 const RECENT_TONE: Record<RecentKind, string> = {
   waybill: 'text-[#2563eb]',
   scan: 'text-[#2563eb]',
+  returned: 'text-[#9a681c]',
   shipped: 'text-[#2563eb]',
   printed: 'text-[#9a681c]',
   error: 'text-[#b42318]',
@@ -451,8 +453,17 @@ export function RecentList({ entries, grow = false }: { entries: readonly Recent
           >
             <span className="tabular-nums">{clockOf(entry.at)}</span>
             <Icon className={cn('h-4 w-4', RECENT_TONE[entry.kind])} aria-hidden />
-            <span className={cn('truncate', entry.kind !== 'error' && 'text-[#27272a]')}>{recentText(entry)}</span>
-            <span className="font-semibold tabular-nums text-[#27272a]">{entry.qty ? `+${entry.qty}` : ''}</span>
+            <span className={cn('flex min-w-0 items-center', entry.kind !== 'error' && 'text-[#27272a]')}>
+              {entry.kind === 'returned' ? (
+                <span className="mr-1.5 shrink-0 rounded bg-[#fff1d9] px-1.5 py-0.5 text-[11px] font-semibold text-[#9a681c]">
+                  되돌림
+                </span>
+              ) : null}
+              <span className="truncate">{recentText(entry)}</span>
+            </span>
+            <span className="font-semibold tabular-nums text-[#27272a]">
+              {entry.qty ? `${entry.kind === 'returned' ? '−' : '+'}${entry.qty}` : ''}
+            </span>
           </li>
         );
       })}

@@ -1,10 +1,10 @@
-export type RecentKind = 'waybill' | 'scan' | 'shipped' | 'printed' | 'error' | 'check';
+export type RecentKind = 'waybill' | 'scan' | 'returned' | 'shipped' | 'printed' | 'error' | 'check';
 
 export interface RecentEntry {
   id: number;
   at: number;
   kind: RecentKind;
-  /** 송장번호(waybill·shipped·printed·check), 상품 이름(scan), 거절된 코드나 사유(error) */
+  /** 송장번호(waybill·shipped·printed·check), 상품 이름(scan·returned — 되돌림 바구니로 꺼낸 것), 거절된 코드나 사유(error) */
   text: string;
   qty?: number;
 }
