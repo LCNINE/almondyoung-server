@@ -40,6 +40,8 @@ import {
   orderAgeOf,
   PREPARATION_BATCH_LIMIT,
   plannedOrderText,
+  recallNextStep,
+  recallReturnText,
   SELECTABLE_BUCKETS,
   type ShipmentGroup,
   shipmentGroupOf,
@@ -105,14 +107,23 @@ export function BucketList({
     bucket.shipments.filter(
       (shipment) => shipmentGroupOf(shipment) === 'batch_return'
     ).length;
+  const recalledCount =
+    bucket.recallReturnCount ??
+    bucket.shipments.filter(
+      (shipment) => shipmentGroupOf(shipment) === 'recall_return'
+    ).length;
   // 앞 쪽에서 돌아온 상자가 끝나도, 묶음이 있는 분류면 첫 줄에 묶음 이름을 단다
   const hasReturns =
-    (bucket.shortPickCount ?? shortPicks.length) + returnedCount > 0;
+    (bucket.shortPickCount ?? shortPicks.length) +
+      returnedCount +
+      recalledCount >
+    0;
   const groupTitle: Record<ShipmentGroup, string> = {
     short_pick: `결품으로 돌아온 상자 ${
       bucket.shortPickCount ?? shortPicks.length
     }건 — 자리 수량을 확인한 뒤 하나씩 골라 주세요`,
     batch_return: `배치에서 빠져 돌아온 상자 ${returnedCount}건 — 뺀 이유를 보고 다시 준비해 주세요`,
+    recall_return: `출고를 되돌린 상자 ${recalledCount}건 — 되돌린 이유를 보고 다시 준비해 주세요`,
     other: '그 밖의 상자',
   };
   const selectAllLabel = `${shortPicks.length > 0 ? '결품 상자 빼고 ' : ''}${
@@ -513,7 +524,8 @@ function ReasonCell({
   shipment: PreparationBucketDto['shipments'][number];
   today: string;
 }) {
-  const nextStep = batchReturnNextStep(bucket, shipment);
+  const nextStep =
+    batchReturnNextStep(bucket, shipment) ?? recallNextStep(bucket, shipment);
   const replenishment = useCanOpen('/inventory/replenishment');
   const canOpenReplenishment =
     replenishment.status === 'ready' && replenishment.allowed;
@@ -533,7 +545,9 @@ function ReasonCell({
     </>
   );
 
-  if (!shipment.shortPick?.length && !shipment.batchReturn) {
+  const recall = shipment.recallReturn ?? null;
+
+  if (!shipment.shortPick?.length && !shipment.batchReturn && !recall) {
     if (!splitReason) {
       return blocked ?? <>{shipment.reason ?? '-'}</>;
     }
@@ -564,6 +578,14 @@ function ReasonCell({
         <span className="block text-xs">
           {batchReturnText(shipment.batchReturn)}
         </span>
+      )}
+      {recall && (
+        <>
+          <span className="block font-medium text-foreground">
+            {recall.reason ? `출고 되돌림 — ${recall.reason}` : '출고 되돌림'}
+          </span>
+          <span className="block text-xs">{recallReturnText(recall)}</span>
+        </>
       )}
       {blocked ??
         (shipment.reason && <span className="block">{shipment.reason}</span>)}

@@ -1348,6 +1348,105 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
     });
   });
 
+  it('출고를 되돌린 상자는 되돌린 시각·사유와 새 송장이 필요한지를 주고, 배치에서 돌아온 상자 다음에 놓되 배치에서 다시 빠졌으면 그 묶음에 함께 싣는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const base = await consolidationBase(tx);
+      const source = () => createConsolidationSource(tx, wired, base, { quantity: 1, customerId: randomUUID() });
+      const plain = await source();
+      const recalled = await source();
+      const redispatched = await source();
+      const recalledThenExited = await source();
+      const journal = async () => {
+        const [row] = await tx.insert(wmsTables.stockJournals).values({}).returning();
+
+        return row.id;
+      };
+      const dispatchedAt = new Date(Date.now() - 3_600_000);
+      const recalledAt = new Date(Date.now() - 1_800_000);
+      const attempt = async (shipmentId: string, attemptNo: number, status: 'recalled' | 'dispatched') =>
+        tx.insert(wmsTables.dispatchAttempts).values({
+          shipmentId,
+          attemptNo,
+          status,
+          idempotencyKey: randomUUID(),
+          stockJournalId: await journal(),
+          reversalJournalId: status === 'recalled' ? await journal() : null,
+          dispatchedAt,
+          recalledAt: status === 'recalled' ? recalledAt : null,
+        });
+      const recall = async (shipmentId: string, reasonCode: string, completedAt: Date) => {
+        const id = randomUUID();
+
+        await tx.insert(wmsTables.shipmentOperations).values({
+          id,
+          type: 'recall',
+          status: 'completed',
+          operatorId: randomUUID(),
+          reason: reasonCode,
+          reasonCode,
+          idempotencyKey: randomUUID(),
+          requestHash: 'a'.repeat(64),
+          completedAt,
+        });
+        await tx.insert(wmsTables.shipmentOperationMembers).values({ operationId: id, shipmentId, role: 'source' });
+      };
+
+      await attempt(recalled.shipment.id, 1, 'recalled');
+      await recall(recalled.shipment.id, 'package_recovered', new Date(recalledAt.getTime() - 60_000));
+      await recall(recalled.shipment.id, 'carrier_handoff_failed', recalledAt);
+      await attempt(redispatched.shipment.id, 1, 'recalled');
+      await attempt(redispatched.shipment.id, 2, 'dispatched');
+      await recall(redispatched.shipment.id, 'dispatch_mistake', recalledAt);
+      await attempt(recalledThenExited.shipment.id, 1, 'recalled');
+      await recall(recalledThenExited.shipment.id, 'address_correction', recalledAt);
+      const [batch] = await tx
+        .insert(wmsTables.outboundBatches)
+        .values({
+          warehouseId: base.warehouseId,
+          batchNumber: `recall-${randomUUID()}`,
+          pickingMethod: 'individual',
+          name: `recall-${randomUUID()}`,
+        })
+        .returning();
+      await tx.insert(wmsTables.outboundBatchWorkItems).values({
+        batchId: batch.id,
+        shipmentId: recalledThenExited.shipment.id,
+        status: 'completed',
+        completedAt: new Date(Date.now() - 7_200_000),
+        createdAt: new Date(Date.now() - 7_200_000),
+      });
+      await tx.insert(wmsTables.outboundBatchWorkItems).values({
+        batchId: batch.id,
+        shipmentId: recalledThenExited.shipment.id,
+        status: 'excluded',
+        exitTo: 'draft',
+        exclusionReason: '잘못 넣은 상자',
+      });
+
+      const summary = await reader.summarize(base.warehouseId, undefined, tx);
+      const ready = summary.buckets.find((entry) => entry.bucket === 'ready');
+      const recallOf = (shipmentId: string) =>
+        ready?.shipments.find((shipment) => shipment.shipmentId === shipmentId)?.recallReturn;
+
+      expect(ready?.count).toBe(4);
+      expect(ready?.batchReturnCount).toBe(1);
+      expect(ready?.recallReturnCount).toBe(1);
+      expect(idsIn(summary, 'ready').slice(0, 2)).toEqual([recalledThenExited.shipment.id, recalled.shipment.id]);
+      expect(recallOf(recalled.shipment.id)).toEqual({
+        recalledAt: recalledAt.toISOString(),
+        reasonCode: 'carrier_handoff_failed',
+        reason: '택배사 인계 실패',
+        needsNewWaybill: true,
+      });
+      expect(recallOf(redispatched.shipment.id)).toBeNull();
+      expect(recallOf(recalledThenExited.shipment.id)).toMatchObject({ reasonCode: 'address_correction' });
+      expect(
+        ready?.shipments.find((shipment) => shipment.shipmentId === recalledThenExited.shipment.id)?.batchReturn,
+      ).toMatchObject({ reason: '잘못 넣은 상자' });
+      expect(recallOf(plain.shipment.id)).toBeNull();
+    });
+  });
+
   it('배치에서 빠져 돌아온 이어서 할 상자는 뺀 곳·사유와 새 송장이 필요한지를 준다', async () => {
     await inRollbackTx(db, async (tx) => {
       const base = await consolidationBase(tx);

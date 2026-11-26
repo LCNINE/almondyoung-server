@@ -10,6 +10,8 @@ import {
   plannedOrderText,
   preparationAddress,
   preparationTargetNotice,
+  recallNextStep,
+  recallReturnText,
   showsShipmentDetailLink,
   waitingProducts,
 } from './preparation-model';
@@ -235,6 +237,82 @@ describe('batchReturnNextStep', () => {
         reason: null,
       })
     ).toBeNull();
+  });
+});
+
+describe('recallNextStep', () => {
+  const recallReturn = (
+    needsNewWaybill: boolean,
+    reasonCode: string | null = 'carrier_handoff_failed'
+  ) => ({
+    recalledAt: '2026-01-02T01:05:00Z',
+    reasonCode,
+    reason: reasonCode ? '택배사 인계 실패' : null,
+    needsNewWaybill,
+  });
+
+  it.each([
+    ['ready', true, '«출고 준비»를 누르면 새 송장을 받아 다시 배치에 담아요'],
+    ['ready', false, '«출고 준비»를 누르면 다시 배치에 담아요'],
+    [
+      'resume',
+      false,
+      '«이어서 출고 준비»를 누르면 지금 송장으로 다시 배치에 담아요',
+    ],
+    ['needs_info', true, null],
+  ] as const)('%s, 새 송장 %s', (bucket, needsNewWaybill, expected) => {
+    expect(
+      recallNextStep(bucket, {
+        recallReturn: recallReturn(needsNewWaybill),
+        batchReturn: null,
+        shortPick: null,
+        reason: null,
+      })
+    ).toBe(expected);
+  });
+
+  it('주소 수정으로 되돌렸으면 받는 분부터 확인하게 한다', () => {
+    expect(
+      recallNextStep('ready', {
+        recallReturn: recallReturn(true, 'address_correction'),
+        batchReturn: null,
+        shortPick: null,
+        reason: null,
+      })
+    ).toBe(
+      '«상자 상세»에서 받는 분 주소를 고쳤는지 확인한 뒤 — «출고 준비»를 누르면 새 송장을 받아 다시 배치에 담아요'
+    );
+  });
+
+  it('배치에서 돌아온 상자와 서버가 사유를 준 상자에는 붙이지 않는다', () => {
+    expect(
+      recallNextStep('ready', {
+        recallReturn: recallReturn(true),
+        batchReturn: {
+          batchNumber: 'OB-1',
+          exitedAt: '2026-01-02T01:05:00Z',
+          place: null,
+          reason: '잘못 넣은 상자',
+          needsNewWaybill: true,
+        },
+        shortPick: null,
+        reason: null,
+      })
+    ).toBeNull();
+    expect(
+      recallNextStep('resume', {
+        recallReturn: recallReturn(true),
+        batchReturn: null,
+        shortPick: null,
+        reason: '운송사가 송장 접수를 거절했어요 — 상자 화면에서 확인해요',
+      })
+    ).toBeNull();
+  });
+
+  it('되돌린 시각을 한국 시각으로 쓰고 재고가 잡힌 곳을 알린다', () => {
+    expect(recallReturnText(recallReturn(true))).toBe(
+      '1월 2일 10:05 출고 되돌림 · 돌려받은 상품은 «출고 재작업존» 재고예요'
+    );
   });
 });
 

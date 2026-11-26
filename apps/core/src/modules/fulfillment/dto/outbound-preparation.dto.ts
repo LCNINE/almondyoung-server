@@ -133,6 +133,15 @@ export class PreparationBatchReturnDto {
   needsNewWaybill: boolean;
 }
 
+export class PreparationRecallReturnDto {
+  recalledAt: string;
+  // 되돌릴 때 고른 사유. 기록에서 찾지 못하면 null
+  reasonCode: string | null;
+  reason: string | null;
+  // 살아 있는 송장이 없어 다시 준비하면 새 송장을 받는다
+  needsNewWaybill: boolean;
+}
+
 // 받는 분. 접속기록이 이 칸을 받은 상자만 대상으로 남기게 상자 id 를 함께 싣는다
 export class PreparationRecipientDto {
   shipmentId: string;
@@ -158,6 +167,8 @@ export class PreparationShipmentDto {
   shortPick: PreparationShortPickLineDto[] | null;
   // 출고 배치에서 빠져 돌아온 상자면 언제·어느 배치에서·왜 뺐는지. 결품 상자 다음에 온다.
   batchReturn: PreparationBatchReturnDto | null;
+  // 출고를 되돌려 돌아온 상자면 언제·왜 되돌렸는지. 배치에서 빠져 돌아온 상자 다음에 오고, 되돌린 뒤 배치에서 다시 빠졌으면 그 묶음에 함께 싣는다.
+  recallReturn: PreparationRecallReturnDto | null;
   // 위탁 업체(3pl) 상자면 그 화주. 자사 상자는 null
   owner: PreparationOwnerDto | null;
   // 우선할당한 상자 — 재고를 먼저 받는다. 합포장이면 담긴 주문이 모두 우선할당일 때만 true
@@ -190,6 +201,8 @@ export class PreparationBucketDto {
   shortPickCount: number;
   // 결품 상자를 뺀, 배치에서 빠져 돌아온 상자 수
   batchReturnCount: number;
+  // 결품·배치에서 돌아온 상자를 뺀, 출고를 되돌려 돌아온 상자 수
+  recallReturnCount: number;
   shipments: PreparationShipmentDto[];
 }
 

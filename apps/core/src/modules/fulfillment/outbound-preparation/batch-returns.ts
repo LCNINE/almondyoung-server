@@ -2,7 +2,7 @@
  * 출고 배치에서 빠져 출고 준비로 돌아온 상자 — 상자의 마지막 작업 항목이 빠짐(excluded)으로 끝났고
  * 끝나지 않은 작업 항목이 없는 상자다. 결품으로 돌아온 상자도 여기에 든다.
  */
-import { and, asc, desc, eq, inArray, ne, notInArray } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, notInArray } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { SHIPMENT_OPERATION_REASONS } from '../shipment/shipment-operation-reasons';
 import { WAYBILL_TERMINAL_STATUSES } from '../waybill/waybill.constants';
@@ -102,11 +102,14 @@ export async function loadReturnedWorkItems(
     return returned;
   }
 
-  // 시각 순서와 상관없이, 아직 끝나지 않은 작업 항목이 있으면 다시 배치에 든 상자다
+  // 시각 순서와 상관없이, 아직 끝나지 않은 작업 항목이 있으면 다시 배치에 든 상자다.
+  // 출고를 되돌린 상자에는 첫 출고 때 끝난(completed) 항목이 남아 있으니 그것은 세지 않는다
   const active = await trx
     .select({ shipmentId: workItems.shipmentId })
     .from(workItems)
-    .where(and(inArray(workItems.shipmentId, [...returned.keys()]), ne(workItems.status, 'excluded')));
+    .where(
+      and(inArray(workItems.shipmentId, [...returned.keys()]), notInArray(workItems.status, ['excluded', 'completed'])),
+    );
 
   for (const { shipmentId } of active) {
     returned.delete(shipmentId);

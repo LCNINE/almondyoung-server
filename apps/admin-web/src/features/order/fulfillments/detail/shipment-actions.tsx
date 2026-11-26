@@ -4,7 +4,7 @@ import { DirectDeliveryTrigger } from '@/features/order/one-order-direct/direct-
 import { useDirectDeliveryTakeover } from '@/lib/services/orders/direct-delivery';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { AlertTriangle, RefreshCw } from 'lucide-react';
+import { AlertTriangle, RefreshCw, Undo2 } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -90,6 +90,7 @@ import {
 } from './plan-profile';
 import { PlanProfileNotice } from './plan-profile-notice';
 import { ProfileSplitFields } from './profile-split-fields';
+import { recallNoticeOf } from './recall-notice';
 import {
   recallConfirmText,
   shipmentActionsFor,
@@ -248,6 +249,7 @@ export function ShipmentActions({
 
   const allowed = shipmentActionsFor(shipment);
   const isSupplier = !!shipment.supplierId;
+  const recallNotice = recallNoticeOf(shipment);
   const canRecall =
     allowed.includes('recall') &&
     canRun(useRecallShipment) &&
@@ -285,7 +287,11 @@ export function ShipmentActions({
     });
     setAction(null);
     if (nextStatus === 'completed' || nextStatus === 'succeeded') {
-      toast.success(`${actionLabel} 완료`);
+      toast.success(
+        done === 'recall' && !isSupplier
+          ? '출고를 되돌렸어요 — 출고 준비에서 다시 준비하면 새 송장을 받아요'
+          : `${actionLabel} 완료`
+      );
     } else {
       toast.info(
         `${actionLabel} 요청을 받았어요. 처리 상태는 상자 작업 버튼 아래에 보여요.`
@@ -515,6 +521,19 @@ export function ShipmentActions({
 
   return (
     <div className="space-y-3">
+      {recallNotice && (
+        <Alert>
+          <Undo2 />
+          <AlertTitle>{recallNotice.title}</AlertTitle>
+          <AlertDescription>
+            {recallNotice.lines.map((line) => (
+              <span key={line} className="block">
+                {line}
+              </span>
+            ))}
+          </AlertDescription>
+        </Alert>
+      )}
       <div className="flex flex-wrap gap-2">
         {allowed.includes('split') && canRun(useSplitShipment) && (
           <Button

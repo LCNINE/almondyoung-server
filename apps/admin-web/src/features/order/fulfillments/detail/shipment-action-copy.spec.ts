@@ -43,6 +43,29 @@ describe('actionFailureMessage', () => {
     );
   });
 
+  it.each([
+    [
+      'SHIPMENT_RECALL_QUANTITY_MISMATCH',
+      '출고 기록이 서로 맞지 않아 되돌리지 못했어요. 새로고침해 상자 상태를 확인하고, 그대로면 상자 번호와 함께 개발 담당에게 알려 주세요.',
+    ],
+    [
+      'SHIPMENT_RECALL_WAYBILL_NOT_USED',
+      '고른 출고는 지금 되돌릴 수 없는 상태예요. 새로고침해 출고 기록을 확인해 주세요.',
+    ],
+    [
+      'SHIPMENT_DISPATCH_ALREADY_REVERSED',
+      '이미 되돌린 출고예요. 새로고침해 출고 기록을 확인해 주세요.',
+    ],
+    [
+      'FULFILLMENT_COMMAND_IN_PROGRESS',
+      '같은 요청을 아직 처리하고 있어요. 잠시 뒤 새로고침해 결과를 확인해 주세요.',
+    ],
+  ])('explains recall rejection %s', (code, expected) => {
+    expect(
+      actionFailureMessage(conflict(code, 'Recall rejected'), 'recall')
+    ).toBe(expected);
+  });
+
   it('keeps a Korean reason and hides an unknown English one', () => {
     expect(
       actionFailureMessage(

@@ -7,6 +7,7 @@ import type {
   PreparationShipmentDto,
   PreparationShortPickLine,
 } from '@/lib/types/dto/fulfillment';
+import type { PreparationRecallReturn } from '@/lib/types/dto/preparation-recall';
 import { formatDwell } from '@/lib/utils/format-dwell';
 import { arrivalSortKey } from './blocked-copy';
 
@@ -87,23 +88,37 @@ function kstMinuteText(iso: string): string {
   return `${parts.month}월 ${parts.day}일 ${parts.hour}:${parts.minute}`;
 }
 
-export type ShipmentGroup = 'short_pick' | 'batch_return' | 'other';
+export type ShipmentGroup =
+  | 'short_pick'
+  | 'batch_return'
+  | 'recall_return'
+  | 'other';
 
 export function shipmentGroupOf(
-  shipment: Pick<PreparationShipmentDto, 'shortPick' | 'batchReturn'>
+  shipment: Pick<
+    PreparationShipmentDto,
+    'shortPick' | 'batchReturn' | 'recallReturn'
+  >
 ): ShipmentGroup {
   if (shipment.shortPick) {
     return 'short_pick';
   }
 
-  return shipment.batchReturn ? 'batch_return' : 'other';
+  if (shipment.batchReturn) {
+    return 'batch_return';
+  }
+
+  return shipment.recallReturn ? 'recall_return' : 'other';
 }
 
 // 상자 상세로 가 볼 까닭이 있는 행. 고칠 것이 있거나, 송장 오류가 있거나, 배치에서 돌아와
 // 무엇을 뺐는지·무엇이 남았는지를 상세의 작업 기록으로 확인하는 상자다.
 export function showsShipmentDetailLink(
   bucket: PreparationBucket,
-  shipment: Pick<PreparationShipmentDto, 'shortPick' | 'batchReturn' | 'reason'>
+  shipment: Pick<
+    PreparationShipmentDto,
+    'shortPick' | 'batchReturn' | 'recallReturn' | 'reason'
+  >
 ): boolean {
   if (bucket === 'needs_info') return true;
   if (bucket === 'resume' && shipment.reason) return true;
@@ -131,9 +146,16 @@ export function batchReturnNextStep(
     return null;
   }
 
+  return returnNextStep(bucket, shipment.batchReturn.needsNewWaybill);
+}
+
+function returnNextStep(
+  bucket: PreparationBucket,
+  needsNewWaybill: boolean
+): string | null {
   switch (bucket) {
     case 'resume':
-      return shipment.batchReturn.needsNewWaybill
+      return needsNewWaybill
         ? '«이어서 출고 준비»를 누르면 새 송장을 받아 다시 배치에 담아요'
         : '«이어서 출고 준비»를 누르면 지금 송장으로 다시 배치에 담아요';
     case 'ready':
@@ -147,6 +169,46 @@ export function batchReturnNextStep(
     default:
       return null;
   }
+}
+
+// 언제 되돌렸는지와 되돌린 상품이 지금 어디 재고로 잡혀 있는지. 사유는 따로 보인다.
+export function recallReturnText(
+  recallReturn: PreparationRecallReturn
+): string {
+  return `${kstMinuteText(recallReturn.recalledAt)} 출고 되돌림 · 돌려받은 상품은 «출고 재작업존» 재고예요`;
+}
+
+// 출고를 되돌린 상자를 다시 보내려면 무엇을 하면 되는지. 주소 수정으로 되돌렸으면 받는 분부터 확인한다.
+export function recallNextStep(
+  bucket: PreparationBucket,
+  shipment: Pick<
+    PreparationShipmentDto,
+    'shortPick' | 'batchReturn' | 'recallReturn' | 'reason'
+  >
+): string | null {
+  const recall = shipment.recallReturn;
+
+  if (
+    !recall ||
+    shipment.shortPick ||
+    shipment.batchReturn ||
+    shipment.reason
+  ) {
+    return null;
+  }
+
+  const step =
+    bucket === 'ready' && recall.needsNewWaybill
+      ? '«출고 준비»를 누르면 새 송장을 받아 다시 배치에 담아요'
+      : returnNextStep(bucket, recall.needsNewWaybill);
+
+  if (!step) {
+    return null;
+  }
+
+  return recall.reasonCode === 'address_correction'
+    ? `«상자 상세»에서 받는 분 주소를 고쳤는지 확인한 뒤 — ${step}`
+    : step;
 }
 
 export function plannedOrderText(
