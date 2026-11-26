@@ -1,3 +1,4 @@
+import { Link } from '@tanstack/react-router';
 import { useEffect, useRef, useState } from 'react';
 import { useWarehouse } from '../../app/warehouse-context';
 import { useApiClient } from '../../core/data/ApiClientProvider';
@@ -24,25 +25,33 @@ interface CompletedPutaway {
 
 const DESCRIPTION = '상품을 원래 선반에 놓고 바코드를 스캔하세요.';
 
-function completedBetween(before: ReturnBinItem[], after: ReturnBinItem[]): CompletedPutaway[] {
-  const done: CompletedPutaway[] = [];
+function completedFrom(
+  before: ReturnBinItem[],
+  after: ReturnBinItem[],
+  putAwayQty: number,
+  locationCode: string | undefined,
+): CompletedPutaway | null {
+  if (!Number.isSafeInteger(putAwayQty) || putAwayQty <= 0) return null;
 
-  for (const item of before) {
+  const candidates = before.filter((item) => {
+    if (locationCode !== undefined && item.locationCode !== locationCode) return false;
+
     const left = after.find((next) => next.skuId === item.skuId && next.sourceLocationId === item.sourceLocationId);
-    const qty = item.qty - (left?.qty ?? 0);
 
-    if (qty > 0) {
-      done.push({
-        key: `${item.skuId}|${item.locationCode}`,
-        skuName: item.skuName,
-        skuCode: item.skuCode,
-        locationCode: item.locationCode,
-        qty,
-      });
-    }
-  }
+    return item.qty - (left?.qty ?? 0) === putAwayQty;
+  });
 
-  return done;
+  if (candidates.length !== 1) return null;
+
+  const [item] = candidates;
+
+  return {
+    key: `${item.skuId}|${item.locationCode}`,
+    skuName: item.skuName,
+    skuCode: item.skuCode,
+    locationCode: item.locationCode,
+    qty: putAwayQty,
+  };
 }
 
 function ReturnPutawayContent({ warehouseId }: { warehouseId: string }) {
@@ -53,27 +62,27 @@ function ReturnPutawayContent({ warehouseId }: { warehouseId: string }) {
   const [notice, setNotice] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [completed, setCompleted] = useState<CompletedPutaway[]>([]);
+  const countedRequests = useRef(new Set<string>());
 
   const queue = useWorkScanQueue<{ binBarcode: string; warehouseId: string; productBarcode: string; locationCode?: string }>(
     async (input, id) => {
       try {
         const result = await putawayReturn(api, { ...input, idempotencyKey: id });
         const before = stepRef.current;
+        const entry =
+          before.kind === 'loading' || countedRequests.current.has(id)
+            ? null
+            : completedFrom(before.bin.items, result.items, result.putAwayQty, input.locationCode);
 
-        if (before.kind !== 'loading') {
-          const done = completedBetween(before.bin.items, result.items);
+        countedRequests.current.add(id);
 
+        if (entry) {
           setCompleted((list) => {
-            const merged = [...list];
+            const index = list.findIndex((row) => row.key === entry.key);
 
-            for (const entry of done) {
-              const index = merged.findIndex((row) => row.key === entry.key);
+            if (index === -1) return [...list, entry];
 
-              if (index === -1) merged.push(entry);
-              else merged[index] = { ...merged[index], qty: merged[index].qty + entry.qty };
-            }
-
-            return merged;
+            return list.map((row, at) => (at === index ? { ...row, qty: row.qty + entry.qty } : row));
           });
         }
 
@@ -180,10 +189,43 @@ function ReturnPutawayContent({ warehouseId }: { warehouseId: string }) {
           ? '복귀 위치가 여러 곳입니다. 실제로 놓은 선반의 위치 바코드를 스캔하세요.'
           : '복귀 선반이 한 곳이면 상품 스캔으로 1개가 처리됩니다. 별도로 확인 버튼을 누를 필요가 없습니다.';
 
+  if (empty && completed.length > 0) {
+    return (
+      <div className="space-y-5">
+        <ScreenHeader title="선반 복귀" backTo="/" description="대기 상품을 모두 처리했습니다." />
+        <section
+          aria-label="선반 복귀 완료"
+          className="mx-auto w-full max-w-[760px] rounded-xl border border-[#e4e4e7] bg-white p-[35px] max-[600px]:px-[18px] max-[600px]:py-6"
+        >
+          <h2 className="text-2xl font-bold text-[#27272a]">선반 복귀 완료</h2>
+          <p className="mt-2.5 text-[13px] text-[#71717a]">복귀 대기 0개</p>
+          <ul aria-label="완료 상품" className="my-[25px] border-t border-[#e4e4e7]">
+            {completed.map((entry) => (
+              <li
+                key={entry.key}
+                className="flex items-center gap-5 border-b border-[#e4e4e7] py-[18px] text-[13px] max-[600px]:flex-wrap max-[600px]:gap-2.5"
+              >
+                <span className="flex-1 text-[#27272a]">{entry.skuName}</span>
+                <strong className="font-semibold text-[#27272a]">{entry.qty}개</strong>
+                <span className="text-[#71717a]">{entry.locationCode}</span>
+              </li>
+            ))}
+          </ul>
+          <Link
+            to="/putaway"
+            className="inline-flex items-center justify-center rounded-lg bg-[#2563eb] px-4 py-2.5 text-sm font-semibold text-white"
+          >
+            작업 목록으로 돌아가기
+          </Link>
+        </section>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-5">
       <ScreenHeader title="선반 복귀" backTo="/" description={empty ? '대기 상품을 모두 처리했습니다.' : DESCRIPTION} />
-      <div className="grid h-[clamp(360px,52vh,560px)] min-h-0 grid-cols-1 items-stretch gap-6 max-[900px]:h-auto lg:grid-cols-[minmax(300px,0.9fr)_minmax(450px,1.4fr)]">
+      <div className="grid h-[clamp(360px,52vh,560px)] min-h-0 grid-cols-1 items-stretch gap-6 max-[900px]:h-auto min-[901px]:grid-cols-[minmax(300px,0.9fr)_minmax(450px,1.4fr)]">
         <section
           aria-label="선반 복귀 대기"
           className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-[#e4e4e7] bg-white max-[900px]:max-h-[400px]"
