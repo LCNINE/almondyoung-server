@@ -52,7 +52,7 @@ export function QuickQuantitySheet({
 
   return (
     <div
-      className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 p-4 sm:items-center"
+      className="fixed inset-0 z-40 flex items-end justify-center bg-[#18181b55] p-4 sm:items-center"
       role="dialog"
       aria-modal="true"
       aria-label={`${skuName} 입고 수량`}
@@ -89,24 +89,24 @@ export function QuickQuantitySheet({
         if (quantity !== null && !saving) onSave();
       }}
     >
-      <div className="max-h-[90vh] w-full max-w-sm space-y-3 overflow-y-auto rounded-xl bg-white p-5 shadow-lg">
+      <div className="max-h-[90vh] w-full max-w-[440px] space-y-4 overflow-y-auto rounded-2xl border border-[#e4e4e7] bg-white p-7 text-[#27272a] shadow-[0_20px_80px_#18181b30] max-[600px]:p-[23px]">
         <div>
-          <div className="font-semibold text-gray-800">{skuName}</div>
-          <div className="font-mono text-xs text-gray-500">{skuCode}</div>
+          <div className="text-xl font-bold text-[#27272a]">{skuName}</div>
+          <div className="mt-1 font-mono text-xs text-[#71717a]">{skuCode}</div>
           <WaitingOrdersNote waiting={waiting} />
         </div>
 
         {notice ? (
           <p
             role="alert"
-            className="rounded-md bg-amber-50 p-2 text-sm text-amber-800"
+            className="rounded-[10px] border border-[#f0dcb4] bg-[#fffaf0] px-4 py-3 text-[13px] text-[#9a681c]"
           >
             {notice}
           </p>
         ) : null}
 
         <div className="space-y-1">
-          <label htmlFor={id} className="block text-sm font-medium">
+          <label htmlFor={id} className="block text-[13px] text-[#71717a]">
             입고 수량 직접 입력 (낱개)
           </label>
           <input
@@ -118,11 +118,11 @@ export function QuickQuantitySheet({
             value={value}
             disabled={saving}
             aria-invalid={quantity === null}
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-right text-2xl font-semibold"
+            className="w-full rounded-lg border border-[#e4e4e7] px-3 py-2.5 text-right text-2xl font-bold tabular-nums outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
             onChange={(e) => onChange(e.target.value)}
           />
           {quantity === null ? (
-            <p className="text-sm text-amber-700">1 이상의 정수를 입력해 주세요.</p>
+            <p className="text-[13px] text-[#9a681c]">1 이상의 정수를 입력해 주세요.</p>
           ) : null}
         </div>
 
@@ -135,14 +135,14 @@ export function QuickQuantitySheet({
           <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
-              className="rounded-md border border-gray-300 bg-gray-50 py-2 text-sm font-medium text-gray-700 active:bg-gray-100"
+              className="rounded-lg border border-[#e4e4e7] bg-white py-2.5 text-sm font-semibold text-[#27272a] hover:bg-[#eff6ff]"
               onClick={() => add(1)}
             >
               +1
             </button>
             <button
               type="button"
-              className="rounded-md border border-gray-300 bg-gray-50 py-2 text-sm font-medium text-gray-700 active:bg-gray-100"
+              className="rounded-lg border border-[#e4e4e7] bg-white py-2.5 text-sm font-semibold text-[#27272a] hover:bg-[#eff6ff]"
               onClick={() => add(10)}
             >
               +10
@@ -157,7 +157,7 @@ export function QuickQuantitySheet({
         <div className="grid grid-cols-3 gap-2">
           <Button
             type="button"
-            className="border border-gray-300 bg-white text-gray-800 hover:bg-gray-50"
+            className="border border-[#e4e4e7] bg-white py-[13px] text-[#27272a] hover:bg-[#eff6ff] hover:brightness-100"
             disabled={saving}
             onClick={onCancel}
           >
@@ -165,7 +165,7 @@ export function QuickQuantitySheet({
           </Button>
           <Button
             type="button"
-            className="col-span-2"
+            className="col-span-2 py-[13px]"
             disabled={saving || quantity === null}
             onClick={onSave}
           >

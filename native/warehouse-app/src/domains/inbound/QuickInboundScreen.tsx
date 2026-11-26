@@ -10,14 +10,18 @@ import {
   useWorkAreaBlocked,
 } from '../../core/operations/WorkBoundary';
 import { useEffect, useRef, useState } from 'react';
-import { Trash2 } from 'lucide-react';
+import { CircleCheck, Trash2 } from 'lucide-react';
 import { useWorkDraft } from '../../core/operations/useWorkDraft';
 import { useWarehouse } from '../../app/warehouse-context';
 import { errorMessage } from '../../core/data/errorMessage';
 import { ApiError, NetworkError } from '../../core/data/httpClient';
 import { Button } from '../../core/design/Button';
 import { parseQuantity } from '../../core/design/QuantityInput';
-import { SkuPicker, type SelectedSku } from '../inventory/SkuPicker';
+import { SkuThumbnail } from '../inventory/SkuInfoSheet';
+import type { SkuSearchItem } from '../inventory/types';
+import { QuickCatalog, A_SMALL_BUTTON } from './QuickCatalog';
+import { InboundTabs } from './InboundTabs';
+import { Kbd } from '../../station/Kbd';
 import { BarcodeInput } from '../../core/hardware/scan/BarcodeInput';
 import { useUnsavedWork } from '../../core/operations/useUnsavedWork';
 import { ScreenHeader } from '../../core/design/ScreenHeader';
@@ -63,10 +67,28 @@ function failureText(error: unknown, fallback: string) {
 
 const NO_ACTIONS: readonly StationAction[] = [];
 
+const PANEL =
+  'min-w-0 overflow-hidden rounded-xl border border-[#e4e4e7] bg-white';
+const PANEL_HEAD =
+  'flex items-center justify-between gap-2.5 border-b border-[#e4e4e7] px-[22px] py-[19px]';
+const THUMB = 'h-[53px] w-[44px] shrink-0 rounded-[7px] bg-[#f4f4f5]';
+const PILL =
+  'inline-flex shrink-0 items-center rounded-[5px] px-2 py-[5px] text-xs font-semibold whitespace-nowrap';
+const OUTLINE_BUTTON =
+  'inline-flex items-center justify-center rounded-lg border border-[#e4e4e7] bg-white px-4 py-[11px] text-sm font-semibold text-[#27272a] hover:bg-[#eff6ff] hover:brightness-100 disabled:opacity-40';
+const STATUS_BOX =
+  'rounded-[10px] border border-[#e4e4e7] bg-white px-4 py-3 text-[13px] text-[#71717a]';
+const WARN_BOX =
+  'rounded-[10px] border border-[#f0dcb4] bg-[#fffaf0] px-4 py-3 text-[13px] text-[#9a681c]';
+const ERROR_BOX =
+  'rounded-[10px] border border-[#efcbc4] bg-[#fff4f1] px-4 py-3 text-[13px] text-[#aa4037]';
+
 interface CartRow {
   skuId: string;
   skuCode: string;
   skuName: string;
+  optionKey?: string | null;
+  imageFileIds?: string[];
   quantity: number;
 }
 
@@ -318,6 +340,8 @@ function QuickInboundScreenContent({ station }: { station: boolean }) {
               skuId: sku.id,
               skuCode: sku.code,
               skuName: sku.name,
+              optionKey: sku.optionKey,
+              imageFileIds: sku.imageFileIds,
               quantity: step,
             },
           ];
@@ -371,7 +395,7 @@ function QuickInboundScreenContent({ station }: { station: boolean }) {
     codes.forEach((code) => enqueueScan.current(code));
   }, [draft.ready, reconciled, prepFailure, stagedMode, heldCount]);
 
-  async function chooseSku(sku: SelectedSku) {
+  async function chooseSku(sku: SkuSearchItem) {
     if (
       !reconciled ||
       !draft.ready ||
@@ -394,6 +418,8 @@ function QuickInboundScreenContent({ station }: { station: boolean }) {
             skuId: sku.id,
             skuCode: sku.code,
             skuName: sku.name,
+            optionKey: sku.optionKey,
+            imageFileIds: sku.imageFileIds,
             quantity: 1,
           },
         ]);
@@ -506,7 +532,7 @@ function QuickInboundScreenContent({ station }: { station: boolean }) {
   );
 
   const registerError = submit.isError ? (
-    <p role="alert" className="text-sm text-red-600">
+    <p role="alert" className="text-[13px] text-[#aa4037]">
       {errorMessage(submit.error, 'inbound')}
     </p>
   ) : null;
@@ -514,38 +540,51 @@ function QuickInboundScreenContent({ station }: { station: boolean }) {
   const registerButton = (
     <Button
       type="button"
-      className={station ? 'w-full py-3 text-base' : 'shrink-0'}
+      className={station ? 'w-full gap-2 py-[15px]' : 'shrink-0 gap-2'}
       disabled={!canRegister}
       onClick={register}
     >
       {cart.length > 0
         ? `${cart.length}종 ${cartTotal}개 입고 등록`
         : '입고 등록'}
+      {station ? (
+        <span aria-hidden>
+          <Kbd tone="outline">F10</Kbd>
+        </span>
+      ) : null}
     </Button>
+  );
+
+  const header = (
+    <ScreenHeader
+      title="입고"
+      backTo="/inbound"
+      description="상품을 확인하고 수량을 담아 한 번에 등록하세요."
+      right={<InboundTabs active="quick" />}
+    />
   );
 
   if (!isSet) {
     return (
-      <div className="space-y-4">
-        <ScreenHeader title="간편입고" backTo="/inbound" />
-        <div className="space-y-3 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-4">
-          <p className="text-sm text-gray-600">창고를 먼저 선택해 주세요.</p>
+      <div className="space-y-[22px]">
+        {header}
+        <div className="space-y-3 rounded-xl border border-dashed border-[#e4e4e7] bg-white p-5">
+          <p className="text-[13px] text-[#71717a]">창고를 먼저 선택해 주세요.</p>
           <WarehousePicker />
         </div>
       </div>
     );
   }
 
+  const stagedTotal = staged.reduce((sum, row) => sum + row.quantity, 0);
+
   return (
-    <div className="space-y-4" aria-busy={!draft.ready || !reconciled}>
+    <div className="space-y-[22px]" aria-busy={!draft.ready || !reconciled}>
       <SaveToast toast={toast.toast} />
-      <ScreenHeader title="간편입고" backTo="/inbound" />
+      {header}
 
       {!stagedMode && !prepFailure && (!draft.ready || !reconciled) ? (
-        <p
-          role="status"
-          className="rounded-md bg-gray-100 p-2 text-sm text-gray-700"
-        >
+        <p role="status" className={STATUS_BOX}>
           스캔 준비 중이에요. 잠시만 기다려 주세요.
           {heldCount > 0
             ? ` 찍은 상품 ${heldCount}건은 준비가 끝나면 담아요.`
@@ -553,10 +592,7 @@ function QuickInboundScreenContent({ station }: { station: boolean }) {
         </p>
       ) : null}
       {prepFailure ? (
-        <p
-          role="alert"
-          className="space-y-2 rounded-md bg-amber-50 p-2 text-sm text-amber-800"
-        >
+        <p role="alert" className={`space-y-2 ${WARN_BOX}`}>
           <span className="block">
             입고 상태를 확인하지 못했어요. {prepFailure}
           </span>
@@ -566,211 +602,241 @@ function QuickInboundScreenContent({ station }: { station: boolean }) {
         </p>
       ) : null}
       {draft.error && !loadFailed ? (
-        <p role="alert">작업을 저장하지 못했어요. 저장 공간을 확인해 주세요.</p>
+        <p role="alert" className={ERROR_BOX}>
+          작업을 저장하지 못했어요. 저장 공간을 확인해 주세요.
+        </p>
       ) : null}
       {scanQueue.error() && !(loadFailed && scanQueue.storageError()) ? (
-        <p role="alert">
+        <p
+          role="alert"
+          className={`flex flex-wrap items-center gap-2 ${ERROR_BOX}`}
+        >
           {scanQueue.storageError()
             ? SCAN_STORAGE_MESSAGE
             : '상품을 확인하지 못했어요.'}{' '}
-          <Button onClick={() => void scanQueue.retryHead().catch(() => {})}>
+          <Button
+            className={A_SMALL_BUTTON}
+            onClick={() => void scanQueue.retryHead().catch(() => {})}
+          >
             다시 확인
           </Button>
         </p>
       ) : null}
       {notice && !editingRow ? (
-        <p
-          role="alert"
-          className="rounded-md bg-amber-50 p-2 text-sm text-amber-800"
-        >
+        <p role="alert" className={WARN_BOX}>
           {notice}
         </p>
       ) : null}
 
       {stagedMode ? (
-        <section className="space-y-2">
-          <h2 className="text-sm font-semibold text-gray-700">적치 대기</h2>
-          <p className="text-xs text-gray-500">
-            입고는 끝났어요. 각 품목을 선반에 꽂으면서 대상 로케이션을 찍어
-            주세요.
-          </p>
-          <Link to="/inbound/history">입고내역 · 취소</Link>
-          <WaitingOrdersFailed failed={waiting.failed} />
-          {!reconciled && !prepFailure && (
-            <p role="alert">
-              입고 상태를 확인하고 있어요. 확인이 안 되면 입고내역 또는 적치
-              대기 목록에서 이어서 작업해 주세요.
-            </p>
-          )}
-          <ul className="space-y-2">
-            {staged.map((saved) => {
-              const current = currentLines.find(
-                (item) => item.id === saved.lineId
-              );
-              const line = {
-                ...saved,
-                putawayDoneQty: current?.putawayFromOriginQty ?? 0,
-                canceledQty: current?.canceledQty ?? 0,
-                returnedQty: current?.returnedQty ?? 0,
-              };
-              return (
-                <li
-                  key={line.lineId}
-                  className="flex items-center gap-3 rounded-lg border border-gray-200 bg-white p-3"
-                >
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate font-medium text-gray-800">
-                      {line.skuName}
-                    </span>
-                    <span className="block font-mono text-xs text-gray-500">
-                      {line.skuCode}
-                    </span>
-                    {line.canceledQty > 0 ||
-                    line.putawayDoneQty >= line.quantity ? null : (
-                      <WaitingOrdersNote waiting={waiting.of(line.skuId)} />
-                    )}
-                    {/* 예정 입고 화면 배너와 같은 문구 — 부분 적치가 손대지 않은 라인과
-                      시각적으로 구분되지 않는 문제를 막는다. */}
-                    {line.putawayDoneQty > 0 &&
-                    line.putawayDoneQty < line.quantity ? (
-                      <span className="block text-xs text-gray-500">
-                        잔여 {current?.pendingQty}개 · {line.putawayDoneQty}개
-                        적치됨
-                      </span>
-                    ) : null}
-                    {current?.putawayBlockReason ===
-                      'ORIGIN_STOCK_INCONSISTENT' && (
-                      <span className="block text-xs text-gray-500">
-                        입고 기록과 현재 재고가 맞지 않아요. 입고내역과 실물을
-                        확인해 주세요.
-                      </span>
-                    )}
-                    {line.returnedQty > 0 && (
-                      <span className="block text-xs text-gray-500">
-                        {line.returnedQty}개 회송됨
-                      </span>
-                    )}
-                  </span>
-                  <span className="text-lg font-semibold text-gray-900">
-                    {line.quantity}
-                  </span>
-                  {current &&
-                  receivedAt &&
-                  line.canceledQty === 0 &&
-                  line.putawayDoneQty < line.quantity ? (
-                    <button
-                      type="button"
-                      className="shrink-0 px-1 py-1.5 text-xs text-gray-600 underline disabled:opacity-50"
-                      disabled={!reconciled || !!draft.error}
-                      onClick={() =>
-                        setCancelFor({
-                          lineId: line.lineId,
-                          source: current.source,
-                          skuName: line.skuName,
-                          originLocationCode: current.originLocationCode,
-                          receivedAt,
-                        })
-                      }
+        <section
+          className={
+            station
+              ? 'grid items-start gap-6 min-[901px]:grid-cols-[1.1fr_.9fr]'
+              : 'space-y-[18px]'
+          }
+        >
+          <div className="min-w-0 space-y-[18px]">
+            <div className="flex items-center gap-[15px] rounded-[10px] bg-[#eff6ff] p-[25px]">
+              <CircleCheck
+                className="h-8 w-8 shrink-0 text-[#2563eb]"
+                aria-hidden
+              />
+              <div className="min-w-0">
+                <p className="text-lg font-bold text-[#27272a]">
+                  입고 등록이 완료됐어요
+                </p>
+                <p className="mt-[5px] text-[13px] text-[#71717a]">
+                  {staged.length}종 {stagedTotal}개 · 각 품목을 선반에
+                  꽂으면서 대상 로케이션을 찍어 주세요.
+                </p>
+              </div>
+            </div>
+            <div className={PANEL}>
+              <div className={PANEL_HEAD}>
+                <h2 className="text-[15px] font-semibold text-[#27272a]">
+                  적치 대기
+                </h2>
+                <WaitingOrdersFailed failed={waiting.failed} />
+              </div>
+              {!reconciled && !prepFailure && (
+                <p role="alert" className={`m-4 ${WARN_BOX}`}>
+                  입고 상태를 확인하고 있어요. 확인이 안 되면 입고내역 또는 적치
+                  대기 목록에서 이어서 작업해 주세요.
+                </p>
+              )}
+              <ul>
+                {staged.map((saved) => {
+                  const current = currentLines.find(
+                    (item) => item.id === saved.lineId
+                  );
+                  const line = {
+                    ...saved,
+                    putawayDoneQty: current?.putawayFromOriginQty ?? 0,
+                    canceledQty: current?.canceledQty ?? 0,
+                    returnedQty: current?.returnedQty ?? 0,
+                  };
+                  const photo = cart.find(
+                    (row) => row.skuId === line.skuId
+                  )?.imageFileIds;
+
+                  return (
+                    <li
+                      key={line.lineId}
+                      className="flex items-center gap-3 border-b border-[#e4e4e7] px-[22px] py-3.5 last:border-b-0"
                     >
-                      잘못 입고 · 취소
-                    </button>
-                  ) : null}
-                  {(line.canceledQty ?? 0) > 0 ? (
-                    <span>취소됨</span>
-                  ) : line.putawayDoneQty >= line.quantity ? (
-                    <span className="shrink-0 text-xs font-semibold text-green-700">
-                      완료
-                    </span>
-                  ) : current?.canPutaway || !reconciled ? (
-                    <Button
-                      className="shrink-0 px-3 py-1.5 text-xs"
-                      disabled={
-                        !reconciled ||
-                        !!draft.error ||
-                        !current?.canPutaway ||
-                        !current.originLocationId
-                      }
-                      onClick={() => {
-                        if (
-                          current?.canPutaway &&
-                          current.originLocationId &&
-                          current.pendingQty !== undefined
-                        )
-                          setPutawayFor({
-                            lineId: line.lineId,
-                            skuId: line.skuId,
-                            skuName: line.skuName,
-                            skuCode: line.skuCode,
-                            source: current.source,
-                            pendingQty: current.pendingQty,
-                            originLocationId: current.originLocationId,
-                            originLocationCode:
-                              current.originLocationCode ?? '원위치',
-                          });
-                      }}
-                    >
-                      적치
-                    </Button>
-                  ) : null}
-                </li>
-              );
-            })}
-          </ul>
-          <ReadyShipmentsSection
-            warehouseId={warehouseId}
-            receiptLineIds={staged.map((row) => row.lineId)}
-          />
-          <Button
-            type="button"
-            className="w-full border border-gray-300 bg-white text-gray-800 hover:bg-gray-50"
-            disabled={saving || !reconciled || !!draft.error}
-            onClick={async () => {
-              if (!reconciled || savingRef.current) return;
-              savingRef.current = true;
-              setSaving(true);
-              try {
-                await draft.update(() => ({
-                  receiptId: null,
-                  cart: [],
-                  staged: [],
-                  seen: [],
-                  key: crypto.randomUUID(),
-                }));
-              } catch {
-                setNotice('새 입고를 시작하지 못했어요. 다시 시도해 주세요.');
-              } finally {
-                savingRef.current = false;
-                setSaving(false);
-              }
-            }}
-          >
-            새 입고 시작
-          </Button>
+                      <SkuThumbnail fileIds={photo} className={THUMB} />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[13px] leading-[1.6] font-semibold text-[#27272a]">
+                          {line.skuName}
+                        </span>
+                        <span className="block font-mono text-[11px] text-[#71717a]">
+                          {line.skuCode}
+                        </span>
+                        {line.canceledQty > 0 ||
+                        line.putawayDoneQty >= line.quantity ? null : (
+                          <WaitingOrdersNote waiting={waiting.of(line.skuId)} />
+                        )}
+                        {/* 예정 입고 화면 배너와 같은 문구 — 부분 적치가 손대지 않은 라인과
+                          시각적으로 구분되지 않는 문제를 막는다. */}
+                        {line.putawayDoneQty > 0 &&
+                        line.putawayDoneQty < line.quantity ? (
+                          <span className="block text-[11px] text-[#71717a]">
+                            잔여 {current?.pendingQty}개 · {line.putawayDoneQty}개
+                            적치됨
+                          </span>
+                        ) : null}
+                        {current?.putawayBlockReason ===
+                          'ORIGIN_STOCK_INCONSISTENT' && (
+                          <span className="block text-[11px] text-[#71717a]">
+                            입고 기록과 현재 재고가 맞지 않아요. 입고내역과
+                            실물을 확인해 주세요.
+                          </span>
+                        )}
+                        {line.returnedQty > 0 && (
+                          <span className="block text-[11px] text-[#71717a]">
+                            {line.returnedQty}개 회송됨
+                          </span>
+                        )}
+                      </span>
+                      <span className="text-lg font-bold text-[#27272a] tabular-nums">
+                        {line.quantity}
+                      </span>
+                      {current &&
+                      receivedAt &&
+                      line.canceledQty === 0 &&
+                      line.putawayDoneQty < line.quantity ? (
+                        <button
+                          type="button"
+                          className="shrink-0 rounded-lg px-2 py-[7px] text-xs text-[#71717a] hover:bg-[#f4f4f5] disabled:opacity-50"
+                          disabled={!reconciled || !!draft.error}
+                          onClick={() =>
+                            setCancelFor({
+                              lineId: line.lineId,
+                              source: current.source,
+                              skuName: line.skuName,
+                              originLocationCode: current.originLocationCode,
+                              receivedAt,
+                            })
+                          }
+                        >
+                          잘못 입고 · 취소
+                        </button>
+                      ) : null}
+                      {(line.canceledQty ?? 0) > 0 ? (
+                        <span className={`${PILL} bg-[#eff1f2] text-[#68706d]`}>
+                          취소됨
+                        </span>
+                      ) : line.putawayDoneQty >= line.quantity ? (
+                        <span className={`${PILL} bg-[#eff6ff] text-[#2563eb]`}>
+                          완료
+                        </span>
+                      ) : current?.canPutaway || !reconciled ? (
+                        <Button
+                          className="shrink-0 px-2.5 py-[7px] text-xs"
+                          disabled={
+                            !reconciled ||
+                            !!draft.error ||
+                            !current?.canPutaway ||
+                            !current.originLocationId
+                          }
+                          onClick={() => {
+                            if (
+                              current?.canPutaway &&
+                              current.originLocationId &&
+                              current.pendingQty !== undefined
+                            )
+                              setPutawayFor({
+                                lineId: line.lineId,
+                                skuId: line.skuId,
+                                skuName: line.skuName,
+                                skuCode: line.skuCode,
+                                source: current.source,
+                                pendingQty: current.pendingQty,
+                                originLocationId: current.originLocationId,
+                                originLocationCode:
+                                  current.originLocationCode ?? '원위치',
+                              });
+                          }}
+                        >
+                          적치
+                        </Button>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Link to="/inbound/history" className={OUTLINE_BUTTON}>
+                입고내역 · 취소
+              </Link>
+              <Button
+                type="button"
+                className={OUTLINE_BUTTON}
+                disabled={saving || !reconciled || !!draft.error}
+                onClick={async () => {
+                  if (!reconciled || savingRef.current) return;
+                  savingRef.current = true;
+                  setSaving(true);
+                  try {
+                    await draft.update(() => ({
+                      receiptId: null,
+                      cart: [],
+                      staged: [],
+                      seen: [],
+                      key: crypto.randomUUID(),
+                    }));
+                  } catch {
+                    setNotice('새 입고를 시작하지 못했어요. 다시 시도해 주세요.');
+                  } finally {
+                    savingRef.current = false;
+                    setSaving(false);
+                  }
+                }}
+              >
+                새 입고 시작
+              </Button>
+            </div>
+          </div>
+          <div className="min-w-0">
+            <ReadyShipmentsSection
+              warehouseId={warehouseId}
+              receiptLineIds={staged.map((row) => row.lineId)}
+            />
+          </div>
         </section>
       ) : (
         <section
           className={
             station
-              ? 'grid grid-cols-[minmax(0,1fr)_360px] items-start gap-4'
-              : 'space-y-3'
+              ? 'grid items-start gap-[22px] min-[901px]:grid-cols-[minmax(400px,1.3fr)_minmax(330px,.8fr)]'
+              : 'space-y-4'
           }
         >
-          <div className="min-w-0 space-y-2">
-            <h2 className="text-sm font-semibold text-gray-700">입고할 품목</h2>
-            <p className="text-xs text-gray-500">
-              발주 상품은 예정 입고에서 등록해 주세요. 수량은 낱개 기준이에요.
-            </p>
-            <BarcodeInput
-              disabled={
-                !draft.ready ||
-                !reconciled ||
-                saving ||
-                !!editing ||
-                submit.isPending
-              }
-              onSubmit={(code) => scanQueue.enqueue(code)}
-            />
-            <SkuPicker
+          <div className="min-w-0 space-y-[17px]">
+            <QuickCatalog
+              warehouseId={warehouseId}
               disabled={
                 !draft.ready ||
                 !reconciled ||
@@ -781,7 +847,22 @@ function QuickInboundScreenContent({ station }: { station: boolean }) {
               }
               onSelect={(sku) => void chooseSku(sku)}
             />
+            <div className="rounded-[10px] border border-[#e4e4e7] bg-white px-[15px] py-3 text-[13px] text-[#71717a]">
+              <BarcodeInput
+                disabled={
+                  !draft.ready ||
+                  !reconciled ||
+                  saving ||
+                  !!editing ||
+                  submit.isPending
+                }
+                onSubmit={(code) => scanQueue.enqueue(code)}
+              />
+            </div>
             <WaitingOrdersFailed failed={waiting.failed} />
+            <p className="px-0.5 text-xs text-[#71717a]">
+              발주 상품은 예정 입고에서 등록해 주세요. 수량은 낱개 기준이에요.
+            </p>
           </div>
 
           <aside
@@ -789,125 +870,145 @@ function QuickInboundScreenContent({ station }: { station: boolean }) {
             aria-label="담은 상품"
             className={
               station
-                ? 'sticky top-0 flex max-h-[calc(100vh-11rem)] flex-col overflow-hidden rounded-lg border border-gray-200 bg-white'
-                : 'scroll-mb-28 space-y-2'
+                ? `sticky top-0 flex max-h-[calc(100vh-11rem)] min-h-[450px] flex-col ${PANEL}`
+                : `scroll-mb-28 ${PANEL}`
             }
           >
+            <div className={PANEL_HEAD}>
+              <h2 className="flex items-center gap-2 text-[15px] font-semibold text-[#27272a]">
+                담은 상품
+                <span className="rounded-[5px] bg-[#eff6ff] px-[7px] py-1 text-xs font-normal text-[#2563eb]">
+                  {cart.length}
+                </span>
+              </h2>
+              <small className="text-xs text-[#71717a]">아직 등록 전</small>
+            </div>
             <div
               className={
                 station
-                  ? 'flex items-baseline gap-2 border-b border-gray-200 px-3 py-2'
-                  : 'flex items-baseline gap-2'
+                  ? 'min-h-[120px] flex-1 overflow-y-auto px-5 py-0.5'
+                  : 'px-5 py-0.5'
               }
             >
-              <h2 className="text-sm font-semibold text-gray-700">담은 상품</h2>
-              <span className="text-xs text-gray-500">아직 등록 전</span>
-            </div>
-            <div
-              className={station ? 'min-h-0 flex-1 overflow-y-auto p-2' : ''}
-            >
               {!draft.ready ? null : cart.length === 0 ? (
-                <p className="text-sm text-gray-500">
-                  상품을 검색해서 선택하거나 바코드를 입력해 주세요.
+                <p className="px-5 py-[60px] text-center text-sm text-[#71717a]">
+                  검색한 상품을 선택하거나
+                  <br />
+                  바코드를 스캔해 주세요.
                 </p>
               ) : (
-                <ul className="space-y-2">
+                <ul>
                   {[...cart].reverse().map((row) => (
                     <li
                       key={row.skuId}
-                      className="rounded-lg border border-gray-200 bg-white p-3"
+                      className="flex items-center gap-2.5 border-b border-[#e4e4e7] py-[17px] last:border-b-0"
                     >
-                      <div className="flex items-center gap-3">
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate font-medium text-gray-800">
-                            {row.skuName}
-                          </span>
-                          <span className="block font-mono text-xs text-gray-500">
-                            {row.skuCode}
-                          </span>
-                          <WaitingOrdersNote waiting={waiting.of(row.skuId)} />
-                        </span>
-                        <button
-                          type="button"
-                          aria-label={`${row.skuName} 수량`}
-                          className="text-lg font-semibold text-gray-900 underline disabled:opacity-40"
-                          disabled={
-                            !reconciled ||
-                            !draft.ready ||
-                            scanQueue.blocked() ||
-                            submit.isPending ||
-                            saving ||
-                            !!editing
+                      <SkuThumbnail
+                        fileIds={row.imageFileIds}
+                        className={THUMB}
+                      />
+                      <span className="min-w-0 flex-1">
+                        <strong className="block truncate text-[13px] leading-[1.6] font-semibold text-[#27272a]">
+                          {row.skuName}
+                        </strong>
+                        <small className="mt-[3px] block truncate text-[11px] text-[#71717a]">
+                          {row.optionKey ? `${row.optionKey} · ` : ''}
+                          <span className="font-mono">{row.skuCode}</span>
+                        </small>
+                        <WaitingOrdersNote waiting={waiting.of(row.skuId)} />
+                      </span>
+                      <button
+                        type="button"
+                        aria-label={`${row.skuName} 수량`}
+                        className="min-w-[47px] rounded-md border border-[#e4e4e7] px-2.5 py-2 text-base font-[650] text-[#27272a] tabular-nums hover:bg-[#eff6ff] disabled:opacity-40"
+                        disabled={
+                          !reconciled ||
+                          !draft.ready ||
+                          scanQueue.blocked() ||
+                          submit.isPending ||
+                          saving ||
+                          !!editing
+                        }
+                        onClick={() => {
+                          if (!reconciled) return;
+                          setNotice(null);
+                          setQuantityText(String(row.quantity));
+                          setEditing(row.skuId);
+                        }}
+                      >
+                        {row.quantity}
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`${row.skuName} 삭제`}
+                        className="grid h-[34px] w-[34px] shrink-0 place-items-center rounded-[7px] text-[#71717a] hover:bg-[#eff6ff] disabled:opacity-40"
+                        disabled={
+                          !reconciled ||
+                          !draft.ready ||
+                          scanQueue.blocked() ||
+                          submit.isPending ||
+                          saving
+                        }
+                        onClick={async () => {
+                          if (!reconciled || savingRef.current) return;
+                          savingRef.current = true;
+                          setSaving(true);
+                          try {
+                            await setCart((prev) =>
+                              prev.filter((r) => r.skuId !== row.skuId)
+                            );
+                            // 지운 줄을 고치던 중이었으면 수정도 닫는다 — 다른 줄의 수정은 그대로 둔다.
+                            setEditing((cur) =>
+                              cur === row.skuId ? null : cur
+                            );
+                          } catch {
+                            setNotice(
+                              '삭제를 저장하지 못했어요. 다시 시도해 주세요.'
+                            );
+                          } finally {
+                            savingRef.current = false;
+                            setSaving(false);
                           }
-                          onClick={() => {
-                            if (!reconciled) return;
-                            setNotice(null);
-                            setQuantityText(String(row.quantity));
-                            setEditing(row.skuId);
-                          }}
-                        >
-                          {row.quantity}
-                        </button>
-                        <button
-                          type="button"
-                          aria-label={`${row.skuName} 삭제`}
-                          className="shrink-0 rounded p-1 text-gray-400 active:bg-gray-100 disabled:opacity-40"
-                          disabled={
-                            !reconciled ||
-                            !draft.ready ||
-                            scanQueue.blocked() ||
-                            submit.isPending ||
-                            saving
-                          }
-                          onClick={async () => {
-                            if (!reconciled || savingRef.current) return;
-                            savingRef.current = true;
-                            setSaving(true);
-                            try {
-                              await setCart((prev) =>
-                                prev.filter((r) => r.skuId !== row.skuId)
-                              );
-                              // 지운 줄을 고치던 중이었으면 수정도 닫는다 — 다른 줄의 수정은 그대로 둔다.
-                              setEditing((cur) =>
-                                cur === row.skuId ? null : cur
-                              );
-                            } catch {
-                              setNotice(
-                                '삭제를 저장하지 못했어요. 다시 시도해 주세요.'
-                              );
-                            } finally {
-                              savingRef.current = false;
-                              setSaving(false);
-                            }
-                          }}
-                        >
-                          <Trash2 className="h-4 w-4" aria-hidden />
-                        </button>
-                      </div>
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" aria-hidden />
+                      </button>
                     </li>
                   ))}
                 </ul>
               )}
             </div>
             {station ? (
-              <div className="space-y-2 border-t border-gray-200 p-2">
-                {registerError}
-                {registerButton}
+              <div className="border-t border-[#e4e4e7] bg-[#fafafa] p-5">
+                <div className="mb-[18px] flex items-center justify-between text-[13px] text-[#27272a]">
+                  <span>{cart.length}종 입고 예정</span>
+                  <strong className="text-[28px] tracking-[-1px] tabular-nums">
+                    {cartTotal}
+                    <span className="ml-[5px] text-sm font-normal">개</span>
+                  </strong>
+                </div>
+                <div className="space-y-2">
+                  {registerError}
+                  {registerButton}
+                </div>
+                <p className="mt-2.5 text-center text-[11px] text-[#71717a]">
+                  담은 상품과 등록 버튼은 항상 이 자리에 있어요.
+                </p>
               </div>
             ) : null}
           </aside>
 
           {station ? null : (
-            <div className="sticky bottom-0 space-y-2 rounded-lg border border-gray-200 bg-white p-3 shadow-lg">
+            <div className="sticky bottom-0 space-y-2 rounded-xl border border-[#e4e4e7] bg-[#fafafa] p-4 shadow-[0_-4px_16px_#0000000a]">
               {registerError}
               <div className="flex items-center gap-3">
                 <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-semibold text-gray-800">
+                  <span className="block text-[13px] font-semibold text-[#27272a]">
                     담은 상품 {cart.length}종 · {cartTotal}개
                   </span>
                   <button
                     type="button"
-                    className="text-xs text-blue-700 underline"
+                    className="text-xs text-[#2563eb] underline"
                     onClick={() =>
                       cartRef.current?.scrollIntoView?.({ block: 'start' })
                     }
