@@ -248,6 +248,7 @@ function SessionCountScreenContent({ sessionId }: { sessionId: string }) {
     <div className="space-y-4">
       <ScreenHeader
         title={detail.data?.sessionName ?? '실사'}
+        description="실물 수량을 입력하고 장부와의 차이를 검토하세요."
         backTo="/stocktaking"
         right={
           progress ? (
@@ -261,7 +262,7 @@ function SessionCountScreenContent({ sessionId }: { sessionId: string }) {
         <p role="alert">{errorMessage(detail.error, 'stocktaking')}</p>
       )}
       {notice && (
-        <p role="status" className="text-sm text-amber-700">
+        <p role="status" className="text-sm text-[#9a681c]">
           {notice}
         </p>
       )}
@@ -282,7 +283,7 @@ function SessionCountScreenContent({ sessionId }: { sessionId: string }) {
       )}
       {!place ? (
         <section className="space-y-3">
-          <div className="rounded-xl border border-dashed border-blue-300 bg-blue-50 p-8 text-center">
+          <div className="rounded-xl border border-dashed border-[#2563eb] bg-[#eff6ff] p-8 text-center text-[#27272a]">
             <p>로케이션 바코드를 스캔하세요</p>
             <p>스캔하면 그 위치의 상품이 나와요.</p>
           </div>
@@ -299,7 +300,7 @@ function SessionCountScreenContent({ sessionId }: { sessionId: string }) {
             </label>
             <input
               id="loc-manual"
-              className="flex-1 rounded-md border px-3 py-2"
+              className="flex-1 rounded-lg border border-[#e4e4e7] bg-white px-3 py-2.5"
               placeholder="코드 직접 입력"
               value={manualCode}
               disabled={busy}
@@ -335,14 +336,14 @@ function SessionCountScreenContent({ sessionId }: { sessionId: string }) {
       ) : (
         <section className="space-y-3">
           <div className="flex items-center gap-2">
-            <span className="flex-1 rounded-lg border border-blue-500 bg-blue-50 px-3 py-2">
+            <span className="flex-1 rounded-lg border border-[#2563eb] bg-[#eff6ff] px-3 py-2 font-semibold text-[#27272a]">
               {place.locationCode}
             </span>
             <Button disabled={busy} onClick={() => void changeLocation()}>
               다른 로케이션
             </Button>
           </div>
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-[#71717a]">
             상품 바코드를 스캔하면 1개씩 올라가요. 박스 단위는 수량 입력을
             쓰세요.
           </p>
@@ -501,28 +502,28 @@ function LineRow({
   const counted = item.countedQuantity;
   const diff = counted === null ? null : counted - item.expectedQuantity;
   return (
-    <div className="flex items-center gap-3 rounded-lg border border-gray-200 bg-white p-3">
+    <div className="flex items-center gap-3 rounded-xl border border-[#e4e4e7] bg-white p-4">
       <span className="flex-1">
-        <span className="block font-medium text-gray-800">{item.skuName}</span>
-        <span className="block font-mono text-xs text-gray-500">
+        <span className="block font-medium text-[#27272a]">{item.skuName}</span>
+        <span className="block font-mono text-xs text-[#71717a]">
           {item.skuCode}
         </span>
       </span>
       <span className="text-center">
-        <span className="block text-xs text-gray-500">예상</span>
-        <span className="block text-sm text-gray-700">
+        <span className="block text-xs text-[#71717a]">예상</span>
+        <span className="block text-sm text-[#27272a]">
           {item.expectedQuantity}
         </span>
       </span>
       <span className="text-center">
-        <span className="block text-xs text-gray-500">카운트</span>
+        <span className="block text-xs text-[#71717a]">카운트</span>
         <span
           data-testid={`count-${item.lineId}`}
           className={cn(
             'block text-lg font-semibold',
-            counted === null && 'text-gray-400',
-            diff !== null && diff === 0 && 'text-gray-900',
-            diff !== null && diff !== 0 && 'text-red-600'
+            counted === null && 'text-[#8b8b95]',
+            diff !== null && diff === 0 && 'text-[#27272a]',
+            diff !== null && diff !== 0 && 'text-[#aa4037]'
           )}
         >
           {counted === null ? '—' : counted}
@@ -534,7 +535,7 @@ function LineRow({
         className="px-3 py-1.5 text-xs"
         onClick={onEdit}
       >
-        수량
+        수량 입력
       </Button>
     </div>
   );
@@ -611,10 +612,10 @@ function QuantityDialog({
         onKeyDown={handlePanelKeyDown}
         className="w-full max-w-sm space-y-3 rounded-xl bg-white p-5 shadow-lg outline-none"
       >
-        <h2 className="text-base font-semibold text-gray-900">
+        <h2 className="text-base font-semibold text-[#27272a]">
           {editing.skuName}
         </h2>
-        <div className="rounded-lg border border-gray-200 p-3 text-center text-2xl font-semibold text-gray-900">
+        <div className="rounded-lg border border-[#e4e4e7] p-3 text-center text-2xl font-semibold text-[#27272a]">
           {editing.value}
         </div>
         <fieldset disabled={pending}>
@@ -632,7 +633,7 @@ function QuantityDialog({
         <div className="flex gap-2">
           <Button
             type="button"
-            className="flex-1 border border-gray-300 bg-white text-gray-800 hover:bg-gray-50"
+            className="flex-1 border border-[#e4e4e7] bg-white text-[#27272a] hover:bg-[#eff6ff] hover:brightness-100"
             onClick={onCancel}
           >
             취소
