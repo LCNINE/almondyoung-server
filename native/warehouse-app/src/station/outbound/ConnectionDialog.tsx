@@ -1,14 +1,11 @@
 import { useEffect, useId, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Check, TriangleAlert } from 'lucide-react';
 import { formatTrackingNo } from '../../domains/outbound/inspection';
 import { scanWaitingMessage } from './panels';
 
-/**
- * 연결이 끊긴 동안의 스캔. `queued` 는 저장해 둔 스캔이 연결되면 그대로 보내지는 경우(다시 찍으면 두 번 오른다),
- * `dropped` 는 보내지도 저장하지도 않은 스캔이라 연결된 뒤 다시 찍어야 하는 경우다
- */
 export type ConnectionLoss = { phase: 'lost' | 'restored'; cause: 'queued' | 'dropped' };
-export type ConnectionProbe = 'idle' | 'checking' | 'failed';
+export type ConnectionProbe = 'idle' | 'checking' | 'failed' | 'server';
 
 export function ConnectionDialog({
   loss,
@@ -32,11 +29,28 @@ export function ConnectionDialog({
   const titleId = useId();
   const descriptionId = useId();
   const titleRef = useRef<HTMLHeadingElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
   const restored = loss.phase === 'restored';
 
   useEffect(() => {
     titleRef.current?.focus();
   }, [restored]);
+
+  useEffect(() => {
+    const root = rootRef.current;
+    const hidden = Array.from(document.body.children).filter(
+      (child): child is HTMLElement => child instanceof HTMLElement && child !== root && !child.inert
+    );
+    hidden.forEach((child) => {
+      child.inert = true;
+    });
+
+    return () => {
+      hidden.forEach((child) => {
+        child.inert = false;
+      });
+    };
+  }, []);
 
   const Icon = restored ? Check : TriangleAlert;
   const status = restored
@@ -45,10 +59,12 @@ export function ConnectionDialog({
       ? '서버 연결을 확인하고 있습니다.'
       : probe === 'failed'
         ? '아직 서버에 연결되지 않았습니다. 네트워크를 확인한 뒤 다시 눌러 주세요.'
-        : '연결이 복구될 때까지 스캔할 수 없습니다.';
+        : probe === 'server'
+          ? '서버가 아직 정상 응답하지 않습니다. 잠시 뒤 다시 눌러 주세요.'
+          : '연결이 복구될 때까지 스캔할 수 없습니다.';
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#18181b55] p-4">
+  return createPortal(
+    <div ref={rootRef} className="fixed inset-0 z-50 flex items-center justify-center bg-[#18181b55] p-4">
       <div
         role="alertdialog"
         aria-modal="true"
@@ -63,7 +79,7 @@ export function ConnectionDialog({
             tabIndex={-1}
             className="flex items-center gap-2.5 text-[19px] leading-[1.4] font-[650] tracking-[-0.5px] outline-none max-[600px]:text-[17px]"
           >
-            <Icon className="h-5 w-5 text-[#b42318]" strokeWidth={1.8} aria-hidden />
+            <Icon className={restored ? 'h-5 w-5 text-[#52525b]' : 'h-5 w-5 text-[#b42318]'} strokeWidth={1.8} aria-hidden />
             {restored ? '서버 연결 복구' : '서버 연결 끊김'}
           </h2>
         </div>
@@ -113,6 +129,7 @@ export function ConnectionDialog({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

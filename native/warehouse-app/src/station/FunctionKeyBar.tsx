@@ -2,6 +2,7 @@ import { cn } from '../core/design/cn';
 import { useKeyHints, useRegistryApi, useResolvedActions } from './ActionRegistry';
 import { functionBarItems } from './actions';
 import { Kbd } from './Kbd';
+import { modalOpen } from './useStationKeys';
 
 /** 기능키 바(스펙 §5.1). 마우스로 눌러도 같은 액션이 돈다 — 실행은 늘 최신 등록에서 꺼낸다. */
 export function FunctionKeyBar() {
@@ -15,6 +16,8 @@ export function FunctionKeyBar() {
       key={action.id}
       type="button"
       onClick={() => {
+        if (modalOpen()) return;
+
         const dispatch = api?.resolveKey(action.key);
         if (dispatch?.kind === 'run') dispatch.action.run();
       }}

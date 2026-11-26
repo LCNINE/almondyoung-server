@@ -115,7 +115,6 @@ export function InspectWork({
     onAccepted: (lineId, quantity, barcode) => onScanned(nameOf(lineId, barcode), quantity),
     onShipped: (final) =>
       onShipped(box, final ? { name: nameOf(final.shipmentLineId, final.barcode), quantity: final.quantity } : null),
-    // 결과를 모르는 스캔은 반영됐을 수 있다 — 확정 거절만 «수량 미반영» 이다
     onRejected: (message, barcode, scannedName) =>
       onAlert(message, barcode ?? undefined, scannedName, barcode !== null && message !== UNCERTAIN_SCAN_MESSAGE),
     onWithdrawn: (barcode) => onWithdrawn(box, barcode),
@@ -189,9 +188,8 @@ export function InspectWork({
   );
   useStationKeyHints(!typing ? NO_HINTS : quantity !== null ? EDITING_HINTS : QUANTITY_HINTS);
 
-  // 저장해 둔 스캔이 연결을 기다린다 — 보내지면 복구로, 보내다 결과를 모르게 되면 창을 닫고 처리 내역 확인에 맡긴다
   const queued = work.waitingForNetwork;
-  const queueFailed = !!work.queueError;
+  const queueFailed = !!work.queueError || work.checking.length > 0;
   const drained = work.idle;
   useEffect(() => {
     if (queued > 0) {
@@ -216,14 +214,11 @@ export function InspectWork({
     try {
       await fetchShipmentByWaybill(api, box.trackingNo, warehouseId);
     } catch (error) {
-      if (error instanceof NetworkError) {
-        setProbe('failed');
-        return;
-      }
+      setProbe(error instanceof NetworkError ? 'failed' : 'server');
+      return;
     }
     setProbe('idle');
 
-    // 저장해 둔 스캔은 연결됐다고 알려야 큐가 다시 보낸다 — 다 보내지면 위 effect 가 복구로 바꾼다
     if (cause === 'queued') onlineManager.setOnline(true);
     else setConnection({ phase: 'restored', cause });
   };

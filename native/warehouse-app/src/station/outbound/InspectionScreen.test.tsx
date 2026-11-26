@@ -88,7 +88,7 @@ describe('F1 출고 검수 — 송장 스캔 즉시 시작, 상품 스캔 = +1, 
     expect(screen.getByText('상품을 모두 확인하면 자동 출고')).toBeInTheDocument();
   });
 
-  it('결과를 모르는 스캔은 반영됐을 수 있어 «수량 미반영» 이라고 하지 않는다', async () => {
+  it('결과를 모르는 스캔은 반영됐을 수 있어 수량 미반영이라고 하지 않는다', async () => {
     const { server, runtime } = await setupInspection();
     await openBox('421033881907');
     server.loseResponses(true);
@@ -360,6 +360,69 @@ describe('F1 출고 검수 — 송장 스캔 즉시 시작, 상품 스캔 = +1, 
       expect(screen.queryByRole('alertdialog')).toBeNull();
       scan('8801002');
       await waitFor(() => expect(progress()).toHaveTextContent('2 / 4'));
+    });
+
+    it('연결된 뒤 다시 보낸 스캔의 응답을 잃으면 창을 닫고 처리 여부 확인으로 넘긴다 — 반영 안 됨이라고 하지 않는다', async () => {
+      const { server, runtime } = await setupInspection();
+      await openBox('421033881907');
+      disconnect(server, true);
+      scan('8801002');
+      await connectionDialog('서버 연결 끊김');
+      server.loseResponses(true);
+      disconnect(server, false);
+      await waitFor(async () => expect((await runtime.store.pending('scope'))[0]?.status).toBe('uncertain'));
+      await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+      expect(screen.queryByText('스캔이 반영되지 않았습니다.')).toBeNull();
+      expect(screen.queryByText('수량 미반영 · 다음 상품을 스캔해 주세요.')).toBeNull();
+      expect(await screen.findByText('처리 여부를 확인하고 있어요. 이 상품은 다시 찍지 마세요.')).toBeInTheDocument();
+      server.loseResponses(false);
+      press('Escape');
+      expect(await screen.findByText('송장을 찍어 주세요')).toBeInTheDocument();
+      expect(screen.getByText(/4210-3388-1907 처리 여부 확인 중/)).toBeInTheDocument();
+    });
+
+    it('다시 연결 확인에 서버가 오류로 답하면 복구라고 하지 않는다', async () => {
+      const box: FakeBox = {
+        ...BOX2,
+        lines: [{ id: 'l-9', skuId: 'sku-9', name: '수입 샴푸', qty: 2, barcode: '012345678905', locations: [{ code: 'E-01-1', qty: 2 }] }],
+      };
+      const { server } = await setupInspection({ boxes: [box] });
+      await openBox('421033881915');
+      disconnect(server, true);
+      scan('012345678905');
+      const lost = await connectionDialog('서버 연결 끊김');
+      disconnect(server, false);
+      server.config.lookupFail = true;
+      fireEvent.click(within(lost).getByRole('button', { name: '다시 연결 확인' }));
+      expect(await within(lost).findByText('서버가 아직 정상 응답하지 않습니다. 잠시 뒤 다시 눌러 주세요.')).toBeInTheDocument();
+      expect(screen.queryByRole('alertdialog', { name: '서버 연결 복구' })).toBeNull();
+      expect(within(lost).getByRole('button', { name: '다시 연결 확인' })).toBeEnabled();
+      server.config.lookupFail = false;
+      fireEvent.click(within(lost).getByRole('button', { name: '다시 연결 확인' }));
+      expect(await connectionDialog('서버 연결 복구')).toHaveTextContent('마지막 상품을 다시 스캔해 주세요.');
+    });
+
+    it('연결 끊김 창이 떠 있는 동안 기능키 바를 눌러도 동작하지 않고, 뒤 화면은 inert 다', async () => {
+      const box: FakeBox = {
+        ...BOX2,
+        lines: [{ id: 'l-9', skuId: 'sku-9', name: '수입 샴푸', qty: 2, barcode: '012345678905', locations: [{ code: 'E-01-1', qty: 2 }] }],
+      };
+      const { server, print } = await setupInspection({ boxes: [box] });
+      await openBox('421033881915');
+      disconnect(server, true);
+      scan('012345678905');
+      await connectionDialog('서버 연결 끊김');
+      // 연결은 돌아왔지만 창은 아직 떠 있다 — 창이 막지 않으면 F12 가 송장을 뽑는다
+      disconnect(server, false);
+      const toolbar = screen.getByRole('toolbar', { name: '기능키' });
+      expect(toolbar.closest('[inert]') ?? Array.from(document.body.children).find((child) => child.contains(toolbar) && (child as HTMLElement).inert)).toBeTruthy();
+      fireEvent.click(within(toolbar).getByRole('button', { name: /송장 재출력/ }));
+      await act(async () => {
+        await sleep(30);
+      });
+      expect(print).not.toHaveBeenCalled();
+      expect(heading('4210-3388-1915')).toBeInTheDocument();
+      expect(screen.getByRole('alertdialog', { name: '서버 연결 끊김' })).toBeInTheDocument();
     });
 
     it('다시 연결 확인이 실패하면 창을 두고 아직 연결되지 않았다고 한다 — 성공하면 저장해 둔 스캔을 보낸다', async () => {

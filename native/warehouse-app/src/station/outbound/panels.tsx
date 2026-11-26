@@ -43,7 +43,6 @@ interface ShipmentFacts {
   split?: SplitShare | null;
 }
 
-/** 송장 카드의 윗부분 — 송장번호·받는 분·택배사, 화주와 나눈 상자 */
 function ShipmentSummary({ trackingNo, recipient, carrier, ownerName, split }: ShipmentFacts) {
   const share = splitShareLines(split);
   const carrierLabel = carrierName(carrier);
@@ -90,16 +89,13 @@ export type SummaryMiddle =
   | { kind: 'armed'; keyLabel: string; label: string }
   | { kind: 'cancelWaiting'; lines: CancelWaitingLine[]; whole: boolean };
 
-/** 송장 카드 아래의 오스캔 문장 — 거절 사유, 무엇을 찍었는지(상품 이름·바코드), 수량이 오르지 않았는지 */
 export interface ScanFeedback {
   message: string;
   detail?: string;
   item?: string;
-  /** 서버가 확정 거절해 수량이 오르지 않았다 */
   unapplied?: boolean;
 }
 
-/** 검수 중 왼쪽 송장 카드 — 송장·검수 수량·막대, 맨 아래에 오스캔 문장. 오스캔이면 테두리가 붉다 */
 export function InspectionSummary({
   middle,
   feedback,
@@ -223,7 +219,6 @@ function SummaryFoot({ feedback }: { feedback: ScanFeedback | null }) {
   );
 }
 
-/** 스캔칸 — 스캐너는 화면 어디서든 받으므로 입력칸이 아니라 안내다. 확인 버튼이 없다 */
 export function ScanField({ placeholder, children }: { placeholder: string; children?: ReactNode }) {
   return (
     <div className="flex w-full shrink-0 items-center gap-2 rounded-[10px] border border-[#e4e4e7] bg-white px-[15px] py-3 text-left">
@@ -561,7 +556,6 @@ export function ManualWaybillInput({
   );
 }
 
-/** 오프라인이라 보내지 못한 상품 스캔 — 연결되면 큐가 그대로 보낸다 */
 export function scanWaitingMessage(count: number): string {
   return `연결이 끊겨 상품 스캔 ${count}개를 보내지 못하고 있어요. 연결되면 자동으로 보내요. 같은 상품은 다시 찍지 마세요.`;
 }

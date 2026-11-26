@@ -75,6 +75,7 @@ export interface OutboundServerConfig {
   legacyBatchStates: boolean;
   /** 내 되돌림 바구니 조회를 실패시킨다(503) */
   returnBinFail: boolean;
+  lookupFail: boolean;
   /** 상자 밖 상품의 이름(바코드별) — 이 상자에 없는 상품을 찍으면 409 에 싣는다. 비어 있으면 옛 core 처럼 싣지 않는다 */
   skuNames: Record<string, string>;
   /** 배치별 피킹 목록 응답. 없는 배치는 404, pickListFail 이면 503 */
@@ -119,6 +120,7 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
     batchesFailStatus: null,
     legacyBatchStates: false,
     returnBinFail: false,
+    lookupFail: false,
     skuNames: {},
     pickLists: {},
     pickListFail: false,
@@ -391,6 +393,7 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
     const reply = (value: unknown) => value as T;
     if (method === 'GET' && path === '/shipments/by-waybill') {
       if (lookupGate) await lookupGate;
+      if (config.lookupFail) throw new ApiError(`GET ${o.path} → 503`, 503);
       const box = byTracking(params.get('trackingNo') ?? '');
       if (!box) throw new ApiError(`GET ${o.path} → 404`, 404, 'NOT_FOUND');
       return reply(found(box));
