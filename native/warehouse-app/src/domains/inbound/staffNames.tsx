@@ -1,9 +1,8 @@
-import { createContext, useContext, useEffect, useMemo } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiAuthMode, oidcConfig } from '../../app/config';
 import { useIsAuthenticated, useSession } from '../../app/session-context';
-import { useWorkerIdentity } from '../../app/useWorkerIdentity';
 import { createApiClient, type ApiClient } from '../../core/data/httpClient';
 
 export const SYSTEM_ACTOR_ID = '00000000-0000-4000-8000-000000000010';
@@ -79,6 +78,39 @@ function readNames(value: unknown): [string, string][] {
     .map((row): [string, string] => [row.id, row.name]);
 }
 
+function useCurrentSessionWorkerId(): string | null {
+  const session = useSession();
+  const [generation, setGeneration] = useState(0);
+  const [resolved, setResolved] = useState<{
+    generation: number;
+    id: string;
+  } | null>(null);
+
+  useEffect(
+    () => session.subscribe(() => setGeneration((n) => n + 1)),
+    [session]
+  );
+
+  useEffect(() => {
+    if (!session.isAuthenticated() || !session.identity) return;
+
+    let live = true;
+
+    session.identity().then(
+      (identity) => {
+        if (live) setResolved({ generation, id: identity.id });
+      },
+      () => {}
+    );
+
+    return () => {
+      live = false;
+    };
+  }, [session, generation]);
+
+  return resolved?.generation === generation ? resolved.id : null;
+}
+
 function useForgetOtherSessionsNames(workerId: string | null) {
   const session = useSession();
   const qc = useQueryClient();
@@ -95,7 +127,7 @@ function useForgetOtherSessionsNames(workerId: string | null) {
     };
     let authed = session.isAuthenticated();
 
-    forget(workerId);
+    if (workerId !== null) forget(workerId);
 
     return session.subscribe(() => {
       const next = session.isAuthenticated();
@@ -113,8 +145,7 @@ export function useStaffNames(
 ): (actorId: string | null | undefined) => string {
   const client = useStaffNamesClient();
   const authenticated = useIsAuthenticated();
-  const worker = useWorkerIdentity();
-  const workerId = worker.status === 'ready' ? worker.identity.id : null;
+  const workerId = useCurrentSessionWorkerId();
   const ids = [
     ...new Set(
       actorIds.filter((id): id is string => !!id && id !== SYSTEM_ACTOR_ID)
