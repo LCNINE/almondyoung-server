@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import { createMemoryHistory, createRootRoute, createRoute, createRouter, RouterProvider } from '@tanstack/react-router';
 import { ScanProvider, useScanBus } from '../../core/hardware/scan/ScanProvider';
 import userEvent from '@testing-library/user-event';
@@ -34,9 +34,18 @@ const FOUND = {
   ],
   total: 2,
 };
+const RACK_CELLS = {
+  items: [
+    { id: 'c-2', code: 'A-07-02' },
+    { id: 'c-1', code: 'A-07-01' },
+    { id: 'c-3', code: 'A-07-03' },
+  ],
+  total: 3,
+};
 const OK: LabelBatch = { format: 'zpl', data: '^XA^XZ', labels: 4, skipped: [] };
 
 let lastSearchPath = '';
+const rackQueryPaths: string[] = [];
 let busEmit: (code: string) => void = () => {};
 function BusProbe() {
   const bus = useScanBus();
@@ -49,6 +58,10 @@ function setup(batch: LabelBatch = OK) {
   const request = vi.fn(async (o: { path: string; body?: unknown }) => {
     if (o.path.startsWith('/locations/warehouses/w-1/racks')) return RACKS;
     if (o.path.startsWith('/locations/warehouses/w-1?')) {
+      if (o.path.includes('rackNumber=')) {
+        rackQueryPaths.push(o.path);
+        return RACK_CELLS;
+      }
       lastSearchPath = o.path;
       return FOUND;
     }
@@ -93,14 +106,58 @@ function setup(batch: LabelBatch = OK) {
 
 async function pickRack() {
   await screen.findByRole('option', { name: 'A-07' });
-  await userEvent.selectOptions(await screen.findByLabelText('랙'), 'r-1');
+  await userEvent.selectOptions(await screen.findByLabelText('출력할 랙'), 'r-1');
 }
 
 async function find(term: string) {
+  await userEvent.click(await screen.findByRole('button', { name: '칸 선택' }));
   await userEvent.type(await screen.findByLabelText('로케이션 코드'), `${term}{Enter}`);
 }
 
 describe('LocationLabelScreen', () => {
+  it('랙 전체와 칸 선택을 오가는 세그먼트가 있고 기본은 랙 전체다', async () => {
+    setup();
+    expect(await screen.findByRole('button', { name: '랙 전체' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: '칸 선택' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('button', { name: '랙 전체 출력' })).toBeDisabled();
+    await userEvent.click(screen.getByRole('button', { name: '칸 선택' }));
+    expect(screen.getByRole('button', { name: '칸 선택' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: '고른 칸 출력' })).toBeDisabled();
+    expect(screen.getByLabelText('로케이션 코드')).toBeInTheDocument();
+  });
+
+  it('랙을 고르면 그 랙의 칸 코드와 총 장수를 미리보고 그 랙만 요청한다', async () => {
+    rackQueryPaths.length = 0;
+    const { labelCalls } = setup();
+    await pickRack();
+    expect(await screen.findByText('A-07-03')).toBeInTheDocument();
+    expect(screen.getByText('총 3장')).toBeInTheDocument();
+    expect(rackQueryPaths).toHaveLength(1);
+    expect(rackQueryPaths[0]).toContain('columnName=A');
+    expect(rackQueryPaths[0]).toContain('rackNumber=7');
+    await userEvent.click(screen.getByRole('button', { name: '랙 전체 출력' }));
+    await screen.findByText('라벨 4장을 보냈어요');
+    expect(labelCalls).toEqual([{ rackId: 'r-1' }]);
+  });
+
+  it('헤더에 라벨 프린터 이름을 보인다', async () => {
+    setup();
+    expect(await screen.findByText('라벨 프린터 · TX400')).toBeInTheDocument();
+  });
+
+  it('칸 선택은 중복 없이 코드순 미리보기와 총 장수를 보인다', async () => {
+    setup();
+    await find('M-07');
+    await userEvent.click(await screen.findByRole('button', { name: 'M-07-꼭대기 고르기' }));
+    await userEvent.click(screen.getByRole('button', { name: 'M-07-01 고르기' }));
+    await userEvent.click(screen.getByRole('button', { name: 'M-07-01 고르기' }));
+    expect(screen.getByText('고른 칸 2개')).toBeInTheDocument();
+    expect(screen.getByText('총 2장')).toBeInTheDocument();
+    const preview = within(screen.getByRole('region', { name: '출력 미리보기' }));
+    const codes = preview.getAllByRole('listitem').map((li) => li.textContent);
+    expect(codes).toEqual(['M-07-01', 'M-07-꼭대기']);
+  });
+
   it('랙을 골라 출력하면 요청이 { rackId } 다', async () => {
     const { labelCalls, print } = setup();
     await pickRack();
@@ -131,17 +188,17 @@ describe('LocationLabelScreen', () => {
   it('같은 칸을 두 번 담아도 목록에 하나다', async () => {
     setup();
     await find('M-07');
-    await userEvent.click(await screen.findByRole('button', { name: 'M-07-01 담기' }));
-    await userEvent.click(screen.getByRole('button', { name: 'M-07-01 담기' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'M-07-01 고르기' }));
+    await userEvent.click(screen.getByRole('button', { name: 'M-07-01 고르기' }));
     expect(screen.getAllByRole('button', { name: 'M-07-01 빼기' })).toHaveLength(1);
   });
 
-  it('담은 칸으로 출력하면 요청이 { locationIds } 이고 담은 순서로 보낸다(인쇄 순서는 core 가 코드순)', async () => {
+  it('고른 칸으로 출력하면 요청이 { locationIds } 이고 고른 순서로 보낸다(인쇄 순서는 core 가 코드순)', async () => {
     const { labelCalls } = setup();
     await find('M-07');
-    await userEvent.click(await screen.findByRole('button', { name: 'M-07-꼭대기 담기' }));
-    await userEvent.click(screen.getByRole('button', { name: 'M-07-01 담기' }));
-    await userEvent.click(screen.getByRole('button', { name: '담은 칸 출력' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'M-07-꼭대기 고르기' }));
+    await userEvent.click(screen.getByRole('button', { name: 'M-07-01 고르기' }));
+    await userEvent.click(screen.getByRole('button', { name: '고른 칸 출력' }));
     await screen.findByText('라벨 4장을 보냈어요');
     expect(labelCalls).toEqual([{ locationIds: ['l-2', 'l-1'] }]);
     expect(screen.getByText('코드 순서로 나와요')).toBeInTheDocument();
@@ -151,7 +208,7 @@ describe('LocationLabelScreen', () => {
     setup();
     await screen.findByRole('option', { name: 'A-07' });
     act(() => busEmit('M-07'));
-    expect(await screen.findByRole('button', { name: 'M-07-01 담기' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'M-07-01 고르기' })).toBeInTheDocument();
     expect(lastSearchPath).toContain('search=M-07');
     expect(lastSearchPath).toContain('isActive=true');
     expect(lastSearchPath).toContain('isSystem=false');
@@ -165,8 +222,8 @@ describe('LocationLabelScreen', () => {
       skipped: [{ ref: 'l-1', code: null, reason: 'NOT_FOUND' }],
     });
     await find('M-07');
-    await userEvent.click(await screen.findByRole('button', { name: 'M-07-01 담기' }));
-    await userEvent.click(screen.getByRole('button', { name: '담은 칸 출력' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'M-07-01 고르기' }));
+    await userEvent.click(screen.getByRole('button', { name: '고른 칸 출력' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('M-07-01 — 찾을 수 없어요');
   });
 
@@ -184,13 +241,13 @@ describe('LocationLabelScreen', () => {
     expect(alert).not.toHaveTextContent('3×5');
   });
 
-  it('담은 칸을 뺄 수 있고 비면 출력할 수 없다', async () => {
+  it('고른 칸을 뺄 수 있고 비면 출력할 수 없다', async () => {
     setup();
     await find('M-07');
-    await userEvent.click(await screen.findByRole('button', { name: 'M-07-01 담기' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'M-07-01 고르기' }));
     await userEvent.click(screen.getByRole('button', { name: 'M-07-01 빼기' }));
     expect(screen.queryByRole('button', { name: 'M-07-01 빼기' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '담은 칸 출력' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '고른 칸 출력' })).toBeDisabled();
   });
 
   it('연타해도 인쇄는 한 번이다', async () => {
