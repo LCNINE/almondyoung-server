@@ -31,7 +31,7 @@ export function HandheldHome() {
           <HubTile icon={ClipboardList} label="적치" />
         </Link>
         <Link to="/returns/putaway">
-          <HubTile icon={Undo2} label="되돌림 적치" />
+          <HubTile icon={Undo2} label="선반 복귀" />
         </Link>
         <Link to="/inbound">
           <HubTile icon={PackagePlus} label="입고/검수" />

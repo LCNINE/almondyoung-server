@@ -7,11 +7,13 @@ export function Barcode({
   label,
   moduleWidth = 2,
   height = 64,
+  fluid = false,
 }: {
   bits: string;
   label: string;
   moduleWidth?: number;
   height?: number;
+  fluid?: boolean;
 }) {
   const bars: { x: number; width: number }[] = [];
   for (let i = 0; i < bits.length; ) {
@@ -29,7 +31,7 @@ export function Barcode({
     <svg
       role="img"
       aria-label={label}
-      width={modules * moduleWidth}
+      width={fluid ? '100%' : modules * moduleWidth}
       height={height}
       viewBox={`0 0 ${modules} ${height}`}
       preserveAspectRatio="none"

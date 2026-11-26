@@ -40,6 +40,7 @@ export interface ReceiptHistoryItem {
   occurredAt: string;
   status: 'posted' | 'voided';
   totalQuantity: number;
+  actorId: string | null;
   lines: ReceiptHistoryLine[];
 }
 export interface ReceiptHistoryResult {
@@ -126,6 +127,11 @@ export function validateReceiptHistory(
   };
   const date = (v: unknown) =>
     typeof v === 'string' && Number.isFinite(Date.parse(v));
+  const actor = (item: Record<string, unknown>) => {
+    if (typeof item.actorId !== 'string') item.actorId = null;
+
+    return true;
+  };
   if (
     !object(value) ||
     !count(value.total) ||
@@ -140,6 +146,7 @@ export function validateReceiptHistory(
         date(item.occurredAt) &&
         ['posted', 'voided'].includes(String(item.status)) &&
         count(item.totalQuantity) &&
+        actor(item) &&
         Array.isArray(item.lines) &&
         item.lines.every(
           (line) =>

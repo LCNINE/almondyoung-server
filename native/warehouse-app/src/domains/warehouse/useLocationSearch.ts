@@ -13,10 +13,7 @@ const EMPTY_LOCATION_SEARCH_RESULT: LocationSearchResult = {
 };
 
 export type LocationSearchPurpose =
-  | 'lookup'
-  | 'movement-source'
-  | 'movement-destination'
-  | 'putaway-destination';
+  'lookup' | 'movement-source' | 'movement-destination' | 'putaway-destination';
 
 /**
  * GET /locations/warehouses/:warehouseId?search=…
@@ -26,13 +23,16 @@ export type LocationSearchPurpose =
 export function useLocationSearch(
   warehouseId: string | null,
   search: string,
-  purpose: LocationSearchPurpose = 'lookup'
+  purpose: LocationSearchPurpose = 'lookup',
+  { listWhenEmpty = false }: { listWhenEmpty?: boolean } = {}
 ) {
   const api = useApiClient();
   const term = search.trim();
+  const listing = term.length === 0 && listWhenEmpty;
+
   return useQuery({
-    queryKey: ['location-search', warehouseId, term, purpose],
-    enabled: warehouseId !== null && term.length > 0,
+    queryKey: ['location-search', warehouseId, term, purpose, listing],
+    enabled: warehouseId !== null && (term.length > 0 || listing),
     placeholderData: (previousData, previousQuery) => {
       if (!previousData) return undefined;
       return previousQuery?.queryKey[1] === warehouseId &&
@@ -41,7 +41,10 @@ export function useLocationSearch(
         : EMPTY_LOCATION_SEARCH_RESULT;
     },
     queryFn: () => {
-      const qs = new URLSearchParams({ search: term, limit: '20' });
+      const qs = listing
+        ? new URLSearchParams({ limit: '100' })
+        : new URLSearchParams({ search: term, limit: '20' });
+
       if (
         purpose === 'movement-destination' ||
         purpose === 'putaway-destination'

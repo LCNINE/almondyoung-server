@@ -10,6 +10,7 @@ export interface Alert {
   detail?: string;
   /** 거절된 바코드의 상품 이름 — 무엇을 잘못 집었는지 */
   item?: string;
+  unapplied?: boolean;
 }
 
 export type PrintStatus = { kind: 'printing' } | { kind: 'printed' } | { kind: 'failed'; message: string };
@@ -49,6 +50,7 @@ export interface BoxWorkHandle {
   settle(): Promise<'settled' | 'checking' | void>;
   /** 오프라인이라 보내지 못한 스캔이 있다 — 내려놓기·전환을 기다리지 않고 거절한다 */
   waitingForNetwork?(): boolean;
+  connectionLost?(): void;
 }
 
 /**

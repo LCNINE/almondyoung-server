@@ -99,7 +99,7 @@ describe('handheld hub navigation', () => {
     expect(screen.getByText('창고를 먼저 선택해 주세요.')).toBeInTheDocument();
   });
 
-  it('허브의 되돌림 적치 타일이 되돌림 적치 화면으로 간다', async () => {
+  it('허브의 선반 복귀 타일이 선반 복귀 화면으로 간다', async () => {
     const session = stub();
     const user = userEvent.setup();
     const client: ApiClient = {
@@ -123,13 +123,13 @@ describe('handheld hub navigation', () => {
       </SessionProvider>
     );
 
-    const tile = await screen.findByRole('link', { name: '되돌림 적치' });
+    const tile = await screen.findByRole('link', { name: '선반 복귀' });
     await act(async () => {
       await user.click(tile);
     });
     // 이 테스트는 창고 미설정 상태로 렌더한다 — 큐 화면은 실제 화면이지만
     // 창고 선택을 먼저 요구하는 카드를 보여준다(플레이스홀더가 아니다).
-    expect(await screen.findByRole('heading', { name: '되돌림 적치' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: '선반 복귀' })).toBeInTheDocument();
     expect(screen.getByText('등록된 창고가 없어요.')).toBeInTheDocument();
   });
 
@@ -262,7 +262,7 @@ describe('handheld hub navigation', () => {
       await user.click(await screen.findByRole('link', { name: /출고작업/ }));
     });
     expect(await screen.findByRole('heading', { name: '출고작업' })).toBeInTheDocument();
-    expect(screen.queryByText('송장 바코드')).toBeNull();
+    expect(screen.queryByText('송장을 찍어 주세요')).toBeNull();
   });
   it('핸드헬드에 반품 경로로 들어오면 스테이션 작업이라고만 알린다', async () => {
     const session = stub();

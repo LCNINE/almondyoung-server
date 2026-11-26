@@ -184,11 +184,11 @@ describe('StationShell', () => {
     await waitFor(() => expect(router.state.location.pathname).toBe('/inbound'));
   });
 
-  it('F4 탭은 하위 탭으로 적치·되돌림 적치·이동을 오간다, F1 에는 하위 탭이 없다', async () => {
+  it('F4 탭은 하위 탭으로 적치·선반 복귀·재고 이동을 오간다, F1 에는 하위 탭이 없다', async () => {
     const { router } = renderShell('/movement');
     const sub = await screen.findByRole('navigation', { name: '하위 탭' });
-    expect(within(sub).getByRole('link', { name: '이동' })).toHaveAttribute('data-active', 'true');
-    fireEvent.click(within(sub).getByRole('link', { name: '되돌림 적치' }));
+    expect(within(sub).getByRole('link', { name: '재고 이동' })).toHaveAttribute('data-active', 'true');
+    fireEvent.click(within(sub).getByRole('link', { name: '선반 복귀' }));
     await waitFor(() => expect(router.state.location.pathname).toBe('/returns/putaway'));
     expect(screen.getByRole('link', { name: /적치·이동/ })).toHaveAttribute('data-active', 'true');
     fireEvent.keyDown(window, { key: 'F1' });

@@ -1,5 +1,14 @@
 @import 'tailwindcss';
 
+@theme {
+  --font-sans: Pretendard, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+}
+
+body {
+  background: #f5f5f5;
+  color: #27272a;
+}
+
 /* 명령 바코드 시트(스테이션) — OS 인쇄 대화상자로 A4 한 장 */
 @page {
   size: A4;

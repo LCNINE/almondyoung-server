@@ -80,21 +80,32 @@ export function ReadyShipmentsSection({
   if (ready.items.length === 0 && ready.waitingOnOtherSkus === 0 && outcome === null) return null;
 
   return (
-    <section className="space-y-2">
+    <section
+      className={`space-y-3 overflow-hidden rounded-xl border border-[#e4e4e7] bg-white pb-4 ${ready.items.length > 0 ? '' : 'pt-4'}`}
+    >
       {ready.items.length > 0 && (
-        <div className="space-y-1">
-          <p className="text-sm font-medium">미발송 주문</p>
-          <ul className="space-y-1">
+        <div>
+          <div className="flex items-center justify-between gap-2.5 border-b border-[#e4e4e7] px-[22px] py-[19px]">
+            <p className="text-[15px] font-semibold text-[#27272a]">미발송 주문</p>
+            <span className="rounded-[5px] bg-[#fff1d9] px-2 py-[5px] text-xs font-semibold text-[#925e13]">
+              {ready.items.length}건
+            </span>
+          </div>
+          <ul>
             {ready.items.map((shipment) => (
-              <li key={shipment.shipmentId} className="flex items-center justify-between gap-2 rounded border px-3 py-2">
-                <span className="text-sm">
+              <li
+                key={shipment.shipmentId}
+                className="flex items-center justify-between gap-2 border-b border-[#e4e4e7] px-[22px] py-3.5 last:border-b-0"
+              >
+                <span className="text-[13px] text-[#27272a]">
                   #{shipment.orderNos[0]} {shipment.recipientMasked} 상품 {shipment.skuCount}종 {shipment.totalQty}개
                 </span>
                 {shipment.readiness === 'putaway_required' ? (
-                  <span className="text-xs text-gray-500">적치하면 나갈 수 있어요</span>
+                  <span className="text-[11px] text-[#71717a]">적치하면 나갈 수 있어요</span>
                 ) : (
                   <Button
                     type="button"
+                    className="px-2.5 py-[7px] text-xs"
                     disabled={busy}
                     onClick={() => {
                       setOutcome(null);
@@ -115,11 +126,11 @@ export function ReadyShipmentsSection({
         </div>
       )}
       {pickingFor !== null && (
-        <div className="flex items-center justify-between gap-2">
-          <p className="text-sm font-medium">#{pickingFor.orderNos[0]} — 배치 고르기</p>
+        <div className="flex items-center justify-between gap-2 px-[22px]">
+          <p className="text-[13px] font-semibold text-[#27272a]">#{pickingFor.orderNos[0]} — 배치 고르기</p>
           <Button
             type="button"
-            className="border border-gray-300 bg-white text-gray-700"
+            className="border border-[#e4e4e7] bg-white px-2.5 py-[7px] text-xs text-[#27272a] hover:bg-[#eff6ff] hover:brightness-100"
             disabled={busy}
             onClick={() => setPickingFor(null)}
           >
@@ -127,17 +138,17 @@ export function ReadyShipmentsSection({
           </Button>
         </div>
       )}
-      {pickingFor !== null && batchesFailed && <p className="text-sm">배치 목록을 불러오지 못했어요.</p>}
+      {pickingFor !== null && batchesFailed && <p className="px-[22px] text-[13px] text-[#aa4037]">배치 목록을 불러오지 못했어요.</p>}
       {pickingFor !== null && !loadingBatches && !batchesFailed && startedBatches.length === 0 && (
-        <p className="text-sm">{NO_BATCH}</p>
+        <p className="px-[22px] text-[13px] text-[#71717a]">{NO_BATCH}</p>
       )}
       {pickingFor !== null && startedBatches.length > 0 && (
-        <ul aria-label="배치 고르기" className="space-y-1">
+        <ul aria-label="배치 고르기" className="space-y-1 px-[22px]">
           {startedBatches.map((batch) => (
             <li key={batch.id}>
               <Button
                 type="button"
-                className="w-full border border-gray-300 bg-white text-left text-gray-700"
+                className="w-full justify-start border border-[#e4e4e7] bg-white text-left text-[#27272a] hover:bg-[#eff6ff] hover:brightness-100"
                 disabled={busy}
                 onClick={() => void run(batch.id)}
               >
@@ -149,9 +160,11 @@ export function ReadyShipmentsSection({
           ))}
         </ul>
       )}
-      <JoinOutcomeView outcome={outcome} labelPrinting={labelPrinting} prefs={prefs} print={print} />
+      <div className="px-[22px] empty:hidden">
+        <JoinOutcomeView outcome={outcome} labelPrinting={labelPrinting} prefs={prefs} print={print} />
+      </div>
       {ready.waitingOnOtherSkus > 0 && (
-        <p className="text-xs text-amber-700">다른 상품을 기다리는 주문 {ready.waitingOnOtherSkus}건</p>
+        <p className="px-[22px] text-xs text-[#9a681c]">다른 상품을 기다리는 주문 {ready.waitingOnOtherSkus}건</p>
       )}
     </section>
   );

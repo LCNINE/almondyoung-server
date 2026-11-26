@@ -1109,3 +1109,26 @@ it('담은 상품은 방금 담은 것이 맨 위에 오고, 등록 버튼에 �
   );
   expect(screen.getByText('담은 상품 2종 · 3개')).toBeInTheDocument();
 });
+
+it('검색한 상품은 카드로 보이고 카드에 미발송 주문 수와 상품 정보 버튼이 있다', async () => {
+  await renderScreen([], undefined, false, {
+    waiting: [{ skuId: 's1', orders: 2, qty: 5 }],
+  });
+  await waitFor(() =>
+    expect(document.querySelector('[aria-busy]')).toHaveAttribute(
+      'aria-busy',
+      'false'
+    )
+  );
+  await userEvent.type(
+    screen.getByLabelText('상품명·코드 검색'),
+    '셔츠{Enter}'
+  );
+  const tile = await screen.findByRole('button', { name: '코튼셔츠 선택' });
+  expect(tile).toHaveTextContent('CT-001');
+  expect(tile).toHaveTextContent('미발송 주문 2건');
+  expect(
+    screen.getByRole('button', { name: '코튼셔츠 상품 정보' })
+  ).toBeInTheDocument();
+  expect(screen.getByText('1개 상품')).toBeInTheDocument();
+});

@@ -35,8 +35,8 @@ describe('activeSectionOf', () => {
 
   it.each([
     ['/putaway', '적치'],
-    ['/returns/putaway', '되돌림 적치'],
-    ['/movement', '이동'],
+    ['/returns/putaway', '선반 복귀'],
+    ['/movement', '재고 이동'],
     ['/putaway/location-labels', '로케이션 라벨'],
   ])('%s → %s', (path, label) => {
     expect(f4 && activeSectionOf(f4, path)?.label).toBe(label);

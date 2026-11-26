@@ -11,7 +11,7 @@ export function WaitingOrdersNote({
 }) {
   if (!waiting) return null;
   return (
-    <span className="block text-xs font-semibold text-amber-700">
+    <span className="mt-[3px] block text-[11px] font-semibold text-[#9a681c]">
       {waitingOrdersLabel(waiting)}
       {detail ? <span className="font-normal"> — {detail}</span> : null}
     </span>
@@ -20,6 +20,6 @@ export function WaitingOrdersNote({
 
 export function WaitingOrdersFailed({ failed }: { failed: boolean }) {
   return failed ? (
-    <p className="text-xs text-gray-500">기다리는 주문을 확인하지 못했어요.</p>
+    <p className="text-xs text-[#71717a]">기다리는 주문을 확인하지 못했어요.</p>
   ) : null;
 }

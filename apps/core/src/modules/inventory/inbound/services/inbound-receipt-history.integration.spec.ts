@@ -222,6 +222,29 @@ describeIfDb('InboundService.listInboundReceipts 회차별 이력 (PostgreSQL in
     });
   });
 
+  it('회차마다 입고 기록의 작업자 id 를 싣고, 기록이 없으면 null 이다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await seedHistory(tx);
+      const service = makeInboundService(db);
+      const actorId = randomUUID();
+      const [journal] = await tx
+        .insert(wmsTables.stockJournals)
+        .values({ sourceType: 'INBOUND_RECEIPT', sourceId: fixture.newest.id, actorId })
+        .returning();
+      await tx
+        .update(wmsTables.inboundReceipts)
+        .set({ journalId: journal.id })
+        .where(eq(wmsTables.inboundReceipts.id, fixture.newest.id));
+
+      const result = await service.listInboundReceipts({ warehouseId: fixture.warehouse.id }, tx);
+
+      expect(result.items.map((item) => [item.id, item.actorId])).toEqual([
+        [fixture.newest.id, actorId],
+        [fixture.older.id, null],
+      ]);
+    });
+  });
+
   it('receiptId 필터는 선택한 warehouseId 범위를 벗어난 회차를 반환하지 않는다', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await seedHistory(tx);

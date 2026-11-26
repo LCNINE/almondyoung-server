@@ -34,3 +34,30 @@ export function useRacks(warehouseId: string | null) {
     },
   });
 }
+
+export interface RackLocations {
+  codes: string[];
+  total: number;
+}
+
+export function useRackLocations(warehouseId: string | null, rack: Rack | undefined) {
+  const api = useApiClient();
+  return useQuery({
+    queryKey: ['rack-locations', warehouseId, rack?.id],
+    enabled: warehouseId !== null && rack !== undefined,
+    queryFn: async (): Promise<RackLocations> => {
+      const qs = new URLSearchParams({
+        columnName: rack?.columnName ?? '',
+        rackNumber: String(rack?.rackNumber ?? ''),
+        isActive: 'true',
+        isSystem: 'false',
+        limit: '100',
+      });
+      const found = await api.request<{ items: { code: string }[]; total: number }>({
+        path: `/locations/warehouses/${warehouseId}?${qs.toString()}`,
+      });
+
+      return { codes: found.items.map((i) => i.code), total: found.total };
+    },
+  });
+}

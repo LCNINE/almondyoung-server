@@ -3,6 +3,7 @@ import { Check, CircleHelp, Package, Printer, ScanLine, X } from 'lucide-react';
 import { Button } from '../../core/design/Button';
 import { cn } from '../../core/design/cn';
 import { SCAN_STORAGE_MESSAGE } from '../../core/hardware/scan/useWorkScanQueue';
+import { skuImageUrls } from '../../domains/inventory/SkuInfoSheet';
 import { formatTrackingNo, splitShareLines, type InspectionRow } from '../../domains/outbound/inspection';
 import type { SplitShare } from '../../domains/outbound/types';
 import type { LabelItemChange } from '../../domains/outbound/waybillLabel';
@@ -12,148 +13,267 @@ import { clockOf, type RecentEntry, type RecentKind } from './recent';
 import { UNCERTAIN_SCAN_MESSAGE } from './useInspectionBox';
 import type { CancelWaitingLine } from '../../domains/outbound/cancelWaiting';
 
-const CARD = 'rounded-[10px] border border-[#D5D8DE] bg-white';
+const CARD = 'rounded-xl border border-[#e4e4e7] bg-white';
 
-/** 출고 검수 작업 영역 — 왼쪽 380px(송장·큰 칸), 오른쪽 나머지(표·최근). 셸 <main> 이 이미 p-3 이다 */
+/** 출고 검수 작업 영역 — 왼쪽 송장 카드, 오른쪽 스캔칸·표·최근. 셸 <main> 이 이미 여백을 준다 */
 export function WorkGrid({ left, right, intake }: { left: ReactNode; right: ReactNode; intake?: 'open' | 'blocked' }) {
   return (
-    <div data-intake={intake} className="grid h-full min-h-0 grid-cols-[380px_minmax(0,1fr)] gap-3">
-      <section className="flex min-h-0 flex-col gap-3">{left}</section>
-      <section className="flex min-h-0 flex-col gap-3">{right}</section>
+    <div
+      data-intake={intake}
+      className="grid h-full min-h-0 grid-cols-[minmax(290px,.76fr)_minmax(480px,1.85fr)] gap-[22px] max-[700px]:flex max-[700px]:flex-col"
+    >
+      <section className="flex min-h-0 min-w-0 flex-col gap-4">{left}</section>
+      <section className="flex min-h-0 min-w-0 flex-col gap-4">{right}</section>
     </div>
   );
 }
 
-export function BoxCard({
-  trackingNo,
-  recipient,
-  deliveryNote,
-  ownerName,
-  split,
-}: {
+const CARRIER_NAMES: Record<string, string> = { HANJIN: '한진택배' };
+
+export function carrierName(code: string | null | undefined): string {
+  if (!code) return '';
+
+  return CARRIER_NAMES[code] ?? code;
+}
+
+interface ShipmentFacts {
   trackingNo: string;
   recipient: string;
-  deliveryNote?: string | null;
+  carrier?: string | null;
   ownerName?: string | null;
   split?: SplitShare | null;
-}) {
+}
+
+function ShipmentSummary({ trackingNo, recipient, carrier, ownerName, split }: ShipmentFacts) {
   const share = splitShareLines(split);
+  const carrierLabel = carrierName(carrier);
+
   return (
-    <div className={cn(CARD, 'flex shrink-0 flex-col gap-2.5 p-[18px]')}>
+    <div className="flex flex-col">
+      <div className="text-xs text-[#71717a]">현재 검수 중인 송장</div>
+      <h2 className="mt-3 text-[25px] leading-tight font-[650] tracking-[-0.7px] tabular-nums">{formatTrackingNo(trackingNo)}</h2>
+      <div className="mt-2.5 text-xs text-[#71717a]">
+        <span>{recipient}</span>
+        {carrierLabel ? (
+          <>
+            <span className="mx-[5px] text-[#a1a1aa]">·</span>
+            <span>{carrierLabel}</span>
+          </>
+        ) : null}
+      </div>
       {ownerName ? (
-        <div className="rounded-md bg-[#1F2329] px-3 py-2 text-lg font-bold text-white">3PL · {ownerName}</div>
-      ) : null}
-      <h2 className="font-mono text-[30px] font-semibold">{formatTrackingNo(trackingNo)}</h2>
-      <div className="text-lg font-medium">{recipient}</div>
-      {share ? (
-        <div aria-label="나눈 상자" className="rounded-md bg-[#E3ECFC] px-3 py-2 text-[#1D5BD8]">
-          <div className="text-lg font-bold">{share.title}</div>
-          <div className="text-[15px] font-medium">{share.detail}</div>
+        <div className="mt-3 self-start rounded-[5px] bg-[#27272a] px-2.5 py-1.5 text-[13px] font-semibold text-white">
+          3PL · {ownerName}
         </div>
       ) : null}
-      {deliveryNote ? (
-        <div className="rounded-md bg-[#FFF1C7] px-3 py-2.5 text-base font-semibold text-[#5E3B00]">{deliveryNote}</div>
+      {share ? (
+        <div aria-label="나눈 상자" className="mt-3 rounded-lg bg-[#eff6ff] px-3 py-2 text-[#2563eb]">
+          <div className="text-sm font-semibold">{share.title}</div>
+          <div className="text-xs">{share.detail}</div>
+        </div>
       ) : null}
     </div>
   );
 }
 
-export type BigPanelContent =
-  | { kind: 'progress'; scanned: number; ordered: number }
+export function BoxCard(props: ShipmentFacts) {
+  return (
+    <div className={cn(CARD, 'shrink-0 p-[22px]')}>
+      <ShipmentSummary {...props} />
+    </div>
+  );
+}
+
+export type SummaryMiddle =
+  | { kind: 'progress'; scanned: number; ordered: number; kinds: number }
   | { kind: 'quantity'; value: string }
   | { kind: 'armed'; keyLabel: string; label: string }
-  | { kind: 'alert'; message: string; detail?: string; item?: string }
-  | { kind: 'notice'; title: string; message?: string }
   | { kind: 'cancelWaiting'; lines: CancelWaitingLine[]; whole: boolean };
 
-/** 왼쪽 아래 큰 칸 — 지금 찍을 것과 진행(거대), 또는 오류·안내 하나(스펙 §6.4) */
-export function BigPanel({ content }: { content: BigPanelContent }) {
-  const base = 'flex min-h-0 flex-1 flex-col items-center justify-center gap-4 rounded-[10px] p-6 text-center';
-  switch (content.kind) {
-    case 'progress':
+export interface ScanFeedback {
+  message: string;
+  detail?: string;
+  item?: string;
+  unapplied?: boolean;
+}
+
+export function InspectionSummary({
+  middle,
+  feedback,
+  ...facts
+}: ShipmentFacts & { middle: SummaryMiddle; feedback: ScanFeedback | null }) {
+  return (
+    <section
+      data-scan-error={feedback ? 'true' : undefined}
+      className={cn(
+        CARD,
+        'flex min-h-0 flex-1 flex-col overflow-auto p-7 max-[700px]:min-h-[300px] max-[700px]:p-[23px]',
+        feedback && 'border-[#d58c85]'
+      )}
+    >
+      <ShipmentSummary {...facts} />
+      <div className="my-auto py-7 max-[700px]:py-[22px]">
+        <SummaryBlock middle={middle} />
+      </div>
+      <SummaryFoot feedback={feedback} />
+    </section>
+  );
+}
+
+const HUGE = 'text-[86px] leading-[1.1] font-[650] tracking-[-4px] whitespace-nowrap tabular-nums max-[700px]:text-[68px]';
+
+function SummaryBlock({ middle }: { middle: SummaryMiddle }) {
+  switch (middle.kind) {
+    case 'progress': {
+      const ratio = middle.ordered > 0 ? Math.min(1, middle.scanned / middle.ordered) : 0;
+      const left = Math.max(0, middle.ordered - middle.scanned);
+
       return (
-        <div role="status" aria-label="진행" className={cn(base, 'border border-[#D5D8DE] bg-white')}>
-          <div className="text-[30px] font-bold text-[#1D5BD8]">상품 바코드</div>
-          <div
-            className="whitespace-nowrap font-mono font-semibold leading-none tracking-tight"
-            style={{ fontSize: bigTextPx(`${content.scanned} / ${content.ordered}`) }}
-          >
-            {content.scanned}
-            <span className="text-[#A3A9B4]"> / {content.ordered}</span>
+        <div role="status" aria-label="진행">
+          <div className="mb-[13px] text-xs text-[#71717a]">검수 수량</div>
+          <div className={cn(HUGE, 'text-[#27272a]')}>
+            {middle.scanned}
+            <span className="ml-1.5 text-[32px] font-normal tracking-[-1px] text-[#a1a1aa]">
+              {` / ${middle.ordered}`}
+              <small className="ml-1 text-[13px] tracking-normal">개</small>
+            </span>
+          </div>
+          <div className="mt-6 h-[5px] overflow-hidden rounded-md bg-[#ededee]">
+            <div className="h-full rounded-md bg-[#52525b] transition-[width] duration-[250ms]" style={{ width: `${ratio * 100}%` }} />
+          </div>
+          <div className="mt-3 flex items-center justify-between text-xs text-[#71717a]">
+            <span>
+              전체 {middle.kinds}종 · {middle.ordered}개
+            </span>
+            <strong className="font-semibold text-[#3f3f46]">{left}개 남음</strong>
           </div>
         </div>
       );
+    }
     case 'quantity':
       return (
-        <div role="status" aria-label="수량" className={cn(base, 'border-2 border-[#1D5BD8] bg-white')}>
-          <div className="text-[30px] font-bold text-[#1D5BD8]">수량</div>
-          <div
-            className="whitespace-nowrap font-mono font-semibold leading-none"
-            style={{ fontSize: bigTextPx(content.value || '_') }}
-          >
-            {content.value || '_'}
-          </div>
+        <div role="status" aria-label="수량">
+          <div className="mb-[13px] text-xs font-semibold text-[#2563eb]">수량</div>
+          <div className={cn(HUGE, 'text-[#2563eb]')}>{middle.value || '_'}</div>
         </div>
       );
     case 'armed':
       return (
-        <div role="status" className={cn(base, 'border-2 border-[#D99A00] bg-[#FFF1C7] text-[#5E3B00]')}>
-          <div className="break-keep text-[32px] font-bold">{content.label}</div>
-          <div className="flex items-center gap-2 text-lg font-semibold">
-            <Kbd>{content.keyLabel}</Kbd> 한 번 더
+        <div role="status" className="rounded-[10px] bg-[#fff1d9] p-5 text-[#9a681c]">
+          <div className="text-[22px] leading-snug font-bold break-keep">{middle.label}</div>
+          <div className="mt-3 flex items-center gap-2 text-sm font-semibold">
+            <Kbd tone="outline" className="opacity-100">
+              {middle.keyLabel}
+            </Kbd>
+            한 번 더
           </div>
-        </div>
-      );
-    case 'alert':
-      return (
-        <div role="alert" className={cn(base, 'border-2 border-[#C8202F] bg-[#FDE8EA]')}>
-          <div className="flex h-20 w-20 items-center justify-center rounded-full bg-[#C8202F] text-white">
-            <X className="h-11 w-11" aria-hidden />
-          </div>
-          <div className="text-[28px] font-bold text-[#9E1320]">{content.message}</div>
-          {content.item ? <div className="text-2xl font-bold">{content.item}</div> : null}
-          {content.detail ? <div className="font-mono text-xl font-semibold">{content.detail}</div> : null}
         </div>
       );
     case 'cancelWaiting':
       return (
-        <div role="status" aria-label="취소 대기" className={cn(base, 'border-2 border-[#D99A00] bg-[#FFF1C7] text-[#5E3B00]')}>
-          <div className="text-[28px] font-bold">
-            {content.whole ? '주문이 취소된 박스예요' : '주문 일부가 취소된 박스예요'}
-          </div>
-          {content.lines.length ? (
-            <ul className="w-full list-none text-left text-lg font-semibold">
-              {content.lines.map((line, index) => (
+        <div role="status" aria-label="취소 대기" className="rounded-[10px] bg-[#fff1d9] p-5 text-[#9a681c]">
+          <div className="text-lg font-bold">{middle.whole ? '주문이 취소된 박스예요' : '주문 일부가 취소된 박스예요'}</div>
+          {middle.lines.length ? (
+            <ul className="mt-3 w-full list-none text-sm font-semibold">
+              {middle.lines.map((line, index) => (
                 <li key={`${line.name}-${index}`} className="flex justify-between gap-3">
                   <span className="min-w-0 truncate">{line.name}</span>
-                  <span className="whitespace-nowrap font-mono">
+                  <span className="whitespace-nowrap tabular-nums">
                     {line.from} → {line.to}
                   </span>
                 </li>
               ))}
             </ul>
           ) : null}
-          <div className="text-lg font-semibold">
+          <div className="mt-3 text-sm">
             검수하지 말고 F11 을 두 번 눌러 박스를 빼 주세요. 담은 상품은 빼기 화면에서 되돌림 바구니에 넣어요.
           </div>
-        </div>
-      );
-    case 'notice':
-      return (
-        <div role="status" className={cn(base, 'border-2 border-[#D99A00] bg-[#FFF1C7] text-[#5E3B00]')}>
-          <div className="text-[32px] font-bold">{content.title}</div>
-          {content.message ? <div className="text-lg font-semibold">{content.message}</div> : null}
         </div>
       );
   }
 }
 
-const TH = 'border-b border-[#D5D8DE] bg-[#F6F7F8] px-4 py-2.5 text-left text-[13px] font-semibold text-[#535968]';
+function SummaryFoot({ feedback }: { feedback: ScanFeedback | null }) {
+  const base = 'flex min-h-[85px] shrink-0 items-center gap-2 border-t border-[#e4e4e7] pt-4';
+
+  if (!feedback) {
+    return (
+      <div className={cn(base, 'text-[11px] text-[#71717a]')}>
+        <ScanLine className="h-4 w-4" aria-hidden />
+        <span>상품을 모두 확인하면 자동 출고</span>
+      </div>
+    );
+  }
+
+  const rejected = [feedback.item, feedback.detail].filter(Boolean).join(' ');
+
+  return (
+    <div role="alert" aria-atomic="true" className={cn(base, 'text-[#b42318]')}>
+      <div className="min-w-0">
+        <strong className="block text-sm leading-normal font-[650] tracking-[-0.2px]">{feedback.message}</strong>
+        {rejected ? <span className="mt-1 block text-xs leading-normal [overflow-wrap:anywhere]">{rejected}</span> : null}
+        {feedback.unapplied ? (
+          <small className="mt-[3px] block text-[11px] leading-[1.6]">수량 미반영 · 다음 상품을 스캔해 주세요.</small>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+export function ScanField({ placeholder, children }: { placeholder: string; children?: ReactNode }) {
+  return (
+    <div className="flex w-full shrink-0 items-center gap-2 rounded-[10px] border border-[#e4e4e7] bg-white px-[15px] py-3 text-left">
+      <ScanLine className="h-[23px] w-[23px] shrink-0 text-[#2563eb]" aria-hidden />
+      {children ?? <span className="min-w-0 flex-1 p-[5px] text-sm text-[#a1a1aa]">{placeholder}</span>}
+    </div>
+  );
+}
+
+export type BigPanelContent =
+  | { kind: 'alert'; message: string; detail?: string; item?: string }
+  | { kind: 'notice'; title: string; message?: string }
+  | { kind: 'quantity'; value: string };
+
+/** 검수 밖 화면(새 송장·뺄 상품·빠진 박스·송장 대기, 입고·반품 스테이션)의 큰 칸 — 오류·안내·수량 하나 */
+export function BigPanel({ content }: { content: BigPanelContent }) {
+  const base = 'flex min-h-0 flex-1 flex-col items-center justify-center gap-3 rounded-xl p-7 text-center';
+
+  switch (content.kind) {
+    case 'alert':
+      return (
+        <div role="alert" className={cn(base, 'border-2 border-[#aa4037] bg-[#fff4f1] text-[#aa4037]')}>
+          <div className="text-2xl font-bold break-keep">{content.message}</div>
+          {content.item ? <div className="text-lg font-semibold text-[#27272a]">{content.item}</div> : null}
+          {content.detail ? <div className="text-base font-semibold tabular-nums">{content.detail}</div> : null}
+        </div>
+      );
+    case 'notice':
+      return (
+        <div role="status" className={cn(base, 'border border-[#e4e4e7] bg-white')}>
+          <div className="text-[28px] font-bold tracking-[-0.8px]">{content.title}</div>
+          {content.message ? <div className="text-sm text-[#71717a]">{content.message}</div> : null}
+        </div>
+      );
+    case 'quantity':
+      return (
+        <div role="status" aria-label="수량" className={cn(base, 'border-2 border-[#2563eb] bg-white')}>
+          <div className="text-sm font-semibold text-[#2563eb]">수량</div>
+          <div className={cn(HUGE, 'text-[#2563eb]')} style={{ fontSize: Math.min(86, bigTextPx(content.value || '_')) }}>
+            {content.value || '_'}
+          </div>
+        </div>
+      );
+  }
+}
+
+const TH = 'bg-[#fafafa] px-5 py-3 text-left text-[11px] font-medium whitespace-nowrap text-[#71717a]';
+const TD = 'border-t border-[#e4e4e7] px-5 py-4 align-middle';
 
 /** 위치 하나면 코드만, 나뉜 줄은 위치마다 한 줄 + 위치별 수량 — 코드 중간에서 꺾이지 않게 */
 function LocationCell({ locations }: { locations: InspectionRow['locations'] }) {
   if (locations.length === 0) return <>—</>;
   if (locations.length === 1) return <span className="whitespace-nowrap">{locations[0].code}</span>;
+
   return (
     <ul className="list-none">
       {locations.map((location) => (
@@ -165,90 +285,118 @@ function LocationCell({ locations }: { locations: InspectionRow['locations'] }) 
   );
 }
 
-/** 품목 표 `위치 | 상품 | 주문 | 스캔` — 완료 줄 회색, 방금 찍은 줄 노랑, 수량 2 이상은 ×N(스펙 §6.4). 위치는 보여 주기만 */
-export function LineTable({ rows, currentLineId }: { rows: readonly InspectionRow[]; currentLineId: string | null }) {
+function PanelHead({ title, meta }: { title: string; meta?: string }) {
   return (
-    <div className={cn(CARD, 'min-h-0 flex-1 overflow-auto')}>
-      <table className="w-full border-collapse">
-        <thead>
-          <tr>
-            <th className={cn(TH, 'w-[120px]')}>위치</th>
-            <th className={TH}>상품</th>
-            <th className={cn(TH, 'w-[90px] text-right')}>주문</th>
-            <th className={cn(TH, 'w-[140px] text-right')}>스캔</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => {
-            const current = !row.done && row.shipmentLineId === currentLineId;
-            return (
-              <tr
-                key={row.shipmentLineId}
-                data-state={row.done ? 'done' : current ? 'current' : 'todo'}
-                className={cn(
-                  'h-[72px] border-b border-[#E4E6EA] text-[17px]',
-                  row.done && 'bg-[#F1F2F4] text-[#6B717D]',
-                  current && 'bg-[#FFF1C7]'
-                )}
-              >
-                <td className="px-4 font-mono font-semibold">
-                  <LocationCell locations={row.locations} />
-                </td>
-                <td className={cn('px-4', !row.done && 'font-semibold')}>{row.name}</td>
-                <td className="px-4 text-right font-mono">
-                  {row.ordered >= 2 ? (
-                    <span className="rounded bg-[#7A4B00] px-2 py-0.5 font-semibold text-white">×{row.ordered}</span>
-                  ) : (
-                    row.ordered
-                  )}
-                </td>
-                <td className="px-4 text-right font-mono">
-                  {row.done ? (
-                    <span className="inline-flex items-center gap-2 font-semibold text-[#1E7A46]">
-                      <Check className="h-5 w-5" aria-hidden />
-                      {row.scanned}
-                    </span>
-                  ) : (
-                    <span className={cn('text-2xl font-semibold', row.scanned > 0 ? 'text-[#1D5BD8]' : 'text-[#A3A9B4]')}>
-                      {row.scanned}
-                      <span className="text-[17px] text-[#7C828E]"> / {row.ordered}</span>
-                    </span>
-                  )}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+    <div className="flex shrink-0 items-center justify-between gap-2.5 border-b border-[#e4e4e7] px-[22px] py-[19px]">
+      <h3 className="text-[15px] font-semibold">{title}</h3>
+      {meta ? <small className="text-xs text-[#71717a]">{meta}</small> : null}
     </div>
+  );
+}
+
+function ProductThumb({ fileIds }: { fileIds: readonly string[] }) {
+  const [src] = skuImageUrls(fileIds);
+  const [failed, setFailed] = useState<string | null>(null);
+  const box = 'h-[53px] w-11 flex-none rounded-[7px] bg-[#f4f4f5]';
+
+  if (!src || failed === src) {
+    return <div aria-hidden="true" data-testid="line-thumb-empty" className={box} />;
+  }
+
+  return <img src={src} alt="" loading="lazy" onError={() => setFailed(src)} className={cn(box, 'object-cover')} />;
+}
+
+/** 이 상자에 담을 상품 `로케이션 | 상품 / 옵션 | 검수 / 주문 | 상태` — 다 찬 줄은 흐리게, 위치는 보여 주기만 */
+export function LineTable({ rows, currentLineId }: { rows: readonly InspectionRow[]; currentLineId: string | null }) {
+  const ordered = rows.reduce((sum, row) => sum + row.ordered, 0);
+
+  return (
+    <section className={cn(CARD, 'flex min-h-0 flex-1 flex-col overflow-hidden')}>
+      <PanelHead title="이 상자에 담을 상품" meta={`${rows.length}종 · ${ordered}개`} />
+      <div className="min-h-0 flex-1 overflow-auto">
+        <table className="w-full border-collapse text-sm">
+          <thead>
+            <tr>
+              <th className={cn(TH, 'max-[700px]:hidden')}>로케이션</th>
+              <th className={TH}>상품 / 옵션</th>
+              <th className={cn(TH, 'text-right')}>검수 / 주문</th>
+              <th className={TH}>상태</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => {
+              const current = !row.done && row.shipmentLineId === currentLineId;
+
+              return (
+                <tr
+                  key={row.shipmentLineId}
+                  data-state={row.done ? 'done' : current ? 'current' : 'todo'}
+                  className={cn(row.done && 'bg-[#fcfcfc] text-[#8c8c95]')}
+                >
+                  <td className={cn(TD, 'text-xs whitespace-nowrap tabular-nums max-[700px]:hidden')}>
+                    <LocationCell locations={row.locations} />
+                  </td>
+                  <td className={TD}>
+                    <div className="flex items-center gap-3">
+                      <ProductThumb fileIds={row.imageFileIds} />
+                      <strong className="block text-sm leading-normal font-semibold">{row.name}</strong>
+                    </div>
+                  </td>
+                  <td className={cn(TD, 'text-right text-xl font-bold whitespace-nowrap tabular-nums')}>
+                    {row.scanned} <span className="text-sm font-normal text-[#71717a]">/ {row.ordered}</span>
+                  </td>
+                  <td className={cn(TD, 'w-10')}>
+                    {row.done ? (
+                      <Check className="h-5 w-5 text-[#2563eb]" aria-label="완료" />
+                    ) : (
+                      <span
+                        className={cn(
+                          'inline-flex items-center rounded-[5px] px-2 py-[5px] text-xs font-semibold whitespace-nowrap',
+                          row.scanned > 0 ? 'bg-[#eff6ff] text-[#2563eb]' : 'bg-[#eff1f2] text-[#68706d]'
+                        )}
+                      >
+                        {row.scanned > 0 ? '진행' : '대기'}
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 
 /** 송장이 바뀐 줄 `위치 | 상품 | 송장 → 지금`(목업 ④) */
 export function ChangeTable({ changes }: { changes: readonly LabelItemChange[] }) {
   return (
-    <div className={cn(CARD, 'min-h-0 flex-1 overflow-auto')}>
-      <table className="w-full border-collapse text-[#535968]">
-        <thead>
-          <tr>
-            <th className={cn(TH, 'w-[120px]')}>위치</th>
-            <th className={TH}>상품</th>
-            <th className={cn(TH, 'w-[180px] text-right')}>송장 → 지금</th>
-          </tr>
-        </thead>
-        <tbody>
-          {changes.map((change) => (
-            <tr key={`${change.locationCode}-${change.skuId}`} className="h-[72px] border-b border-[#E4E6EA] text-[17px]">
-              <td className="px-4 font-mono font-semibold text-[#15171C]">{change.locationCode}</td>
-              <td className="px-4 font-semibold text-[#15171C]">{change.name}</td>
-              <td className="px-4 text-right font-mono text-xl">
-                <span className="line-through">{change.printedQty}</span> → <strong className="text-[#15171C]">{change.currentQty}</strong>
-              </td>
+    <section className={cn(CARD, 'flex min-h-0 flex-1 flex-col overflow-hidden')}>
+      <PanelHead title="송장이 바뀐 상품" />
+      <div className="min-h-0 flex-1 overflow-auto">
+        <table className="w-full border-collapse text-sm">
+          <thead>
+            <tr>
+              <th className={TH}>로케이션</th>
+              <th className={TH}>상품</th>
+              <th className={cn(TH, 'text-right')}>송장 → 지금</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody>
+            {changes.map((change) => (
+              <tr key={`${change.locationCode}-${change.skuId}`}>
+                <td className={cn(TD, 'text-xs whitespace-nowrap tabular-nums')}>{change.locationCode}</td>
+                <td className={cn(TD, 'font-semibold')}>{change.name}</td>
+                <td className={cn(TD, 'text-right text-lg tabular-nums')}>
+                  <span className="text-[#71717a] line-through">{change.printedQty}</span> → <strong>{change.currentQty}</strong>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 
@@ -261,12 +409,12 @@ const RECENT_ICON: Record<RecentKind, typeof Check> = {
   check: CircleHelp,
 };
 const RECENT_TONE: Record<RecentKind, string> = {
-  waybill: 'text-[#1D5BD8]',
-  scan: 'text-[#1E7A46]',
-  shipped: 'text-[#1E7A46]',
-  printed: 'text-[#7A4B00]',
-  error: 'text-[#9E1320]',
-  check: 'text-[#7A4B00]',
+  waybill: 'text-[#2563eb]',
+  scan: 'text-[#2563eb]',
+  shipped: 'text-[#2563eb]',
+  printed: 'text-[#9a681c]',
+  error: 'text-[#b42318]',
+  check: 'text-[#9a681c]',
 };
 
 function recentText(entry: RecentEntry): string {
@@ -274,31 +422,37 @@ function recentText(entry: RecentEntry): string {
   if (entry.kind === 'printed') return `${formatTrackingNo(entry.text)} 새 송장 출력`;
   if (entry.kind === 'waybill') return formatTrackingNo(entry.text);
   if (entry.kind === 'check') return `${formatTrackingNo(entry.text)} 처리 여부 확인 중 — 아래 «확인할 일»`;
+
   return entry.text;
 }
 
-/** 최근 스캔(목업 ②) — 비었으면 그리지 않는다(U2) */
+/** 최근 스캔 — 비었으면 그리지 않는다(U2) */
 export function RecentList({ entries, grow = false }: { entries: readonly RecentEntry[]; grow?: boolean }) {
   if (entries.length === 0) return null;
+
   return (
     <ol
       aria-label="최근 스캔"
-      className={cn(CARD, 'list-none overflow-hidden px-4 py-1.5 text-[15px]', grow ? 'min-h-0 flex-1' : 'h-[172px] shrink-0')}
+      className={cn(
+        'list-none overflow-hidden rounded-[10px] border border-[#e4e4e7] bg-white px-[19px] py-1.5 text-xs text-[#71717a]',
+        grow ? 'min-h-0 flex-1' : 'max-h-[172px] shrink-0'
+      )}
     >
       {entries.map((entry) => {
         const Icon = RECENT_ICON[entry.kind];
+
         return (
           <li
             key={entry.id}
             className={cn(
-              'grid h-10 grid-cols-[84px_28px_minmax(0,1fr)_auto] items-center border-b border-[#EEF0F2] last:border-b-0',
-              entry.kind === 'error' && 'bg-[#FDE8EA] font-semibold text-[#9E1320]'
+              'grid h-10 grid-cols-[64px_26px_minmax(0,1fr)_auto] items-center border-b border-[#f0f0f1] last:border-b-0',
+              entry.kind === 'error' && 'font-semibold text-[#b42318]'
             )}
           >
-            <span className="font-mono text-[#535968]">{clockOf(entry.at)}</span>
+            <span className="tabular-nums">{clockOf(entry.at)}</span>
             <Icon className={cn('h-4 w-4', RECENT_TONE[entry.kind])} aria-hidden />
-            <span className="truncate">{recentText(entry)}</span>
-            <span className="font-mono font-semibold">{entry.qty ? `+${entry.qty}` : ''}</span>
+            <span className={cn('truncate', entry.kind !== 'error' && 'text-[#27272a]')}>{recentText(entry)}</span>
+            <span className="font-semibold tabular-nums text-[#27272a]">{entry.qty ? `+${entry.qty}` : ''}</span>
           </li>
         );
       })}
@@ -310,29 +464,30 @@ export function RecentList({ entries, grow = false }: { entries: readonly Recent
 export function DoneBanner({ last }: { last: LastBox }) {
   if (last.kind === 'shipped')
     return (
-      <div className="flex shrink-0 items-center gap-[18px] rounded-[10px] border border-[#8CC8A4] bg-[#E3F4EA] px-[22px] py-5">
-        <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#1E7A46] text-white">
-          <Check className="h-8 w-8" aria-hidden />
+      <div className="flex shrink-0 items-center gap-4 rounded-xl border border-[#c9dfcf] bg-[#e6f1e9] px-[22px] py-5">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#365d42] text-white">
+          <Check className="h-6 w-6" aria-hidden />
         </span>
-        <span className="font-mono text-[28px] font-semibold">{formatTrackingNo(last.trackingNo)}</span>
-        <span className="text-xl font-semibold text-[#145232]">출고 완료</span>
+        <span className="text-[22px] font-[650] tracking-[-0.5px] tabular-nums">{formatTrackingNo(last.trackingNo)}</span>
+        <span className="text-base font-semibold text-[#365d42]">출고 완료</span>
       </div>
     );
+
   return (
-    <div className="shrink-0 overflow-hidden rounded-[10px] border-2 border-[#D99A00] bg-white">
-      <div className="flex h-10 items-center gap-2.5 bg-[#FFF1C7] px-4 text-[15px] font-bold text-[#5E3B00]">
-        <span className="font-mono">{formatTrackingNo(last.trackingNo)}</span> 보충 대기
+    <div className="shrink-0 overflow-hidden rounded-xl border border-[#e4e4e7] bg-white">
+      <div className="flex h-10 items-center gap-2.5 bg-[#fff1d9] px-4 text-sm font-semibold text-[#9a681c]">
+        <span className="tabular-nums">{formatTrackingNo(last.trackingNo)}</span> 보충 대기
       </div>
-      <ul className="px-4 py-2 text-base">
+      <ul className="px-4 py-2 text-sm">
         {last.items.map((item) => (
           <li key={`${item.locationCode}-${item.name}`} className="py-1">
-            <span className="font-mono font-semibold">[{item.locationCode}]</span> {item.name}{' '}
-            <span className="font-mono font-semibold">×{item.qty}</span>
+            <span className="font-semibold tabular-nums">[{item.locationCode}]</span> {item.name}{' '}
+            <span className="font-semibold tabular-nums">×{item.qty}</span>
           </li>
         ))}
       </ul>
       {last.print.kind === 'failed' ? (
-        <p role="alert" className="border-t border-[#EEF0F2] px-4 py-2 font-semibold text-[#9E1320]">
+        <p role="alert" className="border-t border-[#e4e4e7] px-4 py-2 text-sm font-semibold text-[#b42318]">
           {last.print.message}
         </p>
       ) : null}
@@ -340,7 +495,6 @@ export function DoneBanner({ last }: { last: LastBox }) {
   );
 }
 
-/** 송장 대기(목업 ①) — 직접 입력칸이 열리면 그 안에 그린다 */
 /** 송장 대기 화면이 보이는 지금 배치 — 남은 상자 = 출고 안 된 상자(빠진 상자는 세지 않는다). 남은 상자가 있을 때만 보인다 */
 export interface WaitingBatch {
   code: string;
@@ -349,27 +503,29 @@ export interface WaitingBatch {
   total: number;
 }
 
+/** 송장 대기(목업 ①) — 직접 입력칸이 열리면 스캔칸 자리에 그린다 */
 export function WaitingPrompt({ batch, children }: { batch?: WaitingBatch | null; children?: ReactNode }) {
   return (
-    <div className={cn(CARD, 'flex min-h-0 flex-1 flex-col items-center justify-center gap-5')}>
+    <div className={cn(CARD, 'flex min-h-0 flex-1 flex-col items-center justify-center gap-0 p-14 text-center max-[700px]:p-7')}>
       {batch ? <WaitingBatchLine batch={batch} /> : null}
-      <div className="flex h-[120px] w-[120px] items-center justify-center rounded-3xl bg-[#E3ECFC] text-[#1D5BD8]">
-        <ScanLine className="h-[68px] w-[68px]" strokeWidth={1.6} aria-hidden />
+      <ScanLine className="h-[72px] w-[72px] text-[#2563eb]" strokeWidth={1.6} aria-hidden />
+      <div className="mt-5 mb-3 text-[32px] font-bold tracking-[-1px]">송장을 찍어 주세요</div>
+      <p className="mb-7 text-[#71717a]">하던 상자의 검수 수량은 유지돼요.</p>
+      <div className="w-full max-w-[360px]">
+        <ScanField placeholder="송장번호 입력 또는 스캔">{children}</ScanField>
       </div>
-      <div className="text-4xl font-bold">송장 바코드</div>
-      {children}
     </div>
   );
 }
 
 function WaitingBatchLine({ batch }: { batch: WaitingBatch }) {
   return (
-    <div role="status" aria-label="지금 배치" className="flex flex-col items-center gap-1 text-center">
-      {batch.name ? <div className="text-lg font-semibold text-[#535968]">{batch.name}</div> : null}
-      <div className="whitespace-nowrap font-mono text-xl font-semibold text-[#535968]">{batch.code}</div>
-      <div className="text-[34px] font-bold">
-        남은 상자 <span className="font-mono text-[#1D5BD8]">{batch.total - batch.done}</span>
-        <span className="font-mono text-[#A3A9B4]"> / {batch.total}</span>
+    <div role="status" aria-label="지금 배치" className="mb-8 flex flex-col items-center gap-1 text-center">
+      {batch.name ? <div className="text-sm font-semibold text-[#71717a]">{batch.name}</div> : null}
+      <div className="text-sm whitespace-nowrap text-[#71717a] tabular-nums">{batch.code}</div>
+      <div className="text-[26px] font-bold tracking-[-0.6px]">
+        남은 상자 <span className="text-[#2563eb] tabular-nums">{batch.total - batch.done}</span>
+        <span className="text-[#a1a1aa] tabular-nums"> / {batch.total}</span>
       </div>
     </div>
   );
@@ -386,9 +542,10 @@ export function ManualWaybillInput({
   onClose(): void;
 }) {
   const [value, setValue] = useState(initial);
+
   return (
     <form
-      className="w-[300px]"
+      className="min-w-0 flex-1"
       onSubmit={(e) => {
         e.preventDefault();
         const code = value.trim();
@@ -400,6 +557,7 @@ export function ManualWaybillInput({
         autoFocus
         autoComplete="off"
         inputMode="numeric"
+        placeholder="송장번호 입력 또는 스캔"
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => {
@@ -408,41 +566,36 @@ export function ManualWaybillInput({
             onClose();
           }
         }}
-        className="w-full rounded-md border border-[#D5D8DE] px-3 py-2 font-mono text-2xl"
+        className="w-full border-0 bg-transparent p-[5px] text-sm tabular-nums outline-none"
       />
     </form>
   );
 }
 
-/** 스캔을 저장하지 못했거나 결과를 모를 때 — 같은 상품을 다시 찍지 않게 하고 확인 단추를 준다 */
-export function ScanWaiting({ count }: { count: number }) {
-  return (
-    <p role="status" className="shrink-0 rounded-[10px] border-2 border-[#D99A00] bg-[#FFF1C7] p-3 font-semibold text-[#5E3B00]">
-      연결이 끊겨 상품 스캔 {count}개를 보내지 못하고 있어요. 연결되면 자동으로 보내요. 같은 상품은 다시 찍지 마세요.
-    </p>
-  );
+export function scanWaitingMessage(count: number): string {
+  return `연결이 끊겨 상품 스캔 ${count}개를 보내지 못하고 있어요. 연결되면 자동으로 보내요. 같은 상품은 다시 찍지 마세요.`;
 }
 
 /** 다시 연 박스에 남은 결과 모름 — 무엇을 확인하고 있는지 보여 같은 상품을 또 찍지 않게 한다 */
 export function ScanChecking({ scans }: { scans: ReadonlyArray<{ name: string; quantity: number }> }) {
   return (
-    <div role="status" className="shrink-0 space-y-1 rounded-[10px] border-2 border-[#D99A00] bg-[#FFF1C7] p-3 text-[#5E3B00]">
+    <div role="status" className="shrink-0 space-y-1 rounded-xl bg-[#fff1d9] p-4 text-sm text-[#9a681c]">
       <p className="font-semibold">처리 여부를 확인하고 있어요. 이 상품은 다시 찍지 마세요.</p>
       <ul className="list-none">
         {scans.map((scan, i) => (
-          <li key={i} className="font-mono font-semibold">
+          <li key={i} className="font-semibold tabular-nums">
             {scan.name} ×{scan.quantity}
           </li>
         ))}
       </ul>
-      <p className="text-sm">결과는 아래 상태바 «확인할 일»에서 다시 확인할 수 있어요. 다른 박스는 그대로 찍어도 돼요.</p>
+      <p className="text-xs">결과는 아래 상태바 «확인할 일»에서 다시 확인할 수 있어요. 다른 박스는 그대로 찍어도 돼요.</p>
     </div>
   );
 }
 
 export function QueueTrouble({ storage, onRetry }: { storage: boolean; onRetry(): void }) {
   return (
-    <div role="alert" className="shrink-0 space-y-2 rounded-[10px] border-2 border-[#C8202F] bg-[#FDE8EA] p-3 text-[#9E1320]">
+    <div role="alert" className="shrink-0 space-y-3 rounded-xl border border-[#d58c85] bg-[#fff4f1] p-4 text-sm text-[#b42318]">
       <p className="font-semibold">{storage ? SCAN_STORAGE_MESSAGE : UNCERTAIN_SCAN_MESSAGE}</p>
       <Button onClick={onRetry}>처리 내역 확인</Button>
     </div>

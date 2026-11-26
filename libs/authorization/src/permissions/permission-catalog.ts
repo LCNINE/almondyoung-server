@@ -76,6 +76,10 @@ export const PERMISSION_CATALOG = [
     '테넌트를 만들고 상태를 바꾸고, 소속·대행 계정·비밀번호 재발급·운영자 성질을 다룬다(플랫폼 운영자만)',
     { owners: ['user-service'], grant: NOBODY, ...DANGEROUS },
   ),
+  permission('iam.staff_name.read', '직원 이름 조회', '작업 기록에 남은 직원의 이름을 본다', {
+    owners: ['user-service'],
+    grant: ADMIN_LOGISTICS,
+  }),
   permission('iam.audit_log.read', '권한 변경 이력 조회', '역할·권한·부여 변경 이력을 본다', {
     owners: ['user-service'],
     grant: ADMIN,

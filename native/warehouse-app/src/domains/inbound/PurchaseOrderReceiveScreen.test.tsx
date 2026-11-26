@@ -259,8 +259,9 @@ async function renderScreen(calls: Call[], opts: RenderOpts = {}) {
       }
       if (o.path === '/purchase-orders/receipt-lines/rl-1/cancel') {
         if (opts.failCancel) {
-          throw new Error(
-            'POST /purchase-orders/receipt-lines/rl-1/cancel → 400'
+          throw new ApiError(
+            'POST /purchase-orders/receipt-lines/rl-1/cancel → 400',
+            400
           );
         }
         current = {
@@ -903,19 +904,19 @@ describe('PurchaseOrderReceiveScreen', () => {
     expect(
       screen.queryByRole('button', { name: '취소' })
     ).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: '처리 내역 확인' }));
-    await waitFor(() =>
-      expect(
-        calls.filter(
-          (c) => c.path === '/purchase-orders/receipt-lines/rl-1/cancel'
-        ).length
-      ).toBeGreaterThan(1)
-    );
-    // 같은 receiptLineId 재시도는 본문과 헤더 모두 같은 키를 유지한다.
-    const cancelCalls = calls.filter(
-      (c) => c.path === '/purchase-orders/receipt-lines/rl-1/cancel'
-    );
-    expect(cancelCalls[0].idempotencyKey).toBe(cancelCalls[1].idempotencyKey);
+    const cancelCalls = () =>
+      calls.filter(
+        (c) => c.path === '/purchase-orders/receipt-lines/rl-1/cancel'
+      );
+    const recheck = await screen.findByRole('button', {
+      name: '처리 내역 확인',
+    });
+    await waitFor(() => expect(recheck).toBeEnabled());
+    const before = cancelCalls().length;
+    expect(before).toBe(1);
+
+    await user.click(recheck);
+    await waitFor(() => expect(cancelCalls().length).toBe(before + 1));
     // Finish the retry/recheck before jsdom teardown; observing the second POST alone
     // leaves WorkBoundary's async click handler and later retries in flight.
     await waitFor(() =>
@@ -923,6 +924,16 @@ describe('PurchaseOrderReceiveScreen', () => {
         screen.getByRole('button', { name: '처리 내역 확인' })
       ).toBeEnabled()
     );
+
+    // 같은 receiptLineId 재시도는 본문과 헤더 모두 같은 키를 유지한다.
+    const [first, ...rest] = cancelCalls();
+    expect(first.idempotencyKey).toBeTruthy();
+    expect(first.body).toMatchObject({ idempotencyKey: first.idempotencyKey });
+    for (const call of rest) {
+      expect(call.idempotencyKey).toBe(first.idempotencyKey);
+      expect(call.body).toEqual(first.body);
+    }
+    expect(cancelCalls()).toHaveLength(before + 1);
   });
 });
 

@@ -133,8 +133,8 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
     []
   );
   const reject = useCallback(
-    (message: string, detail?: string, item?: string) => {
-      setAlert({ message, detail, item });
+    (message: string, detail?: string, item?: string, unapplied?: boolean) => {
+      setAlert({ message, detail, item, unapplied });
       signal('error');
       note({ kind: 'error', text: item && detail ? `${item} ${detail}` : (detail ?? message) });
     },
@@ -358,6 +358,7 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
           // 상품 스캔은 아직 큐에 넣지 않았다 — 저장도 전송도 안 된 입력이다
           if (error instanceof NetworkError) {
             reject(SCAN_NOT_SENT_MESSAGE, code);
+            workFor(viewRef.current, work.current)?.connectionLost?.();
             return;
           }
           if (!isNotFound(error)) throw error;
@@ -480,9 +481,9 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
    * 박스 화면이 내는 거절. 화면이 아직 그 박스면 알리고, 다른 박스로 넘어간 뒤 늦게 온 것(박스 빼기 실패)이면
    * 든 박스에 빨간 칸·오류음을 내지 않고 최근 목록에만 적는다
    */
-  const boxAlert = (box: ShipmentByWaybill) => (message: string, detail?: string, item?: string) => {
+  const boxAlert = (box: ShipmentByWaybill) => (message: string, detail?: string, item?: string, unapplied?: boolean) => {
     const current = viewRef.current;
-    if (current.kind !== 'waiting' && current.box.shipmentId === box.shipmentId) reject(message, detail, item);
+    if (current.kind !== 'waiting' && current.box.shipmentId === box.shipmentId) reject(message, detail, item, unapplied);
     else note({ kind: 'error', text: `${box.trackingNo} ${message}` });
   };
 
@@ -686,6 +687,7 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
               <BoxCard
                 trackingNo={view.box.trackingNo}
                 recipient={view.box.recipientMasked}
+                carrier={view.box.carrier}
                 ownerName={view.box.ownerName}
                 split={view.box.split}
               />
@@ -705,9 +707,9 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
                 />
               )}
               {alert && alert.message === NEW_WAYBILL_FIRST_MESSAGE ? (
-                <p role="alert" className="shrink-0 rounded-[10px] border-2 border-[#C8202F] bg-[#FDE8EA] p-3 font-semibold text-[#9E1320]">
+                <p role="alert" className="shrink-0 rounded-xl border border-[#d58c85] bg-[#fff4f1] p-4 text-sm font-semibold text-[#b42318]">
                   {alert.message}
-                  <span className="ml-2 font-mono font-normal">{alert.detail}</span>
+                  <span className="ml-2 font-normal tabular-nums">{alert.detail}</span>
                 </p>
               ) : null}
             </>
@@ -749,7 +751,12 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
         <WorkGrid
           left={
             <>
-              <BoxCard trackingNo={view.box.trackingNo} recipient={view.box.recipientMasked} ownerName={view.box.ownerName} />
+              <BoxCard
+                trackingNo={view.box.trackingNo}
+                recipient={view.box.recipientMasked}
+                carrier={view.box.carrier}
+                ownerName={view.box.ownerName}
+              />
               <BigPanel
                 content={{
                   kind: 'notice',
@@ -761,7 +768,7 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
                 }}
               />
               {alert ? (
-                <p role="alert" className="shrink-0 rounded-[10px] border-2 border-[#C8202F] bg-[#FDE8EA] p-3 font-semibold text-[#9E1320]">
+                <p role="alert" className="shrink-0 rounded-xl border border-[#d58c85] bg-[#fff4f1] p-4 text-sm font-semibold text-[#b42318]">
                   {alert.message}
                 </p>
               ) : null}

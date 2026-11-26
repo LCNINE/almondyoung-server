@@ -34,6 +34,25 @@ export function workerReturnBinBarcode(actorId: string, warehouseId: string): st
   return `RB-${actorId}-${warehouseId}`;
 }
 
+export function returnBinPutawayResponse(input: {
+  bin: ReturnBinRef;
+  warehouseId: string;
+  putAwayQty: number;
+  sku: { id: string; code: string; name: string };
+  locationCode: string;
+  items: ReturnBinItemDto[];
+}): ReturnBinPutawayResponseDto {
+  return {
+    returnBin: { ...input.bin, warehouseId: input.warehouseId },
+    putAwayQty: input.putAwayQty,
+    skuId: input.sku.id,
+    skuCode: input.sku.code,
+    skuName: input.sku.name,
+    locationCode: input.locationCode,
+    items: input.items,
+  };
+}
+
 function binConflict(code: 'RETURN_BIN_UNKNOWN' | 'RETURN_BIN_WAREHOUSE_MISMATCH', message: string) {
   return new ConflictException({ code, message });
 }
@@ -321,11 +340,19 @@ export class ReturnBinService {
           { commandRequestId, returnBinId: bin.id, skuId, locationCode, quantity: input.quantity },
           trx,
         );
-        const response: ReturnBinPutawayResponseDto = {
-          returnBin: { ...bin, warehouseId: input.warehouseId },
+        const [sku] = await trx
+          .select({ code: wmsTables.skus.code, name: wmsTables.skus.name })
+          .from(wmsTables.skus)
+          .where(eq(wmsTables.skus.id, skuId))
+          .limit(1);
+        const response = returnBinPutawayResponse({
+          bin,
+          warehouseId: input.warehouseId,
           putAwayQty: input.quantity,
+          sku: { id: skuId, code: sku?.code ?? '', name: sku?.name ?? '' },
+          locationCode,
           items: await this.contentsOf(bin, trx),
-        };
+        });
         return { response, resourceType: 'return_bin', resourceId: bin.id };
       },
       tx,

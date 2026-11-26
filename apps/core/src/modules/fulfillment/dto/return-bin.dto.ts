@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsInt, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength, Min } from 'class-validator';
 
 export class RegisterReturnBinDto {
@@ -100,5 +100,9 @@ export class ReturnBinPutawayDto {
 export class ReturnBinPutawayResponseDto {
   @ApiProperty({ type: ReturnBinDto }) returnBin: ReturnBinDto;
   @ApiProperty() putAwayQty: number;
+  @ApiPropertyOptional() skuId?: string;
+  @ApiPropertyOptional() skuCode?: string;
+  @ApiPropertyOptional() skuName?: string;
+  @ApiPropertyOptional({ description: '적치한 로케이션' }) locationCode?: string;
   @ApiProperty({ type: [ReturnBinItemDto], description: '적치 뒤 바구니에 남은 물건' }) items: ReturnBinItemDto[];
 }

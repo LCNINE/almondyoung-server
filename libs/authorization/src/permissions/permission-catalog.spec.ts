@@ -98,12 +98,13 @@ describe('permission catalog', () => {
       'messaging.provider.write': ['admin'],
       'analytics.keyword.write': ['admin'],
       'system.operations.read': ['admin'],
+      'iam.staff_name.read': ['admin', 'logistics_worker', 'logistics_manager'],
     };
     const actual = Object.fromEntries(
       Object.keys(expected).map((key) => [key, findPermission(key)?.grantOnFirstRegistration ?? null]),
     );
     expect(actual).toEqual(expected);
-    expect(PERMISSION_CATALOG).toHaveLength(122);
+    expect(PERMISSION_CATALOG).toHaveLength(123);
   });
 
   it('registers the wage permissions for master only', () => {

@@ -39,6 +39,9 @@ import { RoleAdminManager } from './roles/role-admin.manager';
 import { RoleAdminReader } from './roles/role-admin.reader';
 import { RoleAdminService } from './roles/role-admin.service';
 import { RoleRepository } from './roles/role.repository';
+import { StaffNamesController } from './staff/staff-names.controller';
+import { StaffNamesReader } from './staff/staff-names.reader';
+import { StaffNamesService } from './staff/staff-names.service';
 import { StaffPasswordManager } from './staff/staff-password.manager';
 import { ActorTenantReader } from './tenancy/actor-tenant.reader';
 import { PlatformOperatorManager } from './tenancy/platform-operator.manager';
@@ -52,6 +55,7 @@ import { TenancyRepository } from './tenancy/tenancy.repository';
     MePermissionsController,
     RoleAdminController,
     RoleAssignmentController,
+    StaffNamesController,
     IamAuditController,
     PiiAccessLogController,
     PiiAccessRecordController,
@@ -86,6 +90,8 @@ import { TenancyRepository } from './tenancy/tenancy.repository';
     GrantAuthority,
     RoleAssignmentManager,
     StaffPasswordManager,
+    StaffNamesReader,
+    StaffNamesService,
     RoleAssignmentService,
     PiiAccessRepository,
     PiiAccessCreator,

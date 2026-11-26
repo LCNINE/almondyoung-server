@@ -33,7 +33,7 @@ export interface StationTab {
  * 스테이션 탭(스펙 §4). 새 탭 화면이 생기기 전(PR C~G)에는 지금 화면을 그 탭 안에 그대로 그린다.
  * - F1·F2 는 출고 검수·배치 현황 화면이다(PR C)
  * - F3 은 입고 화면이 간편입고·입고내역 링크를 이미 가져 하위 탭이 없다
- * - F4 는 적치 화면에서 이동·되돌림 적치로 갈 길이 없어 하위 탭을 둔다
+ * - F4 는 적치 화면에서 재고 이동·선반 복귀로 갈 길이 없어 하위 탭을 둔다
  * - F6 은 재고 조회 화면에서 제조 완료 등록으로 갈 길이 없어 하위 탭을 둔다
  * - F7 반품은 고객 반품의 도착·검수다(`/returns/putaway` 는 피킹 되돌림 — 경로를 겹치지 않는다)
  */
@@ -48,8 +48,8 @@ export const STATION_TABS: readonly StationTab[] = [
     owns: ['/putaway', '/returns/putaway', '/movement'],
     sections: [
       { label: '적치', to: '/putaway' },
-      { label: '되돌림 적치', to: '/returns/putaway' },
-      { label: '이동', to: '/movement' },
+      { label: '선반 복귀', to: '/returns/putaway' },
+      { label: '재고 이동', to: '/movement' },
       { label: '로케이션 라벨', to: '/putaway/location-labels' },
     ],
   },

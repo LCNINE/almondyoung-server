@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
+import { onlineManager } from '@tanstack/react-query';
 import { useApiClient } from '../../core/data/ApiClientProvider';
 import { errorMessage } from '../../core/data/errorMessage';
+import { NetworkError } from '../../core/data/httpClient';
 import { useHumanKeys } from '../../core/hardware/scan/useScanner';
 import { useWorkPermissions } from '../../core/operations/useWorkCapabilities';
 import { excludeFromBatch } from '../../domains/outbound/batchRemove';
@@ -21,12 +23,13 @@ import type { ShipmentByWaybill } from '../../domains/outbound/types';
 import { useDigitCommands, useStationActions, useStationKeyHints, type KeyHint } from '../ActionRegistry';
 import type { StationAction } from '../actions';
 import { modalOpen } from '../useStationKeys';
+import { ConnectionDialog, type ConnectionLoss, type ConnectionProbe } from './ConnectionDialog';
 import { INSPECTION_ACTIONS } from './inspectionActions';
 import type { Alert, BoxWorkHandle } from './model';
-import { BigPanel, BoxCard, LineTable, QueueTrouble, RecentList, ScanChecking, ScanWaiting, WorkGrid, type BigPanelContent } from './panels';
+import { InspectionSummary, LineTable, QueueTrouble, RecentList, ScanChecking, ScanField, WorkGrid, type SummaryMiddle } from './panels';
 import type { RecentEntry } from './recent';
 import { ShortPickDialog } from './ShortPickDialog';
-import { STATION_WITHDRAW_REASON, useInspectionBox } from './useInspectionBox';
+import { STATION_WITHDRAW_REASON, UNCERTAIN_SCAN_MESSAGE, useInspectionBox } from './useInspectionBox';
 
 /**
  * 결과를 모르는 결품(응답을 잃음·5xx·처리 중) — 반영됐을 수 있다. 다음 F9 는 이것을 같은 키·같은 본문으로 다시 보낸다(서버가
@@ -79,7 +82,7 @@ export function InspectWork({
   alert: Alert | null;
   recent: readonly RecentEntry[];
   canPrint: boolean;
-  onAlert(message: string, detail?: string, item?: string): void;
+  onAlert(message: string, detail?: string, item?: string, unapplied?: boolean): void;
   onScanned(name: string, quantity: number): void;
   /** 출고됐다 — 상자를 끝낸 상품 스캔이 있으면 그 이름·수량(강제출고면 null) */
   onShipped(box: ShipmentByWaybill, final: { name: string; quantity: number } | null): void;
@@ -112,7 +115,8 @@ export function InspectWork({
     onAccepted: (lineId, quantity, barcode) => onScanned(nameOf(lineId, barcode), quantity),
     onShipped: (final) =>
       onShipped(box, final ? { name: nameOf(final.shipmentLineId, final.barcode), quantity: final.quantity } : null),
-    onRejected: (message, barcode, scannedName) => onAlert(message, barcode ?? undefined, scannedName),
+    onRejected: (message, barcode, scannedName) =>
+      onAlert(message, barcode ?? undefined, scannedName, barcode !== null && message !== UNCERTAIN_SCAN_MESSAGE),
     onWithdrawn: (barcode) => onWithdrawn(box, barcode),
     onExcess,
   });
@@ -124,6 +128,8 @@ export function InspectWork({
   const [withdrawing, setWithdrawing] = useState(false);
   const [shortOpen, setShortOpen] = useState(false);
   const [shortBusy, setShortBusy] = useState(false);
+  const [connection, setConnection] = useState<ConnectionLoss | null>(null);
+  const [probe, setProbe] = useState<ConnectionProbe>('idle');
 
   // 손잡이는 마지막 렌더의 큐를 부른다 — 화면이 «받음» 으로 그려진 뒤 이 커밋의 effect 가 돌기 전에 온 스캔이
   // 앞 렌더(아직 막힘)의 판정으로 거절되지 않게
@@ -151,6 +157,10 @@ export function InspectWork({
       disarm: () => setArmed(null),
       settle: () => latest.current.settle(),
       waitingForNetwork: () => latest.current.waitingNow(),
+      connectionLost: () => {
+        setProbe('idle');
+        setConnection({ phase: 'lost', cause: 'dropped' });
+      },
     };
     handleRef.current = own;
     return () => {
@@ -177,6 +187,41 @@ export function InspectWork({
       : null
   );
   useStationKeyHints(!typing ? NO_HINTS : quantity !== null ? EDITING_HINTS : QUANTITY_HINTS);
+
+  const queued = work.waitingForNetwork;
+  const queueFailed = !!work.queueError || work.checking.length > 0;
+  const drained = work.idle;
+  useEffect(() => {
+    if (queued > 0) {
+      setProbe('idle');
+      setConnection({ phase: 'lost', cause: 'queued' });
+      return;
+    }
+
+    setConnection((current) => {
+      if (current?.phase !== 'lost' || current.cause !== 'queued') return current;
+      if (queueFailed) return null;
+
+      return drained ? { phase: 'restored', cause: 'queued' } : current;
+    });
+  }, [queued, queueFailed, drained]);
+
+  const checkConnection = async () => {
+    if (connection?.phase !== 'lost') return;
+
+    const cause = connection.cause;
+    setProbe('checking');
+    try {
+      await fetchShipmentByWaybill(api, box.trackingNo, warehouseId);
+    } catch (error) {
+      setProbe(error instanceof NetworkError ? 'failed' : 'server');
+      return;
+    }
+    setProbe('idle');
+
+    if (cause === 'queued') onlineManager.setOnline(true);
+    else setConnection({ phase: 'restored', cause });
+  };
 
   const remaining = work.lastScan ? remainingOf(work.progress, work.lastScan.shipmentLineId) : 0;
   const canForce = permissions.data?.stationForceDispatch === true;
@@ -340,29 +385,29 @@ export function InspectWork({
   ];
   useStationActions(actions);
 
-  const big: BigPanelContent = armed
-    ? armedPanel(armed, remaining)
+  const middle: SummaryMiddle = armed
+    ? armedMiddle(armed, remaining)
     : quantity !== null
       ? { kind: 'quantity', value: quantity }
-      : alert
-        ? { kind: 'alert', ...alert }
-        : cancelWaiting
-          ? { kind: 'cancelWaiting', ...cancelWaiting }
-          : { kind: 'progress', ...totals };
+      : cancelWaiting
+        ? { kind: 'cancelWaiting', ...cancelWaiting }
+        : { kind: 'progress', ...totals, kinds: rows.length };
+
   return (
     <>
       <WorkGrid
         intake={work.intakeBlocked || cancelWaiting ? 'blocked' : 'open'}
         left={
           <>
-            <BoxCard
+            <InspectionSummary
               trackingNo={box.trackingNo}
               recipient={box.recipientMasked}
-              deliveryNote={box.deliveryNote}
+              carrier={box.carrier}
               ownerName={box.ownerName}
               split={box.split}
+              middle={middle}
+              feedback={alert}
             />
-            <BigPanel content={big} />
             {work.checking.length > 0 ? (
               <ScanChecking
                 scans={work.checking.map((scan) => ({
@@ -372,18 +417,29 @@ export function InspectWork({
               />
             ) : work.queueError ? (
               <QueueTrouble storage={!!work.storageError} onRetry={() => void work.retryHead().catch(() => {})} />
-            ) : work.waitingForNetwork > 0 ? (
-              <ScanWaiting count={work.waitingForNetwork} />
             ) : null}
           </>
         }
         right={
           <>
+            <ScanField placeholder="상품 바코드를 스캔해 주세요" />
             <LineTable rows={rows} currentLineId={work.lastScan?.shipmentLineId ?? null} />
             <RecentList entries={recent} />
           </>
         }
       />
+      {connection ? (
+        <ConnectionDialog
+          loss={connection}
+          probe={probe}
+          trackingNo={box.trackingNo}
+          scanned={totals.scanned}
+          ordered={totals.ordered}
+          waiting={queued}
+          onCheck={() => void checkConnection()}
+          onContinue={() => setConnection(null)}
+        />
+      ) : null}
       {shortOpen ? (
         <ShortPickDialog
           lines={retry?.lines ?? draft}
@@ -398,7 +454,7 @@ export function InspectWork({
   );
 }
 
-function armedPanel(armed: Exclude<Armed, null>, remaining: number): BigPanelContent {
+function armedMiddle(armed: Exclude<Armed, null>, remaining: number): SummaryMiddle {
   switch (armed) {
     case 'all':
       return { kind: 'armed', keyLabel: 'F8', label: `남은 ${remaining}개를 담고 출고 완료` };

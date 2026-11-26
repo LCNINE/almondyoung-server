@@ -25,7 +25,7 @@ const INBOUND_CANCEL_CONFLICT_MESSAGE =
 
 const CONTEXTUAL: Record<ErrorContext, Partial<Record<number, string>>> = {
   adjust: { 403: STOCK_ADJUST_PERMISSION_MESSAGE },
-  'return-putaway': { 404: '등록되지 않은 되돌림 바구니예요.' },
+  'return-putaway': { 404: '등록되지 않은 선반 복귀 대기예요.' },
   returns: { 404: '등록되지 않은 되돌림 바구니예요.' },
   barcode: { 404: '등록되지 않은 바코드예요.' },
   location: { 404: '로케이션을 찾을 수 없어요.' },

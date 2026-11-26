@@ -73,6 +73,7 @@ export function progressOf(found: Pick<ShipmentByWaybill, 'lines'>): SimpleOutbo
 export interface InspectionRow {
   shipmentLineId: string;
   name: string;
+  imageFileIds: string[];
   /** 배정 위치(송장 순서)와 위치별 수량 — 보여 주기만 한다(§6.4). 옛 core 면 [] */
   locations: Array<{ code: string; qty: number }>;
   ordered: number;
@@ -101,6 +102,7 @@ export function inspectionRows(
       return {
         shipmentLineId: line.shipmentLineId,
         name: line.skuName,
+        imageFileIds: line.imageFileIds ?? [],
         locations: (line.allocations ?? []).map((a) => ({ code: a.locationCode, qty: a.qty })),
         ordered: line.qty,
         scanned,

@@ -46,6 +46,7 @@ describeIfDb('ShipmentWaybillReader', () => {
           skuCode: fixture.skuCode,
           skuName: 'Simple SKU',
           barcodes: [fixture.barcode],
+          imageFileIds: [],
           qty: 2,
           pickedQty: 0,
           inspectedQty: 0,
@@ -121,6 +122,23 @@ describeIfDb('ShipmentWaybillReader', () => {
     });
   });
 
+  it('줄마다 그 SKU 사진 파일 id 를 대표 사진부터 싣는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await seedPickableShipment(tx, 2);
+      const main = randomUUID();
+      const extra = randomUUID();
+      await tx.insert(wmsTables.skuImages).values([
+        { skuId: fixture.skuId, uploadId: extra, isPrimary: false, sortOrder: 1 },
+        { skuId: fixture.skuId, uploadId: main, isPrimary: true, sortOrder: 2 },
+      ]);
+      const reader = new ShipmentWaybillReader(ambientDbService(tx), assembleLabels(ambientDbService(tx)).states);
+
+      const found = await reader.byTrackingNo(fixture.trackingNo);
+
+      expect(found.lines[0].imageFileIds).toEqual([main, extra]);
+    });
+  });
+
   // 리뷰 지적 2: 스펙 §4.1 은 by-waybill 라인에 pickedQty 를 요구한다. 박스를 내려놨다가
   // 다시 스캔하는 재개 흐름에서, inspectedQty 는 전량 스캔 전까지 0 에 머물기 때문에
   // pickedQty 가 없으면 화면이 매번 0/N 부터 다시 시작해 재스캔이 과다스캔(409)으로
@@ -161,6 +179,7 @@ describeIfDb('ShipmentWaybillReader', () => {
           skuCode: fixture.skuCode,
           skuName: 'Simple SKU',
           barcodes: [fixture.barcode],
+          imageFileIds: [],
           qty: 2,
           pickedQty: 1,
           inspectedQty: 0,

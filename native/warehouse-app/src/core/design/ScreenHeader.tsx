@@ -8,10 +8,12 @@ export function ScreenHeader({
   title,
   backTo,
   right,
+  description,
 }: {
   title: string;
   backTo: string;
   right?: ReactNode;
+  description?: string;
 }) {
   const { hidesHomeBack } = useContext(ShellChromeContext);
   // 스테이션 셸에는 홈이 없다(탭 바가 홈) — 홈으로 가는 뒤로는 첫 탭으로 튀기만 한다.
@@ -27,8 +29,11 @@ export function ScreenHeader({
           <ChevronLeft className="h-5 w-5 text-gray-700" aria-hidden />
         </Link>
       )}
-      <h1 className="flex-1 truncate text-lg font-semibold text-gray-800">{title}</h1>
-      {right ? <div className="shrink-0 text-sm text-gray-600">{right}</div> : null}
+      <div className="min-w-0 flex-1">
+        <h1 className="truncate text-[28px] leading-[1.3] font-bold tracking-[-1.1px] text-[#27272a]">{title}</h1>
+        {description ? <p className="mt-1.5 text-[13px] leading-[1.6] text-[#71717a]">{description}</p> : null}
+      </div>
+      {right ? <div className="shrink-0 text-sm text-[#71717a]">{right}</div> : null}
     </div>
   );
 }
