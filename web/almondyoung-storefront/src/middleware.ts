@@ -9,6 +9,7 @@ import {
 import { getBackendBaseUrl } from "@/lib/config/backend"
 import { parseCafe24LegacyUrl } from "@/lib/seo/cafe24-legacy-url"
 import { isJwtExpired } from "@/lib/auth/jwt-expiry"
+import { smsLinkRewritePath } from "@/lib/sms-ref/sms-link-path"
 
 const MEDUSA_BASE_URL = getBackendBaseUrl("medusa")
 const PUBLISHABLE_API_KEY = process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY
@@ -274,12 +275,11 @@ export async function middleware(request: NextRequest) {
     return NextResponse.rewrite(url)
   }
 
-  const smsLink = request.nextUrl.pathname.match(/^\/r\/([A-Za-z0-9_-]{8})$/)
-  if (smsLink) {
+  const smsLinkPath = smsLinkRewritePath(request.nextUrl.pathname)
+  if (smsLinkPath) {
     const url = new URL(request.url)
-    url.pathname = "/api/sms-link"
+    url.pathname = smsLinkPath
     url.search = ""
-    url.searchParams.set("code", smsLink[1])
     return NextResponse.rewrite(url)
   }
 

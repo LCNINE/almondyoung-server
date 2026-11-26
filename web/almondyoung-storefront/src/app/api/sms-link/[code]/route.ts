@@ -7,10 +7,10 @@ const REGION = process.env.NEXT_PUBLIC_DEFAULT_REGION || "kr"
 
 export const dynamic = "force-dynamic"
 
-export async function GET(request: NextRequest) {
+// 미들웨어가 /r/<코드> 를 /api/sms-link/<코드> 로 rewrite 한다(smsLinkRewritePath). 코드는 경로 파라미터로만 받는다.
+export async function GET(request: NextRequest, { params }: { params: Promise<{ code: string }> }) {
   const home = new URL(`/${REGION}`, request.nextUrl.origin)
-  const code = request.nextUrl.searchParams.get("code")
-  if (!code) return NextResponse.redirect(home, 302)
+  const { code } = await params
 
   try {
     const res = await fetch(
