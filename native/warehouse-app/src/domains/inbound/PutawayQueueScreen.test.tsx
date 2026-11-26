@@ -27,6 +27,7 @@ import { NetworkError, type ApiClient } from '../../core/data/httpClient';
 import type { Session } from '../../core/auth/session';
 import type { PutawayPendingResult } from './types';
 import type { ReturnGoods } from './returnGoods';
+import type { ReturnBinContents } from '../returns/returnBinApi';
 import { PutawayQueueScreen } from './PutawayQueueScreen';
 import { scanHid } from '../../core/hardware/scan/__fixtures__/hid';
 
@@ -182,6 +183,8 @@ interface RenderOpts {
   moveResponse?: unknown;
   /** 반품 양품 조회를 차례로 소비한다(마지막 항목 반복) — 'error' 는 실패 */
   returnGoodsSequence?: Array<ReturnGoods | 'error'>;
+  /** GET /return-bins/mine 응답 — 없으면 빈 선반 복귀 대기, 'error' 면 실패 */
+  returnBin?: ReturnBinContents | 'error';
   locations?: Record<
     string,
     Array<{
@@ -304,6 +307,18 @@ function renderScreen(prefsSeed?: Record<string, string>, opts?: RenderOpts) {
           }
         );
       }
+      if (o.path.startsWith('/return-bins/mine')) {
+        if (opts?.returnBin === 'error')
+          throw new Error('GET /return-bins/mine → 500');
+        return (
+          opts?.returnBin ?? {
+            id: null,
+            barcode: 'RB-ME',
+            warehouseId: 'w-1',
+            items: [],
+          }
+        );
+      }
       if (o.path === '/movement/move') {
         const { body, idempotencyKey } = o as {
           body?: unknown;
@@ -334,8 +349,18 @@ function renderScreen(prefsSeed?: Record<string, string>, opts?: RenderOpts) {
       </>
     ),
   });
+  const stubRoutes = [
+    ['/returns/putaway', '선반 복귀 화면'],
+    ['/putaway/location-labels', '로케이션 라벨 화면'],
+  ].map(([path, title]) =>
+    createRoute({
+      getParentRoute: () => rootRoute,
+      path,
+      component: () => <h1>{title}</h1>,
+    })
+  );
   const router = createRouter({
-    routeTree: rootRoute.addChildren([indexRoute]),
+    routeTree: rootRoute.addChildren([indexRoute, ...stubRoutes]),
     history: createMemoryHistory({ initialEntries: ['/'] }),
   });
   const wrapper = ({ children }: { children: ReactNode }) => (
@@ -629,7 +654,7 @@ describe('PutawayQueueScreen', () => {
   it('대기 라인을 잔여수량·출발지와 함께 보여준다', async () => {
     renderScreen(SELECTED);
     expect(await screen.findByText('무선마우스 블랙')).toBeInTheDocument();
-    expect(screen.getByText('잔여 20')).toBeInTheDocument();
+    expect(screen.getByText('잔여 20개')).toBeInTheDocument();
     expect(screen.getAllByText(/zone-inbound-default/)[0]).toBeInTheDocument();
   });
 
@@ -929,10 +954,15 @@ describe('PutawayQueueScreen', () => {
     // 라우터 마운트를 기다린 뒤 확인한다 — 그 전에는 화면 자체가 아직 없어
     // "0건"의 부재가 우연이 아니라 의도한 결과인지 알 수 없다.
     await screen.findByText('상품 바코드를 스캔하거나 목록에서 고르세요.');
-    expect(screen.queryByText('0건')).not.toBeInTheDocument();
+    const column = screen.getByRole('region', { name: '입고 기본존' });
+    expect(within(column).getByRole('heading')).toHaveTextContent(
+      /^입고 기본존$/
+    );
 
     resolveQueue(QUEUE);
-    expect(await screen.findByText('2건')).toBeInTheDocument();
+    expect(
+      await within(column).findByRole('heading', { name: '입고 기본존 2' })
+    ).toBeInTheDocument();
   });
 
   it('미등록 바코드 오류 배너는 목록에서 직접 고르면 지워진다', async () => {
@@ -1341,4 +1371,119 @@ it('기다리는 주문이 있는 상품 줄에만 건수와 수량을 보인다
   expect(
     screen.getByRole('button', { name: /무선마우스 블랙/ })
   ).not.toHaveTextContent('기다리는 주문');
+});
+
+describe('적치 보드', () => {
+  const BIN: ReturnBinContents = {
+    id: 'bin-1',
+    barcode: 'RB-ME',
+    warehouseId: 'w-1',
+    items: [
+      {
+        skuId: 's-7',
+        skuCode: 'TINT-01',
+        skuName: '틴트 로즈',
+        sourceLocationId: 'loc-b1',
+        locationCode: 'B-01-02',
+        qty: 3,
+      },
+    ],
+  };
+
+  it('입고 기본존·선반 복귀 대기·적치 완료 세 칸을 개수와 함께 보인다', async () => {
+    renderScreen(SELECTED, { returnBin: BIN });
+    const inbound = await screen.findByRole('region', { name: '입고 기본존' });
+    const returns = screen.getByRole('region', { name: '선반 복귀 대기' });
+    const done = screen.getByRole('region', { name: '적치 완료' });
+
+    expect(
+      await within(inbound).findByRole('heading', { name: '입고 기본존 2' })
+    ).toBeInTheDocument();
+    expect(
+      await within(returns).findByRole('heading', { name: '선반 복귀 대기 3' })
+    ).toBeInTheDocument();
+    expect(
+      within(returns).getByRole('link', { name: '틴트 로즈 3개 선반 복귀' })
+    ).toHaveTextContent('B-01-02');
+    expect(
+      within(done).getByRole('heading', { name: '적치 완료 0' })
+    ).toBeInTheDocument();
+    expect(
+      within(inbound).getByRole('button', { name: /무선마우스 블랙/ })
+    ).toBeInTheDocument();
+  });
+
+  it('입고 카드를 누르면 기존 적치 시트가 열리고, 마치면 적치 완료 칸에 쌓인다', async () => {
+    renderScreen(SELECTED, {
+      locations: {
+        DST01: [
+          {
+            id: 'loc-dst',
+            code: 'DST01',
+            displayName: 'DST01',
+            isActive: true,
+            isSystem: false,
+          },
+        ],
+      },
+    });
+    const inbound = await screen.findByRole('region', { name: '입고 기본존' });
+    await userEvent.click(
+      await within(inbound).findByRole('button', { name: /무선마우스 블랙/ })
+    );
+    const dialog = await screen.findByRole('dialog', { name: '적치' });
+    const full = within(dialog).getByRole('button', { name: '전량' });
+    await userEvent.click(full);
+    scanHid(full, 'DST01');
+    const submit = within(dialog).getByRole('button', { name: '적치' });
+    await waitFor(() => expect(submit).toBeEnabled());
+    await userEvent.click(submit);
+    await waitFor(() => expect(dialog).not.toBeInTheDocument());
+
+    const done = screen.getByRole('region', { name: '적치 완료' });
+    expect(
+      within(done).getByRole('heading', { name: '적치 완료 1' })
+    ).toBeInTheDocument();
+    expect(within(done).getByText('무선마우스 블랙 · 20개')).toBeInTheDocument();
+    expect(within(done).getByText(/도착 위치 DST01/)).toBeInTheDocument();
+  });
+
+  it('복귀 대기가 없으면 없다고 말하고, 선반 복귀 작업 열기로 선반 복귀 화면에 간다', async () => {
+    renderScreen(SELECTED);
+    const returns = await screen.findByRole('region', { name: '선반 복귀 대기' });
+    expect(
+      await within(returns).findByText('복귀 대기 상품이 없습니다.')
+    ).toBeInTheDocument();
+
+    await userEvent.click(
+      within(returns).getByRole('link', { name: '선반 복귀 작업 열기 →' })
+    );
+    expect(
+      await screen.findByRole('heading', { name: '선반 복귀 화면' })
+    ).toBeInTheDocument();
+  });
+
+  it('선반 복귀 대기를 못 불러오면 비었다고 말하지 않고 다시 불러올 수 있다', async () => {
+    renderScreen(SELECTED, { returnBin: 'error' });
+    const returns = await screen.findByRole('region', { name: '선반 복귀 대기' });
+    expect(
+      await within(returns).findByText(/선반 복귀 대기를 불러오지 못했어요/)
+    ).toBeInTheDocument();
+    expect(
+      within(returns).queryByText('복귀 대기 상품이 없습니다.')
+    ).not.toBeInTheDocument();
+    expect(
+      within(returns).getByRole('button', { name: '다시 불러오기' })
+    ).toBeInTheDocument();
+  });
+
+  it('로케이션 라벨 버튼은 로케이션 라벨 화면으로 간다', async () => {
+    renderScreen(SELECTED);
+    await userEvent.click(
+      await screen.findByRole('link', { name: '로케이션 라벨' })
+    );
+    expect(
+      await screen.findByRole('heading', { name: '로케이션 라벨 화면' })
+    ).toBeInTheDocument();
+  });
 });

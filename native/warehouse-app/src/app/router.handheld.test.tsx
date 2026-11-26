@@ -95,7 +95,7 @@ describe('handheld hub navigation', () => {
     });
     // 이 테스트는 창고 미설정 상태로 렌더한다 — 큐 화면은 실제 화면이지만
     // 창고 선택을 먼저 요구하는 카드를 보여준다(플레이스홀더가 아니다).
-    expect(await screen.findByRole('heading', { name: '적치' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: '적치·이동' })).toBeInTheDocument();
     expect(screen.getByText('창고를 먼저 선택해 주세요.')).toBeInTheDocument();
   });
 
