@@ -1290,6 +1290,12 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
     predicate: '',
     note: '역할·권한·관리자 계정 관리 화면 — 임의의 역할·사람을 고르는 것이 기능이다. 권한 상승·시스템 역할 규칙은 iam Manager 가 지킨다. 판정은 권한 키 iam.role.assign(첫 부여 없음 = master 만) 하나가 한다. 옛 스코프 가드를 걷어 내며 대상에 들어왔다 — 접근 범위는 권한 강제 이후와 같다.',
   },
+  'user-service GET /admin/staff/names': {
+    verdict: 'SAFE',
+    evidence: 'apps/user-service/src/api/iam/roles/role.repository.ts:84',
+    predicate: 'liveStaffAssignment(),',
+    note: '작업 기록의 직원 id 를 이름으로 바꾸는 조회(iam.staff_name.read, 관리자·물류 역할). 고객 이름이 id 추측으로 새지 않게 지금 유효한 고객 아닌 역할을 가진 계정만 답하고(liveStaffAssignment), 계정과 부여 둘 다 요청자 테넌트로 좁히며(81·82행 eq(users.tenantId, tenantId)·eq(userRoleAssignments.tenantId, tenantId)), 지운 계정은 뺀다. 그 밖의 id 는 응답에서 빠진다. 돌려주는 값은 id·이름뿐이다.',
+  },
   'user-service PUT /admin/roles/:roleId/permissions': {
     verdict: 'N/A',
     evidence: 'apps/user-service/src/api/iam/roles/role-admin.controller.ts:66',
@@ -1780,15 +1786,15 @@ const keyOf = (r: AuditRow): string => `${r.app} ${r.verb} ${r.route}`;
 describe('IDOR 검사 대상 집합', () => {
   it('감사 스크립트가 idorTarget 을 내보낸다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(targets).toHaveLength(289);
+    expect(targets).toHaveLength(290);
   });
 
   // search 와 analytics 가 둘 다 `GET /health` 이고, user-service 와 file-service 가 둘 다
   // `POST /files/upload` 다. `<VERB> <route>` 로 키를 만들면 그만큼 뭉개지고 스냅샷이 조용히 잃는다.
   it('키에 app 이 들어가야 충돌하지 않는다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(new Set(targets.map(keyOf)).size).toBe(289);
-    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(287);
+    expect(new Set(targets.map(keyOf)).size).toBe(290);
+    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(288);
   });
 
   it('감사 스크립트의 대상 집합과 명단이 정확히 일치한다', () => {

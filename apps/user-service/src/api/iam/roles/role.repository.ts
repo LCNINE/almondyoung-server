@@ -66,6 +66,26 @@ export class RoleRepository {
     return row !== undefined;
   }
 
+  /** 그 테넌트에서 지금 직원 역할을 가진 계정의 이름만 — 직원이 아닌 id 는 나오지 않는다. */
+  async liveStaffNamesIn(userIds: readonly string[], tenantId: string): Promise<{ id: string; name: string }[]> {
+    if (userIds.length === 0) return [];
+
+    return this.dbService.db
+      .selectDistinct({ id: users.id, name: users.username })
+      .from(users)
+      .innerJoin(userRoleAssignments, eq(userRoleAssignments.userId, users.id))
+      .innerJoin(roles, eq(roles.roleId, userRoleAssignments.roleId))
+      .where(
+        and(
+          inArray(users.id, [...userIds]),
+          eq(users.tenantId, tenantId),
+          eq(userRoleAssignments.tenantId, tenantId),
+          isNull(users.deletedAt),
+          liveStaffAssignment(),
+        ),
+      );
+  }
+
   async findRoleByName(name: string, tx: UserServiceTx): Promise<RoleRow | null> {
     const [row] = await tx.select().from(roles).where(eq(roles.name, name));
     return row ?? null;
