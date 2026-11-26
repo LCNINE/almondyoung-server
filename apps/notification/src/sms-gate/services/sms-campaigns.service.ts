@@ -1,7 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { SmsAudienceSummary } from '@app/shared';
 import { ContinueSmsCampaignDto, CreateSmsCampaignDto, PreviewSmsCampaignDto } from '../dto';
+import { SmsLinkAttributionKind } from '../constants/sms-link-attribution';
 import { SmsCampaignManager } from './sms-campaign.manager';
+import { SmsLinkAttributionManager } from './sms-link-attribution.manager';
 import { SmsCampaignClick, SmsCampaignListItem, SmsCampaignPreview, SmsCampaignReader } from './sms-campaign.reader';
 
 @Injectable()
@@ -9,6 +11,7 @@ export class SmsCampaignsService {
   constructor(
     private readonly campaignReader: SmsCampaignReader,
     private readonly campaignManager: SmsCampaignManager,
+    private readonly linkAttributionManager: SmsLinkAttributionManager,
   ) {}
 
   audience(): Promise<SmsAudienceSummary> {
@@ -41,6 +44,10 @@ export class SmsCampaignsService {
 
   click(code: string, userAgent?: string): Promise<{ url: string }> {
     return this.campaignManager.click(code, userAgent);
+  }
+
+  attribute(code: string, userId: string, kind: SmsLinkAttributionKind): Promise<void> {
+    return this.linkAttributionManager.attribute(code, userId, kind);
   }
 
   stop(campaignId: string): Promise<{ cancelled: number }> {
