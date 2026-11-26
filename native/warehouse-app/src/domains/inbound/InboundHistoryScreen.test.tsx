@@ -30,6 +30,7 @@ const session = {
   login: async () => {},
   logout: async () => {},
   subscribe: () => () => {},
+  identity: async () => ({ id: 'worker-a', name: '작업자A' }),
 };
 type Call = { path: string; method?: string; body?: unknown };
 const noStaffNames: ApiClient = {

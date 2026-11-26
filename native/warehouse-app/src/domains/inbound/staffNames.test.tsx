@@ -1,9 +1,11 @@
+import { act } from 'react';
 import { expect, it } from 'vitest';
 import type { ReactNode } from 'react';
 import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SessionProvider } from '../../app/session-context';
-import type { ApiClient } from '../../core/data/httpClient';
+import { ApiError, type ApiClient } from '../../core/data/httpClient';
+import type { Session } from '../../core/auth/session';
 import {
   STAFF_NAMES_BATCH,
   StaffNamesClientProvider,
@@ -20,6 +22,7 @@ const session = {
   login: async () => {},
   logout: async () => {},
   subscribe: () => () => {},
+  identity: async () => ({ id: 'worker-a', name: '작업자A' }),
 };
 
 const uuid = (n: number) =>
@@ -115,4 +118,74 @@ it('부를 작업자가 없으면 요청하지 않는다', async () => {
 
   expect(result.current(SYSTEM_ACTOR_ID)).toBe('자동');
   expect(paths).toEqual([]);
+});
+
+it('다른 작업자로 바꿔 로그인하면 앞 작업자가 받은 이름을 보이지 않고 새 작업자의 권한으로 다시 묻는다', async () => {
+  const listeners = new Set<() => void>();
+  let authed = true;
+  let worker = { id: 'worker-a', name: '작업자A' };
+  const switching: Session = {
+    bootstrap: async () => {},
+    isAuthenticated: () => authed,
+    getAccessToken: async () => `tok-${worker.id}`,
+    login: async () => {},
+    logout: async () => {},
+    subscribe: (fn) => {
+      listeners.add(fn);
+
+      return () => listeners.delete(fn);
+    },
+    identity: async () => worker,
+  };
+  const emit = () => listeners.forEach((fn) => fn());
+  const asked: string[] = [];
+  const client: ApiClient = {
+    request: (async () => {
+      asked.push(worker.id);
+
+      if (worker.id === 'worker-b')
+        throw new ApiError('GET → 403', 403, 'FORBIDDEN');
+
+      return { success: true, data: [{ id: uuid(1), name: '김입고' }] };
+    }) as ApiClient['request'],
+  };
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  function Wrapper({ children }: { children: ReactNode }) {
+    return (
+      <SessionProvider session={switching}>
+        <QueryClientProvider client={queryClient}>
+          <StaffNamesClientProvider client={client}>
+            {children}
+          </StaffNamesClientProvider>
+        </QueryClientProvider>
+      </SessionProvider>
+    );
+  }
+
+  const { result } = renderHook(() => useStaffNames([uuid(1)]), {
+    wrapper: Wrapper,
+  });
+
+  await waitFor(() => expect(result.current(uuid(1))).toBe('김입고'));
+
+  act(() => {
+    authed = false;
+    emit();
+  });
+  act(() => {
+    worker = { id: 'worker-b', name: '작업자B' };
+    authed = true;
+    emit();
+  });
+
+  await waitFor(() => expect(asked).toEqual(['worker-a', 'worker-b']));
+  expect(result.current(uuid(1))).toBe(UNKNOWN_WORKER);
+  expect(
+    queryClient
+      .getQueryCache()
+      .findAll({ queryKey: ['staff-names'] })
+      .map((q) => q.queryKey[1])
+  ).toEqual(['worker-b']);
 });

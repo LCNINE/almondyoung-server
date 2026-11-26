@@ -1,13 +1,16 @@
-import { createContext, useContext, useMemo } from 'react';
+import { createContext, useContext, useEffect, useMemo } from 'react';
 import type { ReactNode } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiAuthMode, oidcConfig } from '../../app/config';
 import { useIsAuthenticated, useSession } from '../../app/session-context';
+import { useWorkerIdentity } from '../../app/useWorkerIdentity';
 import { createApiClient, type ApiClient } from '../../core/data/httpClient';
 
 export const SYSTEM_ACTOR_ID = '00000000-0000-4000-8000-000000000010';
 export const STAFF_NAMES_BATCH = 100;
 export const UNKNOWN_WORKER = '—';
+
+const STAFF_NAMES_KEY = 'staff-names';
 
 const StaffNamesClientContext = createContext<ApiClient | null>(null);
 
@@ -76,19 +79,53 @@ function readNames(value: unknown): [string, string][] {
     .map((row): [string, string] => [row.id, row.name]);
 }
 
+function useForgetOtherSessionsNames(workerId: string | null) {
+  const session = useSession();
+  const qc = useQueryClient();
+
+  useEffect(() => {
+    const forget = (keep: string | null) => {
+      const others = {
+        queryKey: [STAFF_NAMES_KEY],
+        predicate: (q: { queryKey: readonly unknown[] }) =>
+          q.queryKey[1] !== keep,
+      };
+      void qc.cancelQueries(others);
+      qc.removeQueries(others);
+    };
+    let authed = session.isAuthenticated();
+
+    forget(workerId);
+
+    return session.subscribe(() => {
+      const next = session.isAuthenticated();
+
+      if (next === authed) return;
+
+      authed = next;
+      forget(null);
+    });
+  }, [session, qc, workerId]);
+}
+
 export function useStaffNames(
   actorIds: ReadonlyArray<string | null | undefined>
 ): (actorId: string | null | undefined) => string {
   const client = useStaffNamesClient();
   const authenticated = useIsAuthenticated();
+  const worker = useWorkerIdentity();
+  const workerId = worker.status === 'ready' ? worker.identity.id : null;
   const ids = [
     ...new Set(
       actorIds.filter((id): id is string => !!id && id !== SYSTEM_ACTOR_ID)
     ),
   ].sort();
+
+  useForgetOtherSessionsNames(workerId);
+
   const query = useQuery({
-    queryKey: ['staff-names', ids],
-    enabled: authenticated && ids.length > 0,
+    queryKey: [STAFF_NAMES_KEY, workerId, ids],
+    enabled: authenticated && workerId !== null && ids.length > 0,
     retry: false,
     staleTime: 5 * 60_000,
     queryFn: async () => {
@@ -107,7 +144,7 @@ export function useStaffNames(
       );
     },
   });
-  const names = query.data;
+  const names = authenticated && workerId !== null ? query.data : undefined;
 
   return (actorId) => {
     if (!actorId) return UNKNOWN_WORKER;
