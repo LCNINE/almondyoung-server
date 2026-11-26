@@ -1522,7 +1522,9 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
         const { sql: text, params } = dialect.sqlToQuery(query.getSQL());
         if (text.includes('pg_advisory_xact_lock')) {
           const key = String(params[0]);
-          log.push(key.includes(':') ? `stock:${key}` : `variant:${key}`);
+          // 요청 키 잠금은 같은 키끼리만 줄을 세운다 — 재고·품목 잠금 순서와 상관없다
+          if (!key.startsWith('operation-key:'))
+            log.push(key.includes(':') ? `stock:${key}` : `variant:${key}`);
         }
       }
       return execute(query);

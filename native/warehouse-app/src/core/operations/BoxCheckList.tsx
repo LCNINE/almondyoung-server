@@ -6,6 +6,7 @@ import { useHumanKeys } from '../hardware/scan/useScanner';
 import { useWorkRuntime } from './OperationContext';
 import {
   boxCheckLabelsKey,
+  boxCheckWhat as whatOf,
   shipmentOf,
   useBoxChecksOpenRequests,
   type BoxCheckLabel,
@@ -35,23 +36,6 @@ function groupsOf(operations: readonly StoredOperation[]): Group[] {
     shipmentId,
     operations: ops,
   }));
-}
-
-function whatOf(op: StoredOperation, label: BoxCheckLabel | undefined): string {
-  try {
-    const body = JSON.parse(op.bodyJson) as {
-      barcode?: unknown;
-      quantity?: unknown;
-    };
-    if (typeof body.barcode === 'string') {
-      const quantity = typeof body.quantity === 'number' ? body.quantity : 1;
-      const name = label?.items?.[body.barcode];
-      return `${name ?? `상품 바코드 ${body.barcode}`} ×${quantity}`;
-    }
-  } catch {
-    // 본문을 못 읽으면 무엇을 했는지만 적는다
-  }
-  return op.path.endsWith('-forces') ? '강제출고' : '박스 작업';
 }
 
 const clock = (at: number) => {

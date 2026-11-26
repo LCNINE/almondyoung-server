@@ -31,6 +31,27 @@ export interface BoxCheckLabel {
   items?: Record<string, string>;
 }
 
+/** 박스에 묶인 작업이 무엇이었는지 — 찍은 상품 이름(모르면 바코드)과 수량 */
+export function boxCheckWhat(
+  op: StoredOperation,
+  label: BoxCheckLabel | undefined
+): string {
+  try {
+    const body = JSON.parse(op.bodyJson) as {
+      barcode?: unknown;
+      quantity?: unknown;
+    };
+    if (typeof body.barcode === 'string') {
+      const quantity = typeof body.quantity === 'number' ? body.quantity : 1;
+      const name = label?.items?.[body.barcode];
+      return `${name ?? `상품 바코드 ${body.barcode}`} ×${quantity}`;
+    }
+  } catch {
+    // 본문을 못 읽으면 무엇을 했는지만 적는다
+  }
+  return op.path.endsWith('-forces') ? '강제출고' : '박스 작업';
+}
+
 /** 박스 화면이 남기는 표시용 이름(송장·상품) — 작업 기록 본문에는 박스 id 와 바코드만 있다 */
 export const boxCheckLabelsKey = (scope: string) => `${scope}:box-check-labels`;
 

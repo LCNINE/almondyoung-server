@@ -121,6 +121,7 @@ function QuickInboundScreenContent({ station }: { station: boolean }) {
   const runtime = useWorkRuntime();
   const session = useSession();
   const [receivedAt, setReceivedAt] = useState<string | null>(null);
+  const [rotating, setRotating] = useState(false);
   const [currentLines, setCurrentLines] = useState<
     import('./receiptHistory').ReceiptHistoryLine[]
   >([]);
@@ -162,6 +163,13 @@ function QuickInboundScreenContent({ station }: { station: boolean }) {
         throw new CheckStop('로그인을 다시 확인해 주세요.');
       if (op && op.status !== 'confirmed' && op.status !== 'rejected')
         throw new CheckStop('입고 처리 여부를 먼저 확인해 주세요.');
+      // 서버가 거절한 바구니(관리자가 버린 작업 포함)는 새 요청으로 다시 등록하게 키를 바꿔 둔다
+      if (op?.status === 'rejected')
+        await draft.update((prev) =>
+          prev.key === current.key
+            ? { ...prev, key: crypto.randomUUID() }
+            : prev
+        );
       if (op?.status === 'confirmed' && current.staged.length === 0) {
         const result = op.result as SimpleInboundResult;
         await draft.update((prev) => ({
@@ -458,6 +466,7 @@ function QuickInboundScreenContent({ station }: { station: boolean }) {
 
   const cartTotal = cart.reduce((sum, row) => sum + row.quantity, 0);
   const canRegister = !(
+    rotating ||
     !reconciled ||
     !!editing ||
     saving ||
@@ -486,7 +495,21 @@ function QuickInboundScreenContent({ station }: { station: boolean }) {
         ),
       },
       {
-        onError: () => playInboundSaveFailed(),
+        onError: (error) => {
+          playInboundSaveFailed();
+          // 서버가 반영하지 않고 거절했다(관리자가 버린 작업 포함) — 같은 바구니로 다시 누르면 새 요청으로 보낸다.
+          // 키를 바꾸는 동안에는 등록을 막는다(옛 키로 누르면 저장된 거절이 다시 나온다)
+          if (error instanceof ApiError && error.outcome === 'rejected') {
+            setRotating(true);
+            void draft
+              .update((prev) =>
+                prev.key === idempotencyKey
+                  ? { ...prev, key: crypto.randomUUID() }
+                  : prev
+              )
+              .finally(() => setRotating(false));
+          }
+        },
         onSuccess: async (result) => {
           playInboundSaved();
           toast.show({

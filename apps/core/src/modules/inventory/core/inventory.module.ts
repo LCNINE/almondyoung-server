@@ -1,4 +1,5 @@
 import { WarehouseWorkContextController } from './controllers/warehouse-work-context.controller';
+import { DeviceWorkModule } from '../device-work/device-work.module';
 import { Module } from '@nestjs/common';
 import { SCHEDULE_ROOT } from '@app/shared/schedule/schedule-root';
 import { SharedModule } from '../shared/shared.module';
@@ -31,7 +32,7 @@ import { StockEventStore } from './repositories/stock-event.store';
 // Outbox (temporary — moves to Fulfillment BC in Phase 6)
 
 @Module({
-  imports: [SCHEDULE_ROOT, SharedModule, ProductSellableQuantityModule],
+  imports: [SCHEDULE_ROOT, SharedModule, ProductSellableQuantityModule, DeviceWorkModule],
   controllers: [
     InventoryController,
     WarehouseWorkContextController,

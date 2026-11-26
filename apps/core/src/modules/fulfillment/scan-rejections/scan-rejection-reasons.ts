@@ -36,6 +36,8 @@ export const WORKER_RESOLVABLE_REJECTIONS: ReadonlySet<string> = new Set([
   'WORKER_ACTIVE_CLAIM_EXISTS',
   'SHIPMENT_WITHDRAWN',
   'LABEL_REPRINT_REQUIRED',
+  // 관리자가 «기기 확인할 일»에서 이미 버린 작업이다
+  'OPERATION_ABANDONED',
 ]);
 
 /** 배치 작업 시작 전 — 물류앱 F2 에서 작업 시작을 누르면 된다. */

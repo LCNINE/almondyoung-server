@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useContext,
   useEffect,
   useState,
@@ -16,6 +17,7 @@ import { useWorkReadiness } from './useWorkReadiness';
 import { AreaContext, type WorkNavigator } from './workArea';
 import { isBoxCheck, shipmentOf, useBoxChecksHosted } from './boxChecks';
 import { BoxChecks } from './BoxCheckList';
+import { useDeviceWorkReport } from './deviceWorkReport';
 
 export interface ScanAllowance {
   path: string;
@@ -154,6 +156,10 @@ function ActiveBoundary({
   const problem = authed && readiness.status === 'failed';
   const denied = readiness.status === 'failed' && readiness.denied;
   const restoring = authed && !ready && !problem;
+  const workerName = useCallback(
+    async () => (await session.identity?.())?.name,
+    [session]
+  );
   useEffect(() => {
     if (!ops.length) return;
     const timer = setInterval(() => setNow(Date.now()), 500);
@@ -172,6 +178,13 @@ function ActiveBoundary({
     window.addEventListener('online', resume);
     return () => window.removeEventListener('online', resume);
   }, [authed, recheck]);
+  useDeviceWorkReport({
+    runtime,
+    operations: authed ? ops : [],
+    scope: authed ? scope : null,
+    station: navigator ? navigator.station : null,
+    workerName,
+  });
   const state = workStatus(authed ? ops : [], now);
   const blocked = authed && (state.blocksWork || problem);
   const hosted = useBoxChecksHosted();

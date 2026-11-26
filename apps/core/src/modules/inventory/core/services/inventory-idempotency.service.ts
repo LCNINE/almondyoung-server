@@ -6,6 +6,7 @@ import { and, eq, lt } from 'drizzle-orm';
 import { InjectTypedDb, DbService } from '@app/db';
 import { ConflictError } from '@app/shared';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
+import { assertOperationKeyUsable } from './operation-key-guard';
 
 /**
  * 요청 본문 지문. 키 정렬 정규화는 하지 않는다 — 같은 클라이언트의 재전송은 직렬화가
@@ -39,6 +40,7 @@ export class InventoryIdempotencyService {
     const requestHash = computeRequestHash(requestBody);
     const t = wmsTables.inventoryIdempotencyRequests;
     return this.dbService.run(async (trx) => {
+      await assertOperationKeyUsable(trx, key);
       const inserted = await trx
         .insert(t)
         .values({ endpoint, key, requestHash })

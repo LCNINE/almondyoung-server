@@ -3,6 +3,7 @@ import { BadRequestException, ConflictException, Injectable } from '@nestjs/comm
 import { InjectTypedDb, DbService } from '@app/db';
 import { and, eq } from 'drizzle-orm';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
+import { assertOperationKeyUsable } from '../../inventory/core/services/operation-key-guard';
 
 export type FulfillmentCommandResult<T> = {
   response: T;
@@ -59,6 +60,7 @@ export class FulfillmentCommandService {
     const table = wmsTables.fulfillmentCommandRequests;
 
     return this.dbService.run(async (trx) => {
+      await assertOperationKeyUsable(trx, idempotencyKey);
       const inserted = await trx
         .insert(table)
         .values({

@@ -282,6 +282,21 @@ export const PERMISSION_CATALOG = [
     grant: ['admin', ...LOGISTICS_MANAGER],
     ...DANGEROUS,
   }),
+  permission(
+    'inventory.device_work.read',
+    '기기 확인할 일 조회',
+    '물류앱 기기에 결과를 모른 채 남은 작업과 서버 반영 여부를 본다',
+    {
+      owners: ['core'],
+      grant: ADMIN_LOGISTICS_MANAGER,
+    },
+  ),
+  permission(
+    'inventory.device_work.resolve',
+    '기기 확인할 일 정리',
+    '반영되지 않은 기기 작업을 버리고(다시 반영되지 않게 잠근다) 결과가 정해진 작업을 목록에서 뺀다',
+    { owners: ['core'], grant: ADMIN_LOGISTICS_MANAGER, requires: ['inventory.device_work.read'] },
+  ),
   permission('inventory.master.write', '재고 기준정보 관리', 'SKU·로케이션·보관주체·공급처·발주를 관리한다', {
     owners: ['core'],
     grant: ['admin', ...LOGISTICS_MANAGER],

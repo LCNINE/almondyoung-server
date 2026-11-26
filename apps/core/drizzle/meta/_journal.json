@@ -1219,6 +1219,13 @@
       "when": 1795661425108,
       "tag": "20261126025025_add-sku-3d-workshop",
       "breakpoints": true
+    },
+    {
+      "idx": 174,
+      "version": "7",
+      "when": 1795664297839,
+      "tag": "20261126033817_add-device-unresolved-operations",
+      "breakpoints": true
     }
   ]
 }

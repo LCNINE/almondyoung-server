@@ -23,7 +23,12 @@ import {
   ScanProvider,
   useScanBus,
 } from '../../core/hardware/scan/ScanProvider';
-import { ApiError, type ApiClient } from '../../core/data/httpClient';
+import {
+  ApiError,
+  ConflictError,
+  type ApiClient,
+} from '../../core/data/httpClient';
+import { OPERATION_ABANDONED_MESSAGE } from '../../core/data/errorMessage';
 import type { Session } from '../../core/auth/session';
 import { QuickInboundScreen } from './QuickInboundScreen';
 import { scanHid } from '../../core/hardware/scan/__fixtures__/hid';
@@ -128,6 +133,7 @@ async function renderScreen(
     draftLoadFails?: { now: boolean };
     serverDown?: { now: boolean };
     simpleFails?: boolean;
+    abandonFirst?: { now: boolean };
     savedScans?: string[];
     waiting?: Array<{ skuId: string; orders: number; qty: number }>;
     ready?: unknown[];
@@ -185,6 +191,13 @@ async function renderScreen(
       if (o.path.startsWith('/inventory/skus?barcode=')) return [];
       if (o.path === '/inbound/simple') {
         if (hold?.simpleFails) throw new ApiError('권한이 없어요', 403);
+        if (hold?.abandonFirst?.now) {
+          hold.abandonFirst.now = false;
+          throw new ConflictError(
+            '관리자가 버린 작업이에요.',
+            'OPERATION_ABANDONED'
+          );
+        }
 
         return {
           id: 'r-1',
@@ -384,6 +397,32 @@ describe('QuickInboundScreen', () => {
     expect(await runtime.store.get(sent!.idempotencyKey!)).toMatchObject({
       summary: '코튼셔츠 ×20',
     });
+  });
+
+  it('관리자가 버린 입고는 같은 바구니로 다시 누르면 새 요청으로 등록된다', async () => {
+    const user = userEvent.setup();
+    const calls: Call[] = [];
+    await renderScreen(calls, undefined, false, {
+      abandonFirst: { now: true },
+    });
+    await screen.findByText('간편입고');
+
+    await user.click(screen.getByRole('button', { name: '스캔:8802' }));
+    await screen.findByText('코튼셔츠');
+    await user.click(screen.getByRole('button', { name: /입고 등록$/ }));
+    await screen.findByText(OPERATION_ABANDONED_MESSAGE);
+
+    // 새 요청 키를 만드는 동안은 꺼져 있다가 다시 켜진다
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /입고 등록$/ })).toBeEnabled()
+    );
+    await user.click(screen.getByRole('button', { name: /입고 등록$/ }));
+    await screen.findByText('입고 완료');
+    const keys = calls
+      .filter((c) => c.path === '/inbound/simple')
+      .map((c) => c.idempotencyKey);
+    expect(keys).toHaveLength(2);
+    expect(keys[1]).not.toBe(keys[0]);
   });
 
   it('등록에 실패하면 오류음을 내고 완료음과 토스트는 없다', async () => {
