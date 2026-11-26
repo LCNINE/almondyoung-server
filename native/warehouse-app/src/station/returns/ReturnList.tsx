@@ -3,6 +3,7 @@ import {
   useEffect,
   useRef,
   useState,
+  Children,
   type ReactNode,
 } from 'react';
 import { errorMessage } from '../../core/data/errorMessage';
@@ -229,8 +230,17 @@ export function ReturnList({
           {filtered ? '찾는 반품이 없어요' : '도착 대기 반품이 없어요'}
         </p>
       ) : null}
-      {readyItems.length > 0 ? (
-        <ReturnCard title="검수 대기" badge={readyBadge} label="검수 대기 반품">
+      {readyItems.length > 0 || overallItems.length > 0 ? (
+        <ReturnCard
+          title="검수 대기"
+          badge={readyBadge}
+          label="검수 대기 반품"
+          empty={
+            filtered
+              ? '검색한 검수 대기 반품이 없어요.'
+              : '검수 대기 반품이 없어요.'
+          }
+        >
           {readyItems.map((item, index) => (
             <ReturnRow
               key={item.id}
@@ -268,11 +278,13 @@ function ReturnCard({
   title,
   badge,
   label,
+  empty,
   children,
 }: {
   title: string;
   badge: string | null;
   label: string;
+  empty?: string;
   children: ReactNode;
 }) {
   return (
@@ -285,6 +297,9 @@ function ReturnCard({
           </span>
         ) : null}
       </div>
+      {empty && Children.count(children) === 0 ? (
+        <p className="px-5 py-4 text-[13px] text-[#71717a]">{empty}</p>
+      ) : null}
       <ul
         role="listbox"
         aria-label={label}

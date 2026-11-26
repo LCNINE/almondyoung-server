@@ -88,6 +88,32 @@ describe('도착 대기 목록', () => {
     expect(screen.getByText('2건')).toBeInTheDocument();
   });
 
+  it('도착 대기 행만 걸리는 검색에도 검수 대기 카드와 건수가 남는다', async () => {
+    setupReturns();
+    await listed();
+
+    press('F9');
+    submitSearch('김민');
+
+    await waitFor(() => expect(orderNos()).toEqual(['O-1001']));
+    expect(screen.getByRole('heading', { level: 2, name: '검수 대기' })).toBeInTheDocument();
+    expect(screen.getAllByText('1건').length).toBeGreaterThan(0);
+    expect(screen.getByText('검색한 검수 대기 반품이 없어요.')).toBeInTheDocument();
+  });
+
+  it('걸리는 반품이 없는 검색에도 검수 대기 건수가 남는다', async () => {
+    setupReturns();
+    await listed();
+
+    press('F9');
+    submitSearch('없는사람');
+
+    expect(await screen.findByText('찾는 반품이 없어요')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: '검수 대기' })).toBeInTheDocument();
+    expect(screen.getByText('1건')).toBeInTheDocument();
+    expect(screen.getByText('검색한 검수 대기 반품이 없어요.')).toBeInTheDocument();
+  });
+
   it('한 번에 다 못 불러오면 검수 대기 건수에 이상을 붙인다', async () => {
     const { server } = setupReturns();
     server.config.limit = 1;
