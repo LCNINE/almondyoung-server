@@ -3,6 +3,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { useWarehouse } from '../../app/warehouse-context';
 import { errorMessage } from '../../core/data/errorMessage';
 import { Button } from '../../core/design/Button';
+import { isStationDevice } from '../../app/station';
 import { ScreenHeader } from '../../core/design/ScreenHeader';
 import { ConfirmDialog } from '../../core/design/ConfirmDialog';
 import { cn } from '../../core/design/cn';
@@ -42,6 +43,7 @@ function defaultSessionName(): string {
 
 export function SessionListScreen() {
   const navigate = useNavigate();
+  const station = isStationDevice();
   const { warehouseId, isSet } = useWarehouse();
   const sessions = useStocktakingSessions(warehouseId);
   const create = useCreateSession();
@@ -76,10 +78,20 @@ export function SessionListScreen() {
   }
 
   const list = sessions.data?.data ?? [];
+  const newSessionButton = (
+    <Button type="button" className={station ? undefined : 'w-full py-3'} onClick={() => setCreating(true)}>
+      + 새 실사
+    </Button>
+  );
 
   return (
     <div className="space-y-4">
-      <ScreenHeader title="실사" description={DESCRIPTION} backTo="/" />
+      <ScreenHeader
+        title="실사"
+        description={DESCRIPTION}
+        backTo="/"
+        right={station && !creating ? newSessionButton : undefined}
+      />
 
       {creating ? (
         <div className="space-y-2 rounded-xl border border-[#e4e4e7] bg-white p-4">
@@ -119,10 +131,8 @@ export function SessionListScreen() {
             </Button>
           </div>
         </div>
-      ) : (
-        <Button type="button" className="w-full py-3" onClick={() => setCreating(true)}>
-          + 새 실사
-        </Button>
+      ) : station ? null : (
+        newSessionButton
       )}
 
       {sessions.isError ? (

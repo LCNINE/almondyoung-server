@@ -7,6 +7,7 @@ import {
   errorMessage,
   STOCK_ADJUST_PERMISSION_MESSAGE,
 } from '../../core/data/errorMessage';
+import { isStationDevice } from '../../app/station';
 import { Button } from '../../core/design/Button';
 import { ScreenHeader } from '../../core/design/ScreenHeader';
 import { NumberPad } from '../../core/design/NumberPad';
@@ -39,6 +40,7 @@ function AdjustStockScreenContent({
   const permissionDenied =
     !permissions.isError && permissions.data?.stockAdjust === false;
   const isManufacture = mode === 'manufacture';
+  const station = isStationDevice();
   const title = isManufacture ? '제조 완료 등록' : '재고 조정';
   const backTo = isManufacture ? '/inventory/manufacture' : '/inventory';
 
@@ -192,13 +194,15 @@ function AdjustStockScreenContent({
           </p>
           <p>사유 제조</p>
         </div>
-        <Button
-          type="button"
-          className="w-full py-3"
-          onClick={() => navigate({ to: '/inventory/manufacture' })}
-        >
-          다음 상품 등록
-        </Button>
+        <div className={station ? 'flex justify-end' : undefined}>
+          <Button
+            type="button"
+            className={station ? undefined : 'w-full py-3'}
+            onClick={() => navigate({ to: '/inventory/manufacture' })}
+          >
+            다음 상품 등록
+          </Button>
+        </div>
       </div>
     );
   }
@@ -388,14 +392,16 @@ function AdjustStockScreenContent({
         </p>
       ) : null}
 
-      <Button
-        type="button"
-        className="w-full py-3"
-        disabled={!canSubmit || adjust.isPending}
-        onClick={() => setConfirming(true)}
-      >
-        {isManufacture ? '제조 완료 등록' : '조정하기'}
-      </Button>
+      <div className={station ? 'flex justify-end' : undefined}>
+        <Button
+          type="button"
+          className={station ? undefined : 'w-full py-3'}
+          disabled={!canSubmit || adjust.isPending}
+          onClick={() => setConfirming(true)}
+        >
+          {isManufacture ? '제조 완료 등록' : '조정하기'}
+        </Button>
+      </div>
 
       <ConfirmDialog
         open={confirming}

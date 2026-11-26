@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { ReactNode } from 'react';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -18,6 +18,9 @@ import { ApiClientProvider } from '../../core/data/ApiClientProvider';
 import type { ApiClient } from '../../core/data/httpClient';
 import type { Session } from '../../core/auth/session';
 import { SessionListScreen } from './SessionListScreen';
+
+const station = vi.hoisted(() => ({ on: false }));
+vi.mock('../../app/station', () => ({ isStationDevice: () => station.on }));
 
 const session = {
   bootstrap: async () => {},
@@ -147,5 +150,32 @@ describe('SessionListScreen', () => {
     await userEvent.click(screen.getByRole('button', { name: '실사 취소' }));
 
     expect(calls.some((c) => c.path === '/stocktaking/sessions/s-run/cancel')).toBe(true);
+  });
+});
+
+describe('SessionListScreen 새 실사 버튼 배치', () => {
+  afterEach(() => {
+    station.on = false;
+  });
+
+  it('핸드헬드에서는 폭을 꽉 채운다', async () => {
+    renderScreen([]);
+    expect(await screen.findByRole('button', { name: '+ 새 실사' })).toHaveClass('w-full');
+  });
+
+  it('스테이션에서는 제목 줄 오른쪽에 보통 크기로 놓는다', async () => {
+    station.on = true;
+
+    renderScreen([]);
+
+    const button = await screen.findByRole('button', { name: '+ 새 실사' });
+
+    expect(button).not.toHaveClass('w-full');
+    expect(screen.getByRole('heading', { name: '실사' }).closest('.flex')).toContainElement(button);
+
+    await userEvent.click(button);
+
+    expect(screen.getByLabelText('실사 이름')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '+ 새 실사' })).not.toBeInTheDocument();
   });
 });
