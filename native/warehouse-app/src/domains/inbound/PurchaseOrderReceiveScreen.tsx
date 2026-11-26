@@ -51,6 +51,7 @@ import {
   PoReceiveSkuNotInOrderError,
 } from './poReceiveScanError';
 import type { FreshLine, PutawayTarget } from './types';
+import { workSummary } from '../../core/operations/pendingWork';
 
 function createReadinessGate() {
   let release!: () => void;
@@ -285,6 +286,9 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
           { skuId: submission.target.skuId, quantity: submission.quantity },
         ],
         idempotencyKey: submission.key,
+        summary: workSummary([
+          { name: submission.target.skuName, quantity: submission.quantity },
+        ]),
       });
       received = true;
 
@@ -860,6 +864,9 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
             await cancel.mutateAsync({
               receiptLineId: latest.lineId,
               idempotencyKey: cancelKeyFor(latest.lineId),
+              summary: workSummary([
+                { name: fresh.skuName, quantity: latest.quantity },
+              ]),
             });
             toast.show({
               kind: 'cancelled',

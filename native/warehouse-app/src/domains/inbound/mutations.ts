@@ -3,6 +3,7 @@ import type { QueryClient } from '@tanstack/react-query';
 import { useApiClient } from '../../core/data/ApiClientProvider';
 import { WAITING_ORDERS_KEY } from './waitingOrders';
 import { READY_SHIPMENTS_KEY } from './readyShipments';
+import type { WithSummary } from '../../core/operations/pendingWork';
 import type {
   CancelInboundInput,
   CancelPurchaseOrderReceiptInput,
@@ -43,12 +44,17 @@ export function useReceivePurchaseOrder() {
   const api = useApiClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ poId, ...input }: ReceivePurchaseOrderInput) =>
+    mutationFn: ({
+      poId,
+      summary,
+      ...input
+    }: WithSummary<ReceivePurchaseOrderInput>) =>
       api.request<ReceivePurchaseOrderResult>({
         method: 'POST',
         path: `/purchase-orders/${poId}/receipts`,
         body: input,
         idempotencyKey: input.idempotencyKey,
+        summary,
       }),
     onSettled: () => invalidateAfterLedgerWrite(qc),
   });
@@ -62,12 +68,14 @@ export function useCancelPurchaseOrderReceipt() {
     mutationFn: ({
       receiptLineId,
       idempotencyKey,
-    }: CancelPurchaseOrderReceiptInput) =>
+      summary,
+    }: WithSummary<CancelPurchaseOrderReceiptInput>) =>
       api.request<CancelPurchaseOrderReceiptResult>({
         method: 'POST',
         path: `/purchase-orders/receipt-lines/${receiptLineId}/cancel`,
         body: { idempotencyKey },
         idempotencyKey,
+        summary,
       }),
     onSettled: () => invalidateAfterLedgerWrite(qc),
   });
@@ -78,12 +86,13 @@ export function useSimpleInbound() {
   const api = useApiClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: SimpleInboundInput) =>
+    mutationFn: ({ summary, ...input }: WithSummary<SimpleInboundInput>) =>
       api.request<SimpleInboundResult>({
         method: 'POST',
         path: '/inbound/simple',
         body: input,
         idempotencyKey: input.idempotencyKey,
+        summary,
       }),
     onSettled: () => invalidateAfterLedgerWrite(qc),
   });
@@ -94,12 +103,13 @@ export function usePutaway() {
   const api = useApiClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: PutawayInput) =>
+    mutationFn: ({ summary, ...input }: WithSummary<PutawayInput>) =>
       api.request<{ success: boolean; usualShelfSet?: boolean }>({
         method: 'POST',
         path: '/inbound/putaway',
         body: input,
         idempotencyKey: input.idempotencyKey,
+        summary,
       }),
     onSettled: () => invalidateAfterLedgerWrite(qc),
   });
@@ -113,12 +123,13 @@ export function useCancelInbound() {
   const api = useApiClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: CancelInboundInput) =>
+    mutationFn: ({ summary, ...input }: WithSummary<CancelInboundInput>) =>
       api.request<{ success: boolean }>({
         method: 'POST',
         path: '/inbound/cancel',
         body: input,
         idempotencyKey: input.idempotencyKey,
+        summary,
       }),
     onSettled: () => invalidateAfterLedgerWrite(qc),
   });

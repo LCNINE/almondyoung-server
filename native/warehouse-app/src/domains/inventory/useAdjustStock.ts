@@ -3,6 +3,7 @@ import { ApiError } from '../../core/data/httpClient';
 import { STOCK_ADJUST_PERMISSION_MESSAGE } from '../../core/data/errorMessage';
 import { usePermissionReader } from '../../core/operations/useWorkCapabilities';
 import { useApiClient } from '../../core/data/ApiClientProvider';
+import type { WithSummary } from '../../core/operations/pendingWork';
 
 export const ADJUST_REASONS = ['파손', '분실', '발견', '오출고 정정', '제조', '기타'] as const;
 
@@ -25,7 +26,7 @@ export function useAdjustStock() {
   const readPermissions = usePermissionReader();
 
   return useMutation({
-    mutationFn: async (input: AdjustStockInput) => {
+    mutationFn: async ({ summary, ...input }: WithSummary<AdjustStockInput>) => {
       const permissions = await readPermissions().catch(() => undefined);
 
       if (permissions?.stockAdjust === false)
@@ -40,6 +41,7 @@ export function useAdjustStock() {
         path: '/inventory/stocks/adjust',
         body: input,
         idempotencyKey: input.idempotencyKey,
+        summary,
       });
     },
     onSuccess: () => {

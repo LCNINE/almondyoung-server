@@ -102,6 +102,7 @@ interface Call {
   path: string;
   method?: string;
   body?: unknown;
+  idempotencyKey?: string;
 }
 
 /** ScanEvent 는 at 이 필수다. */
@@ -327,13 +328,14 @@ async function renderScreen(
     </SessionProvider>
   );
   render(<RouterProvider router={router} />, { wrapper });
-  if (hold) return;
+  if (hold) return runtime;
   await waitFor(() =>
     expect(document.querySelector('[aria-busy]')).toHaveAttribute(
       'aria-busy',
       'false'
     )
   );
+  return runtime;
 }
 
 const READY_BOX = {
@@ -364,6 +366,24 @@ describe('QuickInboundScreen', () => {
     expect(await screen.findByText('입고 완료')).toBeInTheDocument();
     expect(playInboundSaved).toHaveBeenCalledTimes(1);
     expect(playInboundSaveFailed).not.toHaveBeenCalled();
+  });
+
+  it('등록한 입고의 상품 이름을 기기 작업 기록에 남기고 서버 본문에는 싣지 않는다', async () => {
+    const user = userEvent.setup();
+    const calls: Call[] = [];
+    const runtime = await renderScreen(calls);
+    await screen.findByText('간편입고');
+
+    await user.click(screen.getByRole('button', { name: '스캔:8802' }));
+    await screen.findByText('코튼셔츠');
+    await user.click(screen.getByRole('button', { name: /입고 등록$/ }));
+    await screen.findByText('입고 완료');
+
+    const sent = calls.find((c) => c.path === '/inbound/simple');
+    expect(JSON.stringify(sent?.body)).not.toContain('코튼셔츠');
+    expect(await runtime.store.get(sent!.idempotencyKey!)).toMatchObject({
+      summary: '코튼셔츠 ×20',
+    });
   });
 
   it('등록에 실패하면 오류음을 내고 완료음과 토스트는 없다', async () => {
@@ -1081,8 +1101,11 @@ it('담은 상품은 방금 담은 것이 맨 위에 오고, 등록 버튼에 �
   const rows = within(cart).getAllByRole('listitem');
   expect(rows[0]).toHaveTextContent('면바지');
   expect(rows[1]).toHaveTextContent('코튼셔츠');
-  expect(
-    screen.getByRole('button', { name: '2종 3개 입고 등록' })
-  ).toBeEnabled();
+  // 담은 상품을 기기에 저장한 뒤에 등록 버튼이 켜진다
+  await waitFor(() =>
+    expect(
+      screen.getByRole('button', { name: '2종 3개 입고 등록' })
+    ).toBeEnabled()
+  );
   expect(screen.getByText('담은 상품 2종 · 3개')).toBeInTheDocument();
 });

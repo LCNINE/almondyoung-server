@@ -5,6 +5,7 @@ import { Button } from '../../core/design/Button';
 import { WorkArea } from '../../core/operations/WorkBoundary';
 import { preventScanEnterActivation } from '../../core/hardware/scan/hidScanBoundary';
 import { useCancelInbound, useCancelPurchaseOrderReceipt } from './mutations';
+import { workSummary } from '../../core/operations/pendingWork';
 import { receiptFeedback } from './receiptFeedback';
 import { seoulDate } from './receiptHistory';
 import {
@@ -139,12 +140,17 @@ function CancelReceiptContent({
         return;
       }
       if (latest.source === 'purchase_order')
-        await po.mutateAsync({ receiptLineId: latest.lineId, idempotencyKey });
+        await po.mutateAsync({
+          receiptLineId: latest.lineId,
+          idempotencyKey,
+          summary: workSummary([{ name: target.skuName, quantity: latest.quantity }]),
+        });
       else
         await direct.mutateAsync({
           lineId: latest.lineId,
           quantity: latest.quantity,
           idempotencyKey,
+          summary: workSummary([{ name: target.skuName, quantity: latest.quantity }]),
         });
       onFinished({ ok: true, detail: `${target.skuName} ${latest.quantity}개` });
     } catch (error) {

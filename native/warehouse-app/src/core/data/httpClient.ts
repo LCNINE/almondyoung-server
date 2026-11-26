@@ -1,3 +1,4 @@
+import type { PendingWorkPath } from '../operations/pendingWork';
 import { fetch as tauriFetch } from '@tauri-apps/plugin-http';
 import { authHeader } from './authHeader';
 import { reportServerReach } from './serverStatus';
@@ -237,6 +238,10 @@ export interface ApiClient {
     bodyJson?: string;
     beforeSend?: (token: string) => Promise<void>;
     idempotencyKey?: string;
+    /** 기기에 남는 쓰기 작업의 표시 이름(상품·수량). 서버로는 보내지 않는다 */
+    summary?: string;
+    /** 그 작업을 한 화면 — 같은 경로를 여러 화면이 쓸 때만. 서버로는 보내지 않는다 */
+    screen?: PendingWorkPath;
   }): Promise<T>;
 }
 

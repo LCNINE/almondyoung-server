@@ -10,6 +10,7 @@ import { useScanner } from '../../core/hardware/scan/useScanner';
 import { preventScanEnterActivation } from '../../core/hardware/scan/hidScanBoundary';
 import { useLocationSearch } from '../warehouse/useLocationSearch';
 import { useMoveStock } from '../movement/useMoveStock';
+import { workSummary } from '../../core/operations/pendingWork';
 import { RETURN_GOODS_KEY, type ReturnGoodsItem } from './returnGoods';
 import type { LocationRef } from './PutawaySheet';
 import { RememberUsualToggle } from './RememberUsualToggle';
@@ -147,6 +148,11 @@ function ReturnPutawaySheetContent({
         reason: '반품 적치',
         rememberAsUsual: sent.remember,
         idempotencyKey: sent.key,
+        // 이동과 같은 경로라 적치 화면을 남긴다
+        screen: '/putaway',
+        summary: workSummary([
+          { name: target.skuName, quantity: sent.quantity },
+        ]),
       });
       void qc.invalidateQueries({ queryKey: [RETURN_GOODS_KEY] });
       onDone(

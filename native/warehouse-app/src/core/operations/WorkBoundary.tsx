@@ -5,12 +5,15 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react';
+import { useNavigate, useRouter, useRouterState } from '@tanstack/react-router';
+import { activeTabOf } from '../../station/tabs';
+import type { PendingWorkPath } from './pendingWork';
 import { useIsAuthenticated, useSession } from '../../app/session-context';
 import { useWorkRuntime } from './OperationContext';
 import { workStatus } from './workStatus';
 import { Button } from '../design/Button';
 import { useWorkReadiness } from './useWorkReadiness';
-import { AreaContext } from './workArea';
+import { AreaContext, type WorkNavigator } from './workArea';
 import { isBoxCheck, shipmentOf, useBoxChecksHosted } from './boxChecks';
 import { BoxChecks } from './BoxCheckList';
 
@@ -89,6 +92,39 @@ export function WorkArea({
   const blocked = useWorkAreaBlocked(kind, scanAllowance, shipmentId);
   return <div inert={blocked || undefined}>{children}</div>;
 }
+/** 라우터 안에 한 번 둔다. 경계는 라우터 바깥이라 남은 작업 안내가 그 작업 화면으로 가려면 이 다리가 필요하다 */
+export function WorkNavigationBridge({ station }: { station: boolean }) {
+  const { registerNavigator } = useContext(AreaContext);
+  const navigate = useNavigate();
+  const router = useRouter();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  useEffect(() => {
+    registerNavigator?.({
+      pathname,
+      station,
+      go: async (href) => {
+        // 막힌 이동은 navigate 의 약속이 끝나지 않는다 — 막는 판정(비동기)이 끝난 다음 틱에 실제 위치로 본다
+        void navigate({ href });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        return within(router.history.location.pathname, href);
+      },
+    });
+    return () => registerNavigator?.(null);
+  }, [registerNavigator, navigate, router, pathname, station]);
+  return null;
+}
+
+const within = (pathname: string, screen: string) =>
+  pathname === screen || pathname.startsWith(`${screen}/`);
+
+function screenButtonLabel(screen: PendingWorkPath, station: boolean) {
+  const tab = activeTabOf(screen);
+  if (!tab) return '작업 화면으로 가기';
+  return station
+    ? `${tab.key} ${tab.label} 화면으로 가기`
+    : `${tab.label} 화면으로 가기`;
+}
+
 export function WorkBoundary({ children }: { children: ReactNode }) {
   const runtime = useWorkRuntime();
   if (!runtime) return children;
@@ -109,6 +145,9 @@ function ActiveBoundary({
   );
   const [now, setNow] = useState(Date.now());
   const [checking, setChecking] = useState(false);
+  const [navigator, setNavigator] = useState<WorkNavigator | null>(null);
+  // 이동을 막은 화면 — 그 화면을 떠나거나 남은 작업이 바뀌면 지운다
+  const [goBlockedAt, setGoBlockedAt] = useState<string | null>(null);
   const { state: readiness, recheck } = useWorkReadiness(runtime, authed);
   const ready = readiness.status === 'ready';
   const scope = ready ? readiness.scope : null;
@@ -136,6 +175,11 @@ function ActiveBoundary({
   const state = workStatus(authed ? ops : [], now);
   const blocked = authed && (state.blocksWork || problem);
   const hosted = useBoxChecksHosted();
+  const screen = !problem && state.screen;
+  const go =
+    screen && navigator && !within(navigator.pathname, screen) ? screen : null;
+  const goBlocked =
+    go !== null && goBlockedAt === `${navigator?.pathname} ${go}`;
   return (
     <AreaContext.Provider
       value={{
@@ -144,6 +188,7 @@ function ActiveBoundary({
         problem: authed && problem,
         restoring: authed && restoring,
         recheck,
+        registerNavigator: setNavigator,
       }}
     >
       {children}
@@ -171,6 +216,13 @@ function ActiveBoundary({
                     ? '작업 저장소나 서버 연결을 확인하지 못했어요. 연결을 확인해 주세요.'
                     : state.message}
               </p>
+              {goBlocked && (
+                <p className="mt-1 text-sm text-red-700">
+                  {
+                    '옮기지 못했어요. 이 화면에 저장하지 않은 입력이 있었어요 — 입력을 마치거나 지운 뒤 다시 눌러 주세요.'
+                  }
+                </p>
+              )}
               {denied ? (
                 <Button
                   className="mt-2"
@@ -180,6 +232,18 @@ function ActiveBoundary({
                 </Button>
               ) : (
                 <>
+                  {go && (
+                    <Button
+                      className="mr-2 mt-2"
+                      onClick={async () => {
+                        const from = navigator?.pathname;
+                        if (!(await navigator?.go(go)))
+                          setGoBlockedAt(`${from} ${go}`);
+                      }}
+                    >
+                      {screenButtonLabel(go, navigator?.station ?? false)}
+                    </Button>
+                  )}
                   <Button
                     disabled={checking}
                     className="mt-2"

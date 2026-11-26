@@ -1,3 +1,4 @@
+import type { PendingWorkPath } from './pendingWork';
 import {
   parsePreparationRejection,
   readRequiredPermissions,
@@ -13,6 +14,10 @@ export interface OperationInput {
   path: string;
   bodyJson: string;
   createdAt: number;
+  /** 화면이 남긴 표시 이름(상품·수량) — 본문에는 id 만 있다 */
+  summary?: string;
+  /** 같은 경로를 여러 화면이 쓸 때 그 작업을 한 화면 */
+  screen?: PendingWorkPath;
 }
 export interface StoredOperation extends OperationInput {
   ownerId?: string;
