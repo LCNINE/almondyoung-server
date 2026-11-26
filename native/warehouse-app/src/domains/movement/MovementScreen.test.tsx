@@ -606,9 +606,7 @@ for (const change of ['cancel-reopen', 'quantity'] as const) {
       screen.getByRole('button', { name: '코튼셔츠 이동' })
     );
     await userEvent.type(screen.getByLabelText('도착 로케이션'), 'B-05-03');
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    });
+    await waitFor(() => expect(submitButton()).toBeEnabled());
     let release!: (value: { inboundWorkflowConsistency: boolean }) => void;
     const gate = new Promise<{ inboundWorkflowConsistency: boolean }>(
       (resolve) => {
@@ -836,25 +834,24 @@ describe('MovementScreen A 작업대', () => {
   });
 
   it('실패한 이동은 내역에 남기지 않는다', async () => {
-    const calls: Array<{ path: string; method?: string; body?: unknown }> = [];
     renderScreen(
-      listingClient(calls, async () => {
-        throw new ConflictError('unknown conflict', 'UNKNOWN_CONFLICT');
+      listingClient([], async () => {
+        throw new ConflictError(
+          'inactive destination',
+          'MOVEMENT_DESTINATION_INACTIVE'
+        );
       })
     );
     await pickSource();
     await moveToB0503();
 
-    await waitFor(() =>
-      expect(calls.some((call) => call.path === '/movement/move')).toBe(true)
-    );
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    });
     expect(
-      within(screen.getByRole('dialog', { name: '재고 이동' })).getByText(
-        'B-05-03'
+      await screen.findByText(
+        '사용 중지된 위치예요. 다른 도착 위치를 선택해 주세요.'
       )
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('dialog', { name: '재고 이동' })
     ).toBeInTheDocument();
     expect(
       screen.queryByRole('region', { name: '방금 이동한 내역' })
@@ -862,5 +859,91 @@ describe('MovementScreen A 작업대', () => {
     expect(
       screen.queryByRole('button', { name: /되돌리기/ })
     ).not.toBeInTheDocument();
+  });
+
+  for (const change of ['close', 'quantity'] as const) {
+    it(`응답을 기다리는 동안 ${change} 해도 서버가 확인한 이동은 보낸 값으로 내역에 남긴다`, async () => {
+      let release!: () => void;
+      const response = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const calls: Array<{ path: string; method?: string; body?: unknown }> =
+        [];
+      renderScreen(
+        listingClient(calls, async () => {
+          await response;
+
+          return {};
+        })
+      );
+      await pickSource();
+      await moveToB0503();
+      await waitFor(() =>
+        expect(calls.some((call) => call.path === '/movement/move')).toBe(true)
+      );
+
+      if (change === 'close') {
+        await userEvent.click(screen.getByRole('button', { name: '돌아가기' }));
+      } else {
+        fireEvent.change(screen.getByLabelText('이동 수량 직접 입력 (낱개)'), {
+          target: { value: '4' },
+        });
+      }
+
+      await act(async () => {
+        release();
+        await response;
+      });
+
+      const history = await screen.findByRole('region', {
+        name: '방금 이동한 내역',
+      });
+      const rows = within(history).getAllByRole('listitem');
+
+      expect(rows).toHaveLength(1);
+      expect(within(rows[0]).getByText('코튼셔츠 · 12개')).toBeInTheDocument();
+      expect(
+        within(rows[0]).getByText('A-01-02 → B-05-03')
+      ).toBeInTheDocument();
+
+      if (change === 'quantity') {
+        expect(
+          screen.getByRole('dialog', { name: '재고 이동' })
+        ).toBeInTheDocument();
+        expect(screen.getByLabelText('이동 수량 직접 입력 (낱개)')).toHaveValue(
+          '4'
+        );
+      } else {
+        expect(
+          screen.queryByRole('dialog', { name: '재고 이동' })
+        ).not.toBeInTheDocument();
+      }
+    });
+  }
+
+  it('검색어가 있어도 Esc 로 도착 목록을 닫는다', async () => {
+    renderScreen(listingClient([]));
+    await pickSource();
+    await userEvent.click(
+      await screen.findByRole('button', { name: '코튼셔츠 이동' })
+    );
+    const input = screen.getByLabelText('도착 로케이션');
+
+    await userEvent.type(input, 'B-05');
+    expect(
+      await screen.findByRole('group', { name: '도착 로케이션 목록' })
+    ).toBeInTheDocument();
+    expect(input).toHaveAttribute('aria-expanded', 'true');
+
+    await userEvent.keyboard('{Escape}');
+
+    expect(
+      screen.queryByRole('group', { name: '도착 로케이션 목록' })
+    ).not.toBeInTheDocument();
+    expect(input).toHaveAttribute('aria-expanded', 'false');
+    expect(input).toHaveValue('B-05');
+    expect(
+      screen.getByRole('dialog', { name: '재고 이동' })
+    ).toBeInTheDocument();
   });
 });

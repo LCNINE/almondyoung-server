@@ -157,7 +157,11 @@ function MovementScreenContent() {
   // 스캔은 무시한다 — 품목은 탭으로 고른다.
   useScanner((e) => {
     if (activeItem) {
-      if (!dest) setDestTerm(e.code);
+      if (!dest) {
+        setDestTerm(e.code);
+        setDestOpen(true);
+      }
+
       return;
     }
     if (!source) setSourceTerm(e.code);
@@ -318,7 +322,7 @@ function MovementScreenContent() {
     dest?.id !== source?.id &&
     qty >= 1 &&
     qty <= (activeItem?.generallyMovableQty ?? 0);
-  const destListShown = !dest && (destOpen || destTerm.trim().length > 0);
+  const destListShown = !dest && destOpen;
 
   if (!isSet) {
     return (
@@ -669,75 +673,87 @@ function MovementScreenContent() {
                       직전 대상지 {lastDest.code} 사용
                     </button>
                   ) : null}
-                  <input
-                    id="dest-search"
-                    role="combobox"
-                    aria-label="도착 로케이션"
-                    aria-expanded={destListShown}
-                    aria-controls="move-destination-options"
-                    aria-autocomplete="list"
-                    autoComplete="off"
-                    className="w-full rounded-lg border border-[#e4e4e7] px-3.5 py-2.5 text-sm outline-none focus:border-[#2563eb]"
-                    placeholder="위치 바코드 스캔 또는 코드 입력"
-                    value={destTerm}
-                    onFocus={() => setDestOpen(true)}
-                    onClick={() => setDestOpen(true)}
-                    onChange={(e) => {
-                      setDestTerm(e.target.value);
-                      setDestOpen(true);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.code === 'NumpadEnter') {
-                        e.preventDefault();
-                        submitDestTerm();
-                        return;
-                      }
-
-                      if (e.key === 'Escape' && destOpen) {
-                        e.stopPropagation();
+                  <div
+                    className="flex flex-col gap-2"
+                    onBlur={(e) => {
+                      if (!e.currentTarget.contains(e.relatedTarget)) {
                         setDestOpen(false);
                       }
                     }}
-                  />
-                  {destSearch.isError ? (
-                    <p
-                      role="alert"
-                      className="text-xs leading-[1.7] text-[#b42318]"
-                    >
-                      {errorMessage(destSearch.error, 'location')}
-                    </p>
-                  ) : null}
-                  {destListShown ? (
-                    <div
-                      id="move-destination-options"
-                      role="group"
-                      aria-label="도착 로케이션 목록"
-                      className="max-h-[155px] overflow-y-auto rounded-lg border border-[#e4e4e7] [scrollbar-gutter:stable]"
-                    >
-                      {destOptions.map((loc) => (
-                        <button
-                          key={loc.id}
-                          type="button"
-                          className="flex w-full items-center justify-between border-b border-[#f4f4f5] px-3.5 py-3 text-left text-[13px] outline-0 hover:bg-[#f4f4f5] focus-visible:bg-[#f4f4f5]"
-                          onClick={() => chooseDest(loc)}
-                        >
-                          <strong className="font-semibold">{loc.code}</strong>
-                          {loc.displayName && loc.displayName !== loc.code ? (
-                            <span className="text-[11px] text-[#71717a]">
-                              {loc.displayName}
-                            </span>
-                          ) : null}
-                        </button>
-                      ))}
-                      {destOptions.length === 0 ? (
-                        <p className="p-3.5 text-xs text-[#71717a]">
-                          {destSearch.isFetching
-                            ? '불러오는 중…'
-                            : '일치하는 로케이션이 없습니다.'}
-                        </p>
-                      ) : null}
-                    </div>
-                  ) : null}
+                  >
+                    <input
+                      id="dest-search"
+                      role="combobox"
+                      aria-label="도착 로케이션"
+                      aria-expanded={destListShown}
+                      aria-controls="move-destination-options"
+                      aria-autocomplete="list"
+                      autoComplete="off"
+                      className="w-full rounded-lg border border-[#e4e4e7] px-3.5 py-2.5 text-sm outline-none focus:border-[#2563eb]"
+                      placeholder="위치 바코드 스캔 또는 코드 입력"
+                      value={destTerm}
+                      onFocus={() => setDestOpen(true)}
+                      onClick={() => setDestOpen(true)}
+                      onChange={(e) => {
+                        setDestTerm(e.target.value);
+                        setDestOpen(true);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.code === 'NumpadEnter') {
+                          e.preventDefault();
+                          submitDestTerm();
+                          return;
+                        }
+
+                        if (e.key === 'Escape' && destOpen) {
+                          e.stopPropagation();
+                          setDestOpen(false);
+                        }
+                      }}
+                    />
+                    {destSearch.isError ? (
+                      <p
+                        role="alert"
+                        className="text-xs leading-[1.7] text-[#b42318]"
+                      >
+                        {errorMessage(destSearch.error, 'location')}
+                      </p>
+                    ) : null}
+                    {destListShown ? (
+                      <div
+                        id="move-destination-options"
+                        role="group"
+                        aria-label="도착 로케이션 목록"
+                        className="max-h-[155px] overflow-y-auto rounded-lg border border-[#e4e4e7] [scrollbar-gutter:stable]"
+                      >
+                        {destOptions.map((loc) => (
+                          <button
+                            key={loc.id}
+                            type="button"
+                            className="flex w-full items-center justify-between border-b border-[#f4f4f5] px-3.5 py-3 text-left text-[13px] outline-0 hover:bg-[#f4f4f5] focus-visible:bg-[#f4f4f5]"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => chooseDest(loc)}
+                          >
+                            <strong className="font-semibold">
+                              {loc.code}
+                            </strong>
+                            {loc.displayName && loc.displayName !== loc.code ? (
+                              <span className="text-[11px] text-[#71717a]">
+                                {loc.displayName}
+                              </span>
+                            ) : null}
+                          </button>
+                        ))}
+                        {destOptions.length === 0 ? (
+                          <p className="p-3.5 text-xs text-[#71717a]">
+                            {destSearch.isFetching
+                              ? '불러오는 중…'
+                              : '일치하는 로케이션이 없습니다.'}
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
                 </>
               )}
               <p className="text-[11px] leading-[1.7] text-[#71717a]">
@@ -842,39 +858,40 @@ function MovementScreenContent() {
           try {
             await assertInboundWorkflowCapability(runtime);
             if (!mounted.current || revision !== intentRevision.current) return;
-            await move.mutateAsync(
-              {
-                warehouseId,
-                skuId: activeItem.skuId,
-                fromLocationId: source.id,
-                toLocationId: dest.id,
-                quantity: qty,
-                reason: effectiveReason || undefined,
-                idempotencyKey,
-                summary: workSummary([
-                  { name: activeItem.skuName, quantity: qty },
-                ]),
-              },
-              {
-                onSuccess: () => {
-                  if (!mounted.current || revision !== intentRevision.current)
-                    return;
-                  const record: MovementRecord = {
-                    key: idempotencyKey,
-                    skuName: activeItem.skuName,
-                    qty,
-                    from: source.code,
-                    to: dest.code,
-                    time: clockLabel(new Date()),
-                  };
+            const submitted = {
+              key: idempotencyKey,
+              skuName: activeItem.skuName,
+              qty,
+              from: source.code,
+              to: dest.code,
+            };
+            const confirmedDest = dest;
 
-                  setHistory((list) => [record, ...list]);
-                  setLastDest(dest);
-                  setIdempotencyKey(crypto.randomUUID());
-                  closeSheet();
-                },
-              }
-            );
+            await move.mutateAsync({
+              warehouseId,
+              skuId: activeItem.skuId,
+              fromLocationId: source.id,
+              toLocationId: dest.id,
+              quantity: qty,
+              reason: effectiveReason || undefined,
+              idempotencyKey,
+              summary: workSummary([
+                { name: activeItem.skuName, quantity: qty },
+              ]),
+            });
+
+            if (!mounted.current) return;
+
+            setHistory((list) => [
+              { ...submitted, time: clockLabel(new Date()) },
+              ...list,
+            ]);
+            setLastDest(confirmedDest);
+
+            if (revision !== intentRevision.current) return;
+
+            setIdempotencyKey(crypto.randomUUID());
+            closeSheet();
           } catch (error) {
             if (mounted.current && revision === intentRevision.current) {
               if (
