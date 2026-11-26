@@ -1442,6 +1442,8 @@ export const inventoryIdempotencyRequests = pgTable(
   (t) => ({
     uqEndpointKey: uniqueIndex('uq_inv_idem_requests_endpoint_key').on(t.endpoint, t.key),
     idxCreatedAt: index('idx_inv_idem_requests_created_at').on(t.createdAt),
+    // 물류앱 기기가 올린 결과 모름을 요청 키만으로 판정한다(어느 endpoint 인지 모른다)
+    idxKey: index('idx_inv_idem_requests_key').on(t.key),
   }),
 );
 
@@ -3743,6 +3745,8 @@ export const fulfillmentCommandRequests = pgTable(
     idxCommandStatus: index('idx_fulfillment_command_status').on(t.status, t.createdAt),
     idxCommandOperation: index('idx_fulfillment_command_operation').on(t.operationId),
     idxCommandAttempt: index('idx_fulfillment_command_attempt').on(t.attemptId),
+    // 물류앱 기기가 올린 결과 모름을 요청 키만으로 판정한다(어느 명령인지 모른다)
+    idxCommandKey: index('idx_fulfillment_command_key').on(t.idempotencyKey),
     ckCommandRequestHash: check('ck_fulfillment_command_request_hash', sql`length(${t.requestHash}) = 64`),
     ckCommandCompletion: check(
       'ck_fulfillment_command_completion',
@@ -3785,6 +3789,68 @@ export const outboundScanRejections = pgTable(
     idxRejectionShipment: index('idx_outbound_scan_rejection_shipment').on(t.shipmentId, t.createdAt),
   }),
 );
+
+/**
+ * 물류앱 기기가 올린 «결과 모름» 작업 — 응답을 못 받아 기기에만 남은 쓰기. 기기가 연결될 때마다 지금 남은 것을 통째로 올리고,
+ * 목록에서 빠진 것은 기기가 스스로 정리한 것이다. 반영 여부는 이 표가 아니라 요청 키 기록(멱등 표)으로 판정한다.
+ */
+export const deviceUnresolvedOperations = pgTable(
+  'device_unresolved_operations',
+  {
+    /** 기기가 그 쓰기에 붙인 요청 키 */
+    operationKey: varchar('operation_key', { length: 255 }).primaryKey(),
+    deviceId: uuid('device_id').notNull(),
+    deviceKind: varchar('device_kind', { length: 16 }).$type<'station' | 'handheld'>().notNull(),
+    actorId: varchar('actor_id', { length: 255 }).notNull(),
+    workerName: varchar('worker_name', { length: 100 }),
+    method: varchar('method', { length: 10 }).notNull(),
+    path: varchar('path', { length: 500 }).notNull(),
+    /** 기기가 붙인 표시 — 작업 이름(입고·출고 등)과 대상(상품·수량) */
+    workName: varchar('work_name', { length: 50 }).notNull(),
+    summary: varchar('summary', { length: 300 }),
+    deviceStatus: varchar('device_status', { length: 16 }).notNull(),
+    attempts: integer('attempts').notNull().default(0),
+    errorCode: varchar('error_code', { length: 128 }),
+    /** 기기 시계로 그 작업을 처음 기록한 시각 */
+    recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull(),
+    firstReportedAt: timestamp('first_reported_at', { withTimezone: true }).notNull().defaultNow(),
+    lastReportedAt: timestamp('last_reported_at', { withTimezone: true }).notNull().defaultNow(),
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+    resolution: varchar('resolution', { length: 16 }).$type<'device' | 'abandoned' | 'dismissed'>(),
+    resolvedBy: varchar('resolved_by', { length: 255 }),
+  },
+  (t) => ({
+    idxDeviceOpen: index('idx_device_unresolved_device').on(t.deviceId, t.actorId),
+    idxOpen: index('idx_device_unresolved_open')
+      .on(t.lastReportedAt)
+      .where(sql`${t.resolvedAt} IS NULL`),
+    ckResolution: check('ck_device_unresolved_resolution', sql`(${t.resolvedAt} IS NULL) = (${t.resolution} IS NULL)`),
+  }),
+);
+
+/** 기기·작업자마다 마지막으로 받은 보고 번호 — 늦게 도착한 옛 보고가 기기가 이미 정리한 것을 다시 열지 않게 */
+export const deviceReportMarks = pgTable(
+  'device_report_marks',
+  {
+    deviceId: uuid('device_id').notNull(),
+    actorId: varchar('actor_id', { length: 255 }).notNull(),
+    reportSeq: bigint('report_seq', { mode: 'number' }).notNull(),
+    reportedAt: timestamp('reported_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.deviceId, t.actorId] }),
+  }),
+);
+
+/**
+ * 관리자가 버린 요청 키 — 이 키로 오는 쓰기는 반영하지 않는다. 키를 쓰는 요청과 버리기는 같은 키 잠금으로 줄을 서므로
+ * 이미 반영된 키는 버려지지 않고, 버린 뒤에 오는 요청은 반영되지 않는다.
+ */
+export const abandonedOperationKeys = pgTable('abandoned_operation_keys', {
+  operationKey: varchar('operation_key', { length: 255 }).primaryKey(),
+  abandonedBy: varchar('abandoned_by', { length: 255 }).notNull(),
+  abandonedAt: timestamp('abandoned_at', { withTimezone: true }).notNull().defaultNow(),
+});
 
 export const shipmentOperations = pgTable(
   'shipment_operations',
@@ -4661,6 +4727,9 @@ export const wmsTables = {
   // Outbound V2 expand model
   fulfillmentCommandRequests,
   outboundScanRejections,
+  deviceUnresolvedOperations,
+  deviceReportMarks,
+  abandonedOperationKeys,
   carrierTrackingChecks,
   carrierTrackingConfirmations,
   shipmentOperations,

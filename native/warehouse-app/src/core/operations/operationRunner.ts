@@ -185,14 +185,18 @@ export function createOperationRunner(deps: {
           failure = error;
         }
         // Persistence/notification errors after a response must never change its outcome.
+        // 관리자가 버린 키는 서버가 잠가 다시 반영되지 않는다 — 결과를 맞추는 요청(resolving)이어도 끝난 것이다
+        const abandoned =
+          failure instanceof ApiError && failure.code === 'OPERATION_ABANDONED';
         const status = failure
-          ? !resolving &&
-            failure instanceof ApiError &&
-            failure.outcome === 'rejected' &&
-            !(
-              failure.status === 403 &&
-              (claimed.attempts > 0 || claimed.status !== 'queued')
-            )
+          ? abandoned ||
+            (!resolving &&
+              failure instanceof ApiError &&
+              failure.outcome === 'rejected' &&
+              !(
+                failure.status === 403 &&
+                (claimed.attempts > 0 || claimed.status !== 'queued')
+              ))
             ? 'rejected'
             : 'uncertain'
           : forceRejected

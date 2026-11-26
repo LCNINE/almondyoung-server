@@ -1,11 +1,14 @@
 import { ConflictError } from '@app/shared';
+import { wmsTables } from '../../schema/inventory.schema';
 import { InventoryIdempotencyService, computeRequestHash } from './inventory-idempotency.service';
+import { OperationAbandonedError } from './operation-key-guard';
 
 type Row = { id: string; endpoint: string; key: string; requestHash: string; response: unknown };
 
-function makeTrx(over: { insertedIds?: Array<{ id: string }>; existing?: Row[] } = {}) {
+function makeTrx(over: { insertedIds?: Array<{ id: string }>; existing?: Row[]; abandoned?: boolean } = {}) {
   const whereUpdate = jest.fn().mockResolvedValue(undefined);
   const trx = {
+    execute: jest.fn().mockResolvedValue([]),
     insert: jest.fn().mockReturnValue({
       values: jest.fn().mockReturnValue({
         onConflictDoNothing: jest.fn().mockReturnValue({
@@ -17,11 +20,19 @@ function makeTrx(over: { insertedIds?: Array<{ id: string }>; existing?: Row[] }
       set: jest.fn().mockReturnValue({ where: whereUpdate }),
     }),
     select: jest.fn().mockReturnValue({
-      from: jest.fn().mockReturnValue({
+      from: jest.fn((table: unknown) => ({
         where: jest.fn().mockReturnValue({
-          limit: jest.fn().mockResolvedValue(over.existing ?? []),
+          limit: jest
+            .fn()
+            .mockResolvedValue(
+              table === wmsTables.abandonedOperationKeys
+                ? over.abandoned
+                  ? [{ key: 'k' }]
+                  : []
+                : (over.existing ?? []),
+            ),
         }),
-      }),
+      })),
     }),
   };
   return { trx, whereUpdate };
@@ -53,6 +64,18 @@ describe('InventoryIdempotencyService.withIdempotency', () => {
     expect(handler).toHaveBeenCalledWith(trx);
     expect(whereUpdate).toHaveBeenCalled();
     expect(result).toEqual({ receiptId: 'r-1' });
+  });
+
+  it('관리자가 버린 키는 기록을 남기지 않고 handler 도 부르지 않은 채 거절한다', async () => {
+    const { trx } = makeTrx({ insertedIds: [{ id: 'row-1' }], abandoned: true });
+    const svc = build(trx);
+    const handler = jest.fn().mockResolvedValue({ receiptId: 'r-1' });
+    await expect(svc.withIdempotency('inbound.simple', 'k-1', dto, handler)).rejects.toBeInstanceOf(
+      OperationAbandonedError,
+    );
+    expect(trx.execute).toHaveBeenCalledTimes(1);
+    expect(trx.insert).not.toHaveBeenCalled();
+    expect(handler).not.toHaveBeenCalled();
   });
 
   it('신규 키: handler 가 throw 하면 그대로 전파한다(응답 저장 없음)', async () => {

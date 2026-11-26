@@ -341,6 +341,11 @@ const allMenus: MainMenu[] = [
         path: '/inventory/stocktaking',
       },
       {
+        id: 'inventory-device-work',
+        title: '기기 확인할 일',
+        path: '/inventory/device-work',
+      },
+      {
         id: 'inventory-purchase-orders',
         title: '발주관리',
         path: '/inventory/purchase-orders',

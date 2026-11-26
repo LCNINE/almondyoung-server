@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import 'fake-indexeddb/auto';
 import { createOperationStore } from './operationStore';
-import { createOperationRunner } from './operationRunner';
+import { createOperationRunner, storedRejection } from './operationRunner';
 import {
   ApiError,
   ConflictError,
@@ -11,7 +11,10 @@ import {
 import { workStatus } from './workStatus';
 import { isBoxCheck } from './boxChecks';
 import { unsentCount } from '../../station/status/statusBarItems';
-import { errorMessage } from '../data/errorMessage';
+import {
+  errorMessage,
+  OPERATION_ABANDONED_MESSAGE,
+} from '../data/errorMessage';
 
 describe('durable requests', () => {
   it('replays same operation after commit and lost response without applying twice', async () => {
@@ -568,6 +571,34 @@ describe('location force resolution', () => {
       )
     ).toBe(true);
     expect(await store.pending('a')).toEqual([]);
+  });
+  it('관리자가 버린 강제출고는 결과 확인 요청이 거절을 받으면 거기서 끝나고 다시 묻지 않는다', async () => {
+    const store = await savedForce();
+    const sent: string[] = [];
+    const runner = createOperationRunner({
+      store,
+      getScope: async () => 'a',
+      wait: async () => {},
+      api: {
+        request: async (o: Parameters<ApiClient['request']>[0]) => {
+          sent.push(o.path);
+          throw new ConflictError(
+            '관리자가 버린 작업이에요.',
+            'OPERATION_ABANDONED'
+          );
+        },
+      },
+    });
+    await runner.retryPending();
+    expect(sent).toEqual([resolutionPath]);
+    const saved = await store.get('force-key');
+    expect(saved).toMatchObject({
+      status: 'rejected',
+      errorCode: 'OPERATION_ABANDONED',
+    });
+    expect(errorMessage(storedRejection(saved!), 'outbound')).toBe(
+      OPERATION_ABANDONED_MESSAGE
+    );
   });
   it('restores a version 1 uncertain record and confirms without reexecuting force after permission revocation', async () => {
     const name = crypto.randomUUID();

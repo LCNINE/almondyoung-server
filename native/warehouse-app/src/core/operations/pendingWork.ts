@@ -145,8 +145,10 @@ function fallbackSummary(body: Record<string, unknown>): string | null {
   return quantity === null ? null : `${quantity}개`;
 }
 
-const summaryOf = (op: StoredOperation) =>
+/** 작업 기록의 대상 이름 — 화면이 남긴 이름, 없으면 본문의 바코드·수량 */
+export const pendingWorkSummary = (op: StoredOperation) =>
   op.summary ?? fallbackSummary(bodyOf(op));
+const summaryOf = pendingWorkSummary;
 
 export interface PendingWorkDescription {
   /** 예: «입고 1건(데모 상품 11 ×1)», «입고 2건(데모 상품 11 ×1 외 1건)·실사 1건» */

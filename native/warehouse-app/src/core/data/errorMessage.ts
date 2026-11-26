@@ -17,6 +17,10 @@ export type ErrorContext =
   // 되돌림 적치 화면 — 'returns' 와 같되 이 화면에만 맞는 문구를 덧씌운다.
   | 'return-putaway';
 
+/** 관리자가 «기기 확인할 일»에서 버린 작업 — 서버가 그 요청을 다시 받지 않는다 */
+export const OPERATION_ABANDONED_MESSAGE =
+  '관리자가 이 작업을 버렸어요. 반영되지 않았으니 필요하면 새로 해 주세요.';
+
 export const STOCK_ADJUST_PERMISSION_MESSAGE =
   '재고 조정 권한이 없어요. 관리자에게 요청해 주세요.';
 
@@ -285,6 +289,8 @@ export const NETWORK_FAILURE_MESSAGE = '서버에 연결하지 못했어요. 네
 
 export function errorMessage(error: unknown, context?: ErrorContext): string {
   if (error instanceof NetworkError) return NETWORK_FAILURE_MESSAGE;
+  if (error instanceof ApiError && error.code === 'OPERATION_ABANDONED')
+    return OPERATION_ABANDONED_MESSAGE;
   if (context === 'return-putaway') {
     if (error instanceof ApiError && error.code && RETURN_PUTAWAY_MESSAGES[error.code])
       return RETURN_PUTAWAY_MESSAGES[error.code];
