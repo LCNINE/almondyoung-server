@@ -228,7 +228,7 @@ export function AppSidebar({
           <SidebarGroup>
             <SidebarMenu>
               <SidebarMenuItem>
-                <SidebarMenuButton asChild isActive={isHome} tooltip="홈">
+                <SidebarMenuButton asChild isActive={isHome}>
                   <Link href="/">
                     <House className="size-4 shrink-0" />
                     <span>홈</span>
@@ -238,7 +238,6 @@ export function AppSidebar({
               {visibleMainMenus.map((menu) => {
                 const button = (
                   <SidebarMenuButton
-                    tooltip={menu.title}
                     isActive={!isHome && activeMenu === menu.id}
                     onClick={() => goToMenu(menu.id)}
                   >
