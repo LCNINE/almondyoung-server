@@ -107,7 +107,7 @@ async function readViewerState(edgeBin, url, signal) {
           resolve(Number(found[1]));
         }
       });
-      browser.on('exit', () => reject(new Error('브라우저가 바로 꺼졌어요')));
+      browser.on('exit', (code) => reject(new Error(`브라우저가 바로 꺼졌어요(종료 코드 ${code}): ${text.slice(-300)}`)));
     });
     const pages = await (await fetch(`http://127.0.0.1:${port}/json`)).json();
     const page = pages.find((p) => p.type === 'page');

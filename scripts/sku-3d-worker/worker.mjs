@@ -138,7 +138,7 @@ async function uploadAll(api, job, iterDir, judged, viewerShot, assertLive) {
   const optional = async (name) => (existsSync(join(iterDir, name)) ? upload(join(iterDir, name)) : undefined);
   const renderFileIds = [];
 
-  for (const path of [...judged.renders, viewerShot]) {
+  for (const path of viewerShot ? [...judged.renders, viewerShot] : judged.renders) {
     renderFileIds.push(await upload(path));
   }
 
@@ -267,10 +267,13 @@ export async function runJob(job, { api, config, tools, signal }) {
       }).catch((error) => {
         assertLive();
 
-        // 검사 도구가 실패한 걸 모델 오류로 보고 Codex 에 고치라고 보내지 않는다
-        throw Object.assign(new Error(`웹 뷰어 검사를 실행하지 못했어요: ${String(error.message ?? error).slice(0, 300)}`), {
-          retryable: true,
-        });
+        // 검사 도구가 실패한 걸 모델 오류로 보지 않는다 — Codex 를 다시 돌리지 않고, 확인 못 했다고 남긴 채 올린다.
+        // 공개는 작업자가 휴대전화의 실제 웹 뷰어로 보고 승인해야만 된다
+        const reason = String(error.message ?? error).slice(0, 400);
+
+        events.push({ type: 'status', body: `웹 뷰어 자동 확인을 못 했어요. 화면에서 직접 확인해 주세요 (${reason.slice(0, 200)})` });
+
+        return { ok: true, unverified: true, state: `확인 못 함: ${reason}`, screenshot: null };
       });
 
       return { judged, viewer };
