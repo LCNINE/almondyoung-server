@@ -15,7 +15,7 @@ const seg = encodeURIComponent;
 
 export const sku3dWorkshopClient = {
   open: async (skuId: string): Promise<Sku3dWorkshopDto> =>
-    (await client.post(`${BASE}/skus/${seg(skuId)}`)).data,
+    (await client.post(`${BASE}/skus/${seg(skuId)}`, {})).data,
 
   detail: async (id: string): Promise<Sku3dWorkshopDetailDto> =>
     (await client.get(`${BASE}/${seg(id)}`)).data,
