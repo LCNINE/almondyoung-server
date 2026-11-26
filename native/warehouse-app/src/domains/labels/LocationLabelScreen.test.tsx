@@ -44,6 +44,7 @@ const RACK_CELLS = {
   total: 3,
 };
 let rackTotal = 3;
+let rackGate: Promise<void> | null = null;
 const OK: LabelBatch = { format: 'zpl', data: '^XA^XZ', labels: 4, skipped: [] };
 
 let lastSearchPath = '';
@@ -64,6 +65,8 @@ function setup(batch: LabelBatch = OK) {
     if (o.path.startsWith('/locations/warehouses/w-1?')) {
       if (o.path.includes('rackNumber=')) {
         rackQueryPaths.push(o.path);
+        if (rackGate) await rackGate;
+
         return { ...RACK_CELLS, total: rackTotal };
       }
       lastSearchPath = o.path;
@@ -188,8 +191,33 @@ describe('LocationLabelScreen', () => {
   it('랙을 골라 출력하면 요청이 { rackId } 다', async () => {
     const { labelCalls, print } = setup();
     await pickRack();
+    await waitFor(() => expect(screen.getByRole('button', { name: '랙 전체 출력' })).toBeEnabled());
     await userEvent.click(screen.getByRole('button', { name: '랙 전체 출력' }));
     expect(await screen.findByText('라벨 4장을 보냈어요')).toBeInTheDocument();
+    expect(labelCalls).toEqual([{ rackId: 'r-1' }]);
+    expect(print).toHaveBeenCalledTimes(1);
+  });
+
+  it('고른 랙의 칸을 불러오는 동안에는 랙 전체를 출력할 수 없다', async () => {
+    let release: () => void = () => {};
+    rackGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { labelCalls, print } = setup();
+    await pickRack();
+    const preview = within(screen.getByRole('region', { name: '출력 미리보기' }));
+    expect(await preview.findByRole('status')).toHaveTextContent('랙의 칸을 불러오고 있어요.');
+    const button = screen.getByRole('button', { name: '랙 전체 출력' });
+    expect(button).toBeDisabled();
+    await userEvent.click(button);
+    expect(labelCalls).toEqual([]);
+
+    release();
+    rackGate = null;
+    await waitFor(() => expect(button).toBeEnabled());
+    expect(screen.getByText('총 3장')).toBeInTheDocument();
+    await userEvent.click(button);
+    await screen.findByText('라벨 4장을 보냈어요');
     expect(labelCalls).toEqual([{ rackId: 'r-1' }]);
     expect(print).toHaveBeenCalledTimes(1);
   });
@@ -281,6 +309,7 @@ describe('LocationLabelScreen', () => {
     const { print } = setup();
     await pickRack();
     const button = screen.getByRole('button', { name: '랙 전체 출력' });
+    await waitFor(() => expect(button).toBeEnabled());
     button.click();
     button.click();
     await waitFor(() => expect(print).toHaveBeenCalledTimes(1));

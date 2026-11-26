@@ -78,7 +78,10 @@ export function LocationLabelScreen({
   const previewCodes = mode === 'rack' ? (rackLocations.data?.codes ?? []) : sortedPicked.map((x) => x.code);
   const total = mode === 'rack' ? (rackLocations.data?.total ?? 0) : picked.length;
   const truncated = mode === 'rack' && total > previewCodes.length;
-  const canPrint = mode === 'rack' ? rackId !== '' && !rackLocations.isError : picked.length > 0;
+  const rackReady = rack !== undefined && rackLocations.isSuccess && rackLocations.data.total > 0;
+  const rackLoading = mode === 'rack' && rack !== undefined && rackLocations.isPending;
+  const rackEmpty = mode === 'rack' && rack !== undefined && rackLocations.isSuccess && rackLocations.data.total === 0;
+  const canPrint = mode === 'rack' ? rackReady : picked.length > 0;
 
   // 스캔은 포커스가 어디 있든 검색어가 된다 — 명령 바코드는 셸이 가져가 여기 오지 않는다.
   useScanner((e) => {
@@ -280,6 +283,14 @@ export function LocationLabelScreen({
               <p role="alert" className="text-[13px] text-[#aa4037]">
                 {errorMessage(rackLocations.error)}
               </p>
+            </div>
+          ) : rackLoading ? (
+            <div role="status" className="grid flex-1 place-items-center px-6 py-[65px] text-center text-[13px] text-[#71717a]">
+              랙의 칸을 불러오고 있어요.
+            </div>
+          ) : rackEmpty ? (
+            <div className="grid flex-1 place-items-center px-6 py-[65px] text-center text-[13px] text-[#71717a]">
+              이 랙에는 출력할 칸이 없어요.
             </div>
           ) : previewCodes.length > 0 ? (
             <ul className="grid max-h-[330px] grid-cols-2 gap-2.5 overflow-auto bg-[#f4f4f5] p-4 max-[700px]:grid-cols-1">
