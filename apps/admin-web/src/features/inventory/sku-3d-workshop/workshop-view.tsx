@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, type JSX } from 'react';
+import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -281,9 +282,17 @@ export function WorkshopView({
       )}
 
       <section className="space-y-2 rounded-xl border border-gray-200 bg-white p-4">
-        <h3 className="text-sm font-semibold text-gray-800">
-          원본 사진·실측값
-        </h3>
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-gray-800">
+            원본 사진·실측값
+          </h3>
+          <Link
+            href={`/mobile/sku-field-capture/${encodeURIComponent(skuId)}?back=${encodeURIComponent(`/mobile/sku-3d-workshop/${skuId}`)}`}
+            className="text-sm font-medium text-gray-700 underline underline-offset-2"
+          >
+            실측 상세
+          </Link>
+        </div>
         <p className="text-sm text-gray-700">
           포장째 {detail.sku.packageWidthMm ?? '?'}×
           {detail.sku.packageLengthMm ?? '?'}×

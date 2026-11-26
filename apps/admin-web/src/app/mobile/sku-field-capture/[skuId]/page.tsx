@@ -170,7 +170,8 @@ function CaptureForm({ detail }: { detail: FieldCaptureDetailDto }) {
   // 작업 기록에서 «수정»으로 왔으면 그 목록으로, 아니면 선반으로. 실측 화면 안의 주소만 받는다
   const back = useSearchParams().get('back');
   const shelfHref = detail.positionCode ? `${BASE}?position=${encodeURIComponent(detail.positionCode)}` : BASE;
-  const backHref = back?.startsWith(`${BASE}/`) ? back : shelfHref;
+  // 실측 화면 안이나 그 상품의 3D 작업실에서 온 주소만 돌아갈 곳으로 받는다
+  const backHref = back?.startsWith(`${BASE}/`) || back === `/mobile/sku-3d-workshop/${skuId}` ? back : shelfHref;
 
   return (
     <>
