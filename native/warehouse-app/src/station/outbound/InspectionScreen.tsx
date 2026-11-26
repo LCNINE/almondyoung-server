@@ -736,7 +736,7 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
           onRemoved={(label) => {
             setAlert(null);
             signal('success');
-            note({ kind: 'scan', text: label, qty: 1 });
+            note({ kind: 'returned', text: label, qty: 1 });
           }}
           onDone={(box, exitTo) => {
             clearLastBox(prefs);
