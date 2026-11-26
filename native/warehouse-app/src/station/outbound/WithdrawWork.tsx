@@ -92,7 +92,7 @@ export function WithdrawWork({
       intake={queue.ready && !queue.error() ? 'open' : 'blocked'}
       left={
         <>
-          <BoxCard trackingNo={box.trackingNo} recipient={box.recipientMasked} deliveryNote={box.deliveryNote} />
+          <BoxCard trackingNo={box.trackingNo} recipient={box.recipientMasked} carrier={box.carrier} />
           <BigPanel
             content={
               alert

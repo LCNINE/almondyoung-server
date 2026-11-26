@@ -40,7 +40,7 @@ describe('보충 대기(스펙 §7.3)', () => {
     const { server } = await setupInspection({ refills: 'fail' });
     const panel = await screen.findByRole('region', { name: '보충 대기' });
     expect(await within(panel).findByRole('alert')).toHaveTextContent('보충 대기를 불러오지 못했어요.');
-    expect(screen.getByText('송장 바코드')).toBeInTheDocument();
+    expect(screen.getByText('송장을 찍어 주세요')).toBeInTheDocument();
 
     const release = server.holdLists();
     fireEvent.click(within(panel).getByRole('button', { name: '다시 확인' }));

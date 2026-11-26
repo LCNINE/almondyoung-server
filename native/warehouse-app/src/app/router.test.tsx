@@ -182,7 +182,7 @@ it('스테이션의 F1 은 출고 검수, F2 는 배치 현황 화면이다', as
         : { data: [], total: 0 }) as unknown as ApiClient['request'],
   };
   const router = renderAppRouter(['/outbound'], session, prefs, stationClient);
-  expect(await screen.findByText('송장 바코드')).toBeInTheDocument();
+  expect(await screen.findByText('송장을 찍어 주세요')).toBeInTheDocument();
   fireEvent.keyDown(window, { key: 'F2' });
   await waitFor(() => expect(router.state.location.pathname).toBe('/outbound/batches'));
   expect(await screen.findByText('진행 중인 배치가 없어요.')).toBeInTheDocument();
@@ -201,7 +201,7 @@ it('스테이션의 F7 은 반품 탭 — 송장 대기에서 누르면 도착 �
           : { data: [], total: 0 }) as unknown as ApiClient['request'],
   };
   const router = renderAppRouter(['/outbound'], session, prefs, stationClient);
-  expect(await screen.findByText('송장 바코드')).toBeInTheDocument();
+  expect(await screen.findByText('송장을 찍어 주세요')).toBeInTheDocument();
   fireEvent.keyDown(window, { key: 'F7' });
   await waitFor(() => expect(router.state.location.pathname).toBe('/customer-returns'));
   expect(await screen.findByText('도착 대기 반품이 없어요')).toBeInTheDocument();

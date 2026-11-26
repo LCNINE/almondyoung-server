@@ -117,7 +117,7 @@ describe('뺄 상품(스펙 §6.2 withdrawing)', () => {
     await openBox('421033881907');
     await screen.findByText('뺄 상품을 찍어 주세요');
     press('Escape');
-    expect(await screen.findByText('송장 바코드')).toBeInTheDocument();
+    expect(await screen.findByText('송장을 찍어 주세요')).toBeInTheDocument();
   });
 
   it('빠진 박스 화면에서 다른 송장은 새 박스로 열고, 상품은 앞 스캔 확인 중이라고 하지 않는다', async () => {

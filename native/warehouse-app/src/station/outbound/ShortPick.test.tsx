@@ -205,7 +205,7 @@ describe('F9 결품(스펙 §7.1·§7.2)', () => {
     const { server, print } = await openShortPick();
     await typeHuman(['Enter', 'Enter']);
     expect(await screen.findByText('보충 대기')).toBeInTheDocument();
-    expect(screen.getByText('송장 바코드')).toBeInTheDocument();
+    expect(screen.getByText('송장을 찍어 주세요')).toBeInTheDocument();
     expect(screen.getAllByText('[C-07-1]').length).toBeGreaterThan(0);
     await waitFor(() => expect(print).toHaveBeenCalledWith('spooler://XP-DT108B', '^XA421033881907^XZ'));
     expect(server.confirmedPrints).toEqual(['s-1']);

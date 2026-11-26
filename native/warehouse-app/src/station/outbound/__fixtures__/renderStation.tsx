@@ -122,7 +122,7 @@ export async function setupInspection(
   const print = opts.print ?? vi.fn<PrintRaw>(async () => {});
   const prefs = opts.prefs ?? stationPrefs();
   const view = renderStation(() => <InspectionScreen prefs={prefs} print={print} />, { runtime, prefs });
-  await screen.findByText('송장 바코드');
+  await screen.findByText('송장을 찍어 주세요');
   return { server, runtime, print, prefs, ...view };
 }
 

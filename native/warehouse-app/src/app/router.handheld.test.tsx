@@ -262,7 +262,7 @@ describe('handheld hub navigation', () => {
       await user.click(await screen.findByRole('link', { name: /출고작업/ }));
     });
     expect(await screen.findByRole('heading', { name: '출고작업' })).toBeInTheDocument();
-    expect(screen.queryByText('송장 바코드')).toBeNull();
+    expect(screen.queryByText('송장을 찍어 주세요')).toBeNull();
   });
   it('핸드헬드에 반품 경로로 들어오면 스테이션 작업이라고만 알린다', async () => {
     const session = stub();

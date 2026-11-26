@@ -23,12 +23,13 @@ const progress = () => screen.getByRole('status', { name: '진행' });
 const heading = (trackingNo: string) => screen.getByRole('heading', { name: trackingNo });
 
 describe('F1 출고 검수 — 송장 스캔 즉시 시작, 상품 스캔 = +1, 마지막 스캔 = 출고(스펙 §6)', () => {
-  it('송장을 찍으면 박스가 열린다 — 송장번호·받는 분·배송메모, 송장 순서 품목 표', async () => {
+  it('송장을 찍으면 박스가 열린다 — 송장번호·받는 분·택배사, 송장 순서 품목 표. 배송메모는 보이지 않는다', async () => {
     await setupInspection();
     await openBox('421033881907');
     expect(heading('4210-3388-1907')).toBeInTheDocument();
     expect(screen.getByText('김*영')).toBeInTheDocument();
-    expect(screen.getByText('문 앞에 놓아주세요')).toBeInTheDocument();
+    expect(screen.getByText('한진택배')).toBeInTheDocument();
+    expect(screen.queryByText('문 앞에 놓아주세요')).toBeNull();
     const rows = within(screen.getByRole('table')).getAllByRole('row').slice(1) as HTMLTableRowElement[];
     expect(rows.map((r) => r.cells[0].textContent)).toEqual(['A-03-2', 'B-11-1']);
     expect(progress()).toHaveTextContent('0 / 4');
@@ -62,20 +63,39 @@ describe('F1 출고 검수 — 송장 스캔 즉시 시작, 상품 스캔 = +1, 
     await waitFor(() => expect(progress()).toHaveTextContent('1 / 4'));
     for (const code of ['8801002', '8801002', '8801001']) scan(code);
     expect(await screen.findByText('출고 완료')).toBeInTheDocument();
-    expect(screen.getByText('송장 바코드')).toBeInTheDocument();
+    expect(screen.getByText('송장을 찍어 주세요')).toBeInTheDocument();
     expect(flash()).toBe('complete');
     expect(server.box('421033881907')?.shipped).toBe(true);
   });
 
-  it('박스에 없는 상품은 빨간 칸·오류로 알리고 진행은 그대로', async () => {
+  it('박스에 없는 상품은 창 없이 송장 카드 아래 빨간 문장으로 알리고 진행은 그대로 — 다음 정상 스캔이 지운다', async () => {
     await setupInspection();
     await openBox('421033881907');
     scan('8809999');
-    expect(await screen.findByRole('alert')).toHaveTextContent('이 송장에 없는 상품이에요');
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('이 송장에 없는 상품이에요');
+    expect(alert).toHaveTextContent('8809999');
+    expect(alert).toHaveTextContent('수량 미반영 · 다음 상품을 스캔해 주세요.');
+    expect(alert.closest('[data-scan-error]')).not.toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(progress()).toHaveTextContent('0 / 4');
     expect(flash()).toBe('error');
     scan('8801001');
     await waitFor(() => expect(progress()).toHaveTextContent('1 / 4'));
     expect(screen.queryByRole('alert')).toBeNull();
+    expect(document.querySelector('[data-scan-error]')).toBeNull();
+    expect(screen.getByText('상품을 모두 확인하면 자동 출고')).toBeInTheDocument();
+  });
+
+  it('결과를 모르는 스캔은 반영됐을 수 있어 «수량 미반영» 이라고 하지 않는다', async () => {
+    const { server, runtime } = await setupInspection();
+    await openBox('421033881907');
+    server.loseResponses(true);
+    scan('8801002');
+    await waitFor(async () => expect((await runtime.store.pending('scope'))[0]?.status).toBe('uncertain'));
+    expect(await screen.findByText('처리 여부를 확인하고 있어요. 이 상품은 다시 찍지 마세요.')).toBeInTheDocument();
+    expect(screen.queryByText('수량 미반영 · 다음 상품을 스캔해 주세요.')).toBeNull();
   });
 
   it('박스에 없는 상품은 서버가 알려 준 상품 이름을 바코드와 함께 보이고 최근 스캔에도 남긴다', async () => {
@@ -197,7 +217,7 @@ describe('F1 출고 검수 — 송장 스캔 즉시 시작, 상품 스캔 = +1, 
     server.loseResponses(false);
     // 내려놓기가 된다
     press('Escape');
-    expect(await screen.findByText('송장 바코드')).toBeInTheDocument();
+    expect(await screen.findByText('송장을 찍어 주세요')).toBeInTheDocument();
     expect(screen.getByText(/4210-3388-1907 처리 여부 확인 중/)).toBeInTheDocument();
     // 다른 박스는 그대로 찍힌다
     scan('421033881915');
@@ -240,7 +260,7 @@ describe('F1 출고 검수 — 송장 스캔 즉시 시작, 상품 스캔 = +1, 
     expect(await screen.findByRole('heading', { name: '4210-3388-1915' }, slow)).toBeInTheDocument();
     await act(async () => {});
     press('Escape');
-    expect(await screen.findByText('송장 바코드', undefined, slow)).toBeInTheDocument();
+    expect(await screen.findByText('송장을 찍어 주세요', undefined, slow)).toBeInTheDocument();
     expect(server.scans).toEqual([]);
   });
 
@@ -251,7 +271,7 @@ describe('F1 출고 검수 — 송장 스캔 즉시 시작, 상품 스캔 = +1, 
     scan('8801002');
     await waitFor(async () => expect((await runtime.store.pending('scope'))[0]?.status).toBe('uncertain'));
     press('Escape');
-    expect(await screen.findByText('송장 바코드')).toBeInTheDocument();
+    expect(await screen.findByText('송장을 찍어 주세요')).toBeInTheDocument();
     server.loseResponses(false);
     scan('421033881907');
     expect(await screen.findByRole('heading', { name: '4210-3388-1907' })).toBeInTheDocument();
@@ -269,7 +289,7 @@ describe('F1 출고 검수 — 송장 스캔 즉시 시작, 상품 스캔 = +1, 
     scan('8801002');
     await waitFor(async () => expect((await runtime.store.pending('scope'))[0]?.status).toBe('uncertain'));
     press('Escape');
-    expect(await screen.findByText('송장 바코드')).toBeInTheDocument();
+    expect(await screen.findByText('송장을 찍어 주세요')).toBeInTheDocument();
     await act(async () => {});
     press('F8');
     const dialog = await screen.findByRole('dialog', { name: '확인할 일' });
@@ -312,18 +332,51 @@ describe('F1 출고 검수 — 송장 스캔 즉시 시작, 상품 스캔 = +1, 
       act(() => onlineManager.setOnline(!off));
     };
 
-    it('찍은 상품은 저장해 두고 기다린다고 알린다 — 연결되면 그대로 보낸다', async () => {
+    const connectionDialog = (name: '서버 연결 끊김' | '서버 연결 복구') => screen.findByRole('alertdialog', { name });
+
+    it('찍은 상품은 저장해 두고 연결 끊김 창으로 알린다 — 연결되면 그대로 보내고 복구 창은 다시 찍지 말라고 한다', async () => {
       const { server } = await setupInspection();
       await openBox('421033881907');
       disconnect(server, true);
       scan('8801002');
-      expect(await screen.findByText('연결이 끊겨 상품 스캔 1개를 보내지 못하고 있어요. 연결되면 자동으로 보내요. 같은 상품은 다시 찍지 마세요.')).toBeInTheDocument();
+      const lost = await connectionDialog('서버 연결 끊김');
+      expect(lost).toHaveTextContent('스캔이 반영되지 않았습니다.');
+      expect(lost).toHaveTextContent('4210-3388-1907');
+      expect(lost).toHaveTextContent('0 / 4개유지');
+      expect(within(lost).getByText('연결이 끊겨 상품 스캔 1개를 보내지 못하고 있어요. 연결되면 자동으로 보내요. 같은 상품은 다시 찍지 마세요.')).toBeInTheDocument();
       expect(progress()).toHaveTextContent('0 / 4');
       expect(server.scans).toHaveLength(0);
+      // 창이 떠 있는 동안 찍은 상품은 받지 않는다 — 연결된 뒤 두 번 오르지 않게
+      scan('8801002');
+      expect(flash()).toBe('error');
       disconnect(server, false);
       await waitFor(() => expect(progress()).toHaveTextContent('1 / 4'));
       expect(server.scans).toHaveLength(1);
       expect(screen.queryByText(/연결이 끊겨/)).toBeNull();
+      const restored = await connectionDialog('서버 연결 복구');
+      expect(restored).toHaveTextContent('보내지 못한 스캔을 보냈어요. 같은 상품은 다시 찍지 마세요.');
+      expect(restored).not.toHaveTextContent('다시 스캔해 주세요');
+      fireEvent.click(within(restored).getByRole('button', { name: '검수 계속하기' }));
+      expect(screen.queryByRole('alertdialog')).toBeNull();
+      scan('8801002');
+      await waitFor(() => expect(progress()).toHaveTextContent('2 / 4'));
+    });
+
+    it('다시 연결 확인이 실패하면 창을 두고 아직 연결되지 않았다고 한다 — 성공하면 저장해 둔 스캔을 보낸다', async () => {
+      const { server } = await setupInspection();
+      await openBox('421033881907');
+      disconnect(server, true);
+      scan('8801002');
+      const lost = await connectionDialog('서버 연결 끊김');
+      fireEvent.click(within(lost).getByRole('button', { name: '다시 연결 확인' }));
+      expect(await within(lost).findByText(/아직 서버에 연결되지 않았습니다/)).toBeInTheDocument();
+      expect(server.scans).toHaveLength(0);
+      // 서버는 닿지만 기기는 아직 끊긴 줄 안다 — 다시 연결 확인이 연결을 알려 큐가 보낸다
+      server.setOffline(false);
+      fireEvent.click(within(lost).getByRole('button', { name: '다시 연결 확인' }));
+      await connectionDialog('서버 연결 복구');
+      expect(progress()).toHaveTextContent('1 / 4');
+      expect(server.scans).toHaveLength(1);
     });
 
     it('보내지 못한 스캔이 있으면 Esc 는 기다리지 않고 거절한다 — 연결되면 보내고 내려놓을 수 있다', async () => {
@@ -332,14 +385,19 @@ describe('F1 출고 검수 — 송장 스캔 즉시 시작, 상품 스캔 = +1, 
       disconnect(server, true);
       scan('8801002');
       await screen.findByText(/연결이 끊겨 상품 스캔 1개를/);
+      // 연결 끊김 창이 Esc 를 가져간다 — 내려놓지 않는다
       press('Escape');
-      expect(await screen.findByRole('alert')).toHaveTextContent('앞 스캔이 아직 끝나지 않았어요. 연결된 뒤 다시 해 주세요.');
+      await act(async () => {
+        await sleep(30);
+      });
       expect(heading('4210-3388-1907')).toBeInTheDocument();
+      expect(screen.getByRole('alertdialog', { name: '서버 연결 끊김' })).toBeInTheDocument();
       disconnect(server, false);
       await waitFor(() => expect(server.scans).toHaveLength(1));
       expect(screen.queryByText(/처리됐는지 확인하지 못했어요/)).toBeNull();
+      fireEvent.click(within(await screen.findByRole('alertdialog', { name: '서버 연결 복구' })).getByRole('button', { name: '검수 계속하기' }));
       press('Escape');
-      expect(await screen.findByText('송장 바코드')).toBeInTheDocument();
+      expect(await screen.findByText('송장을 찍어 주세요')).toBeInTheDocument();
     });
 
     it('보내지 못한 스캔이 있으면 다른 송장은 조회하지 않고 바로 거절한다', async () => {
@@ -350,8 +408,13 @@ describe('F1 출고 검수 — 송장 스캔 즉시 시작, 상품 스캔 = +1, 
       await screen.findByText(/연결이 끊겨 상품 스캔 1개를/);
       const release = server.holdLookups();
       scan('421033881915');
-      expect(await screen.findByRole('alert')).toHaveTextContent('앞 스캔이 아직 끝나지 않았어요. 연결된 뒤 다시 해 주세요.');
+      // 연결 끊김 창이 떠 있다 — 스캔은 오류음으로 거절되고 송장을 조회하지 않는다
+      expect(flash()).toBe('error');
+      await act(async () => {
+        await sleep(30);
+      });
       expect(server.requests.some((r) => r.path.includes('trackingNo=421033881915'))).toBe(false);
+      expect(heading('4210-3388-1907')).toBeInTheDocument();
       release();
     });
 
@@ -384,7 +447,15 @@ describe('F1 출고 검수 — 송장 스캔 즉시 시작, 상품 스캔 = +1, 
       expect(alert).toHaveTextContent('012345678905');
       expect(alert).not.toHaveTextContent('알 수 없는 오류');
       expect(server.scans).toHaveLength(0);
+      const lost = await connectionDialog('서버 연결 끊김');
+      expect(lost).toHaveTextContent('0 / 2개유지');
+      expect(progress()).toHaveTextContent('0 / 2');
       disconnect(server, false);
+      fireEvent.click(within(lost).getByRole('button', { name: '다시 연결 확인' }));
+      const restored = await connectionDialog('서버 연결 복구');
+      expect(restored).toHaveTextContent('마지막 상품을 다시 스캔해 주세요.');
+      expect(server.scans).toHaveLength(0);
+      fireEvent.click(within(restored).getByRole('button', { name: '검수 계속하기' }));
       scan('012345678905');
       await waitFor(() => expect(progress()).toHaveTextContent('1 / 2'));
       expect(server.scans).toHaveLength(1);
@@ -571,7 +642,7 @@ describe('F1 출고 검수 — 송장 스캔 즉시 시작, 상품 스캔 = +1, 
     // 화면이 바뀐 커밋의 effect(기능키 등록)까지 돈 뒤에 누른다 — 부하가 크면 Esc 가 앞 렌더의 키 표로 판정된다
     await act(async () => {});
     press('Escape');
-    expect(await screen.findByText('송장 바코드')).toBeInTheDocument();
+    expect(await screen.findByText('송장을 찍어 주세요')).toBeInTheDocument();
   });
 
   it('Esc 는 박스를 내려놓는다 — 찍은 수량은 서버에 남아 다시 열면 이어진다', async () => {
@@ -580,7 +651,7 @@ describe('F1 출고 검수 — 송장 스캔 즉시 시작, 상품 스캔 = +1, 
     scan('8801002');
     await waitFor(() => expect(server.scans).toHaveLength(1));
     press('Escape');
-    expect(await screen.findByText('송장 바코드')).toBeInTheDocument();
+    expect(await screen.findByText('송장을 찍어 주세요')).toBeInTheDocument();
     await openBox('421033881907');
     expect(progress()).toHaveTextContent('1 / 4');
   });
