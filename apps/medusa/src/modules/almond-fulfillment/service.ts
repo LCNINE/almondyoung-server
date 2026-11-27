@@ -15,7 +15,7 @@ import {
   type ShippingPolicySnapshot,
 } from './types';
 
-type QueryGraph = {
+export type QueryGraph = {
   graph: (config: {
     entity: string;
     fields: string[];
@@ -197,7 +197,7 @@ function readFromCradle<T>(container: Record<string, unknown>, key: string): T |
 }
 
 /** Medusa 금액은 number / string / BigNumber 로 섞여 온다. */
-function toAmount(value: unknown): number {
+export function toAmount(value: unknown): number {
   if (typeof value === 'number') return value;
   if (typeof value === 'string') return Number(value);
   if (value && typeof value === 'object') {
