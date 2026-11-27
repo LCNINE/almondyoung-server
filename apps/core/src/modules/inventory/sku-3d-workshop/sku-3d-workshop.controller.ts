@@ -38,6 +38,13 @@ export class Sku3dWorkshopController {
   }
 
   @RequirePermission('inventory.model_workshop.read')
+  @Get()
+  @ApiOperation({ summary: '내 3D 작업실 목록 — 최근 바뀐 순, 상태(만드는 중·확인 필요·실패·공개됨·요청 전)와 함께' })
+  mine(@User() user: WorkshopUser) {
+    return this.service.mine(workshopActorOf(user, this.checkpoints));
+  }
+
+  @RequirePermission('inventory.model_workshop.read')
   @Get(':id')
   @ApiOperation({ summary: '작업실 상세 — 사진·치수·진행 작업·버전·작업 PC 상태' })
   detail(@Param('id', ParseUUIDPipe) id: string, @User() user: WorkshopUser) {
