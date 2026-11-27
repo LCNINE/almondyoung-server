@@ -153,6 +153,8 @@ describeWithPostgres('SKU 3D workshop (PostgreSQL)', () => {
     expect(list.find((w) => w.id === making.id)).toMatchObject({ activeJobKind: 'create', latestRevisionNumber: null });
     expect(list.find((w) => w.id === review.id)).toMatchObject({ activeJobKind: null, latestRevisionNumber: 1 });
     expect(list.find((w) => w.id === failed.id)?.failedError).toBe('사진 부족');
+    expect((await reader.detail(failed.id, me)).lastFailure).toMatchObject({ error: '사진 부족' });
+    expect((await reader.detail(review.id, me)).lastFailure).toBeNull();
 
     await manager.postMessage(review.id, me, '뚜껑을 둥글게 해줘');
 

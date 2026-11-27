@@ -2212,6 +2212,8 @@ export type Sku3dWorkshopDetailDto = {
     photos: { fileId: string; sortOrder: number }[];
   };
   activeJob: Sku3dWorkshopJobDto | null;
+  /** 마지막 작업이 실패했으면 그 이유 */
+  lastFailure: { error: string | null; finishedAt: string | null } | null;
   revisions: Sku3dWorkshopRevisionDto[];
   worker: { online: boolean; lastSeenAt: string | null };
   materialChanges: Sku3dMaterialChangesDto | null;

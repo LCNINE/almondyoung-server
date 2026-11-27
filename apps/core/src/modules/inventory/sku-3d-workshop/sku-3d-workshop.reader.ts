@@ -38,6 +38,8 @@ export type WorkshopDetail = {
     photos: { fileId: string; sortOrder: number }[];
   };
   activeJob: WorkshopJob | null;
+  // 마지막 작업이 실패했으면 그 이유 — 다시 만들기 옆에 보여 준다
+  lastFailure: { error: string | null; finishedAt: Date | null } | null;
   revisions: WorkshopRevision[];
   worker: { online: boolean; lastSeenAt: Date | null };
   // 마지막 버전을 만든 뒤 실측 사진·치수가 바뀌었으면 그 차이
@@ -113,6 +115,7 @@ export class Sku3dWorkshopReader {
         workshop,
         sku: { ...sku, photos },
         activeJob: await this.activeJob(trx, workshopId),
+        lastFailure: await this.lastFailure(trx, workshopId),
         revisions,
         worker: await this.workerStatus(trx),
         materialChanges: materialChanges(materialInputsOf(latest?.provenance), current),
@@ -272,6 +275,20 @@ export class Sku3dWorkshopReader {
     assertCanView(workshop, actor);
 
     return workshop;
+  }
+
+  private async lastFailure(
+    trx: DbTx,
+    workshopId: string,
+  ): Promise<{ error: string | null; finishedAt: Date | null } | null> {
+    const [job] = await trx
+      .select({ status: sku3dWorkshopJobs.status, error: sku3dWorkshopJobs.error, finishedAt: sku3dWorkshopJobs.finishedAt })
+      .from(sku3dWorkshopJobs)
+      .where(eq(sku3dWorkshopJobs.workshopId, workshopId))
+      .orderBy(desc(sku3dWorkshopJobs.createdAt))
+      .limit(1);
+
+    return job?.status === 'failed' ? { error: job.error, finishedAt: job.finishedAt } : null;
   }
 
   private async activeJob(trx: DbTx, workshopId: string): Promise<WorkshopJob | null> {

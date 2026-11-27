@@ -82,6 +82,7 @@ const detail = (
     photos: [],
   },
   activeJob: null,
+  lastFailure: null,
   revisions: [],
   worker: { online: true, lastSeenAt: '2026-11-26T00:00:00Z' },
   materialChanges: null,
