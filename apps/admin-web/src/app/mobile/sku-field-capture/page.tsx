@@ -4,7 +4,7 @@ import { Suspense, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { ChevronRight, Loader2, Search } from 'lucide-react';
+import { Box, ChevronRight, Loader2, Search } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -15,6 +15,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { useCan } from '@/hooks/use-permission';
+import { sku3dWorkshopClient } from '@/lib/api/domains/inventory/sku-3d-workshop.client';
 import { skuFieldCaptureClient } from '@/lib/api/domains/inventory/sku-field-capture.client';
 import { skusClient } from '@/lib/api/domains/inventory/skus.client';
 import type { FieldCaptureSkuSummaryDto } from '@/lib/types/dto/inventory';
@@ -29,6 +31,11 @@ import {
   reworkNotice,
   scanInputValue,
 } from '@/features/inventory/sku-field-capture/field-capture-model';
+import {
+  myWorkshopSummary,
+  myWorkshopSummaryText,
+  workshopKeys,
+} from '@/features/inventory/sku-3d-workshop/workshop-model';
 
 const BASE = '/mobile/sku-field-capture';
 
@@ -63,6 +70,7 @@ function FieldCaptureEntry() {
         />
       </section>
       <MyToday />
+      <MyWorkshopsCard />
       <NameSearch onOpenSku={openSku} />
     </div>
   );
@@ -83,6 +91,40 @@ function MyToday() {
     >
       작업 기록 보기 · 오늘 {data.today}개
       <ChevronRight className="h-4 w-4" />
+    </Link>
+  );
+}
+
+// 3D 작업실 권한이 있을 때만 — 못 불러와도 실측 작업은 막지 않는다
+function MyWorkshopsCard() {
+  const canRead = useCan(['inventory.model_workshop.write']);
+  const allowed = canRead.status === 'ready' && canRead.allowed;
+  const { data } = useQuery({
+    queryKey: workshopKeys.mine,
+    queryFn: () => sku3dWorkshopClient.mine(),
+    enabled: allowed,
+    staleTime: 0,
+  });
+  if (!allowed || !data) return null;
+  const { review } = myWorkshopSummary(data);
+  return (
+    <Link
+      href="/mobile/sku-3d-workshop"
+      className="flex items-center gap-3 rounded-xl border-2 border-gray-900 bg-white px-4 py-3.5"
+    >
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gray-900">
+        <Box className="h-5 w-5 text-white" aria-hidden />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block font-bold text-gray-900">내 3D 작업실</span>
+        <span className="mt-0.5 block truncate text-sm text-gray-600">{myWorkshopSummaryText(data)}</span>
+      </span>
+      {review > 0 && (
+        <span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-gray-900 px-1.5 text-xs font-bold text-white">
+          {review}
+        </span>
+      )}
+      <ChevronRight className="h-5 w-5 shrink-0 text-gray-400" aria-hidden />
     </Link>
   );
 }

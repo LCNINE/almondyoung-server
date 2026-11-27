@@ -386,6 +386,8 @@ describeIfDb('SkuFieldCaptureReader (DB integration)', () => {
       expect(rest.items).toHaveLength(1);
       const bItem = (await reader.listItems({ who: 'all' }, me.workerId, trx)).items.find((i) => i.skuId === b);
       expect(bItem).toMatchObject({ lastWorkerLabel: 'other', canCancel: false });
+      expect(bItem?.photoFileIds).toEqual((await reader.getDetail(b, trx)).photos.map((p) => p.fileId));
+      expect(bItem?.photoFileIds).toHaveLength(3);
 
       const [aSku] = await trx
         .select({ code: wmsTables.skus.code })

@@ -23,6 +23,7 @@ import type { MyCaptureItemDto } from '@/lib/types/dto/inventory';
 import { resolvePublicFileUrl } from '@/lib/utils/file-url';
 import { MobileTopBar } from '@/features/inventory/sku-field-capture/components/mobile-top-bar';
 import { SkuThumb } from '@/features/inventory/sku-field-capture/components/sku-thumb';
+import { PhotoImg, PhotoZoomDialog } from '@/features/inventory/sku-field-capture/components/photo-zoom-dialog';
 import {
   errorMessageOf,
   fieldCaptureKeys,
@@ -89,6 +90,7 @@ function CaptureHistory() {
 
   const queryClient = useQueryClient();
   const [target, setTarget] = useState<MyCaptureItemDto | null>(null);
+  const [zoom, setZoom] = useState<{ skuId: string; index: number } | null>(null);
   // 완료 취소는 inventory.stock.operate (core 가 강제한다 — 여기선 버튼만 막는다)
   const canOperate = useCan(['inventory.stock.operate']);
   const writeBlocked = blockedReason(canOperate, [{ permission: ['inventory.stock.operate'] }]);
@@ -103,6 +105,8 @@ function CaptureHistory() {
   });
   const items = uniqueBySku(data?.pages.flatMap((p) => p.items) ?? []);
   const total = data?.pages[0]?.total ?? 0;
+  // 다시 불러와 사진이 바뀌어도 크게 보기는 지금 목록의 사진을 본다
+  const zoomItem = zoom ? items.find((i) => i.skuId === zoom.skuId) : undefined;
 
   const cancel = useMutation({
     mutationFn: (item: MyCaptureItemDto) => skuFieldCaptureClient.cancel(item.skuId),
@@ -237,7 +241,7 @@ function CaptureHistory() {
               {g.items.map((item) => (
                 <li key={item.skuId} className="rounded-xl border border-gray-200 bg-white p-3">
                   <div className="flex items-center gap-3">
-                    <SkuThumb src={resolvePublicFileUrl(item.imageUrl)} />
+                    {item.photoFileIds.length === 0 && <SkuThumb src={resolvePublicFileUrl(item.imageUrl)} />}
                     <div className="min-w-0 flex-1">
                       <p className="truncate font-semibold text-gray-900">{item.name}</p>
                       <p className="text-xs text-gray-500">
@@ -248,6 +252,7 @@ function CaptureHistory() {
                       {who === 'all' && <p className="text-xs text-gray-500">{item.lastWorkerLabel} 님</p>}
                     </div>
                   </div>
+                  {item.photoFileIds.length > 0 && <PhotoStrip item={item} onOpen={(i) => setZoom({ skuId: item.skuId, index: i })} />}
                   <div className="mt-3 flex gap-2">
                     <Link
                       href={`${BASE}/${encodeURIComponent(item.skuId)}?back=${encodeURIComponent(here)}`}
@@ -293,6 +298,12 @@ function CaptureHistory() {
           </button>
         )}
 
+        <PhotoZoomDialog
+          srcs={zoomItem ? photoSrcs(zoomItem) : []}
+          index={zoom && zoomItem ? Math.min(zoom.index, zoomItem.photoFileIds.length - 1) : null}
+          onIndex={(index) => setZoom(zoom && index !== null ? { skuId: zoom.skuId, index } : null)}
+        />
+
         <AlertDialog open={target !== null} onOpenChange={(open) => !open && setTarget(null)}>
           <AlertDialogContent>
             <AlertDialogHeader>
@@ -317,6 +328,42 @@ function CaptureHistory() {
         </AlertDialog>
       </div>
     </>
+  );
+}
+
+const STRIP = 4;
+
+function photoSrcs(item: MyCaptureItemDto): string[] {
+  return item.photoFileIds.map((id) => resolvePublicFileUrl(id) ?? '');
+}
+
+// 찍은 사진을 한 줄 4칸으로 — 더 있으면 마지막 칸에 남은 장수
+function PhotoStrip({ item, onOpen }: { item: MyCaptureItemDto; onOpen: (index: number) => void }) {
+  const srcs = photoSrcs(item);
+  const more = srcs.length > STRIP ? srcs.length - (STRIP - 1) : 0;
+
+  return (
+    <div className="mt-3 space-y-1.5">
+      <div className="grid grid-cols-4 gap-1.5">
+        {srcs.slice(0, STRIP).map((src, i) => (
+          <button
+            key={`${src}-${i}`}
+            type="button"
+            onClick={() => onOpen(i)}
+            aria-label={`${item.name} 사진 ${i + 1} 크게 보기`}
+            className="relative aspect-square overflow-hidden rounded-lg bg-gray-200"
+          >
+            <PhotoImg src={src} />
+            {more > 0 && i === STRIP - 1 && (
+              <span className="absolute inset-0 flex items-center justify-center bg-black/55 text-base font-bold text-white">
+                +{more}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+      <p className="text-xs text-gray-600">찍은 사진 {srcs.length}장 · 눌러서 크게 보기</p>
+    </div>
   );
 }
 

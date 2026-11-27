@@ -1999,6 +1999,8 @@ export interface MyCaptureItemDto {
   packageHeightMm: number | null;
   barcodeStatus: FieldCaptureBarcodeStatus;
   canCancel: boolean;
+  /** 이 상품의 실측 사진 파일 id, 찍은 순서대로 */
+  photoFileIds: string[];
 }
 
 /** 작업 기록 조회 조건. from·to 는 KST 날짜(YYYY-MM-DD, 양끝 포함) */
@@ -2148,6 +2150,22 @@ export type Sku3dWorkshopDto = {
   updatedAt: string;
 };
 
+export type MyWorkshopStatus = 'making' | 'review' | 'failed' | 'public' | 'waiting';
+
+/** 내 3D 작업실 목록 한 줄 */
+export type MyWorkshopDto = {
+  id: string;
+  skuId: string;
+  skuCode: string;
+  skuName: string;
+  photoFileId: string | null;
+  status: MyWorkshopStatus;
+  latestRevisionNumber: number | null;
+  activeJobKind: 'create' | 'revise' | null;
+  failedError: string | null;
+  updatedAt: string;
+};
+
 export type Sku3dWorkshopJobDto = {
   id: string;
   workshopId: string;
@@ -2194,6 +2212,8 @@ export type Sku3dWorkshopDetailDto = {
     photos: { fileId: string; sortOrder: number }[];
   };
   activeJob: Sku3dWorkshopJobDto | null;
+  /** 마지막 작업이 실패했으면 그 이유 */
+  lastFailure: { error: string | null; finishedAt: string | null } | null;
   revisions: Sku3dWorkshopRevisionDto[];
   worker: { online: boolean; lastSeenAt: string | null };
   materialChanges: Sku3dMaterialChangesDto | null;

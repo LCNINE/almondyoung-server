@@ -75,6 +75,7 @@ export class Sku3dWorkshopPublisher {
         .update(sku3dWorkshopRevisions)
         .set({ approvedById: actor.userId, approvedAt: publishedAt, publishedAt })
         .where(eq(sku3dWorkshopRevisions.id, revisionId));
+      await trx.update(sku3dWorkshops).set({ updatedAt: publishedAt }).where(eq(sku3dWorkshops.id, workshopId));
       await trx.insert(sku3dWorkshopEvents).values({
         workshopId,
         revisionId,

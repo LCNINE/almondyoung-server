@@ -322,14 +322,15 @@ test('changeLines tells Codex what changed since the base version', () => {
   assert.match(lines, /160mm.*→.*150mm/);
 });
 
-test('finishedFor matches only the same kind and request', () => {
+test('finishedFor matches only the same job, kind and request', () => {
   const dir = mkdtempSync(join(tmpdir(), 'done-'));
 
-  writeFileSync(join(dir, DONE_MARKER), JSON.stringify({ kind: 'revise', request: '뚜껑을 둥글게' }));
-  assert.equal(finishedFor(dir, { kind: 'revise' }, '뚜껑을 둥글게'), true);
-  assert.equal(finishedFor(dir, { kind: 'revise' }, '다른 요청'), false);
-  assert.equal(finishedFor(dir, { kind: 'create' }, '뚜껑을 둥글게'), false);
-  assert.equal(finishedFor(mkdtempSync(join(tmpdir(), 'none-')), { kind: 'create' }, ''), false);
+  writeFileSync(join(dir, DONE_MARKER), JSON.stringify({ jobId: 'j1', kind: 'revise', request: '뚜껑을 둥글게' }));
+  assert.equal(finishedFor(dir, { id: 'j1', kind: 'revise' }, '뚜껑을 둥글게'), true);
+  assert.equal(finishedFor(dir, { id: 'j2', kind: 'revise' }, '뚜껑을 둥글게'), false);
+  assert.equal(finishedFor(dir, { id: 'j1', kind: 'revise' }, '다른 요청'), false);
+  assert.equal(finishedFor(dir, { id: 'j1', kind: 'create' }, '뚜껑을 둥글게'), false);
+  assert.equal(finishedFor(mkdtempSync(join(tmpdir(), 'none-')), { id: 'j1', kind: 'create' }, ''), false);
 });
 
 test('hasSharp is false when sharp is not next to gltf-transform', () => {
@@ -357,7 +358,7 @@ function retrySetup({ valid }) {
     join(iterDir, 'review.json'),
     JSON.stringify({ summary: 's', verdict: 'ready_for_review', issues: [], proposals: [], autoFixes: [], unseenFaces: [], assumptions: [], needsPhotos: [], dimensionsUsed: { widthMm: 1, lengthMm: 1, heightMm: 1, basis: 'package' } }),
   );
-  writeFileSync(join(iterDir, DONE_MARKER), JSON.stringify({ kind: 'create', request: '' }));
+  writeFileSync(join(iterDir, DONE_MARKER), JSON.stringify({ jobId: 'j', kind: 'create', request: '' }));
 
   const before = readFileSync(join(iterDir, 'model.glb'));
   const calls = [];
@@ -380,6 +381,9 @@ function retrySetup({ valid }) {
     jobTimeoutMs: 10_000,
     gltfValidatorModule: validator,
     edgeBin: join(workRoot, 'no-edge.exe'),
+    denyRead: [],
+    codexHome: join(workRoot, 'codex-home'),
+    userCodexHome: join(workRoot, 'user-codex-home'),
   };
 
   return { api, config, calls, codexRan, iterDir, before, fakeCodex };
@@ -409,6 +413,17 @@ test('a retry whose finished outputs fail validation stops without calling Codex
   assert.match(failed[1], /검증을 통과하지 못했어요/);
   assert.equal(failed[2], false);
   assert.deepEqual(readFileSync(join(s.iterDir, 'model.glb')), s.before);
+});
+
+test('a new job does not upload outputs left by an earlier job in the same version folder', async () => {
+  const s = retrySetup({ valid: true });
+
+  await runJob({ id: 'j2', workshopId: 'w', kind: 'create' }, { api: s.api, config: { ...s.config, codexBin: s.fakeCodex }, tools: {}, signal: new AbortController().signal });
+
+  assert.ok(!s.calls.some((c) => c[0] === 'complete' || c[0] === 'upload'));
+  assert.ok(s.calls.some((c) => c[0] === 'fail'));
+  assert.throws(() => readFileSync(join(s.iterDir, 'model.glb')));
+  assert.throws(() => readFileSync(join(s.iterDir, DONE_MARKER)));
 });
 
 test('loadConfig reads the dedicated Codex home and deny list', () => {

@@ -121,6 +121,8 @@ export class Sku3dWorkshopManager {
         .values({ workshopId, kind: 'revise', request: body, baseRevisionId: base.id })
         .returning();
 
+      await trx.update(sku3dWorkshops).set({ updatedAt: new Date() }).where(eq(sku3dWorkshops.id, workshopId));
+
       await trx.insert(sku3dWorkshopEvents).values({
         workshopId,
         jobId: job.id,

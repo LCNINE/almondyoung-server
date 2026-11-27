@@ -4,6 +4,7 @@ import { DbService, InjectTypedDb } from '@app/db';
 import { NotFoundError } from '@app/shared';
 import {
   DbTx,
+  Sku3dJobKind,
   sku3dWorkers,
   sku3dWorkshopEvents,
   sku3dWorkshopJobs,
@@ -37,6 +38,8 @@ export type WorkshopDetail = {
     photos: { fileId: string; sortOrder: number }[];
   };
   activeJob: WorkshopJob | null;
+  // 마지막 작업이 실패했으면 그 이유 — 다시 만들기 옆에 보여 준다
+  lastFailure: { error: string | null; finishedAt: Date | null } | null;
   revisions: WorkshopRevision[];
   worker: { online: boolean; lastSeenAt: Date | null };
   // 마지막 버전을 만든 뒤 실측 사진·치수가 바뀌었으면 그 차이
@@ -44,6 +47,24 @@ export type WorkshopDetail = {
 };
 
 export type RevisionFile = { bytes: Buffer; contentType: string };
+
+// making: 만드는 중 / review: 확인할 버전이 있음 / failed: 마지막 작업이 실패 / public: 마지막 버전이 공개됨 / waiting: 아직 요청 전
+export type MyWorkshopStatus = 'making' | 'review' | 'failed' | 'public' | 'waiting';
+
+export type MyWorkshop = {
+  id: string;
+  skuId: string;
+  skuCode: string;
+  skuName: string;
+  photoFileId: string | null;
+  status: MyWorkshopStatus;
+  latestRevisionNumber: number | null;
+  activeJobKind: Sku3dJobKind | null;
+  failedError: string | null;
+  updatedAt: Date;
+};
+
+const MY_WORKSHOP_LIMIT = 200;
 
 @Injectable()
 export class Sku3dWorkshopReader {
@@ -94,10 +115,87 @@ export class Sku3dWorkshopReader {
         workshop,
         sku: { ...sku, photos },
         activeJob: await this.activeJob(trx, workshopId),
+        lastFailure: await this.lastFailure(trx, workshopId),
         revisions,
         worker: await this.workerStatus(trx),
         materialChanges: materialChanges(materialInputsOf(latest?.provenance), current),
       };
+    }, tx);
+  }
+
+  // ponytail: 최근 200개까지만 — 한 사람이 그보다 많이 쌓으면 페이지를 붙인다
+  async mine(actor: WorkshopActor, tx?: DbTx): Promise<MyWorkshop[]> {
+    return this.db.run(async (trx) => {
+      const workshops = await trx
+        .select({
+          id: sku3dWorkshops.id,
+          skuId: sku3dWorkshops.skuId,
+          skuCode: skus.code,
+          skuName: skus.name,
+          updatedAt: sku3dWorkshops.updatedAt,
+        })
+        .from(sku3dWorkshops)
+        .innerJoin(skus, eq(skus.id, sku3dWorkshops.skuId))
+        .where(and(eq(sku3dWorkshops.ownerId, actor.userId), eq(skus.isDeleted, false)))
+        .orderBy(desc(sku3dWorkshops.updatedAt), asc(sku3dWorkshops.id))
+        .limit(MY_WORKSHOP_LIMIT);
+
+      if (workshops.length === 0) {
+        return [];
+      }
+
+      const ids = workshops.map((w) => w.id);
+      // ponytail: 작업별 최신 행은 workshop_id 인덱스 없이 찾는다 — 작업 행이 수만을 넘어 느려지면 (workshop_id, created_at) 인덱스
+      const jobs = await trx
+        .selectDistinctOn([sku3dWorkshopJobs.workshopId], {
+          workshopId: sku3dWorkshopJobs.workshopId,
+          kind: sku3dWorkshopJobs.kind,
+          status: sku3dWorkshopJobs.status,
+          error: sku3dWorkshopJobs.error,
+        })
+        .from(sku3dWorkshopJobs)
+        .where(inArray(sku3dWorkshopJobs.workshopId, ids))
+        .orderBy(sku3dWorkshopJobs.workshopId, desc(sku3dWorkshopJobs.createdAt));
+      const revisions = await trx
+        .selectDistinctOn([sku3dWorkshopRevisions.workshopId], {
+          workshopId: sku3dWorkshopRevisions.workshopId,
+          number: sku3dWorkshopRevisions.number,
+          publishedAt: sku3dWorkshopRevisions.publishedAt,
+        })
+        .from(sku3dWorkshopRevisions)
+        .where(inArray(sku3dWorkshopRevisions.workshopId, ids))
+        .orderBy(sku3dWorkshopRevisions.workshopId, desc(sku3dWorkshopRevisions.number));
+      const photos = await trx
+        .selectDistinctOn([skuReferencePhotos.skuId], {
+          skuId: skuReferencePhotos.skuId,
+          fileId: skuReferencePhotos.fileId,
+        })
+        .from(skuReferencePhotos)
+        .where(
+          inArray(
+            skuReferencePhotos.skuId,
+            workshops.map((w) => w.skuId),
+          ),
+        )
+        .orderBy(skuReferencePhotos.skuId, asc(skuReferencePhotos.sortOrder), asc(skuReferencePhotos.createdAt));
+      const jobOf = new Map(jobs.map((j) => [j.workshopId, j]));
+      const revisionOf = new Map(revisions.map((r) => [r.workshopId, r]));
+      const photoOf = new Map(photos.map((p) => [p.skuId, p.fileId]));
+
+      return workshops.map((w) => {
+        const job = jobOf.get(w.id);
+        const revision = revisionOf.get(w.id);
+        const active = job?.status === 'queued' || job?.status === 'running';
+
+        return {
+          ...w,
+          photoFileId: photoOf.get(w.skuId) ?? null,
+          status: myWorkshopStatus(job?.status ?? null, revision ?? null),
+          latestRevisionNumber: revision?.number ?? null,
+          activeJobKind: active && job ? job.kind : null,
+          failedError: job?.status === 'failed' ? job.error : null,
+        };
+      });
     }, tx);
   }
 
@@ -179,6 +277,20 @@ export class Sku3dWorkshopReader {
     return workshop;
   }
 
+  private async lastFailure(
+    trx: DbTx,
+    workshopId: string,
+  ): Promise<{ error: string | null; finishedAt: Date | null } | null> {
+    const [job] = await trx
+      .select({ status: sku3dWorkshopJobs.status, error: sku3dWorkshopJobs.error, finishedAt: sku3dWorkshopJobs.finishedAt })
+      .from(sku3dWorkshopJobs)
+      .where(eq(sku3dWorkshopJobs.workshopId, workshopId))
+      .orderBy(desc(sku3dWorkshopJobs.createdAt))
+      .limit(1);
+
+    return job?.status === 'failed' ? { error: job.error, finishedAt: job.finishedAt } : null;
+  }
+
   private async activeJob(trx: DbTx, workshopId: string): Promise<WorkshopJob | null> {
     const [job] = await trx
       .select()
@@ -227,4 +339,23 @@ function fileIdOf(revision: typeof sku3dWorkshopRevisions.$inferSelect, kind: st
   }
 
   return revision.files.renders[Number(render[1])] ?? null;
+}
+
+export function myWorkshopStatus(
+  latestJobStatus: string | null,
+  latestRevision: { publishedAt: Date | null } | null,
+): MyWorkshopStatus {
+  if (latestJobStatus === 'queued' || latestJobStatus === 'running') {
+    return 'making';
+  }
+
+  if (latestJobStatus === 'failed') {
+    return 'failed';
+  }
+
+  if (!latestRevision) {
+    return 'waiting';
+  }
+
+  return latestRevision.publishedAt ? 'public' : 'review';
 }

@@ -17,6 +17,10 @@ export class Sku3dWorkshopService {
     return this.manager.open(skuId, actor);
   }
 
+  mine(actor: WorkshopActor) {
+    return this.reader.mine(actor);
+  }
+
   detail(workshopId: string, actor: WorkshopActor) {
     return this.reader.detail(workshopId, actor);
   }

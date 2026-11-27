@@ -1,4 +1,5 @@
 import type {
+  MyWorkshopDto,
   Sku3dWorkshopDetailDto,
   Sku3dWorkshopEventDto,
   Sku3dWorkshopRevisionDto,
@@ -13,6 +14,8 @@ import {
   latestProgressText,
   materialChangeText,
   mergeEvents,
+  myWorkshopsOf,
+  myWorkshopSummaryText,
   safeBackHref,
   shortHash,
   viewerRevision,
@@ -79,6 +82,7 @@ const detail = (
     photos: [],
   },
   activeJob: null,
+  lastFailure: null,
   revisions: [],
   worker: { online: true, lastSeenAt: '2026-11-26T00:00:00Z' },
   materialChanges: null,
@@ -315,5 +319,33 @@ describe('3D 작업실 화면 로직', () => {
     ).toBe(
       '마지막 버전을 만든 뒤 실측 자료가 바뀌었어요 (사진 2장 추가, 사진 1장 삭제)'
     );
+  });
+});
+
+describe('내 3D 작업실 목록', () => {
+  const row = (status: MyWorkshopDto['status']): MyWorkshopDto => ({
+    id: status,
+    skuId: status,
+    skuCode: 'SKU',
+    skuName: '상품',
+    photoFileId: null,
+    status,
+    latestRevisionNumber: null,
+    activeJobKind: null,
+    failedError: null,
+    updatedAt: '2026-11-27T00:00:00Z',
+  });
+  const list = (['making', 'review', 'failed', 'public', 'waiting'] as const).map(row);
+
+  it('확인 필요 탭은 실패한 것도 담는다', () => {
+    expect(myWorkshopsOf(list, 'review').map((w) => w.status)).toEqual(['review', 'failed']);
+    expect(myWorkshopsOf(list, 'all')).toHaveLength(5);
+    expect(myWorkshopsOf(list, 'public').map((w) => w.status)).toEqual(['public']);
+  });
+
+  it('요약은 확인할 것·만드는 중을 센다', () => {
+    expect(myWorkshopSummaryText(list)).toBe('확인할 것 2개 · 만드는 중 1개');
+    expect(myWorkshopSummaryText([row('public')])).toBe('작업실 1개');
+    expect(myWorkshopSummaryText([])).toBe('아직 만든 작업실이 없어요');
   });
 });

@@ -3,6 +3,7 @@
 import { ALMONDYOUNG_API_BASE_URL } from '@/const';
 import { client } from '../../client';
 import type {
+  MyWorkshopDto,
   Sku3dDimensionBasis,
   Sku3dWorkshopDetailDto,
   Sku3dWorkshopDto,
@@ -14,6 +15,8 @@ const BASE = `${ALMONDYOUNG_API_BASE_URL}/inventory/sku-3d-workshops`;
 const seg = encodeURIComponent;
 
 export const sku3dWorkshopClient = {
+  mine: async (): Promise<MyWorkshopDto[]> => (await client.get(BASE)).data,
+
   open: async (skuId: string): Promise<Sku3dWorkshopDto> =>
     (await client.post(`${BASE}/skus/${seg(skuId)}`, {})).data,
 

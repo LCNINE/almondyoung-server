@@ -102,6 +102,7 @@ export class MyCaptureItemDto {
   @ApiProperty({ enum: FIELD_CAPTURE_BARCODE_STATUSES })
   barcodeStatus!: FieldCaptureBarcodeStatus;
   @ApiProperty({ description: '마지막 완료자가 나일 때만 완료를 취소할 수 있다' }) canCancel!: boolean;
+  @ApiProperty({ type: [String], description: '이 상품의 실측 사진 파일 id, 찍은 순서대로' }) photoFileIds!: string[];
 }
 
 export class FieldCaptureListQueryDto {

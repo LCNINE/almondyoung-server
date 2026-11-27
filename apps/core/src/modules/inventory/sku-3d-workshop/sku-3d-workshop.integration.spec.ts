@@ -123,6 +123,44 @@ describeWithPostgres('SKU 3D workshop (PostgreSQL)', () => {
     expect(mine[0]).toMatchObject({ kind: 'revise', baseRevisionId: revisionId });
   });
 
+  it('mine lists only my workshops with their status', async () => {
+    const me = actor();
+    const waiting = await manager.open(await seedSku(t.db), me);
+    const making = await manager.open(await seedSku(t.db), me);
+    const review = await manager.open(await seedSku(t.db), me);
+    const failed = await manager.open(await seedSku(t.db), me);
+
+    await manager.open(await seedSku(t.db), actor());
+    await manager.confirmDimensions(making.id, me, 'package');
+    await manager.confirmDimensions(review.id, me, 'package');
+    await finishedRevision(t.db, review.id);
+    await manager.confirmDimensions(failed.id, me, 'package');
+    await t.db
+      .update(sku3dWorkshopJobs)
+      .set({ status: 'failed', error: '사진 부족' })
+      .where(eq(sku3dWorkshopJobs.workshopId, failed.id));
+
+    const list = await reader.mine(me);
+    const statusOf = Object.fromEntries(list.map((w) => [w.id, w.status]));
+
+    expect(list).toHaveLength(4);
+    expect(statusOf).toEqual({
+      [waiting.id]: 'waiting',
+      [making.id]: 'making',
+      [review.id]: 'review',
+      [failed.id]: 'failed',
+    });
+    expect(list.find((w) => w.id === making.id)).toMatchObject({ activeJobKind: 'create', latestRevisionNumber: null });
+    expect(list.find((w) => w.id === review.id)).toMatchObject({ activeJobKind: null, latestRevisionNumber: 1 });
+    expect(list.find((w) => w.id === failed.id)?.failedError).toBe('사진 부족');
+    expect((await reader.detail(failed.id, me)).lastFailure).toMatchObject({ error: '사진 부족' });
+    expect((await reader.detail(review.id, me)).lastFailure).toBeNull();
+
+    await manager.postMessage(review.id, me, '뚜껑을 둥글게 해줘');
+
+    expect((await reader.mine(me))[0]).toMatchObject({ id: review.id, status: 'making', activeJobKind: 'revise' });
+  });
+
   it('hides other owner workshop', async () => {
     const skuId = await seedSku(t.db);
     const owner = actor();

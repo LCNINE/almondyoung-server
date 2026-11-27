@@ -157,6 +157,12 @@ export function WorkshopView({
         </section>
       )}
 
+      {detail.lastFailure && !detail.activeJob && (
+        <p className="rounded-lg bg-red-50 p-3 text-sm text-red-800">
+          지난번에 만들지 못했어요{detail.lastFailure.error && `: ${detail.lastFailure.error}`}
+        </p>
+      )}
+
       {canRetryCreate(detail) && (
         <button
           type="button"
