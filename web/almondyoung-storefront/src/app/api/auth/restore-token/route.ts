@@ -3,6 +3,24 @@ import { cookies } from "next/headers"
 import { requireBackendBaseUrl } from "@/lib/config/backend"
 import { restoreAccessToken } from "@/lib/auth/user-service"
 import { settleSmsRef } from "@/lib/sms-ref/sms-ref"
+import { describeSentSession } from "@/lib/auth/session-snapshot"
+import { createWebLogger } from "@packages/web-observability"
+
+const logger = createWebLogger({
+  component: "storefront.restore-token",
+  route: "/api/auth/restore-token",
+})
+
+const logRestoreFailure = (request: NextRequest, reason: string) => {
+  logger.warn("storefront.restore_token.failed", {
+    attributes: {
+      reason,
+      method: request.method,
+      user_agent: request.headers.get("user-agent") ?? "",
+      ...describeSentSession(request.headers.get("cookie")),
+    },
+  })
+}
 
 export const dynamic = "force-dynamic"
 export const revalidate = 0
@@ -130,6 +148,7 @@ async function restoreTokens(
     const currentMedusaJwt = cookieStore.get("_medusa_jwt")?.value
 
     if (!refreshToken) {
+      logRestoreFailure(request, "no_refresh")
       clearAuthCookies(failureResponse, tokenCookieDomain)
       return failureResponse
     }
@@ -197,6 +216,11 @@ async function restoreTokens(
     } else {
       console.error("Restore token error:", error)
     }
+
+    logRestoreFailure(
+      request,
+      error instanceof Error ? error.message.slice(0, 120) : "unknown"
+    )
 
     const referer = request.headers.get("referer")
     let isMainPage = false
