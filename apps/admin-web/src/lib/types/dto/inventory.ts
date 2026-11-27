@@ -1999,6 +1999,8 @@ export interface MyCaptureItemDto {
   packageHeightMm: number | null;
   barcodeStatus: FieldCaptureBarcodeStatus;
   canCancel: boolean;
+  /** 이 상품의 실측 사진 파일 id, 찍은 순서대로 */
+  photoFileIds: string[];
 }
 
 /** 작업 기록 조회 조건. from·to 는 KST 날짜(YYYY-MM-DD, 양끝 포함) */
