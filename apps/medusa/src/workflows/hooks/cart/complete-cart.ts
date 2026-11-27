@@ -11,6 +11,7 @@ import { grantsFor, grantsGovernUsage } from '../../../modules/promotion-meta/gr
 import { consumeCouponGrantsForCart, restoreConsumedCouponGrants, type ConsumeRequest } from './consume-coupon-grants';
 import type { CouponGrantRow } from '../../../modules/promotion-meta/service';
 import { findPromotionCapViolations } from './enforce-promotion-cap';
+import { validateAddToDelivery } from './validate-add-to-delivery';
 import { isOverseasProduct, requiresMembershipToPurchase, type MembershipProduct } from '../../../utils/membership-filter';
 // import { getInventoryValidationFailures } from '../../../utils/validate-inventory';
 
@@ -295,6 +296,8 @@ completeCartWorkflow.hooks.validate(async ({ cart }, { container }) => {
   // }
   //
   // // 재고 부족이 없으면 통과
+
+  await validateAddToDelivery(query, cart);
 
   // ── 소모: 훅의 마지막 문장 (ADR-0034 결정 5). 위의 어떤 거절도 장을 잡은 뒤에 일어나지 않는다. ──
   const consumed = await consumeCouponGrantsForCart(

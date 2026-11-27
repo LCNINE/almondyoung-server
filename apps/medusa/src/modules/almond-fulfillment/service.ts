@@ -7,6 +7,7 @@ import type {
 } from '@medusajs/framework/types';
 
 import { calculateShippingFee, type ShippingFeeLine } from './calculate-shipping-fee';
+import { ADD_TO_DELIVERY_PARENT_KEY, resolveParent } from './add-to-delivery/resolve-parent';
 import {
   DEFAULT_SHIPPING_GROUP_CODE,
   DEFAULT_SHIPPING_GROUP_DELIVERY,
@@ -45,7 +46,8 @@ export class AlmondFulfillmentProviderService extends AbstractFulfillmentProvide
   constructor(container: Record<string, unknown>) {
     super();
     // 모듈 컨테이너는 awilix cradle 프록시라 미등록 키 접근이 throw 한다.
-    this.logger_ = readFromCradle<Logger>(container, ContainerRegistrationKeys.LOGGER) ?? (console as unknown as Logger);
+    this.logger_ =
+      readFromCradle<Logger>(container, ContainerRegistrationKeys.LOGGER) ?? (console as unknown as Logger);
     this.query_ = readFromCradle<QueryGraph>(container, ContainerRegistrationKeys.QUERY);
 
     if (!this.query_) {
@@ -91,6 +93,12 @@ export class AlmondFulfillmentProviderService extends AbstractFulfillmentProvide
     context: CalculateContext,
   ): Promise<CalculatedShippingOptionPrice> {
     const { policy, shippingProfileId, shippingGroupCode } = this.readOptionData(optionData);
+
+    // 함께 배송 카트는 부모가 아직 출고 전이면 지역 추가비까지 면제한다.
+    if (await this.isAddToDeliveryWaived(context.id, shippingProfileId)) {
+      return { calculated_amount: 0, is_calculated_price_tax_inclusive: false };
+    }
+
     const lines = await this.selectGroupLines(context, shippingProfileId, shippingGroupCode);
     const amount = calculateShippingFee(policy, lines, context.shipping_address?.postal_code);
 
@@ -108,6 +116,24 @@ export class AlmondFulfillmentProviderService extends AbstractFulfillmentProvide
 
   async cancelFulfillment(): Promise<any> {
     return {};
+  }
+
+  private async isAddToDeliveryWaived(cartId: string | undefined, shippingProfileId: string): Promise<boolean> {
+    if (!cartId || !this.query_) return false;
+
+    const { data } = await this.query_.graph({
+      entity: 'cart',
+      fields: ['id', 'customer_id', 'metadata'],
+      filters: { id: cartId },
+    });
+    const cart = data[0];
+    const parentOrderId = cart?.metadata?.[ADD_TO_DELIVERY_PARENT_KEY];
+
+    if (typeof parentOrderId !== 'string' || !parentOrderId || !cart.customer_id) return false;
+
+    const parent = await resolveParent(this.query_, { customerId: cart.customer_id, parentOrderId, shippingProfileId });
+
+    return parent !== null;
   }
 
   private tryReadOptionData(optionData: Record<string, unknown>): ShippingGroupOptionData | null {
