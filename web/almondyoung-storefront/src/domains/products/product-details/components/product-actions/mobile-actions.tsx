@@ -28,6 +28,7 @@ import {
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 import type { AttachedPrintFile } from "@/domains/almond-template/components/print-file-order-dialog"
 import { PrintFileNotice, PrintSourceButtons } from "./print-source"
+import AddToDeliveryButton from "../add-to-delivery"
 
 type MobileActionsProps = {
   paperPreview?: React.ReactNode
@@ -48,6 +49,11 @@ type MobileActionsProps = {
   inStock: boolean
   handleAddToCart: () => void
   handleBuyNow: () => void
+  addToDelivery?: {
+    productId: string
+    enabled: boolean
+    onPick: (parentOrderId: string) => void
+  }
   isPending: boolean
   show: boolean
   templateHref?: string
@@ -83,6 +89,7 @@ const MobileActions: React.FC<MobileActionsProps> = ({
   inStock,
   handleAddToCart,
   handleBuyNow,
+  addToDelivery,
   isPending,
   show,
   templateHref,
@@ -255,6 +262,15 @@ const MobileActions: React.FC<MobileActionsProps> = ({
               </>
             )}
           </div>
+          {/* 옵션 창 없이 바로 사는 단순 상품은 하단 바에서 함께 받기를 연다 */}
+          {addToDelivery && instantPurchase && (
+            <AddToDeliveryButton
+              productId={addToDelivery.productId}
+              enabled={addToDelivery.enabled}
+              disabled={isPending || selectedItems.length === 0}
+              onPick={addToDelivery.onPick}
+            />
+          )}
         </div>
       </div>
 
@@ -443,6 +459,19 @@ const MobileActions: React.FC<MobileActionsProps> = ({
                 </>
               )}
             </div>
+            {addToDelivery && (
+              <AddToDeliveryButton
+                productId={addToDelivery.productId}
+                enabled={addToDelivery.enabled}
+                disabled={
+                  !!disabledLabel || isPending || selectedItems.length === 0
+                }
+                onPick={(parentOrderId) => {
+                  addToDelivery.onPick(parentOrderId)
+                  setOpen(false)
+                }}
+              />
+            )}
           </div>
         </DrawerContent>
       </Drawer>

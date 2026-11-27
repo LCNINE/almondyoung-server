@@ -1,10 +1,11 @@
 "use client"
-import { useSearchParams, useRouter } from "next/navigation"
-import { useEffect, useState } from "react"
+import { useParams, useSearchParams, useRouter } from "next/navigation"
+import { useEffect, useState, useTransition } from "react"
 import { useTranslations } from "next-intl"
 import CheckoutHeader from "@/app/[countryCode]/(checkout)/checkout/checkout-header"
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { CHECKOUT_ERROR_CODES } from "@/lib/api/medusa/checkout-error-code"
+import { convertAddToDeliveryCartToNormal } from "@/lib/api/medusa/add-to-delivery"
 
 // 코드가 잡히는 에러는 Medusa 영문 원문 대신 안내 문구를 보여준다.
 const MESSAGE_KEY_BY_CODE: Record<string, string> = {
@@ -12,6 +13,7 @@ const MESSAGE_KEY_BY_CODE: Record<string, string> = {
   [CHECKOUT_ERROR_CODES.shippingMethodNone]: "shippingMethodNone",
   [CHECKOUT_ERROR_CODES.insufficientInventory]: "insufficientInventory",
   [CHECKOUT_ERROR_CODES.variantUnavailable]: "variantUnavailable",
+  [CHECKOUT_ERROR_CODES.addToDeliveryParentShipped]: "addToDeliveryShipped",
 }
 
 // 재고 때문에 막힌 경우엔 결제도 주문도 성립하지 않았다는 사실과, 장바구니에서
@@ -26,6 +28,8 @@ export default function CheckoutFailPage() {
   const tHeader = useTranslations("checkout.header")
   const searchParams = useSearchParams()
   const router = useRouter()
+  const { countryCode } = useParams<{ countryCode: string }>()
+  const [converting, startConvert] = useTransition()
   const [errorInfo, setErrorInfo] = useState<{
     code: string
     message: string
@@ -50,6 +54,20 @@ export default function CheckoutFailPage() {
   }
 
   const isStockError = STOCK_ERROR_CODES.includes(errorInfo?.code ?? "")
+  const convertibleCartId =
+    errorInfo?.code === CHECKOUT_ERROR_CODES.addToDeliveryParentShipped
+      ? searchParams.get("cartId")
+      : null
+
+  // 같은 카트를 일반 주문으로 바꿔 배송비를 다시 받고 체크아웃으로 돌아간다
+  const handleConvertToNormal = () => {
+    if (!convertibleCartId) return
+
+    startConvert(async () => {
+      await convertAddToDeliveryCartToNormal(convertibleCartId)
+      router.push(`/${countryCode}/checkout?cartId=${convertibleCartId}`)
+    })
+  }
 
   if (!errorInfo) {
     return (
@@ -107,6 +125,15 @@ export default function CheckoutFailPage() {
         )}
 
         <div className="space-y-3">
+          {convertibleCartId && (
+            <button
+              onClick={handleConvertToNormal}
+              disabled={converting}
+              className="bg-primary hover:bg-primary/90 block w-full rounded-lg py-3 text-center font-medium text-white transition-colors"
+            >
+              {t("addToDeliveryConvert")}
+            </button>
+          )}
           {isStockError && (
             <LocalizedClientLink
               href="/cart"

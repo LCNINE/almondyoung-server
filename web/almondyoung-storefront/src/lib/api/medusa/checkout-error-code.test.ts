@@ -6,6 +6,14 @@ import {
 } from "./checkout-error-code"
 
 describe("toCheckoutErrorCode", () => {
+  it("함께 배송 부모가 결제 순간 출고된 거절을 잡는다", () => {
+    expect(
+      toCheckoutErrorCode(
+        "함께 받을 주문이 방금 출고됐어요. 배송비를 포함해 다시 결제해 주세요."
+      )
+    ).toBe(CHECKOUT_ERROR_CODES.addToDeliveryParentShipped)
+  })
+
   it("배송비 그룹이 덜 붙은 에러를 잡는다", () => {
     const raw =
       "The cart items require shipping profiles that are not satisfied by the current shipping methods"

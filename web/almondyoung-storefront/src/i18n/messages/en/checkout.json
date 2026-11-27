@@ -178,7 +178,8 @@
         "postcodeLoading": "Loading the postal code search service. Please try again shortly."
       }
     },
-    "changeAddress": "Change address"
+    "changeAddress": "Change address",
+    "addToDeliveryLocked": "Ships to the same address as the order it goes with. No shipping fee."
   },
   "customsCode": {
     "title": "Personal Customs Clearance Code",
@@ -388,7 +389,9 @@
       "goToCart": "Go to cart",
       "whatToDoQuantity": "In your cart, lower the quantity of the item that is short on stock and try again.",
       "whatToDoUnavailable": "Remove the item from your cart and try again."
-    }
+    },
+    "addToDeliveryConvert": "Pay as a regular order",
+    "addToDeliveryShipped": "The order this was going with has just shipped. Please pay again with the shipping fee."
   },
   "callback": {
     "paymentFailed": "Payment failed.",

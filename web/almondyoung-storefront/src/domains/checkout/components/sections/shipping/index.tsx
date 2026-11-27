@@ -26,6 +26,7 @@ export const ShippingSection = ({
   shippingMemo,
   onShippingMemoChange,
   memoPromptKey = 0,
+  addressLocked = false,
 }: ShippingSectionProps) => {
   const t = useTranslations("checkout.shipping")
   const tMemo = useTranslations("checkout.shipping.memo")
@@ -120,10 +121,14 @@ export const ShippingSection = ({
           <SectionCard
             title={t("title")}
             subtitle={addressName || name}
-            action={{
-              label: t("changeAddress"),
-              onClick: () => setIsSelectorOpen(true),
-            }}
+            action={
+              addressLocked
+                ? undefined
+                : {
+                    label: t("changeAddress"),
+                    onClick: () => setIsSelectorOpen(true),
+                  }
+            }
           >
             <AddressDisplay
               phone={phone}
@@ -132,6 +137,11 @@ export const ShippingSection = ({
               address2={address2}
               fullAddress={fullAddress}
             />
+            {addressLocked && (
+              <p className="text-muted-foreground mt-2 text-[13px]">
+                {t("addToDeliveryLocked")}
+              </p>
+            )}
           </SectionCard>
 
           <SectionCard

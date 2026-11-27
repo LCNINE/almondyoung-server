@@ -461,5 +461,13 @@
     "attachedHint": "No reprint or refund terms accepted",
     "change": "Change",
     "loginRequired": "Log in to upload a file"
+  },
+  "addToDelivery": {
+    "button": "Add to delivery",
+    "hint": "Ships with order #{displayId} · Free shipping",
+    "sheetTitle": "Which order should this ship with?",
+    "sheetDesc": "It ships in the same box as the order you pick. No shipping fee.",
+    "orderLine": "Order #{displayId}",
+    "fail": "Couldn't start. Please try again in a moment."
   }
 }

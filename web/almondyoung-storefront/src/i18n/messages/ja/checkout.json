@@ -178,7 +178,8 @@
         "postcodeLoading": "郵便番号検索サービスを読み込んでいます。しばらくしてからもう一度お試しください。"
       }
     },
-    "changeAddress": "配送先変更"
+    "changeAddress": "配送先変更",
+    "addToDeliveryLocked": "一緒に受け取る注文と同じ住所に配送されます。送料はかかりません。"
   },
   "customsCode": {
     "title": "個人通関固有符号",
@@ -388,7 +389,9 @@
       "goToCart": "カートを確認する",
       "whatToDoQuantity": "カートで在庫が不足している商品の数量を減らしてから、再度お試しください。",
       "whatToDoUnavailable": "カートから該当商品を削除してから、再度お試しください。"
-    }
+    },
+    "addToDeliveryConvert": "通常の注文として支払う",
+    "addToDeliveryShipped": "一緒に受け取る注文が先ほど出荷されました。送料を含めてもう一度お支払いください。"
   },
   "callback": {
     "paymentFailed": "決済に失敗しました。",

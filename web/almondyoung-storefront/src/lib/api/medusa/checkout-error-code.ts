@@ -14,6 +14,8 @@ export const CHECKOUT_ERROR_CODES = {
   insufficientInventory: "INSUFFICIENT_INVENTORY",
   /** 담아둔 상품(또는 옵션)이 판매중단됐다. */
   variantUnavailable: "VARIANT_UNAVAILABLE",
+  /** 함께 배송 결제 순간 부모 주문이 출고됐다. PG 승인 전이라 돈은 나가지 않았다. */
+  addToDeliveryParentShipped: "ADD_TO_DELIVERY_PARENT_SHIPPED",
 } as const
 
 export type CheckoutErrorCode =
@@ -35,6 +37,10 @@ const PATTERNS: Array<{ test: RegExp; code: CheckoutErrorCode }> = [
   {
     test: /do not exist or belong to a product that is not published/i,
     code: CHECKOUT_ERROR_CODES.variantUnavailable,
+  },
+  {
+    test: /함께 받을 주문이 방금 출고됐어요/,
+    code: CHECKOUT_ERROR_CODES.addToDeliveryParentShipped,
   },
 ]
 

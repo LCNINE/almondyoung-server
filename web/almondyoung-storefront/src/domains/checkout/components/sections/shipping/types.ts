@@ -15,6 +15,8 @@ export interface ShippingSectionProps {
   onShippingMemoChange: (memo: ShippingMemo) => void
   /** 값이 바뀔 때마다 배송메모 편집 창을 검증 상태로 연다. */
   memoPromptKey?: number
+  /** 함께 배송 카트: 배송지를 바꿀 수 없고 이 안내를 보인다 */
+  addressLocked?: boolean
 }
 
 export interface EditAddressState {

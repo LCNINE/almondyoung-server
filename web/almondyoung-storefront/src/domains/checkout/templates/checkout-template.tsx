@@ -76,6 +76,8 @@ export default function CheckoutTemplate({
   // 배송 필요 여부 — 전체 카트 기준. 디지털 단독 카트면 false → 배송지/배송메모 강제와 배송비를 모두 생략한다.
   // 판별은 line item requires_shipping 우선, 없으면 product_type 폴백(shipping-method-policy).
   const requiresShipping = cartRequiresShipping(cartItems)
+  // 함께 배송 카트: 부모 배송지로 잠기고, 결제는 즉시 결제수단만 연다
+  const isAddToDeliveryCart = cart?.metadata?.cart_kind === "add_to_delivery"
 
   // 가격 계산 - checkout cart 전체 기준
   const cartTotals: CartTotals = useMemo(() => {
@@ -326,6 +328,7 @@ export default function CheckoutTemplate({
           orderName,
           items: paymentItems,
           customerEmail: cart.email,
+          ...(isAddToDeliveryCart ? { instantOnly: true } : {}),
         },
       })
 
@@ -368,6 +371,7 @@ export default function CheckoutTemplate({
                 shippingMemo={shippingMemo}
                 onShippingMemoChange={handleShippingMemoChange}
                 memoPromptKey={memoPromptKey}
+                addressLocked={isAddToDeliveryCart}
               />
             )}
             {hasOverseasItem && (

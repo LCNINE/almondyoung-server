@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { useIntersection } from "@/hooks/use-intersection"
 import { addToCart, createBuyNowCart } from "@/lib/api/medusa/cart"
+import { createAddToDeliveryCart } from "@/lib/api/medusa/add-to-delivery"
+import AddToDeliveryButton from "../add-to-delivery"
 import { getPricesForVariant } from "@/lib/utils/get-product-price"
 import {
   getHideMembershipPriceForNonMembers,
@@ -115,6 +117,7 @@ export default function ProductActions({
 }: ProductActionsProps) {
   const t = useTranslations("productDetail.options")
   const tPrint = useTranslations("productDetail.printFile")
+  const tAddToDelivery = useTranslations("productDetail.addToDelivery")
   const [isPending, startTransition] = useTransition()
   const [printFile, setPrintFile] = useState<AttachedPrintFile | null>(null)
   const [fileOrderOpen, setFileOrderOpen] = useState(false)
@@ -644,6 +647,40 @@ export default function ProductActions({
     })
   }
 
+  // 함께 받기: 출고 전 주문과 같은 상자로, 배송비 없이
+  const handleAddToDelivery = (parentOrderId: string) => {
+    if (selectedItems.length === 0 || almondSizeMismatch || needsPrintSource)
+      return
+
+    startTransition(async () => {
+      try {
+        const result = await createAddToDeliveryCart({
+          parentOrderId,
+          items: selectedItems.map((item) => ({
+            variantId: item.variantId,
+            quantity: item.quantity,
+            metadata: lineMetadata,
+          })),
+        })
+        if (result.error) {
+          toast.error(tAddToDelivery("fail"))
+
+          return
+        }
+        router.push(`/${countryCode}/checkout?cartId=${result.cartId}`)
+      } catch (error: unknown) {
+        const err = error as Error & { digest?: string }
+        if (err.digest === "UNAUTHORIZED" || err.message === "UNAUTHORIZED") {
+          throw error
+        }
+      }
+    })
+  }
+
+  const addToDeliveryShown =
+    !!customer && !membersOnlyPurchase && allInStock && !isWelcomeMembership &&
+    !needsPrintSource
+
   return (
     <>
       <div
@@ -845,6 +882,17 @@ export default function ProductActions({
               )}
             </div>
           )}
+          <AddToDeliveryButton
+            productId={product.id}
+            enabled={addToDeliveryShown}
+            disabled={
+              !!disabledLabel ||
+              !!disabled ||
+              isPending ||
+              selectedItems.length === 0
+            }
+            onPick={handleAddToDelivery}
+          />
         </div>
       </div>
 
@@ -867,6 +915,11 @@ export default function ProductActions({
         inStock={allInStock}
         handleAddToCart={handleAddToCart}
         handleBuyNow={handleBuyNow}
+        addToDelivery={{
+          productId: product.id,
+          enabled: addToDeliveryShown,
+          onPick: handleAddToDelivery,
+        }}
         isPending={isPending}
         show={!inView && !fileOrderOpen}
         templateHref={templateHref}

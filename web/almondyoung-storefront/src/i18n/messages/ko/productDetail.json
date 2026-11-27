@@ -461,5 +461,13 @@
     "attachedHint": "재제작·환불 불가 동의 완료",
     "change": "바꾸기",
     "loginRequired": "로그인하면 파일을 올릴 수 있어요"
+  },
+  "addToDelivery": {
+    "button": "함께 받기",
+    "hint": "주문번호 {displayId}와 함께 배송돼요 · 배송비 0원",
+    "sheetTitle": "어느 주문과 함께 받을까요?",
+    "sheetDesc": "고른 주문과 같은 상자로 배송돼요. 배송비는 받지 않아요.",
+    "orderLine": "주문번호 {displayId}",
+    "fail": "함께 받기를 시작하지 못했어요. 잠시 뒤 다시 시도해 주세요."
   }
 }

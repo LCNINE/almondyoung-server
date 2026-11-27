@@ -17,6 +17,7 @@ vi.mock("@/components/ui/drawer", () => ({
   DrawerTitle: ({ children }: { children: ReactNode }) => <h2>{children}</h2>,
 }))
 vi.mock("./almond-design-notice", () => ({ AlmondDesignNotice: () => null }))
+vi.mock("../add-to-delivery", () => ({ default: () => null }))
 vi.mock("./selected-item-row", () => ({ default: () => null }))
 vi.mock("./option-select", () => ({
   default: () => <div>옵션 선택 컨트롤</div>,

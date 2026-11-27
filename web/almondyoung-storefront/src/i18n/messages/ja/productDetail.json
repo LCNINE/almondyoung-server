@@ -461,5 +461,13 @@
     "attachedHint": "再制作・返金不可に同意済み",
     "change": "変更",
     "loginRequired": "ログインするとファイルをアップロードできます"
+  },
+  "addToDelivery": {
+    "button": "一緒に受け取る",
+    "hint": "注文番号{displayId}と一緒に配送されます・送料無料",
+    "sheetTitle": "どの注文と一緒に受け取りますか？",
+    "sheetDesc": "選んだ注文と同じ箱で配送されます。送料はかかりません。",
+    "orderLine": "注文番号{displayId}",
+    "fail": "開始できませんでした。しばらくしてからもう一度お試しください。"
   }
 }

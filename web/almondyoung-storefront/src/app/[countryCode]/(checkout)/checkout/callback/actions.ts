@@ -1,6 +1,9 @@
 "use server"
 
-import { toCheckoutErrorCode } from "@/lib/api/medusa/checkout-error-code"
+import {
+  CHECKOUT_ERROR_CODES,
+  toCheckoutErrorCode,
+} from "@/lib/api/medusa/checkout-error-code"
 import {
   isTransientCartConflictError,
   withCartConflictRetry,
@@ -478,7 +481,7 @@ export async function processPaymentCallback(
       const knownCode = toCheckoutErrorCode(errMsg)
       return {
         success: false,
-        redirectUrl: `/${countryCode}/checkout/fail?code=${knownCode ?? "ORDER_FAILED"}&message=${encodeURIComponent(errMsg)}`,
+        redirectUrl: `/${countryCode}/checkout/fail?code=${knownCode ?? "ORDER_FAILED"}&message=${encodeURIComponent(errMsg)}${convertibleCartQuery(knownCode, targetCartId)}`,
       }
     }
 
@@ -519,7 +522,7 @@ export async function processPaymentCallback(
     })
     return {
       success: false,
-      redirectUrl: `/${countryCode}/checkout/fail?code=ORDER_FAILED&message=${encodeURIComponent(fallbackError)}`,
+      redirectUrl: `/${countryCode}/checkout/fail?code=${toCheckoutErrorCode(fallbackError) ?? "ORDER_FAILED"}&message=${encodeURIComponent(fallbackError)}${convertibleCartQuery(toCheckoutErrorCode(fallbackError), completion?.cart_id)}`,
     }
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : "알 수 없는 오류"
@@ -540,7 +543,7 @@ export async function processPaymentCallback(
       redirectUrl:
         mode === "membership"
           ? `/${countryCode}/mypage/membership/subscribe/fail?code=CALLBACK_ERROR&message=${encodeURIComponent(errorMessage)}`
-          : `/${countryCode}/checkout/fail?code=${knownCode ?? "CALLBACK_ERROR"}&message=${encodeURIComponent(errorMessage)}`,
+          : `/${countryCode}/checkout/fail?code=${knownCode ?? "CALLBACK_ERROR"}&message=${encodeURIComponent(errorMessage)}${convertibleCartQuery(knownCode, cartId)}`,
     }
   }
 }
@@ -551,4 +554,14 @@ export async function revalidateMembershipSuccess(): Promise<void> {
   if (cartCacheTag) {
     revalidateTag(cartCacheTag)
   }
+}
+
+// 함께 배송이 부모 출고로 막혔을 때만 실패 페이지가 같은 카트를 일반 주문으로 바꿀 수 있게 카트 id 를 싣는다.
+function convertibleCartQuery(
+  code: string | null,
+  cartId: string | null | undefined
+): string {
+  return code === CHECKOUT_ERROR_CODES.addToDeliveryParentShipped && cartId
+    ? `&cartId=${encodeURIComponent(cartId)}`
+    : ""
 }

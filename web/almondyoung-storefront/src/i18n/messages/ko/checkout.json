@@ -178,7 +178,8 @@
         "postcodeLoading": "우편번호 검색 서비스를 불러오는 중입니다. 잠시 후 다시 시도해주세요."
       }
     },
-    "changeAddress": "배송지 변경"
+    "changeAddress": "배송지 변경",
+    "addToDeliveryLocked": "함께 받을 주문과 같은 주소로 배송돼요. 배송비는 받지 않아요."
   },
   "customsCode": {
     "title": "개인통관고유부호",
@@ -388,7 +389,9 @@
       "goToCart": "장바구니에서 확인하기",
       "whatToDoQuantity": "장바구니에서 재고가 부족한 상품의 수량을 줄이고 다시 결제해 주세요.",
       "whatToDoUnavailable": "장바구니에서 해당 상품을 빼고 다시 결제해 주세요."
-    }
+    },
+    "addToDeliveryConvert": "일반 주문으로 결제하기",
+    "addToDeliveryShipped": "함께 받을 주문이 방금 출고됐어요. 배송비를 포함해 다시 결제해 주세요."
   },
   "callback": {
     "paymentFailed": "결제에 실패했습니다.",
