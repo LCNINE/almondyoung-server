@@ -3,11 +3,37 @@
 import { CircleAlert } from 'lucide-react';
 import { useWaybillSenderPreview } from '@/lib/services/orders';
 import {
+  FIELD_UNKNOWN_TEXT,
+  RETURN_ADDRESS_TEXT,
   SENDER_UNKNOWN_TEXT,
   senderGroupsOf,
   reissueSenderText,
   senderLineOf,
+  type SenderField,
 } from './sender-preview-model';
+
+/** 보내는 분 이름 아래 한 칸 — 전화·출고지. 값이 없으면 확인 불가 */
+function SenderFieldRow({
+  label,
+  field,
+}: {
+  label: string;
+  field: SenderField;
+}) {
+  return (
+    <p className="flex flex-wrap items-center gap-x-1.5 text-xs">
+      <span className="text-muted-foreground">{label}</span>
+      {field.text ? (
+        <span>{field.text}</span>
+      ) : (
+        <span className="font-medium text-amber-700">{FIELD_UNKNOWN_TEXT}</span>
+      )}
+      {field.note && (
+        <span className="text-muted-foreground">({field.note})</span>
+      )}
+    </p>
+  );
+}
 
 /** 상자 상세 운송장 칸 — 이 상자 송장에 찍힐 보내는 분 */
 export function SenderPreviewLine({ shipmentId }: { shipmentId: string }) {
@@ -41,6 +67,16 @@ export function SenderPreviewLine({ shipmentId }: { shipmentId: string }) {
           <span className="text-xs text-muted-foreground">({line.note})</span>
         )}
       </p>
+      {!line.unknown && (
+        <>
+          <SenderFieldRow label="보내는 분 전화" field={line.phone} />
+          <SenderFieldRow label="출고지" field={line.origin} />
+          <p className="flex flex-wrap items-center gap-x-1.5 text-xs">
+            <span className="text-muted-foreground">반품지</span>
+            <span className="text-muted-foreground">{RETURN_ADDRESS_TEXT}</span>
+          </p>
+        </>
+      )}
       {reissue && <p className="text-xs text-amber-700">{reissue}</p>}
     </div>
   );
@@ -87,9 +123,18 @@ export function SenderPreviewSummary({
                 ({group.note})
               </span>
             )}
+            {!group.unknown && (
+              <span className="basis-full text-xs text-muted-foreground">
+                전화 {group.phone.text ?? FIELD_UNKNOWN_TEXT} · 출고지{' '}
+                {group.origin.text ?? FIELD_UNKNOWN_TEXT}
+              </span>
+            )}
           </li>
         ))}
       </ul>
+      <p className="text-xs text-muted-foreground">
+        반품지: {RETURN_ADDRESS_TEXT}
+      </p>
     </section>
   );
 }

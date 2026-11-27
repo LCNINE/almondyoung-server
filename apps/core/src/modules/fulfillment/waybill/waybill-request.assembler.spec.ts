@@ -11,6 +11,7 @@ import {
 import type { SenderPreviewInput } from './waybill.types';
 import type { WaybillRequest } from './carrier/carrier-gateway.interface';
 import type { HanjinConfig } from './carrier/hanjin/hanjin.config';
+import { RECIPIENT_DETAIL_FALLBACK } from './carrier/hanjin/hanjin-carrier.gateway';
 
 const config: HanjinConfig = {
   clientId: 'CID',
@@ -264,8 +265,8 @@ describe('발급 전 보내는 분 미리보기', () => {
     profileSender: null,
     ...over,
   });
-  // 미리보기 이름이 실제 발급 요청에 실리는 이름과 같아야 한다
-  const issuedName = (i: SenderPreviewInput) =>
+  // 미리보기 값이 실제 발급 요청(한진 접수·라벨이 쓰는 sender)과 같아야 한다
+  const issuedSender = (i: SenderPreviewInput) =>
     assembleWaybillRequest({
       shipmentId: '00000000-0000-4000-8000-000000000001',
       recipientSnapshot: snapshot,
@@ -273,7 +274,21 @@ describe('발급 전 보내는 분 미리보기', () => {
       config,
       profileSender: i.profileSender,
       ...(i.storedSender !== undefined ? { storedSender: i.storedSender } : {}),
-    }).sender.name;
+    }).sender;
+  const issuedName = (i: SenderPreviewInput) => issuedSender(i).name;
+  const previewMatchesIssue = (i: SenderPreviewInput) => {
+    const preview = senderPreviewOf(i, config, true);
+    const sent = issuedSender(i);
+    expect(preview.name).toBe(sent.name);
+    expect(preview.phone).toBe(sent.tel || null);
+    // 상세주소가 비면 한진 접수는 대체 문구를 싣는다(hanjin-carrier.gateway register)
+    expect(preview.origin).toEqual({
+      zip: sent.zip,
+      baseAddress: sent.baseAddress,
+      detailAddress: sent.detailAddress.trim() || RECIPIENT_DETAIL_FALLBACK,
+    });
+    return preview;
+  };
 
   it('프로필에 보내는 분이 있으면 그 이름, 출처는 배송 프로필', () => {
     const i = input({ profileSender: profile });
@@ -281,9 +296,49 @@ describe('발급 전 보내는 분 미리보기', () => {
       shipmentId: 'box',
       name: '위탁업체',
       source: 'profile',
+      // 프로필에 전화·출고지가 비어 그 칸은 기본값으로 메워진다
+      phone: '02-100-2000',
+      phoneSource: 'default',
+      origin: { zip: '06236', baseAddress: '서울 강남구 테헤란로 1', detailAddress: '10층' },
+      originSource: 'default',
       beforePlan: false,
     });
     expect(issuedName(i)).toBe('위탁업체');
+    previewMatchesIssue(i);
+  });
+
+  it('프로필 전화·출고지가 있으면 그 값, 칸마다 출처를 준다 — 발급 요청과 같다', () => {
+    const full = {
+      name: '위탁업체',
+      phone: '031-000-0000',
+      zip: '14000',
+      baseAddress: '경기 부천시 길 1',
+      detailAddress: '',
+    };
+    const preview = previewMatchesIssue(input({ profileSender: full }));
+    expect(preview).toMatchObject({ phoneSource: 'profile', originSource: 'profile' });
+  });
+
+  it('프로필 출고지가 우편번호나 도로명 중 하나라도 비면 주소는 기본값 통째', () => {
+    const half = { name: '위탁업체', phone: '031-000-0000', zip: '14000', baseAddress: '', detailAddress: '2층' };
+    const preview = previewMatchesIssue(input({ profileSender: half }));
+    expect(preview).toMatchObject({
+      phone: '031-000-0000',
+      phoneSource: 'profile',
+      origin: { zip: '06236', baseAddress: '서울 강남구 테헤란로 1', detailAddress: '10층' },
+      originSource: 'default',
+    });
+  });
+
+  it('송장 행 값은 칸마다 이미 만든 송장 값이고, 전화가 빈 옛 행은 전화만 확인 불가', () => {
+    const stored = { name: '옛 이름', zip: '1', baseAddress: '주소', detailAddress: '', tel: '' };
+    const preview = previewMatchesIssue(input({ profileSender: profile, storedSender: stored }));
+    expect(preview).toMatchObject({
+      phone: null,
+      phoneSource: 'unknown',
+      origin: { zip: '1', baseAddress: '주소', detailAddress: RECIPIENT_DETAIL_FALLBACK },
+      originSource: 'waybill',
+    });
   });
 
   it('프로필 값이 없으면 기본 송화인으로 대체된다고 알린다', () => {
@@ -309,6 +364,10 @@ describe('발급 전 보내는 분 미리보기', () => {
     expect(senderPreviewOf(input({ profileSender: profile }), config, false)).toMatchObject({
       name: null,
       source: 'unknown',
+      phone: null,
+      phoneSource: 'unknown',
+      origin: null,
+      originSource: 'unknown',
       reason: 'carrier_not_configured',
     });
   });
@@ -357,10 +416,35 @@ describe('발급 전 보내는 분 미리보기', () => {
       reissue: { name: '위탁업체', source: 'profile' },
     });
     expect(issuedName({ ...i, storedSender: undefined })).toBe('위탁업체');
-    // 같으면 덧붙이지 않는다
-    expect(
-      senderPreviewOf(input({ ...i, storedSender: { ...stored, name: '위탁업체' } }), config, true).reissue,
-    ).toBeUndefined();
+    // 이름·전화·주소가 모두 같으면 덧붙이지 않는다
+    const same = { ...config.sender, name: '위탁업체' };
+    expect(senderPreviewOf(input({ ...i, storedSender: same }), config, true).reissue).toBeUndefined();
+  });
+
+  it('재발급 때 이름은 같아도 전화나 출고지가 바뀌면 바뀐 값을 함께 준다', () => {
+    const stored = { ...config.sender, name: '위탁업체' };
+    const moved = {
+      name: '위탁업체',
+      phone: '031-000-0000',
+      zip: '14000',
+      baseAddress: '경기 부천시 길 1',
+      detailAddress: '',
+    };
+    const i = input({ storedSender: stored, activeStatus: 'registered', profileSender: moved });
+    expect(senderPreviewOf(i, config, true).reissue).toEqual({
+      name: '위탁업체',
+      source: 'profile',
+      phone: '031-000-0000',
+      phoneSource: 'profile',
+      origin: { zip: '14000', baseAddress: '경기 부천시 길 1', detailAddress: RECIPIENT_DETAIL_FALLBACK },
+      originSource: 'profile',
+    });
+    expect(issuedSender({ ...i, storedSender: undefined })).toMatchObject({ tel: '031-000-0000', zip: '14000' });
+  });
+
+  it('기본값의 앞뒤 공백도 접수에 실리는 그대로 보인다', () => {
+    const spaced = { ...config, sender: { ...config.sender, name: ' 보내는이 ', tel: ' 02-1 ' } };
+    expect(senderPreviewOf(input(), spaced, true)).toMatchObject({ name: ' 보내는이 ', phone: ' 02-1 ' });
   });
 
   it('없는 상자는 확인 불가', () => {

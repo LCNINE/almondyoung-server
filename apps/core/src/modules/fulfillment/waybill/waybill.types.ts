@@ -63,11 +63,32 @@ export interface SenderPreview {
   shipmentId: string;
   /** 송장에 찍힐 보내는 분 이름. 확인할 수 없으면 null */
   name: string | null;
-  source: 'waybill' | 'profile' | 'default' | 'unknown';
+  source: SenderPreviewSource;
+  /** 송장에 찍힐 보내는 분 전화(한진 sndrTelNo). 확인할 수 없으면 null */
+  phone: string | null;
+  phoneSource: SenderPreviewSource;
+  /** 보내는 분 주소 = 출고지(한진 sndr 주소). 확인할 수 없으면 null */
+  origin: SenderOrigin | null;
+  originSource: SenderPreviewSource;
   beforePlan: boolean;
   reason?: SenderPreviewReason;
-  /** 등록된 송장을 재발급하면 찍힐 보내는 분 — 지금 송장 값과 다를 때만 */
-  reissue?: { name: string; source: 'profile' | 'default' };
+  /** 등록된 송장을 재발급하면 찍힐 보내는 분 — 이름·전화·주소 중 하나라도 지금 송장 값과 다를 때만 */
+  reissue?: {
+    name: string | null;
+    source: 'profile' | 'default';
+    phone: string | null;
+    phoneSource: SenderPreviewSource;
+    origin: SenderOrigin | null;
+    originSource: SenderPreviewSource;
+  };
+}
+
+export type SenderPreviewSource = 'waybill' | 'profile' | 'default' | 'unknown';
+
+export interface SenderOrigin {
+  zip: string;
+  baseAddress: string;
+  detailAddress: string;
 }
 
 export interface ProfileSender {

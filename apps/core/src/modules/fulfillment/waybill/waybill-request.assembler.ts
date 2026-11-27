@@ -1,6 +1,7 @@
 import { BadRequestError } from '@app/shared';
 import type { HanjinConfig } from './carrier/hanjin/hanjin.config';
 import type { WaybillRequest } from './carrier/carrier-gateway.interface';
+import { RECIPIENT_DETAIL_FALLBACK } from './carrier/hanjin/hanjin-carrier.gateway';
 import { deriveCustOrdNo } from './cust-ord-no';
 import { WAYBILL } from './waybill.constants';
 import type {
@@ -98,23 +99,73 @@ export function storedSenderOf(snapshot: unknown): HanjinConfig['sender'] | null
 /** 보내는 분이 어디서 왔나 — waybill: 이미 만든 송장 행, profile: 상자의 배송 프로필, default: HANJIN_SENDER_* */
 export type SenderSource = 'waybill' | 'profile' | 'default';
 
+/** 칸마다 어디서 왔나 — 프로필은 전화·주소가 비면 그 칸만 기본값으로 메운다(senderOf) */
+export interface SenderFieldSources {
+  name: SenderSource;
+  phone: SenderSource;
+  origin: SenderSource;
+}
+
 /** 송장에 실을 보내는 분. 발급(assembleWaybillRequest)과 발급 전 미리보기가 이 함수 하나로 고른다 */
 export function resolveSender(input: Pick<AssembleInput, 'config' | 'profileSender' | 'storedSender'>): {
   sender: HanjinConfig['sender'];
   source: SenderSource;
+  fields: SenderFieldSources;
 } {
+  const all = (source: SenderSource): SenderFieldSources => ({ name: source, phone: source, origin: source });
+
   if (input.storedSender !== undefined) {
     const stored = storedSenderOf(input.storedSender);
-    return stored ? { sender: stored, source: 'waybill' } : { sender: input.config.sender, source: 'default' };
+    return stored
+      ? { sender: stored, source: 'waybill', fields: all('waybill') }
+      : { sender: input.config.sender, source: 'default', fields: all('default') };
   }
-  return input.profileSender
-    ? { sender: senderOf(input.config, input.profileSender), source: 'profile' }
-    : { sender: input.config.sender, source: 'default' };
+  const profile = input.profileSender;
+  if (!profile) return { sender: input.config.sender, source: 'default', fields: all('default') };
+
+  return {
+    sender: senderOf(input.config, profile),
+    source: 'profile',
+    fields: {
+      name: 'profile',
+      phone: profile.phone ? 'profile' : 'default',
+      origin: profile.zip && profile.baseAddress ? 'profile' : 'default',
+    },
+  };
+}
+
+type SenderValues = Pick<SenderPreview, 'name' | 'phone' | 'phoneSource' | 'origin' | 'originSource'>;
+
+/** 한진 접수에 실리는 그대로 보인다 — 값은 다듬지 않고, 빈 상세주소는 접수 때처럼 대체 문구로 바꾼다 */
+function senderValuesOf(sender: HanjinConfig['sender'], fields: SenderFieldSources): SenderValues {
+  const hasPhone = !!sender.tel.trim();
+  return {
+    name: sender.name.trim() ? sender.name : null,
+    phone: hasPhone ? sender.tel : null,
+    phoneSource: hasPhone ? fields.phone : 'unknown',
+    origin: {
+      zip: sender.zip,
+      baseAddress: sender.baseAddress,
+      detailAddress: sender.detailAddress.trim() || RECIPIENT_DETAIL_FALLBACK,
+    },
+    originSource: fields.origin,
+  };
+}
+
+function sameSender(a: SenderValues, b: SenderValues): boolean {
+  return (
+    a.name === b.name &&
+    a.phone === b.phone &&
+    a.origin?.zip === b.origin?.zip &&
+    a.origin?.baseAddress === b.origin?.baseAddress &&
+    a.origin?.detailAddress === b.origin?.detailAddress
+  );
 }
 
 /**
  * 발급 전 미리보기 — 발급과 같은 resolveSender 로 고른다. 택배사 설정이 비었거나 확정이 막히는 상자처럼
- * 실제 값을 장담할 수 없으면 이름을 내지 않고 unknown 으로 둔다(화면은 «확인 불가»로 보인다)
+ * 실제 값을 장담할 수 없으면 값을 내지 않고 unknown 으로 둔다(화면은 «확인 불가»로 보인다).
+ * 한진 출고 접수와 라벨에 실리는 보내는 분 칸(이름·전화·주소)만 다룬다 — 배송 프로필의 반품지는 송장에 실리지 않는다
  */
 export function senderPreviewOf(
   input: SenderPreviewInput,
@@ -126,6 +177,10 @@ export function senderPreviewOf(
     ...base,
     name: null,
     source: 'unknown',
+    phone: null,
+    phoneSource: 'unknown',
+    origin: null,
+    originSource: 'unknown',
     reason,
   });
 
@@ -139,23 +194,23 @@ export function senderPreviewOf(
     return unknown('carrier_not_configured');
   }
 
-  const { sender, source } = resolveSender({
+  const now = resolveSender({
     config,
     profileSender: input.profileSender,
     storedSender: input.storedSender,
   });
-  const name = sender.name.trim();
-  if (!name) return unknown('sender_missing');
+  const values = senderValuesOf(now.sender, now.fields);
+  if (!values.name) return unknown('sender_missing');
 
   // 재발급은 지금 송장을 무효로 하고 상자의 배송 프로필로 새로 조립한다(reissue → issueForShipment)
   if (input.activeStatus === 'registered' && carrierConfigured) {
     const next = resolveSender({ config, profileSender: input.profileSender });
-    const nextName = next.sender.name.trim();
-    if (nextName && nextName !== name && next.source !== 'waybill') {
-      return { ...base, name, source, reissue: { name: nextName, source: next.source } };
+    const nextValues = senderValuesOf(next.sender, next.fields);
+    if (nextValues.name && next.source !== 'waybill' && !sameSender(values, nextValues)) {
+      return { ...base, ...values, source: now.source, reissue: { ...nextValues, source: next.source } };
     }
   }
-  return { ...base, name, source };
+  return { ...base, ...values, source: now.source };
 }
 
 /**
