@@ -68,6 +68,9 @@ export default function OrderDetailsStatusCards({
       itemCount={items.length}
       coreActions={coreActions}
       addToDelivery={parentCancelInfo(addToDeliveryLink, coreActions)}
+      reorderHref={
+        order.items?.[0]?.product_handle ? `/products/${order.items[0].product_handle}` : undefined
+      }
       bankTransferStatus={bankTransferStatus}
       refundRequestStatus={refundRequestStatus}
       refundIntentId={intentId}
