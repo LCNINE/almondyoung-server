@@ -337,6 +337,7 @@ export class SkuFieldCaptureReader {
               .limit(ITEM_PAGE_SIZE)
               .offset(offset);
       const total = rows[0]?.total ?? 0;
+      const photoFileIds = await this.photoFileIdsBySku(trx, rows.map((r) => r.skuId));
       const items = rows.flatMap((r) =>
         r.completedAt && r.barcodeStatus && r.lastWorkerId && r.lastWorkerLabel && r.lastCompletedAt
           ? [
@@ -354,6 +355,7 @@ export class SkuFieldCaptureReader {
                 packageHeightMm: r.packageHeightMm,
                 barcodeStatus: asBarcodeStatus(r.barcodeStatus),
                 canCancel: r.lastWorkerId === workerId,
+                photoFileIds: photoFileIds.get(r.skuId) ?? [],
               },
             ]
           : [],
@@ -362,6 +364,27 @@ export class SkuFieldCaptureReader {
 
       return { items, total, nextOffset: fetched < total ? fetched : null };
     }, tx);
+  }
+
+  private async photoFileIdsBySku(trx: DbTx, skuIds: string[]): Promise<Map<string, string[]>> {
+    const bySku = new Map<string, string[]>();
+
+    if (skuIds.length === 0) {
+      return bySku;
+    }
+
+    const ph = wmsTables.skuReferencePhotos;
+    const photos = await trx
+      .select({ skuId: ph.skuId, fileId: ph.fileId })
+      .from(ph)
+      .where(inArray(ph.skuId, skuIds))
+      .orderBy(asc(ph.skuId), asc(ph.sortOrder), asc(ph.createdAt));
+
+    for (const photo of photos) {
+      bySku.set(photo.skuId, [...(bySku.get(photo.skuId) ?? []), photo.fileId]);
+    }
+
+    return bySku;
   }
 
   /** 찍힌 사진 전체, 최근순 — 어떤 선반·상품을 누가 찍었는지. 기간(KST)·상품명·코드·선반·작업자로 거른다. */
