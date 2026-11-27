@@ -24,11 +24,17 @@ import {
 } from '../returns/return-settlement-record';
 import { appliedExternalRefund, checkAlreadyRefunded, hashRequest, unresolvedExternalRefund } from './external-refund';
 import type { OrderAdjustment } from './prorate-adjustments';
-import { planPartialCancel, PartialCancelRejected, type CancelRequestItem, type OrderLine } from './plan-partial-cancel';
+import {
+  planPartialCancel,
+  PartialCancelRejected,
+  type CancelRequestItem,
+  type OrderLine,
+} from './plan-partial-cancel';
 import { PARTIAL_CANCEL_CHARGE_NAME, planShipping } from './plan-shipping';
 import { priorGroupFeesFor } from './prior-group-fees';
 import { shippingPlanLines, shippingRefundFloorLines } from './shipping-plan-lines';
 import { cancelShippingFeeBearer, type ShippingFeeBearer } from './shipping-fee-bearer';
+import { ADD_TO_DELIVERY_PARENT_KEY } from '../../../modules/almond-fulfillment/add-to-delivery/resolve-parent';
 
 export { PARTIAL_CANCEL_CHARGE_NAME };
 
@@ -123,7 +129,10 @@ const refundNote = (requestId: string) => `partial-cancel:${requestId}`;
  * 스스로 붙여 장부를 맞춘다. 진행 단계는 주문 metadata.partialCancels[requestId] 에 남아, 같은 requestId 로 다시 부르면
  * 끊긴 곳부터 이어 간다.
  */
-export async function partialCancelOrder(container: MedusaContainer, input: PartialCancelInput): Promise<PartialCancelResult> {
+export async function partialCancelOrder(
+  container: MedusaContainer,
+  input: PartialCancelInput,
+): Promise<PartialCancelResult> {
   const locking = container.resolve(Modules.LOCKING);
   return locking.execute(orderCancelLockKey(input.orderId), () => run(container, input), {
     timeout: ORDER_LOCK_TIMEOUT_SECONDS,
@@ -169,14 +178,27 @@ async function run(container: MedusaContainer, input: PartialCancelInput): Promi
   } catch (error) {
     const refusal = readWalletRefundRefusal(error);
     if (refusal) throw new PartialCancelRefundRefused(input.requestId, refusal.code, refusal.message);
-    throw new PartialCancelRefundPending(input.requestId, `부분취소 환불이 끝나지 않았습니다(${input.requestId}): ${describeError(error)}`);
+    throw new PartialCancelRefundPending(
+      input.requestId,
+      `부분취소 환불이 끝나지 않았습니다(${input.requestId}): ${describeError(error)}`,
+    );
   }
-  const done: PartialCancelRecord = { ...record, stage: 'refunded', refundedAt: new Date().toISOString(), refundMode: mode };
+  const done: PartialCancelRecord = {
+    ...record,
+    stage: 'refunded',
+    refundedAt: new Date().toISOString(),
+    refundMode: mode,
+  };
   await writeRecord(container, input.orderId, input.requestId, done);
   return toResult(input.requestId, done);
 }
 
-async function edit(container: MedusaContainer, input: PartialCancelInput, order: OrderView, requestHash: string): Promise<PartialCancelRecord> {
+async function edit(
+  container: MedusaContainer,
+  input: PartialCancelInput,
+  order: OrderView,
+  requestHash: string,
+): Promise<PartialCancelRecord> {
   if (order.status === 'canceled') throw new PartialCancelRejected('이미 취소된 주문입니다');
   const returnRecords = await loadReturnSettlementRecords(container, order.id);
   // 수령은 됐는데 택배비 청구 전에 끊긴 반품 정산이 있으면 기다린다(500 → 호출자 재시도). 지금 부분취소하면 이 취소가
@@ -207,7 +229,8 @@ async function edit(container: MedusaContainer, input: PartialCancelInput, order
     refundFloorLines: shippingRefundFloorLines(order.lines, newQty, profiles),
     postalCode: order.postalCode,
     priorGroupFees: priorGroupFeesFor(Object.values(readPartialCancelRecords(order.metadata)), returnRecords),
-    chargeCap: bearer === 'seller' ? 0 : plan.itemRefundEstimate,
+    // 함께 배송 주문은 배송비를 면제받았다 — 일부를 취소해도 정책 배송비를 새로 매기지 않는다
+    chargeCap: bearer === 'seller' || isAddToDeliveryOrder(order.metadata) ? 0 : plan.itemRefundEstimate,
   });
 
   const { result: change } = await beginOrderEditOrderWorkflow(container).run({
@@ -219,7 +242,9 @@ async function edit(container: MedusaContainer, input: PartialCancelInput, order
     });
 
     // 수량 변경 워크플로가 (carry_over_promotions 가 꺼져 있으면) 기존 ITEM_ADJUSTMENTS_REPLACE 를 지우므로 그 «뒤»에 넣는다.
-    const toReplace = plan.lines.flatMap((p) => (p.replaceAdjustments ? [{ itemId: p.itemId, adjustments: p.replaceAdjustments }] : []));
+    const toReplace = plan.lines.flatMap((p) =>
+      p.replaceAdjustments ? [{ itemId: p.itemId, adjustments: p.replaceAdjustments }] : [],
+    );
     if (toReplace.length > 0) {
       await createOrderChangeActionsWorkflow(container).run({
         input: toReplace.map((p) => ({
@@ -245,8 +270,12 @@ async function edit(container: MedusaContainer, input: PartialCancelInput, order
       });
     }
 
-    await requestOrderEditRequestWorkflow(container).run({ input: { order_id: order.id, requested_by: input.actorId } });
-    await confirmOrderEditRequestWorkflow(container).run({ input: { order_id: order.id, confirmed_by: input.actorId } });
+    await requestOrderEditRequestWorkflow(container).run({
+      input: { order_id: order.id, requested_by: input.actorId },
+    });
+    await confirmOrderEditRequestWorkflow(container).run({
+      input: { order_id: order.id, confirmed_by: input.actorId },
+    });
   } catch (error) {
     // 확정 전 실패 — 열린 주문 수정을 버려 주문을 원래대로 둔다(더한 «부분취소 배송비» 방법도 지운다)
     await cancelOpenOrderEdit(container, order.id).catch(() => undefined);
@@ -256,7 +285,8 @@ async function edit(container: MedusaContainer, input: PartialCancelInput, order
   const edited = await loadOrder(container, order.id);
   // 이번 수정이 만든 «돌려줄 차액»만 센다. 수정 전부터 남아 있던 차액(예: 환불이 밀린 다른 부분취소)을 같이 돌려주지 않게.
   const owed = roundWon(order.pendingDifference - edited.pendingDifference);
-  if (!Number.isFinite(owed)) throw new Error(`돌려줄 차액을 읽지 못했습니다: ${order.pendingDifference} → ${edited.pendingDifference}`);
+  if (!Number.isFinite(owed))
+    throw new Error(`돌려줄 차액을 읽지 못했습니다: ${order.pendingDifference} → ${edited.pendingDifference}`);
   // 상계는 Medusa 가 받아 주는 만큼으로도 묶는다: validateOrderCreditLinesStep 은 음수 라인이 |수정 뒤 차액| 을 넘으면
   // 거절한다. owed 는 반올림한 값이라(29,285.71 → 29,286) 그대로 쓰면 재시도마다 거절돼 refund_pending 에 갇힌다 —
   // 차액을 내림한 만큼만 상계하고, 1원 미만 반올림 몫은 환불이 떠안는다.
@@ -271,7 +301,9 @@ async function edit(container: MedusaContainer, input: PartialCancelInput, order
     shippingRefund: shipping.adjustable ? shipping.refund : 0,
     shippingNotAdjusted: !shipping.adjustable,
     // newFee 가 아니라 recordedFee — 상한이 청구를 깎았으면 실제로 청구한 만큼만 다음 취소의 기준이 된다
-    groupFees: shipping.adjustable ? Object.fromEntries(shipping.groups.map((g) => [g.shippingProfileId, g.recordedFee])) : {},
+    groupFees: shipping.adjustable
+      ? Object.fromEntries(shipping.groups.map((g) => [g.shippingProfileId, g.recordedFee]))
+      : {},
     at: new Date().toISOString(),
     orderVersion: edited.version,
     shippingFeeBearer: bearer,
@@ -319,11 +351,18 @@ export function readPartialCancelRecords(metadata: unknown): Record<string, Part
   if (!v || typeof v !== 'object') return {};
   // metadata 는 JSON 병합 갱신이라 «지운» 기록은 null 로 남는다 — 객체가 아닌 값은 기록이 없는 것으로 본다.
   return Object.fromEntries(
-    Object.entries(v as Record<string, unknown>).filter((e): e is [string, PartialCancelRecord] => !!e[1] && typeof e[1] === 'object'),
+    Object.entries(v as Record<string, unknown>).filter(
+      (e): e is [string, PartialCancelRecord] => !!e[1] && typeof e[1] === 'object',
+    ),
   );
 }
 
-async function writeRecord(container: MedusaContainer, orderId: string, requestId: string, record: PartialCancelRecord) {
+async function writeRecord(
+  container: MedusaContainer,
+  orderId: string,
+  requestId: string,
+  record: PartialCancelRecord,
+) {
   const orderModule = container.resolve(Modules.ORDER);
   const current = await orderModule.retrieveOrder(orderId, { select: ['id', 'metadata'] });
   const meta = (current.metadata ?? {}) as Record<string, unknown>;
@@ -360,3 +399,6 @@ const toAdjustmentDetail = (a: OrderAdjustment) => ({
   description: a.description ?? undefined,
   is_tax_inclusive: a.is_tax_inclusive ?? false,
 });
+
+const isAddToDeliveryOrder = (metadata: unknown) =>
+  typeof (metadata as Record<string, unknown> | null | undefined)?.[ADD_TO_DELIVERY_PARENT_KEY] === 'string';

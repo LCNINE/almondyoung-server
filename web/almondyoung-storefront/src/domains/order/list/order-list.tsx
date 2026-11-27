@@ -475,6 +475,7 @@ export function OrderList({
                     order.showInquiry || actions?.fulfillmentStatus === "delivered"
                   }
                   coreActions={actions}
+                  reorderHref={order.items[0]?.href}
                   addToDelivery={parentCancelInfo(
                     linksMap[order.orderId],
                     actions

@@ -73,6 +73,8 @@ interface OrderActionsProps {
   trackingHref?: string
   /** 이 주문에 붙은 함께 배송 주문이 있으면: 부모만 취소할 때 뺄 금액과 그 주문들 */
   addToDelivery?: { withheldAmount: number; childOrderIds: string[] }
+  /** 옵션·수량을 바꾸려고 취소했을 때 다시 담으러 갈 상품 상세 경로 */
+  reorderHref?: string
   children?: (actions: ReactNode) => ReactNode
 }
 
@@ -117,6 +119,7 @@ export default function OrderActions({
   hasReturns = false,
   trackingHref,
   addToDelivery,
+  reorderHref,
   children,
 }: OrderActionsProps) {
   const availableActions = coreActions?.availableActions ?? availableActionsProp
@@ -284,11 +287,20 @@ export default function OrderActions({
         setShowCancelDialog(false)
         setShowParentCancelDialog(false)
         // 취소는 요청 순간 확정된다(#1016 36번 재설계 §8.2) — 응답이 곧 «취소 완료»다
-        toast.success(
-          cancelReasonCode === "CHANGE_OPTION"
-            ? tChangeOption("toast")
-            : tActions("cancelCompleted")
-        )
+        if (cancelReasonCode === "CHANGE_OPTION") {
+          toast.success(tChangeOption("toast"), {
+            ...(reorderHref
+              ? {
+                  action: {
+                    label: tChangeOption("reAdd"),
+                    onClick: () => router.push(`/${countryCode}${reorderHref}`),
+                  },
+                }
+              : {}),
+          })
+        } else {
+          toast.success(tActions("cancelCompleted"))
+        }
         router.refresh()
       } catch (err: unknown) {
         // 인증 실패는 error.tsx 가 토큰 복구를 처리하도록 전파

@@ -6,6 +6,16 @@ export const ADD_TO_DELIVERY_CART_KIND = 'add_to_delivery';
 
 const PARENT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
+/** 함께 배송을 여는 배송비 그룹(셀메이트·부천 출고). 인쇄·직배송 그룹은 같은 상자로 묶을 수 없다 */
+export function addToDeliveryGroupCodes(): Set<string> {
+  return new Set(
+    (process.env.ADD_TO_DELIVERY_SHIPPING_GROUP_CODES ?? 'default')
+      .split(',')
+      .map((c) => c.trim())
+      .filter(Boolean),
+  );
+}
+
 // Core 라우트 한 번 상한. 최신 주문부터 묻는다.
 const CORE_BATCH_LIMIT = 50;
 
@@ -101,13 +111,17 @@ async function loadProfiles(query: QueryGraph, productIds: string[]): Promise<Ma
   const result = new Map<string, string>();
   if (ids.length === 0) return result;
 
+  const allowed = addToDeliveryGroupCodes();
   const { data } = await query.graph({
     entity: 'product',
-    fields: ['id', 'shipping_profile.id'],
+    fields: ['id', 'shipping_profile.id', 'shipping_profile.metadata'],
     filters: { id: ids },
   });
   for (const product of data) {
-    if (product.shipping_profile?.id) result.set(product.id, product.shipping_profile.id);
+    const code = product.shipping_profile?.metadata?.shippingGroupCode;
+    if (product.shipping_profile?.id && typeof code === 'string' && allowed.has(code)) {
+      result.set(product.id, product.shipping_profile.id);
+    }
   }
 
   return result;

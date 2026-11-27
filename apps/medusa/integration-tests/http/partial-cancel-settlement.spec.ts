@@ -151,5 +151,17 @@ medusaIntegrationTestRunner({
       // 0 이 아니면 멈추고 보고한다 — 스펙 §3-2(돌려줄 돈은 장부에서 사라지지 않는다)의 반례일 수 있다
       expect(balance(o)).toBe(0);
     });
+
+
+    it('함께 배송 주문은 일부를 취소해 무료배송 기준이 깨져도 배송비를 새로 매기지 않는다', async () => {
+      const { orderId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'A', quantity: 2 }] });
+      const orderModule = getContainer().resolve(Modules.ORDER);
+      await orderModule.updateOrders([{ id: orderId, metadata: { add_to_delivery_parent_order_id: 'order_parent' } }]);
+
+      const res = await cancelOne(orderId, 'req-add-on', { reasonCode: 'CHANGE_OF_MIND', requestedBy: 'customer' });
+
+      expect(res.status).toBe(200);
+      expect(res.data.shippingDelta).toBe(0);
+    });
   },
 });

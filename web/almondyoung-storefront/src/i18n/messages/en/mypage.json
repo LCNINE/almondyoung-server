@@ -1037,7 +1037,8 @@
       "toast": "Tap Add to delivery on a product page to get it with this order at no shipping fee."
     },
     "changeOption": {
-      "toast": "Canceled. Please add the item again with the option you want."
+      "toast": "Canceled. Please add the item again with the option you want.",
+      "reAdd": "Add the same item again"
     }
   },
   "membership": {

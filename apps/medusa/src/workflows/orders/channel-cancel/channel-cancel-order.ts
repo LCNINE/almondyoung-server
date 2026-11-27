@@ -18,11 +18,13 @@ import { orderCancelLockKey, orderPaymentIds } from '../settlement/order-payment
 import type { RefundMode } from '../settlement/refund-mode';
 import { planPaymentWalletRefundBookings, reconcileOrderWalletRefunds } from '../settlement/wallet-refund-ledger';
 import {
+  addOnParentId,
   clearAddOnCanceling,
   holdForParentCancel,
   markAddOnCanceling,
   recordHoldBeforeCancel,
-  releaseParentHold,
+  releaseInsideParentLock,
+  withParentSettlementLock,
 } from './add-to-delivery-hold';
 import { cancelOrderKeepingHoldWorkflow } from './cancel-order-keeping-hold';
 
@@ -87,16 +89,31 @@ async function run(container: MedusaContainer, input: ChannelCancelInput): Promi
   try {
     // ① 빠진 wallet 환불(외부·응답 유실)을 먼저 장부에 — 그래야 ② 의 «캡처 − 환불»이 이미 나간 돈을 또 내지 않는다
     await reconcileOrderWalletRefunds(container, input.orderId);
-    await markAddOnCanceling(container, input.orderId);
-    // 부모만 취소하면 살아 있는 함께 배송 주문의 면제 배송비를 결제에 남긴다. 그 주문이 취소되면 releaseParentHold 가 돌려준다
-    const hold = await holdForParentCancel(container, input);
-    const held = await refundRemaining(container, input, hold);
-    // 이 주문이 함께 배송 주문이면, 자기 환불 뒤·자기 취소 전에 부모 보류에서 이제 필요 없는 몫을 돌려준다(실패하면 500 으로 재시도된다)
-    await releaseParentHold(container, {
-      childOrderId: input.orderId,
-      refundMode: input.refundMode,
-      actorId: input.actorId,
-    });
+    const parentId = await addOnParentId(container, input.orderId);
+    let held = 0;
+
+    if (parentId) {
+      // 함께 배송 주문: 표시·자기 환불·부모 보류 되돌려주기를 부모 정산 잠금 안에서 한 번에 한다.
+      // 부모 전체취소는 같은 잠금 안에서 보류를 정하므로, 이 주문이 살아 있는지(보류) 끝났는지(보류 안 함)만 보게 된다
+      await withParentSettlementLock(container, parentId, async () => {
+        await markAddOnCanceling(container, input.orderId);
+        try {
+          await refundRemaining(container, input);
+        } catch (error) {
+          if (readWalletRefundRefusal(error)) await clearAddOnCanceling(container, input.orderId);
+          throw error;
+        }
+        await releaseInsideParentLock(container, parentId, {
+          childOrderId: input.orderId,
+          refundMode: input.refundMode,
+          actorId: input.actorId,
+        });
+      });
+    } else {
+      // 부모만 취소하면 살아 있는 함께 배송 주문의 면제 배송비를 결제에 남긴다. 그 주문이 취소되면 위 갈래가 돌려준다
+      const hold = await holdForParentCancel(container, input);
+      held = await refundRemaining(container, input, hold);
+    }
 
     // 보류를 취소 «전»에 적는다 — 취소 뒤에 끊기면 재시도가 «이미 취소됨»으로 끝나 보류를 영영 못 적는다
     await recordHoldBeforeCancel(container, input.orderId, held);

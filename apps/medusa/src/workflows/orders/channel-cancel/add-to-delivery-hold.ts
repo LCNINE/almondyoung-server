@@ -39,7 +39,7 @@ export function readHold(metadata: unknown): AddToDeliveryHold | null {
 
 /**
  * 함께 배송 주문이 전체취소를 시작한다고 적는다(환불 전). 부모 취소가 이 표시를 본 뒤면 이 주문 몫을 보류하지 않고,
- * 표시 전에 부모가 보류했다면 이 주문의 releaseParentHold 가 부모 잠금 뒤에서 그 보류를 본다.
+ * 이 표시·자기 환불·되돌려주기는 부모 정산 잠금 안에서 함께 돈다(channel-cancel-order 의 함께 배송 갈래).
  */
 export async function markAddOnCanceling(container: MedusaContainer, orderId: string): Promise<void> {
   const orderModule = container.resolve(Modules.ORDER);
@@ -60,6 +60,26 @@ export async function clearAddOnCanceling(container: MedusaContainer, orderId: s
   if (!metadata[ADD_TO_DELIVERY_CANCELING_KEY]) return;
 
   await orderModule.updateOrders([{ id: orderId, metadata: { ...metadata, [ADD_TO_DELIVERY_CANCELING_KEY]: null } }]);
+}
+
+/** 이 주문이 함께 배송 주문이면 부모 주문 id */
+export async function addOnParentId(container: MedusaContainer, orderId: string): Promise<string | null> {
+  const query = container.resolve(ContainerRegistrationKeys.QUERY);
+  const { data } = await query.graph({ entity: 'order', fields: ['id', 'metadata'], filters: { id: orderId } });
+  const parentId = data[0]?.metadata?.[ADD_TO_DELIVERY_PARENT_KEY];
+
+  return typeof parentId === 'string' && parentId ? parentId : null;
+}
+
+/** 부모 주문의 정산 잠금(부모 전체취소가 잡는 것과 같은 키) 안에서 돈다 */
+export async function withParentSettlementLock<T>(
+  container: MedusaContainer,
+  parentOrderId: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  return container
+    .resolve(Modules.LOCKING)
+    .execute(orderCancelLockKey(parentOrderId), fn, { timeout: ORDER_LOCK_TIMEOUT_SECONDS });
 }
 
 /** 부모 전체취소에서 남겨 둘 금액. 판매자 탓 취소(배송 지연 등)면 고객에게 물리지 않는다. */
@@ -95,33 +115,8 @@ export async function writeHold(container: MedusaContainer, orderId: string, hol
   ]);
 }
 
-/**
- * 함께 배송 주문이 취소될 때(자기 환불 뒤, 자기 취소 전) 부모에 남긴 보류에서 이제 필요 없는 몫을 돌려준다.
- * 부모 잠금 안에서 읽어, 부모 전체취소와 겹쳐도 보류를 쓰기 전·후 어느 쪽이든 한 번만 돈다. 자식마다 한 번(releases).
- */
-export async function releaseParentHold(
-  container: MedusaContainer,
-  input: { childOrderId: string; refundMode: RefundMode; actorId?: string },
-): Promise<void> {
-  const query = container.resolve(ContainerRegistrationKeys.QUERY);
-  const { data } = await query.graph({
-    entity: 'order',
-    fields: ['id', 'metadata'],
-    filters: { id: input.childOrderId },
-  });
-  const parentOrderId = data[0]?.metadata?.[ADD_TO_DELIVERY_PARENT_KEY];
-  if (typeof parentOrderId !== 'string' || !parentOrderId) return;
-
-  const locking = container.resolve(Modules.LOCKING);
-
-  await locking.execute(
-    orderCancelLockKey(parentOrderId),
-    () => releaseInsideParentLock(container, parentOrderId, input),
-    { timeout: ORDER_LOCK_TIMEOUT_SECONDS },
-  );
-}
-
-async function releaseInsideParentLock(
+/** 부모 정산 잠금 안에서: 부모 보류에서 이제 필요 없는 몫을 돌려준다. 자식마다 한 번(releases). */
+export async function releaseInsideParentLock(
   container: MedusaContainer,
   parentOrderId: string,
   input: { childOrderId: string; refundMode: RefundMode; actorId?: string },

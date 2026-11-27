@@ -39,7 +39,10 @@ function queryWith(orders: Row[], almondUserId: string | null = 'u1') {
       return {
         data: (filters?.id as string[]).map((id) => ({
           id,
-          shipping_profile: { id: id === 'prod_p' ? PRINT : BUCHEON },
+          shipping_profile: {
+            id: id === 'prod_p' ? PRINT : BUCHEON,
+            metadata: { shippingGroupCode: id === 'prod_p' ? 'wowpress' : 'default' },
+          },
         })),
       };
     }
@@ -99,6 +102,12 @@ describe('listEligibleParents / resolveParent', () => {
     const query = queryWith([order({ created_at: '2026-11-19T02:59:00.000Z' })]);
 
     await expect(listEligibleParents(query, { customerId: 'cus_1' })).resolves.toEqual([]);
+  });
+
+  it('함께 배송 그룹이 아닌 배송비 그룹(인쇄)은 부모가 되지 못한다', async () => {
+    const query = queryWith([order({ items: [{ product_id: 'prod_p', requires_shipping: true }] })]);
+
+    await expect(listEligibleParents(query, { customerId: 'cus_1', shippingProfileId: PRINT })).resolves.toEqual([]);
   });
 
   it('다른 배송비 그룹 상품만 든 주문은 뺀다', async () => {

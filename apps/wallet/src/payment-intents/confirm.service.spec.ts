@@ -324,6 +324,7 @@ describe('ConfirmService', () => {
   it.each([
     ['BANK_TRANSFER', undefined],
     ['TOSS', 'WIDGET'],
+    ['TOSS', undefined],
   ] as const)('rejects %s (%s) for an instantOnly intent', async (methodType, tossCheckoutMode) => {
     const { service } = makeContext({ methodType, intent: { metadata: { instantOnly: true } } });
 
