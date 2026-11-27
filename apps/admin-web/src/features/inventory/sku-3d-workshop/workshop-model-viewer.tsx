@@ -5,7 +5,7 @@ import { Loader2 } from 'lucide-react';
 
 type ViewerState = 'loading' | 'ready' | 'error';
 
-// 쇼핑몰과 같은 model-viewer. 휴대전화에서 가로 드래그는 회전, 세로는 페이지 스크롤, 두 손가락은 확대
+// 쇼핑몰과 같은 model-viewer. 휴대전화에서 한 손가락 드래그는 360도 회전, 두 손가락은 확대
 export function WorkshopModelViewer({
   src,
   title,
@@ -35,7 +35,8 @@ export function WorkshopModelViewer({
           src,
           alt: title,
           autoRotate: false,
-          touchAction: 'pan-y',
+          // 한 손가락으로 어느 방향이든 돌린다 — 페이지 스크롤은 모델 밖을 끌어서
+          touchAction: 'none',
           onLoad: () => setState('ready'),
           onError: () => setState('error'),
         });
