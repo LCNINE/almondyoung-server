@@ -32,7 +32,8 @@ const CHIP: Record<MyWorkshopStatus, string> = {
 
 export default function MyWorkshopsPage() {
   const [tab, setTab] = useState<MyWorkshopTab>('all');
-  const canRead = useCan(['inventory.model_workshop.read']);
+  // 줄을 누르면 여는 작업실이 쓰기 권한을 본다 — 목록도 같은 권한으로 맞춘다
+  const canRead = useCan(['inventory.model_workshop.write']);
   const allowed = canRead.status === 'ready' && canRead.allowed;
   const { data, error, isLoading } = useQuery({
     queryKey: workshopKeys.mine,
@@ -60,6 +61,7 @@ export default function MyWorkshopsPage() {
                 key={t.id}
                 type="button"
                 onClick={() => setTab(t.id)}
+                aria-pressed={t.id === tab}
                 className={
                   t.id === tab
                     ? 'min-h-11 rounded-md bg-white text-sm font-semibold text-gray-900 shadow-sm'

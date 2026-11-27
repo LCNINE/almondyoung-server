@@ -97,7 +97,7 @@ function MyToday() {
 
 // 3D 작업실 권한이 있을 때만 — 못 불러와도 실측 작업은 막지 않는다
 function MyWorkshopsCard() {
-  const canRead = useCan(['inventory.model_workshop.read']);
+  const canRead = useCan(['inventory.model_workshop.write']);
   const allowed = canRead.status === 'ready' && canRead.allowed;
   const { data } = useQuery({
     queryKey: workshopKeys.mine,

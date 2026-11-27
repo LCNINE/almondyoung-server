@@ -90,7 +90,7 @@ function CaptureHistory() {
 
   const queryClient = useQueryClient();
   const [target, setTarget] = useState<MyCaptureItemDto | null>(null);
-  const [zoom, setZoom] = useState<{ item: MyCaptureItemDto; index: number } | null>(null);
+  const [zoom, setZoom] = useState<{ skuId: string; index: number } | null>(null);
   // 완료 취소는 inventory.stock.operate (core 가 강제한다 — 여기선 버튼만 막는다)
   const canOperate = useCan(['inventory.stock.operate']);
   const writeBlocked = blockedReason(canOperate, [{ permission: ['inventory.stock.operate'] }]);
@@ -105,6 +105,8 @@ function CaptureHistory() {
   });
   const items = uniqueBySku(data?.pages.flatMap((p) => p.items) ?? []);
   const total = data?.pages[0]?.total ?? 0;
+  // 다시 불러와 사진이 바뀌어도 크게 보기는 지금 목록의 사진을 본다
+  const zoomItem = zoom ? items.find((i) => i.skuId === zoom.skuId) : undefined;
 
   const cancel = useMutation({
     mutationFn: (item: MyCaptureItemDto) => skuFieldCaptureClient.cancel(item.skuId),
@@ -250,7 +252,7 @@ function CaptureHistory() {
                       {who === 'all' && <p className="text-xs text-gray-500">{item.lastWorkerLabel} 님</p>}
                     </div>
                   </div>
-                  {item.photoFileIds.length > 0 && <PhotoStrip item={item} onOpen={(i) => setZoom({ item, index: i })} />}
+                  {item.photoFileIds.length > 0 && <PhotoStrip item={item} onOpen={(i) => setZoom({ skuId: item.skuId, index: i })} />}
                   <div className="mt-3 flex gap-2">
                     <Link
                       href={`${BASE}/${encodeURIComponent(item.skuId)}?back=${encodeURIComponent(here)}`}
@@ -297,9 +299,9 @@ function CaptureHistory() {
         )}
 
         <PhotoZoomDialog
-          srcs={zoom ? photoSrcs(zoom.item) : []}
-          index={zoom?.index ?? null}
-          onIndex={(index) => setZoom(zoom && index !== null ? { item: zoom.item, index } : null)}
+          srcs={zoomItem ? photoSrcs(zoomItem) : []}
+          index={zoom && zoomItem ? Math.min(zoom.index, zoomItem.photoFileIds.length - 1) : null}
+          onIndex={(index) => setZoom(zoom && index !== null ? { skuId: zoom.skuId, index } : null)}
         />
 
         <AlertDialog open={target !== null} onOpenChange={(open) => !open && setTarget(null)}>
