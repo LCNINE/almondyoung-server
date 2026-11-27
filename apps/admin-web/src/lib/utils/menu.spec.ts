@@ -6,6 +6,23 @@ import {
 } from './menu';
 
 describe('admin menu navigation', () => {
+  it('CS 주문조회를 첫 화면으로 열고 메뉴 선택을 유지한다', () => {
+    expect(getFirstPagePath('customer-service')).toBe('/cs');
+    expect(getActiveMenuAndItem('/cs')).toEqual({
+      menuId: 'customer-service',
+      itemId: 'cs-order-lookup',
+    });
+    expect(getActiveMenuAndItem('/cs/management')).toEqual({
+      menuId: 'customer-service',
+      itemId: 'cs-management',
+    });
+    expect(getMenuById('customer-service')?.children).toContainEqual(
+      expect.objectContaining({
+        id: 'cs-management',
+        isComingSoon: true,
+      })
+    );
+  });
   it('자사몰 관리는 존재하는 첫 하위 페이지로 이동한다', () => {
     const path = getFirstPagePath('own-mall');
 

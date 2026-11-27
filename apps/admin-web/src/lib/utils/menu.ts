@@ -462,8 +462,13 @@ const allMenus: MainMenu[] = [
     id: 'customer-service',
     title: 'CS',
     icon: 'Headphones',
-    defaultPath: '/cs/management', // 첫 번째 페이지
+    defaultPath: '/cs',
     children: [
+      {
+        id: 'cs-order-lookup',
+        title: '주문조회',
+        path: '/cs',
+      },
       {
         id: 'channel-talk',
         title: '실시간 채널톡',
@@ -471,8 +476,9 @@ const allMenus: MainMenu[] = [
       },
       {
         id: 'cs-management',
-        title: 'CS 목록',
+        title: 'CS 관리',
         path: '/cs/management',
+        isComingSoon: true,
       },
       {
         id: 'return-exchange',
@@ -671,7 +677,11 @@ const allMenus: MainMenu[] = [
             path: '/mall/banner-groups',
           },
           { id: 'popups', title: '팝업', path: '/mall/popups' },
-          { id: 'top-notices', title: '상단 공지 띠', path: '/mall/top-notices' },
+          {
+            id: 'top-notices',
+            title: '상단 공지 띠',
+            path: '/mall/top-notices',
+          },
           { id: 'points', title: '적립금', path: '/mall/marketing/points' },
           { id: 'coupons', title: '쿠폰', path: '/mall/marketing/coupons' },
           {
