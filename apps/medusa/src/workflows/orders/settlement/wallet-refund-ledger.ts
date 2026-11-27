@@ -13,17 +13,29 @@ import { fetchWalletRefunds } from '../../../modules/almond-payment/wallet-refun
 import { EXTERNAL_REFUND_NOTE_PREFIX } from '../partial-cancel/external-refund';
 import { orderPaymentIds } from './order-payments';
 import { writePaymentData } from './payment-data';
-import { planWalletRefundBookings, type WalletRefundBooking, type WalletRefundPlan } from './plan-wallet-refund-bookings';
+import {
+  planWalletRefundBookings,
+  type WalletRefundBooking,
+  type WalletRefundPlan,
+} from './plan-wallet-refund-bookings';
 
 /** 환불 투영(payment-events)·부분취소와 같은 값. 맞추기는 보통 0~1건이라 그 안에 든다 */
 const PAYMENT_LOCK_TIMEOUT_SECONDS = 30;
+
+/** 취소된 주문은 refundPaymentWorkflow 의 크레딧 라인 단계가 던진다 — 그때는 결제 모듈로 장부에 넣는다 */
+export type LedgerOptions = { viaPaymentModule?: boolean };
 
 /**
  * Medusa 밖에서 끝난(또는 응답을 잃은) wallet 환불 하나를 장부에 넣는다 — wallet 을 다시 부르지 않는다(ADR-0042 원칙 3).
  * `externalRefund` 표식을 쓰고 refundPaymentWorkflow 를 돌리면 almond-payment 가 표식을 보고 wallet 호출을 건너뛴다.
  * 결제 잠금(paymentRefundLockKey) 안에서 부른다. 웹훅 투영(api/hooks/payment-events)과 장부 맞추기가 함께 쓴다.
  */
-export async function projectWalletRefund(container: MedusaContainer, paymentId: string, booking: WalletRefundBooking): Promise<void> {
+export async function projectWalletRefund(
+  container: MedusaContainer,
+  paymentId: string,
+  booking: WalletRefundBooking,
+  opts: LedgerOptions = {},
+): Promise<void> {
   const paymentModule = container.resolve(Modules.PAYMENT);
   const fresh = await paymentModule.retrievePayment(paymentId, { select: ['id', 'data'] });
   await writePaymentData(
@@ -32,7 +44,13 @@ export async function projectWalletRefund(container: MedusaContainer, paymentId:
     withExternalRefund(fresh.data ?? {}, { walletRefundId: booking.walletRefundId, amount: booking.amount }),
   );
   try {
-    await refundPaymentWorkflow(container).run({ input: { payment_id: paymentId, amount: booking.amount, note: booking.note } });
+    if (opts.viaPaymentModule) {
+      await paymentModule.refundPayment({ payment_id: paymentId, amount: booking.amount, note: booking.note });
+    } else {
+      await refundPaymentWorkflow(container).run({
+        input: { payment_id: paymentId, amount: booking.amount, note: booking.note },
+      });
+    }
   } catch (err) {
     // 영구 실패(캡처 없음·캡처 초과 등)면 표식이 남아 같은 금액의 다음 Medusa 환불이 wallet 을 건너뛴다.
     // Medusa 는 JSON 칸을 병합 갱신하므로 null 로 지운다. 재배달·다음 맞추기가 표식을 다시 쓴다.
@@ -79,7 +97,11 @@ export async function planPaymentWalletRefundBookings(
  * 다시 불리고, wallet 이 그 행을 SUCCEEDED·FAILED 로 끝낸 뒤에 넣거나 버린다. 시도 표식도 그때까지 남는다.
  * 남은 시도 표식은 여기서 소비한다: 그 시도가 움직인 돈은 방금 그 메모로 들어갔거나, 없었다.
  */
-export async function reconcileWalletRefunds(container: MedusaContainer, paymentId: string): Promise<void> {
+export async function reconcileWalletRefunds(
+  container: MedusaContainer,
+  paymentId: string,
+  opts: LedgerOptions = {},
+): Promise<void> {
   const { bookings, inFlight, attempt } = await planPaymentWalletRefundBookings(container, paymentId);
   if (inFlight.length > 0) {
     throw new Error(
@@ -87,15 +109,19 @@ export async function reconcileWalletRefunds(container: MedusaContainer, payment
         inFlight.map((r) => `${r.walletRefundId}:${r.amount}`).join(','),
     );
   }
-  for (const booking of bookings) await projectWalletRefund(container, paymentId, booking);
+  for (const booking of bookings) await projectWalletRefund(container, paymentId, booking, opts);
   if (attempt) await writePaymentData(container.resolve(Modules.PAYMENT), paymentId, { refundAttempt: null });
 }
 
 /** 주문의 결제마다 결제 잠금을 잡고 맞춘다. 부르는 쪽은 주문 잠금(orderCancelLockKey)을 쥐고 있다 */
-export async function reconcileOrderWalletRefunds(container: MedusaContainer, orderId: string): Promise<void> {
+export async function reconcileOrderWalletRefunds(
+  container: MedusaContainer,
+  orderId: string,
+  opts: LedgerOptions = {},
+): Promise<void> {
   const locking = container.resolve(Modules.LOCKING);
   for (const paymentId of await orderPaymentIds(container, orderId)) {
-    await locking.execute(paymentRefundLockKey(paymentId), () => reconcileWalletRefunds(container, paymentId), {
+    await locking.execute(paymentRefundLockKey(paymentId), () => reconcileWalletRefunds(container, paymentId, opts), {
       timeout: PAYMENT_LOCK_TIMEOUT_SECONDS,
     });
   }

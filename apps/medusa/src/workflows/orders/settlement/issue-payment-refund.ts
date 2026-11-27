@@ -25,23 +25,46 @@ import type { RefundMode } from './refund-mode';
  */
 export async function issuePaymentRefund(
   container: MedusaContainer,
-  input: { paymentId: string; amount: number; note: string; mode: RefundMode; kind: WalletRefundKind; actorId?: string },
+  input: {
+    paymentId: string;
+    amount: number;
+    note: string;
+    mode: RefundMode;
+    kind: WalletRefundKind;
+    actorId?: string;
+    /** 취소된 주문의 결제는 refundPaymentWorkflow 의 크레딧 라인 단계가 돈이 나간 뒤 던진다 — 그때는 결제 모듈로 바로 환불한다 */
+    viaPaymentModule?: boolean;
+  },
 ): Promise<void> {
   const paymentModule = container.resolve(Modules.PAYMENT);
   const fresh = await paymentModule.retrievePayment(input.paymentId, { select: ['id', 'data'] });
   // 종류 표식도 이번 시도의 값으로 덮어쓴다(금액이 붙어 있어 앞 시도의 표식은 다른 금액의 환불에 붙지 못한다)
   const marked = withoutExternalRefund(
-    withRefundKind(withRefundAttempt(fresh.data ?? {}, { note: input.note, amount: input.amount }), { kind: input.kind, amount: input.amount }),
+    withRefundKind(withRefundAttempt(fresh.data ?? {}, { note: input.note, amount: input.amount }), {
+      kind: input.kind,
+      amount: input.amount,
+    }),
   );
   await writePaymentData(
     paymentModule,
     input.paymentId,
-    input.mode === 'manual' ? withManualRefund(marked, { requestId: input.note, amount: input.amount }) : withoutManualRefund(marked),
+    input.mode === 'manual'
+      ? withManualRefund(marked, { requestId: input.note, amount: input.amount })
+      : withoutManualRefund(marked),
   );
   try {
-    await refundPaymentWorkflow(container).run({
-      input: { payment_id: input.paymentId, amount: input.amount, created_by: input.actorId, note: input.note },
-    });
+    if (input.viaPaymentModule) {
+      await paymentModule.refundPayment({
+        payment_id: input.paymentId,
+        amount: input.amount,
+        created_by: input.actorId,
+        note: input.note,
+      });
+    } else {
+      await refundPaymentWorkflow(container).run({
+        input: { payment_id: input.paymentId, amount: input.amount, created_by: input.actorId, note: input.note },
+      });
+    }
   } catch (error) {
     if (input.mode === 'manual') {
       // 지우기 실패가 원래 오류(영구 거절 표지·일시)를 덮으면 부르는 쪽의 판정이 바뀐다 — 로그만 남기고 원래 오류를 던진다

@@ -52,6 +52,8 @@ export class FakeWallet {
   rejectNextRefundWith: { status: number; error: string; message?: string; retryable?: boolean } | null = null;
   /** 환불은 해 놓고 응답을 잃는다(504, 본문 없음) — Medusa 는 실패로 보고 자기 환불 행을 지운다 */
   loseNextRefundResponse = false;
+  /** 이 수만큼 환불은 정상으로 넘기고 그다음 하나의 응답을 잃는다(null 이면 끔) */
+  loseRefundResponseAfter: number | null = null;
   /**
    * 자동 환불 행을 PENDING 으로 커밋한 채 응답을 잃는다(504) — 실제 wallet 이 PG 를 부르기 «전»에 행을 커밋하고, PG 호출 중 연결이
    * 끊기거나 wallet 이 죽은 상태(D8). PG 결과는 테스트가 `refunds[i].status` 를 바꿔 낸다
@@ -85,6 +87,7 @@ export class FakeWallet {
     this.rejectNextRefundWith = null;
     this.loseNextRefundResponse = false;
     this.loseNextRefundResponseInFlight = false;
+    this.loseRefundResponseAfter = null;
   }
   /** 결제창 완료 = 즉시 승인 + 캡처(지연 승인 표식이 없을 때의 wallet 동작). */
   simulateCheckout(intentId: string) {
@@ -203,7 +206,12 @@ export class FakeWallet {
         reasonCode: body.reasonCode,
         idempotencyKey: key,
       });
-      if (this.loseNextRefundResponse || inFlight) {
+      let loseByCount = false;
+      if (this.loseRefundResponseAfter !== null) {
+        loseByCount = this.loseRefundResponseAfter === 0;
+        this.loseRefundResponseAfter = loseByCount ? null : this.loseRefundResponseAfter - 1;
+      }
+      if (this.loseNextRefundResponse || inFlight || loseByCount) {
         this.loseNextRefundResponse = false;
         this.loseNextRefundResponseInFlight = false;
         return { status: 504, payload: null };

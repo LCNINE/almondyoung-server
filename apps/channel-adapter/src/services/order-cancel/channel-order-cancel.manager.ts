@@ -106,7 +106,11 @@ export class ChannelOrderCancelManager {
   }
 
   private async settleFull(command: CancelChannelOrderPayload): Promise<SettlementFailure | undefined> {
-    const outcome = await this.medusaClient.cancelOrder(command.externalOrderId, { refundMode: command.refundMode ?? 'auto' });
+    const outcome = await this.medusaClient.cancelOrder(command.externalOrderId, {
+      refundMode: command.refundMode ?? 'auto',
+      ...(command.reasonCode !== undefined ? { reasonCode: command.reasonCode } : {}),
+      ...(command.requestedBy !== undefined ? { requestedBy: command.requestedBy } : {}),
+    });
     switch (outcome.kind) {
       case 'cancelled':
       case 'already_cancelled':
@@ -174,7 +178,11 @@ export class ChannelOrderCancelManager {
     }
   }
 
-  private async fail(command: CancelChannelOrderPayload, deliveryId: string, failure: SettlementFailure): Promise<void> {
+  private async fail(
+    command: CancelChannelOrderPayload,
+    deliveryId: string,
+    failure: SettlementFailure,
+  ): Promise<void> {
     const { requestId, salesChannel, externalOrderId, scope } = command;
     this.logger.warn(
       `[CANCEL] ${requestId} ${salesChannel}:${externalOrderId} ${scope} 정산 실패 ${failure.failureCode}` +

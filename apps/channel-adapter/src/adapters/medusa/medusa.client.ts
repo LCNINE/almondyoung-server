@@ -1439,7 +1439,8 @@ export class MedusaClient {
       const projectionSku = toMedusaProductSellableInventorySku(pimVariantId);
       const projectionLink = inventoryLinks.find((link) => {
         const inventory = link.inventory as
-          { sku?: string | null; metadata?: Record<string, unknown> | null } | undefined;
+          | { sku?: string | null; metadata?: Record<string, unknown> | null }
+          | undefined;
         return (
           link.inventory_item_id &&
           (inventory?.sku === projectionSku ||
@@ -1559,7 +1560,8 @@ export class MedusaClient {
     for (const variant of latest.variants || []) {
       for (const link of ((variant as any).inventory_items || []) as any[]) {
         const inventory = link.inventory as
-          { sku?: string | null; metadata?: Record<string, unknown> | null } | undefined;
+          | { sku?: string | null; metadata?: Record<string, unknown> | null }
+          | undefined;
         if (link.inventory_item_id && inventory && isMedusaProductSellableInventoryItem(inventory)) {
           deletePayload.push({
             inventory_item_id: link.inventory_item_id,
@@ -2006,11 +2008,18 @@ export class MedusaClient {
    * 멱등은 «이미 취소됨»과 «남은 몫만 환불»(장부 맞추기)로 선다 — 같은 명령을 다시 불러도 환불은 한 번이다.
    * 던지지 않는다: 모든 응답·연결 실패가 결과 종류다. 분류는 라우트 머리 주석의 응답 계약을 따른다.
    */
-  async cancelOrder(orderId: string, input: { refundMode: ChannelCancelRefundMode }): Promise<MedusaCancelOutcome> {
+  async cancelOrder(
+    orderId: string,
+    input: { refundMode: ChannelCancelRefundMode; reasonCode?: string; requestedBy?: string },
+  ): Promise<MedusaCancelOutcome> {
     const path = `/admin/orders/${encodeURIComponent(orderId)}/channel-cancel`;
     let response: { status: number; body: Record<string, unknown> };
     try {
-      response = await this.postAdmin(path, { refundMode: input.refundMode });
+      response = await this.postAdmin(path, {
+        refundMode: input.refundMode,
+        ...(input.reasonCode !== undefined ? { reasonCode: input.reasonCode } : {}),
+        ...(input.requestedBy !== undefined ? { requestedBy: input.requestedBy } : {}),
+      });
     } catch (error) {
       return {
         kind: 'transient',
@@ -2828,7 +2837,10 @@ export class MedusaClient {
     reservations: { id: string; lineItemId: string; quantity: number; orderCreatedAt: Date }[];
     nextAfterId: string | null;
   }> {
-    const params = new URLSearchParams({ order_created_from: q.orderCreatedFrom.toISOString(), limit: String(q.limit) });
+    const params = new URLSearchParams({
+      order_created_from: q.orderCreatedFrom.toISOString(),
+      limit: String(q.limit),
+    });
     if (q.afterId) params.set('after_id', q.afterId);
     const path = `/admin/line-item-reservations?${params.toString()}`;
     const encodedKey = Buffer.from(`${this.apiKey}:`).toString('base64');
@@ -2903,12 +2915,24 @@ function toLineItemReservationResult(row: Record<string, unknown>): LineItemRese
   const after = row.quantity_after;
   const message = typeof row.message === 'string' ? row.message : undefined;
   if (outcome === undefined) {
-    return { lineItemId, outcome: 'error', quantityBefore: 0, quantityAfter: 0, message: `알 수 없는 outcome: ${String(row.outcome)}` };
+    return {
+      lineItemId,
+      outcome: 'error',
+      quantityBefore: 0,
+      quantityAfter: 0,
+      message: `알 수 없는 outcome: ${String(row.outcome)}`,
+    };
   }
   if (typeof before !== 'number' || !Number.isFinite(before) || typeof after !== 'number' || !Number.isFinite(after)) {
     return { lineItemId, outcome: 'error', quantityBefore: 0, quantityAfter: 0, message: '수량이 숫자가 아니다' };
   }
-  return { lineItemId, outcome, quantityBefore: before, quantityAfter: after, ...(message !== undefined ? { message } : {}) };
+  return {
+    lineItemId,
+    outcome,
+    quantityBefore: before,
+    quantityAfter: after,
+    ...(message !== undefined ? { message } : {}),
+  };
 }
 
 export type QuantityDiscountTierPrice = { variant_id: string; min_quantity: number; amount: number };

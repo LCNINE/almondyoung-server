@@ -82,3 +82,34 @@ describe('issuePaymentRefund — 표식 정규화', () => {
     expect(payment.updatePayment).toHaveBeenLastCalledWith({ id: 'pay_1', data: { refundAttempt: null, refundKind: null } });
   });
 });
+
+describe('issuePaymentRefund — 취소된 주문의 결제', () => {
+  beforeEach(() => run.mockReset());
+
+  it('viaPaymentModule 이면 워크플로 대신 결제 모듈로 환불한다(크레딧 라인 단계를 타지 않는다)', async () => {
+    const payment = {
+      retrievePayment: jest.fn().mockResolvedValue({ id: 'pay_1', data: { intentId: 'i1' } }),
+      updatePayment: jest.fn().mockResolvedValue({}),
+      refundPayment: jest.fn().mockResolvedValue({}),
+    };
+    const container = { resolve: jest.fn(() => payment) } as any;
+
+    await issuePaymentRefund(container, {
+      paymentId: 'pay_1',
+      amount: 3000,
+      note: 'add-to-delivery-release:order_p',
+      mode: 'auto',
+      kind: 'ITEM_CANCEL',
+      viaPaymentModule: true,
+    });
+
+    expect(run).not.toHaveBeenCalled();
+    expect(payment.refundPayment).toHaveBeenCalledWith({
+      payment_id: 'pay_1',
+      amount: 3000,
+      created_by: undefined,
+      note: 'add-to-delivery-release:order_p',
+    });
+    expect(payment.updatePayment.mock.calls[0][0].data.refundAttempt).toEqual({ note: 'add-to-delivery-release:order_p', amount: 3000 });
+  });
+});

@@ -1555,6 +1555,16 @@ describe('MedusaClient 취소 (#1016 35번 PR-B · 36번 재설계 PR 3)', () =>
       expect(lastBody()).toEqual({ refundMode: 'manual' });
     });
 
+    it('사유·요청 주체가 있으면 본문에 싣는다', async () => {
+      global.fetch = respond(200, { orderId: 'order_1', status: 'canceled', refund: { mode: 'auto', amount: 30000 } });
+      await makeClient().cancelOrder('order_1', {
+        refundMode: 'auto',
+        reasonCode: 'CHANGE_OF_MIND',
+        requestedBy: 'customer',
+      });
+      expect(lastBody()).toEqual({ refundMode: 'auto', reasonCode: 'CHANGE_OF_MIND', requestedBy: 'customer' });
+    });
+
     it('«이미 취소됨» 400 은 성공 쪽이다', async () => {
       global.fetch = respond(400, { type: 'invalid_data', message: 'Order with id order_1 has been canceled.' });
       await expect(makeClient().cancelOrder('order_1', auto)).resolves.toEqual({ kind: 'already_cancelled' });
@@ -1655,20 +1665,38 @@ describe('MedusaClient 취소 (#1016 35번 PR-B · 36번 재설계 PR 3)', () =>
     });
 
     it('400 return_settle_rejected → rejected(reason)', async () => {
-      global.fetch = respond(400, { type: 'not_allowed', code: 'return_settle_rejected', reason: 'items_mismatch', message: 'x' });
+      global.fetch = respond(400, {
+        type: 'not_allowed',
+        code: 'return_settle_rejected',
+        reason: 'items_mismatch',
+        message: 'x',
+      });
       await expect(settle()).resolves.toEqual({ kind: 'rejected', reason: 'items_mismatch', message: 'x' });
     });
 
     it('모르는 400 not_allowed → 일시(재시도) 실패, 그 code 를 싣는다', async () => {
       global.fetch = respond(400, { type: 'not_allowed', code: 'order_change_open', message: '열린 주문 수정' });
-      await expect(settle()).resolves.toEqual({ kind: 'transient', failureCode: 'order_change_open', message: '열린 주문 수정' });
+      await expect(settle()).resolves.toEqual({
+        kind: 'transient',
+        failureCode: 'order_change_open',
+        message: '열린 주문 수정',
+      });
       global.fetch = respond(400, { type: 'not_allowed', message: 'x' });
       await expect(settle()).resolves.toMatchObject({ kind: 'transient', failureCode: 'not_allowed' });
     });
 
     it('400 wallet_refund_refused:X → refund_refused', async () => {
-      global.fetch = respond(400, { type: 'not_allowed', code: 'wallet_refund_refused:X', stage: 'received', message: 'w' });
-      await expect(settle()).resolves.toEqual({ kind: 'refund_refused', failureCode: 'wallet_refund_refused:X', message: 'w' });
+      global.fetch = respond(400, {
+        type: 'not_allowed',
+        code: 'wallet_refund_refused:X',
+        stage: 'received',
+        message: 'w',
+      });
+      await expect(settle()).resolves.toEqual({
+        kind: 'refund_refused',
+        failureCode: 'wallet_refund_refused:X',
+        message: 'w',
+      });
     });
 
     it('502 본문 refund_pending → refund_pending', async () => {
@@ -1748,7 +1776,12 @@ describe('MedusaClient 취소 (#1016 35번 PR-B · 36번 재설계 PR 3)', () =>
     });
 
     it('400 return_prepay_rejected → rejected(reason)', async () => {
-      global.fetch = respond(400, { type: 'not_allowed', code: 'return_prepay_rejected', reason: 'return_already_settled', message: 'x' });
+      global.fetch = respond(400, {
+        type: 'not_allowed',
+        code: 'return_prepay_rejected',
+        reason: 'return_already_settled',
+        message: 'x',
+      });
       await expect(prepay()).resolves.toEqual({ kind: 'rejected', reason: 'return_already_settled', message: 'x' });
     });
 
@@ -1759,7 +1792,11 @@ describe('MedusaClient 취소 (#1016 35번 PR-B · 36번 재설계 PR 3)', () =>
 
     it('400 wallet_refund_refused:X → refund_refused', async () => {
       global.fetch = respond(400, { code: 'wallet_refund_refused:X', message: 'w' });
-      await expect(prepay()).resolves.toEqual({ kind: 'refund_refused', failureCode: 'wallet_refund_refused:X', message: 'w' });
+      await expect(prepay()).resolves.toEqual({
+        kind: 'refund_refused',
+        failureCode: 'wallet_refund_refused:X',
+        message: 'w',
+      });
     });
 
     it('502 본문 refund_pending → refund_pending, 본문 없는 502 → 일시 http_502', async () => {
@@ -1827,8 +1864,18 @@ describe('MedusaClient 취소 (#1016 35번 PR-B · 36번 재설계 PR 3)', () =>
     });
 
     it('취소 사유·요청 주체는 있을 때만 reasonCode·requestedBy 로 싣는다', async () => {
-      global.fetch = respond(200, { requestId: 'req-1', refundAmount: 1, shippingDelta: 0, shippingNotAdjusted: false, stage: 'refunded' });
-      await makeClient().partialCancelOrder('order_1', { ...input, reasonCode: 'OUT_OF_STOCK', requestedBy: 'operator' });
+      global.fetch = respond(200, {
+        requestId: 'req-1',
+        refundAmount: 1,
+        shippingDelta: 0,
+        shippingNotAdjusted: false,
+        stage: 'refunded',
+      });
+      await makeClient().partialCancelOrder('order_1', {
+        ...input,
+        reasonCode: 'OUT_OF_STOCK',
+        requestedBy: 'operator',
+      });
       expect(lastBody()).toEqual({
         requestId: 'req-1',
         items: [{ item_id: 'ordli_1', quantity: 2 }],
@@ -1839,7 +1886,13 @@ describe('MedusaClient 취소 (#1016 35번 PR-B · 36번 재설계 PR 3)', () =>
     });
 
     it('사유·요청 주체가 없으면 두 칸의 키가 없다', async () => {
-      global.fetch = respond(200, { requestId: 'req-1', refundAmount: 1, shippingDelta: 0, shippingNotAdjusted: false, stage: 'refunded' });
+      global.fetch = respond(200, {
+        requestId: 'req-1',
+        refundAmount: 1,
+        shippingDelta: 0,
+        shippingNotAdjusted: false,
+        stage: 'refunded',
+      });
       await makeClient().partialCancelOrder('order_1', input);
       expect(lastBody()).not.toHaveProperty('reasonCode');
       expect(lastBody()).not.toHaveProperty('requestedBy');
@@ -1982,23 +2035,37 @@ describe('MedusaClient line-item reservations (#1247)', () => {
   afterEach(() => jest.restoreAllMocks());
 
   it('setLineItemReservations: snake_case 본문, 120초 타임아웃, 결과를 camelCase 로', async () => {
-    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(
-      new Response(
-        JSON.stringify({ results: [{ line_item_id: 'li1', outcome: 'deferred', quantity_before: 3, quantity_after: 3, message: 'm' }] }),
-        { status: 200 },
-      ),
-    );
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            results: [
+              { line_item_id: 'li1', outcome: 'deferred', quantity_before: 3, quantity_after: 3, message: 'm' },
+            ],
+          }),
+          { status: 200 },
+        ),
+      );
     const out = await makeClient().setLineItemReservations([{ lineItemId: 'li1', quantity: 1, allowDecrease: false }]);
     const [url, init] = fetchSpy.mock.calls[0];
     expect(url).toBe('http://medusa.test/admin/line-item-reservations');
-    expect(JSON.parse(String(init?.body))).toEqual({ items: [{ line_item_id: 'li1', quantity: 1, allow_decrease: false }] });
+    expect(JSON.parse(String(init?.body))).toEqual({
+      items: [{ line_item_id: 'li1', quantity: 1, allow_decrease: false }],
+    });
     expect(init?.signal).toBeDefined();
-    expect(out).toEqual([{ lineItemId: 'li1', outcome: 'deferred', quantityBefore: 3, quantityAfter: 3, message: 'm' }]);
+    expect(out).toEqual([
+      { lineItemId: 'li1', outcome: 'deferred', quantityBefore: 3, quantityAfter: 3, message: 'm' },
+    ]);
   });
 
   it('setLineItemReservations: dryRun 이면 본문에 dry_run: true', async () => {
-    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(new Response(JSON.stringify({ results: [] }), { status: 200 }));
-    await makeClient().setLineItemReservations([{ lineItemId: 'li1', quantity: 1, allowDecrease: true }], { dryRun: true });
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify({ results: [] }), { status: 200 }));
+    await makeClient().setLineItemReservations([{ lineItemId: 'li1', quantity: 1, allowDecrease: true }], {
+      dryRun: true,
+    });
     expect(JSON.parse(String(fetchSpy.mock.calls[0][1]?.body))).toMatchObject({ dry_run: true });
   });
 
@@ -2022,13 +2089,18 @@ describe('MedusaClient line-item reservations (#1247)', () => {
       ),
     );
     const out = await makeClient().setLineItemReservations([{ lineItemId: 'a', quantity: 1, allowDecrease: true }]);
-    expect(out.map((r) => [r.lineItemId, r.outcome])).toEqual([['a', 'error'], ['b', 'error']]);
+    expect(out.map((r) => [r.lineItemId, r.outcome])).toEqual([
+      ['a', 'error'],
+      ['b', 'error'],
+    ]);
     expect(out[0].message).toContain('weird');
   });
 
   it('setLineItemReservations: 5xx 는 던진다', async () => {
     jest.spyOn(global, 'fetch').mockResolvedValue(new Response('{}', { status: 502 }));
-    await expect(makeClient().setLineItemReservations([{ lineItemId: 'a', quantity: 1, allowDecrease: true }])).rejects.toThrow(/status=502/);
+    await expect(
+      makeClient().setLineItemReservations([{ lineItemId: 'a', quantity: 1, allowDecrease: true }]),
+    ).rejects.toThrow(/status=502/);
   });
 
   it('listLineItemReservations: 쿼리를 만들고 camelCase 로 돌려준다', async () => {

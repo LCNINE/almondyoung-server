@@ -28,7 +28,12 @@ function setup(opts: { mapped?: boolean } = {}) {
   const medusa = { cancelOrder: jest.fn(), partialCancelOrder: jest.fn() };
   const poller = { syncOrder: jest.fn().mockResolvedValue({ outcome: 'emitted' }) };
   const approver = { approve: jest.fn() };
-  const manager = new ChannelOrderCancelManager(repository as never, medusa as never, poller as never, approver as never);
+  const manager = new ChannelOrderCancelManager(
+    repository as never,
+    medusa as never,
+    poller as never,
+    approver as never,
+  );
   return { manager, repository, medusa, poller, approver };
 }
 
@@ -71,7 +76,10 @@ describe('ChannelOrderCancelManager (#1016 35번 PR-B · 36번 재설계 PR 3)',
       const { manager, repository, poller, approver } = setup();
       approver.approve.mockResolvedValue({ kind: 'approved' });
       await expect(
-        manager.execute({ ...asked, salesChannel: 'coupang', answers: { channelRequestRef: '123', needsApproval: true } }, 'd1'),
+        manager.execute(
+          { ...asked, salesChannel: 'coupang', answers: { channelRequestRef: '123', needsApproval: true } },
+          'd1',
+        ),
       ).resolves.toBeUndefined();
       expect(poller.syncOrder).toHaveBeenCalledWith('coupang', 'order_1', { force: true });
       expect(repository.recordSettlementFailure).not.toHaveBeenCalled();
@@ -89,7 +97,12 @@ describe('ChannelOrderCancelManager (#1016 35번 PR-B · 36번 재설계 PR 3)',
 
     it('failed approval is recorded as a settlement failure', async () => {
       const { manager, repository, poller, approver } = setup();
-      approver.approve.mockResolvedValue({ kind: 'failed', retryable: false, failureCode: 'approval_observe_mode', message: 'm' });
+      approver.approve.mockResolvedValue({
+        kind: 'failed',
+        retryable: false,
+        failureCode: 'approval_observe_mode',
+        message: 'm',
+      });
       await manager.execute(asked, 'd1');
       const { fact } = recorded(repository);
       expect(fact).toMatchObject({ salesChannel: 'naver', retryable: false, failureCode: 'approval_observe_mode' });
@@ -110,7 +123,11 @@ describe('ChannelOrderCancelManager (#1016 35번 PR-B · 36번 재설계 PR 3)',
           new CustomerCancelApprover(naver as never, coupang as never),
         );
         await manager.execute(asked, 'd1');
-        expect(recorded(repository).fact).toMatchObject({ salesChannel: 'naver', retryable: false, failureCode: 'approval_observe_mode' });
+        expect(recorded(repository).fact).toMatchObject({
+          salesChannel: 'naver',
+          retryable: false,
+          failureCode: 'approval_observe_mode',
+        });
         expect(naver.approveCancel).not.toHaveBeenCalled();
         expect(coupang.stoppedShipment).not.toHaveBeenCalled();
         expect(poller.syncOrder).not.toHaveBeenCalled();
@@ -134,7 +151,12 @@ describe('ChannelOrderCancelManager (#1016 35번 PR-B · 36번 재설계 PR 3)',
         const { manager, repository, medusa, poller } = setup();
         await manager.execute({ ...full, salesChannel }, 'd1');
         const { fact } = recorded(repository);
-        expect(fact).toMatchObject({ salesChannel, retryable: false, failureCode: 'channel_not_supported', scope: 'full' });
+        expect(fact).toMatchObject({
+          salesChannel,
+          retryable: false,
+          failureCode: 'channel_not_supported',
+          scope: 'full',
+        });
         expect(repository.hasCollectedOrder).not.toHaveBeenCalled();
         expect(medusa.cancelOrder).not.toHaveBeenCalled();
         expect(poller.syncOrder).not.toHaveBeenCalled();
@@ -150,6 +172,21 @@ describe('ChannelOrderCancelManager (#1016 35번 PR-B · 36번 재설계 PR 3)',
     });
   });
 
+  describe('전체취소 사유 전달', () => {
+    it('사유·요청 주체를 Medusa 로 넘긴다 — 함께 배송 배송비를 고객이 낼지 정한다', async () => {
+      const { manager, medusa } = setup();
+      medusa.cancelOrder.mockResolvedValue({ kind: 'cancelled' });
+
+      await manager.execute({ ...full, requestedBy: 'customer', reasonCode: 'CHANGE_OF_MIND' }, 'd1');
+
+      expect(medusa.cancelOrder).toHaveBeenCalledWith('order_1', {
+        refundMode: 'auto',
+        reasonCode: 'CHANGE_OF_MIND',
+        requestedBy: 'customer',
+      });
+    });
+  });
+
   describe('refundMode 전달', () => {
     it('명령에 없으면 auto 로 보낸다 — 옛 core 의 명령이다', async () => {
       const { manager, medusa } = setup();
@@ -157,7 +194,7 @@ describe('ChannelOrderCancelManager (#1016 35번 PR-B · 36번 재설계 PR 3)',
       medusa.partialCancelOrder.mockResolvedValue(cancelledPartial);
       await manager.execute(full, 'd1');
       await manager.execute(partial, 'd2');
-      expect(medusa.cancelOrder).toHaveBeenCalledWith('order_1', { refundMode: 'auto' });
+      expect(medusa.cancelOrder).toHaveBeenCalledWith('order_1', { refundMode: 'auto', requestedBy: 'operator' });
       expect(medusa.partialCancelOrder).toHaveBeenCalledWith('order_1', {
         requestId: 'req-1',
         items: [{ itemId: 'ordli_1', quantity: 2 }],
@@ -172,7 +209,7 @@ describe('ChannelOrderCancelManager (#1016 35번 PR-B · 36번 재설계 PR 3)',
       medusa.partialCancelOrder.mockResolvedValue(cancelledPartial);
       await manager.execute({ ...full, refundMode: 'manual' }, 'd1');
       await manager.execute({ ...partial, refundMode: 'manual', alreadyRefundedAmount: 10000 }, 'd2');
-      expect(medusa.cancelOrder).toHaveBeenCalledWith('order_1', { refundMode: 'manual' });
+      expect(medusa.cancelOrder).toHaveBeenCalledWith('order_1', { refundMode: 'manual', requestedBy: 'operator' });
       expect(medusa.partialCancelOrder).toHaveBeenCalledWith('order_1', {
         requestId: 'req-1',
         items: [{ itemId: 'ordli_1', quantity: 2 }],
@@ -203,13 +240,16 @@ describe('ChannelOrderCancelManager (#1016 35번 PR-B · 36번 재설계 PR 3)',
   });
 
   describe('전체취소', () => {
-    it.each([{ kind: 'cancelled' }, { kind: 'already_cancelled' }])('$kind 면 사실 없이 즉시 재수집한다', async (outcome) => {
-      const { manager, repository, medusa, poller } = setup();
-      medusa.cancelOrder.mockResolvedValue(outcome);
-      await manager.execute(full, 'd1');
-      expect(poller.syncOrder).toHaveBeenCalledWith('medusa', 'order_1', { force: true });
-      expect(repository.recordSettlementFailure).not.toHaveBeenCalled();
-    });
+    it.each([{ kind: 'cancelled' }, { kind: 'already_cancelled' }])(
+      '$kind 면 사실 없이 즉시 재수집한다',
+      async (outcome) => {
+        const { manager, repository, medusa, poller } = setup();
+        medusa.cancelOrder.mockResolvedValue(outcome);
+        await manager.execute(full, 'd1');
+        expect(poller.syncOrder).toHaveBeenCalledWith('medusa', 'order_1', { force: true });
+        expect(repository.recordSettlementFailure).not.toHaveBeenCalled();
+      },
+    );
 
     it('wallet 영구 거절은 영구 정산 실패', async () => {
       const { manager, repository, medusa, poller } = setup();
@@ -272,13 +312,16 @@ describe('ChannelOrderCancelManager (#1016 35번 PR-B · 36번 재설계 PR 3)',
       expect(repository.recordSettlementFailure).not.toHaveBeenCalled();
     });
 
-    it.each(['channel_inactive', 'not_found'])('취소 뒤 재수집이 %s 면 warn 으로 남긴다 — 돌아가는 사실이 없다', async (outcome) => {
-      const { manager, medusa, poller } = setup();
-      medusa.cancelOrder.mockResolvedValue({ kind: 'cancelled' });
-      poller.syncOrder.mockResolvedValue({ outcome });
-      await manager.execute(full, 'd1');
-      expect(warn).toHaveBeenCalledWith(expect.stringContaining(`재수집 ${outcome}`));
-    });
+    it.each(['channel_inactive', 'not_found'])(
+      '취소 뒤 재수집이 %s 면 warn 으로 남긴다 — 돌아가는 사실이 없다',
+      async (outcome) => {
+        const { manager, medusa, poller } = setup();
+        medusa.cancelOrder.mockResolvedValue({ kind: 'cancelled' });
+        poller.syncOrder.mockResolvedValue({ outcome });
+        await manager.execute(full, 'd1');
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining(`재수집 ${outcome}`));
+      },
+    );
   });
 
   describe('부분취소', () => {
@@ -296,7 +339,12 @@ describe('ChannelOrderCancelManager (#1016 35번 PR-B · 36번 재설계 PR 3)',
       medusa.partialCancelOrder.mockResolvedValue({ kind: 'rejected', message: '수량 초과' });
       await manager.execute(partial, 'd1');
       const { fact } = recorded(repository);
-      expect(fact).toMatchObject({ scope: 'partial', retryable: false, failureCode: 'partial_cancel_rejected', message: '수량 초과' });
+      expect(fact).toMatchObject({
+        scope: 'partial',
+        retryable: false,
+        failureCode: 'partial_cancel_rejected',
+        message: '수량 초과',
+      });
       expect(poller.syncOrder).not.toHaveBeenCalled();
     });
 
@@ -310,7 +358,11 @@ describe('ChannelOrderCancelManager (#1016 35번 PR-B · 36번 재설계 PR 3)',
       });
       await manager.execute(partial, 'd1');
       const { fact } = recorded(repository);
-      expect(fact).toMatchObject({ retryable: false, failureCode: 'external_refund_unresolved', message: '외부 환불 10,000원' });
+      expect(fact).toMatchObject({
+        retryable: false,
+        failureCode: 'external_refund_unresolved',
+        message: '외부 환불 10,000원',
+      });
     });
 
     it('수정 뒤 wallet 영구 거절은 영구 정산 실패 — 던지지 않는다', async () => {
@@ -323,10 +375,13 @@ describe('ChannelOrderCancelManager (#1016 35번 PR-B · 36번 재설계 PR 3)',
       });
       await manager.execute(partial, 'd1');
       const { fact } = recorded(repository);
-      expect(fact).toMatchObject({ scope: 'partial', retryable: false, failureCode: 'wallet_refund_refused:ALREADY_CANCELED_PAYMENT' });
+      expect(fact).toMatchObject({
+        scope: 'partial',
+        retryable: false,
+        failureCode: 'wallet_refund_refused:ALREADY_CANCELED_PAYMENT',
+      });
       expect(poller.syncOrder).not.toHaveBeenCalled();
     });
-
 
     it('환불 미완(502)은 일시 정산 실패 refund_pending 를 내고 ack 한다', async () => {
       const { manager, repository, medusa, poller } = setup();

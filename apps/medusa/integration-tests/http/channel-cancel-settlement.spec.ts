@@ -403,5 +403,132 @@ medusaIntegrationTestRunner({
         expect(res.status).toBe(200);
       });
     });
+
+    describe('함께 배송 보류', () => {
+      const customerCancel = { reasonCode: 'CHANGE_OF_MIND', requestedBy: 'customer' };
+      const holdOf = async (orderId: string) => ((await order(orderId)).metadata ?? {}).add_to_delivery_hold;
+
+      /** 부모(A 30,000 + 조건부 배송비 3,000)와 그 함께 배송 주문(C 고정 배송비 3,000 — 면제액은 결제 시점 스냅샷 3,000) */
+      const placePair = async () => {
+        const parent = await place();
+        const child = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'C', quantity: 1 }] });
+        const orderModule = getContainer().resolve(Modules.ORDER);
+        const [p] = await orderModule.listOrders({ id: parent.orderId }, { select: ['id', 'customer_id'] });
+        await orderModule.updateOrders([
+          { id: child.orderId, customer_id: p.customer_id, metadata: { add_to_delivery_parent_order_id: parent.orderId } },
+        ]);
+
+        return { parentId: parent.orderId, childId: child.orderId };
+      };
+
+      it('부모만 취소하면 면제 배송비를 남기고 환불한 뒤 취소한다', async () => {
+        const { parentId } = await placePair();
+        const { captured } = await ledger(parentId);
+
+        const res = await channelCancel(parentId, customerCancel);
+
+        expect(res.status).toBe(200);
+        expect(res.data.refund.amount).toBe(captured - 3000);
+        expect((await order(parentId)).status).toBe('canceled');
+        expect((await ledger(parentId)).refunds).toEqual([{ amount: captured - 3000, note: `channel-cancel:${parentId}` }]);
+        expect(await holdOf(parentId)).toEqual({ amount: 3000, released: 0, releases: {} });
+      });
+
+      it('그다음 함께 배송 주문을 취소하면 부모에 남긴 배송비를 돌려준다 — 다시 불러도 한 번만', async () => {
+        const { parentId, childId } = await placePair();
+        const { captured } = await ledger(parentId);
+        await channelCancel(parentId, customerCancel);
+
+        expect((await channelCancel(childId, customerCancel)).status).toBe(200);
+        expect((await channelCancel(childId, customerCancel)).status).toBe(400);
+
+        const refunds = (await ledger(parentId)).refunds;
+        expect(refunds).toEqual([
+          { amount: captured - 3000, note: `channel-cancel:${parentId}` },
+          { amount: 3000, note: `add-to-delivery-release:${parentId}` },
+        ]);
+        expect(await holdOf(parentId)).toEqual({ amount: 3000, released: 3000, releases: { [childId]: 3000 } });
+      });
+
+      it('함께 배송 주문을 먼저 취소하면 부모는 전액 환불하고 보류가 없다', async () => {
+        const { parentId, childId } = await placePair();
+        const { captured } = await ledger(parentId);
+
+        expect((await channelCancel(childId, customerCancel)).status).toBe(200);
+        expect((await channelCancel(parentId, customerCancel)).status).toBe(200);
+
+        expect((await ledger(parentId)).refunds).toEqual([{ amount: captured, note: `channel-cancel:${parentId}` }]);
+        expect(await holdOf(parentId)).toBeUndefined();
+      });
+
+      it('판매자 탓 취소(배송 지연)는 보류 없이 전액 환불한다', async () => {
+        const { parentId } = await placePair();
+        const { captured } = await ledger(parentId);
+
+        expect((await channelCancel(parentId, { reasonCode: 'DELAY', requestedBy: 'customer' })).status).toBe(200);
+
+        expect((await ledger(parentId)).refunds).toEqual([{ amount: captured, note: `channel-cancel:${parentId}` }]);
+        expect(await holdOf(parentId)).toBeUndefined();
+      });
+
+      it('되돌려주기 환불의 응답을 잃어도 재시도가 같은 돈을 또 내지 않는다', async () => {
+        const { parentId, childId } = await placePair();
+        const { captured } = await ledger(parentId);
+        await channelCancel(parentId, customerCancel);
+        const childCaptured = (await ledger(childId)).captured;
+
+        // 자식 자기 환불은 통과시키고, 그다음 부모 되돌려주기 환불의 응답만 잃는다
+        wallet.loseRefundResponseAfter = 1;
+        expect((await channelCancel(childId, customerCancel)).status).toBe(500);
+        expect((await order(childId)).status).not.toBe('canceled');
+
+        expect((await channelCancel(childId, customerCancel)).status).toBe(200);
+
+        const releases = wallet.refunds.filter((r) => r.amount === 3000);
+        expect(releases).toHaveLength(1);
+        expect((await ledger(parentId)).refunds).toEqual([
+          { amount: captured - 3000, note: `channel-cancel:${parentId}` },
+          { amount: 3000, note: `add-to-delivery-release:${parentId}` },
+        ]);
+        expect((await ledger(childId)).refunds.reduce((sum: number, r: { amount: number }) => sum + r.amount, 0)).toBe(childCaptured);
+      });
+
+      it('함께 배송 주문 환불이 영구 거절되면 취소 중 표시를 지워, 다음 부모 취소가 그 몫을 보류한다', async () => {
+        const { parentId, childId } = await placePair();
+        const { captured } = await ledger(parentId);
+        wallet.rejectNextRefundWith = { status: 400, error: 'REFUND_NOT_AUTOMATABLE', message: 'wallet 원문', retryable: false };
+
+        expect((await channelCancel(childId, customerCancel)).status).toBe(400);
+        expect(((await order(childId)).metadata ?? {}).add_to_delivery_canceling_at ?? null).toBeNull();
+
+        expect((await channelCancel(parentId, customerCancel)).status).toBe(200);
+        expect((await ledger(parentId)).refunds).toEqual([{ amount: captured - 3000, note: `channel-cancel:${parentId}` }]);
+      });
+
+      it('수동 환불로 함께 배송 주문을 취소하면 부모 되돌려주기도 수동으로 한다', async () => {
+        const { parentId, childId } = await placePair();
+        await channelCancel(parentId, customerCancel);
+
+        expect((await channelCancel(childId, { ...customerCancel, refundMode: 'manual' })).status).toBe(200);
+
+        const release = wallet.refunds.find((r) => r.amount === 3000 && r.execution === 'MANUAL');
+        expect(release).toBeDefined();
+        expect((await holdOf(parentId)).released).toBe(3000);
+      });
+
+      it('취소를 시작한 함께 배송 주문은 부모 보류에서 빠진다', async () => {
+        const { parentId, childId } = await placePair();
+        const { captured } = await ledger(parentId);
+        const orderModule = getContainer().resolve(Modules.ORDER);
+        const [child] = await orderModule.listOrders({ id: childId }, { select: ['id', 'metadata'] });
+        await orderModule.updateOrders([
+          { id: childId, metadata: { ...child.metadata, add_to_delivery_canceling_at: new Date().toISOString() } },
+        ]);
+
+        expect((await channelCancel(parentId, customerCancel)).status).toBe(200);
+
+        expect((await ledger(parentId)).refunds).toEqual([{ amount: captured, note: `channel-cancel:${parentId}` }]);
+      });
+    });
   },
 });

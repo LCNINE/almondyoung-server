@@ -10,6 +10,7 @@ import {
 } from '../../../modules/almond-fulfillment/add-to-delivery/resolve-parent';
 import { listLiveAddOns, type RawSql } from '../../../modules/almond-fulfillment/add-to-delivery/live-add-ons';
 import { waivedShippingAmount } from '../../../modules/almond-fulfillment/add-to-delivery/waived-shipping';
+import { readHold } from '../../../workflows/orders/channel-cancel/add-to-delivery-hold';
 
 export const PARENT_UNAVAILABLE_MESSAGE = '함께 받을 주문이 방금 출고됐어요. 배송비를 포함해 다시 결제해 주세요.';
 
@@ -129,6 +130,7 @@ export async function readLinks(
       const children = childrenByParent.get(o.id) ?? [];
       const waived = parentId ? await waivedShippingAmount(deps.query, o.id) : 0;
       const childAmounts = await Promise.all(children.map((id) => waivedShippingAmount(deps.query, id)));
+      const hold = readHold(o.metadata);
 
       return [
         o.id,
@@ -136,7 +138,10 @@ export async function readLinks(
           parent_order_id: parentId,
           children,
           waived_amount: waived,
-          withheld_amount: childAmounts.reduce((sum, a) => sum + a, 0),
+          // 이미 부모만 취소했으면 결제에 남은 보류액, 아니면 지금 부모만 취소할 때 뺄 금액
+          withheld_amount: hold
+            ? Math.max(0, hold.amount - hold.released)
+            : childAmounts.reduce((sum, a) => sum + a, 0),
         },
       ];
     }),

@@ -17,13 +17,28 @@ import { issuePaymentRefund } from '../settlement/issue-payment-refund';
 import { orderCancelLockKey, orderPaymentIds } from '../settlement/order-payments';
 import type { RefundMode } from '../settlement/refund-mode';
 import { planPaymentWalletRefundBookings, reconcileOrderWalletRefunds } from '../settlement/wallet-refund-ledger';
+import {
+  clearAddOnCanceling,
+  holdForParentCancel,
+  markAddOnCanceling,
+  recordHoldBeforeCancel,
+  releaseParentHold,
+} from './add-to-delivery-hold';
+import { cancelOrderKeepingHoldWorkflow } from './cancel-order-keeping-hold';
 
 /** 맞추기 + 환불 + 취소가 넉넉히 들어가게 잡는다 — 레디스 잠금은 timeout 이 곧 만료다 */
 const ORDER_LOCK_TIMEOUT_SECONDS = 120;
 /** 부분취소·환불 투영과 같은 값. 이 잠금 안에서는 refundPaymentWorkflow 한 번만 돈다 */
 const PAYMENT_LOCK_TIMEOUT_SECONDS = 30;
 
-export type ChannelCancelInput = { orderId: string; refundMode: RefundMode; actorId?: string };
+export type ChannelCancelInput = {
+  orderId: string;
+  refundMode: RefundMode;
+  actorId?: string;
+  /** 취소 사유·요청 주체 — 함께 배송 배송비를 고객이 낼지 정한다(부분취소와 같은 규칙) */
+  reasonCode?: string;
+  requestedBy?: string;
+};
 export type ChannelCancelResult = { orderId: string; status: 'canceled'; refund: { mode: RefundMode; amount: number } };
 
 const refundNote = (orderId: string) => `channel-cancel:${orderId}`;
@@ -34,7 +49,10 @@ const refundNote = (orderId: string) => `channel-cancel:${orderId}`;
  * 취소된 주문엔 환불할 수 없으므로(크레딧 라인 단계가 돈이 나간 «뒤» 던진다, §2.2) 환불이 먼저다.
  * 다시 부르면 남은 몫만 환불하고 취소를 이어 간다.
  */
-export async function channelCancelOrder(container: MedusaContainer, input: ChannelCancelInput): Promise<ChannelCancelResult> {
+export async function channelCancelOrder(
+  container: MedusaContainer,
+  input: ChannelCancelInput,
+): Promise<ChannelCancelResult> {
   const locking = container.resolve(Modules.LOCKING);
   return locking.execute(orderCancelLockKey(input.orderId), () => run(container, input), {
     timeout: ORDER_LOCK_TIMEOUT_SECONDS,
@@ -55,27 +73,57 @@ async function run(container: MedusaContainer, input: ChannelCancelInput): Promi
       moved = await moneyMovedHere(container, input.orderId);
     } catch (checkError) {
       // 판정을 못 하면 400 으로 닫지 않는다 — 돈이 나갔을 수 있다. 일시 실패(500)로 재시도시킨다
-      throw new Error(`채널 취소가 중단됐습니다 — 환불 여부를 확인하지 못했습니다, 다시 시도합니다(${input.orderId}): ${describeError(checkError)}`);
+      throw new Error(
+        `채널 취소가 중단됐습니다 — 환불 여부를 확인하지 못했습니다, 다시 시도합니다(${input.orderId}): ${describeError(checkError)}`,
+      );
     }
     if (moved) {
-      throw new Error(`채널 취소가 중단됐습니다 — 환불은 이미 나갔습니다, 다시 시도합니다(${input.orderId}): ${describeError(error)}`);
+      throw new Error(
+        `채널 취소가 중단됐습니다 — 환불은 이미 나갔습니다, 다시 시도합니다(${input.orderId}): ${describeError(error)}`,
+      );
     }
     throw error;
   }
   try {
     // ① 빠진 wallet 환불(외부·응답 유실)을 먼저 장부에 — 그래야 ② 의 «캡처 − 환불»이 이미 나간 돈을 또 내지 않는다
     await reconcileOrderWalletRefunds(container, input.orderId);
-    await refundRemaining(container, input);
-    // ③ 환불할 몫이 0 이라 그 안의 환불 단계는 아무것도 하지 않는다. 크레딧 라인은 위 환불이 이미 붙였다(빈 필터 → 0, 2026-10-11 실측)
-    await cancelOrderWorkflow(container).run({ input: { order_id: input.orderId, canceled_by: input.actorId } });
+    await markAddOnCanceling(container, input.orderId);
+    // 부모만 취소하면 살아 있는 함께 배송 주문의 면제 배송비를 결제에 남긴다. 그 주문이 취소되면 releaseParentHold 가 돌려준다
+    const hold = await holdForParentCancel(container, input);
+    const held = await refundRemaining(container, input, hold);
+    // 이 주문이 함께 배송 주문이면, 자기 환불 뒤·자기 취소 전에 부모 보류에서 이제 필요 없는 몫을 돌려준다(실패하면 500 으로 재시도된다)
+    await releaseParentHold(container, {
+      childOrderId: input.orderId,
+      refundMode: input.refundMode,
+      actorId: input.actorId,
+    });
+
+    // 보류를 취소 «전»에 적는다 — 취소 뒤에 끊기면 재시도가 «이미 취소됨»으로 끝나 보류를 영영 못 적는다
+    await recordHoldBeforeCancel(container, input.orderId, held);
+
+    if (held > 0) {
+      await cancelOrderKeepingHoldWorkflow(container).run({
+        input: { order_id: input.orderId, canceled_by: input.actorId },
+      });
+    } else {
+      // ③ 환불할 몫이 0 이라 그 안의 환불 단계는 아무것도 하지 않는다. 크레딧 라인은 위 환불이 이미 붙였다(빈 필터 → 0, 2026-10-11 실측)
+      await cancelOrderWorkflow(container).run({ input: { order_id: input.orderId, canceled_by: input.actorId } });
+    }
   } catch (error) {
     // 영구 거절 표지만 그대로 올린다(400 — 주문은 안 취소됐다). 결제분이 여럿이면 앞 몫은 이미 나갔을 수 있는데, 그 돈은 다음 정산
     // (재시도·수동)의 장부 맞추기가 장부에 넣고 남은 몫만 낸다. 그 밖은 500 으로 바꿔 재시도시킨다 — 표지 없는 400 은
     // channel-adapter 가 «취소 불가»로 닫는다. 재시도는 맞추기 뒤 남은 몫만 환불한다
-    if (readWalletRefundRefusal(error)) throw error;
+    if (readWalletRefundRefusal(error)) {
+      await clearAddOnCanceling(container, input.orderId);
+      throw error;
+    }
     throw new Error(`채널 취소가 중단됐습니다 — 다시 시도합니다(${input.orderId}): ${describeError(error)}`);
   }
-  return { orderId: input.orderId, status: 'canceled', refund: { mode: input.refundMode, amount: await refundedHere(container, input.orderId) } };
+  return {
+    orderId: input.orderId,
+    status: 'canceled',
+    refund: { mode: input.refundMode, amount: await refundedHere(container, input.orderId) },
+  };
 }
 
 async function assertCancelable(container: MedusaContainer, orderId: string): Promise<void> {
@@ -99,10 +147,12 @@ async function assertCancelable(container: MedusaContainer, orderId: string): Pr
     throw new MedusaError(MedusaError.Types.INVALID_DATA, `Order with id ${orderId} has been canceled.`);
   }
   // 환불 워크플로의 크레딧 라인 단계가 주문 변경을 만든다 — 진행 중인 변경이 있으면 거기서 실패하는데, 그때는 돈이 이미 나갔다
-  const activeChanges = await container.resolve(Modules.ORDER).listOrderChanges(
-    { order_id: orderId, status: [OrderChangeStatus.PENDING, OrderChangeStatus.REQUESTED] },
-    { select: ['id'] },
-  );
+  const activeChanges = await container
+    .resolve(Modules.ORDER)
+    .listOrderChanges(
+      { order_id: orderId, status: [OrderChangeStatus.PENDING, OrderChangeStatus.REQUESTED] },
+      { select: ['id'] },
+    );
   if (activeChanges.length > 0) {
     throw new MedusaError(
       MedusaError.Types.NOT_ALLOWED,
@@ -144,17 +194,25 @@ async function moneyMovedHere(container: MedusaContainer, orderId: string): Prom
 async function refundedHere(container: MedusaContainer, orderId: string): Promise<number> {
   const paymentIds = await orderPaymentIds(container, orderId);
   if (paymentIds.length === 0) return 0;
-  const payments = await container.resolve(Modules.PAYMENT).listPayments({ id: paymentIds }, { relations: ['refunds'] });
+  const payments = await container
+    .resolve(Modules.PAYMENT)
+    .listPayments({ id: paymentIds }, { relations: ['refunds'] });
   return payments
     .flatMap((p) => p.refunds ?? [])
     .filter((r) => r.note === refundNote(orderId))
     .reduce((s, r) => s + toNumber(r.amount), 0);
 }
 
-/** 결제마다 «캡처 − 환불»을 돌려준다. 오류는 잡지 않는다 — run() 이 표지(400)와 그 밖(500)을 가른다 */
-async function refundRemaining(container: MedusaContainer, input: ChannelCancelInput): Promise<void> {
+/**
+ * 결제마다 «캡처 − 환불»을 돌려준다. hold 만큼은 결제 순서대로 덜 돌려주고 실제로 남긴 금액을 낸다.
+ * 오류는 잡지 않는다 — run() 이 표지(400)와 그 밖(500)을 가른다
+ */
+async function refundRemaining(container: MedusaContainer, input: ChannelCancelInput, hold = 0): Promise<number> {
   const paymentModule = container.resolve(Modules.PAYMENT);
   const locking = container.resolve(Modules.LOCKING);
+  let toHold = Math.max(0, hold);
+  let held = 0;
+
   for (const paymentId of await orderPaymentIds(container, input.orderId)) {
     await locking.execute(
       paymentRefundLockKey(paymentId),
@@ -163,7 +221,11 @@ async function refundRemaining(container: MedusaContainer, input: ChannelCancelI
         if (p.canceled_at) return;
         const captured = (p.captures ?? []).reduce((s, x) => s + toNumber(x.amount), 0);
         const refunded = (p.refunds ?? []).reduce((s, x) => s + toNumber(x.amount), 0);
-        const amount = captured - refunded;
+        const keep = Math.min(toHold, Math.max(0, captured - refunded));
+        toHold -= keep;
+        held += keep;
+
+        const amount = captured - refunded - keep;
         if (!(amount > 0)) return;
         await issuePaymentRefund(container, {
           paymentId,
@@ -177,4 +239,6 @@ async function refundRemaining(container: MedusaContainer, input: ChannelCancelI
       { timeout: PAYMENT_LOCK_TIMEOUT_SECONDS },
     );
   }
+
+  return held;
 }

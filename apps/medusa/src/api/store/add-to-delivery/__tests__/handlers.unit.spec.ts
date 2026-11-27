@@ -124,6 +124,24 @@ describe('add-to-delivery store handlers', () => {
     });
   });
 
+  it('부모만 취소한 뒤에는 결제에 남은 보류액을 낸다', async () => {
+    waivedMock.mockResolvedValue(3000);
+    const q = query({
+      order: [
+        {
+          id: 'order_p',
+          customer_id: 'cus_1',
+          metadata: { add_to_delivery_hold: { amount: 3000, released: 0, releases: {} } },
+        },
+      ],
+    });
+    const knex = { raw: jest.fn(async (_sql: string, _b: unknown[]) => ({ rows: [] as Array<Record<string, any>> })) };
+
+    const links = await readLinks({ query: q, knex }, 'cus_1', ['order_p']);
+
+    expect(links.order_p.withheld_amount).toBe(3000);
+  });
+
   it('비로그인은 401', async () => {
     const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
 
