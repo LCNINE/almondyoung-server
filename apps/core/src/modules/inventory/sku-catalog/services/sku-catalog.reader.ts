@@ -7,6 +7,7 @@ import { skuNameLikePatterns } from './sku-name-search';
 import { readSkuImageFileIds } from './sku-image-files';
 import { SkuResponseDto } from '../dto/sku-response.dto';
 import { AdvancedInventoryFiltersDto, StockDisplayMode } from '../dto/advanced-filters.dto';
+import { likeContains } from '../../sku-field-capture/sku-field-capture.rules';
 
 @Injectable()
 export class SkuCatalogReader {
@@ -280,15 +281,30 @@ export class SkuCatalogReader {
   async searchAdvanced(
     filters: AdvancedInventoryFiltersDto,
     tx?: DbTx,
-  ): Promise<{ items: SkuResponseDto[]; total: number; limit: number; offset: number }> {
+  ): Promise<{ items: SkuResponseDto[]; total: number; limit: number; offset: number; q: string }> {
     return this.dbService.run(async (trx) => {
       if (filters.displayMode && !filters.warehouseId) {
         throw new Error('displayMode filter requires warehouseId to be specified');
       }
 
       const conditions: SQL[] = [];
+      const q = filters.q?.trim() ?? '';
 
       conditions.push(eq(wmsTables.skus.isDeleted, false));
+
+      if (q) {
+        conditions.push(
+          or(
+            sql`${wmsTables.skus.name} ILIKE ${likeContains(q)}`,
+            eq(wmsTables.skus.code, q),
+            sql`EXISTS (
+              SELECT 1 FROM ${wmsTables.skuBarcodes}
+              WHERE ${wmsTables.skuBarcodes.skuId} = ${wmsTables.skus.id}
+                AND ${wmsTables.skuBarcodes.barcode} = ${q}
+            )`,
+          )!,
+        );
+      }
 
       if (filters.search) {
         conditions.push(
@@ -392,6 +408,7 @@ export class SkuCatalogReader {
         total,
         limit: filters.limit ?? 50,
         offset: filters.offset ?? 0,
+        q,
       };
     }, tx);
   }

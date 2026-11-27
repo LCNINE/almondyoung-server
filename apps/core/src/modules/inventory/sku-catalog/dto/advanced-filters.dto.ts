@@ -1,6 +1,18 @@
-import { IsOptional, IsString, IsEnum, IsIn, IsInt, Min, Max, IsBoolean, IsDateString, IsUUID } from 'class-validator';
+import {
+  IsOptional,
+  IsString,
+  IsEnum,
+  IsIn,
+  IsInt,
+  Min,
+  Max,
+  MaxLength,
+  IsBoolean,
+  IsDateString,
+  IsUUID,
+} from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { StockTypeEnum, stockTypeValues } from '../../schema/enum-values';
 
 export enum StockDisplayMode {
@@ -15,6 +27,13 @@ export type SkuSortField = (typeof SKU_SORT_FIELDS)[number];
 
 export class AdvancedInventoryFiltersDto {
   // Basic search
+  @ApiProperty({ description: 'SKU 이름 부분일치 또는 SKU 코드·바코드 정확일치', required: false, maxLength: 200 })
+  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
+  @IsString()
+  @MaxLength(200)
+  @IsOptional()
+  q?: string;
+
   @ApiProperty({
     description: 'SKU 이름/코드 검색 (Search by SKU name or code)',
     required: false,

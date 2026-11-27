@@ -1,4 +1,5 @@
-import { validate } from 'class-validator';
+import { plainToInstance } from 'class-transformer';
+import { validate, validateSync } from 'class-validator';
 import { AdvancedInventoryFiltersDto, SKU_SORT_FIELDS } from './advanced-filters.dto';
 
 /**
@@ -33,5 +34,21 @@ describe('AdvancedInventoryFiltersDto.sortBy', () => {
     const errors = await validate(dtoWith('id; DROP TABLE skus'));
     expect(errors).toHaveLength(1);
     expect(errors[0].property).toBe('sortBy');
+  });
+});
+
+describe('AdvancedInventoryFiltersDto q', () => {
+  it('검색어를 다듬고 whitelist 검증에서 유지한다', () => {
+    const filters = plainToInstance(AdvancedInventoryFiltersDto, { q: '  8801234567890  ' });
+    const errors = validateSync(filters, { whitelist: true });
+
+    expect(errors).toEqual([]);
+    expect(filters.q).toBe('8801234567890');
+  });
+
+  it('길이 상한을 넘는 검색어를 거절한다', () => {
+    const filters = plainToInstance(AdvancedInventoryFiltersDto, { q: 'x'.repeat(201) });
+
+    expect(validateSync(filters).some((error) => error.property === 'q')).toBe(true);
   });
 });

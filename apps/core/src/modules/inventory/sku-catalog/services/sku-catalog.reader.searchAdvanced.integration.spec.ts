@@ -112,6 +112,98 @@ describeIfDb('SkuCatalogReader.searchAdvanced (DB integration, rollback-only)', 
   });
 
   describe('searchAdvanced 필터 (SKU 목록 화면이 쓰는 것)', () => {
+    it('q 는 SKU 이름 부분일치와 SKU 코드 정확일치를 OR 로 찾는다', async () => {
+      await inRollbackTx(async (tx) => {
+        const token = randomUUID().slice(0, 8);
+        const [byName, byCode] = await seedSkus(tx, token, 2);
+        const [codeSku] = await tx.select().from(wmsTables.skus).where(eq(wmsTables.skus.id, byCode));
+
+        const nameResult = await reader.searchAdvanced({ q: `IT-${token.toUpperCase()}`, limit: 20 }, tx);
+        const codeResult = await reader.searchAdvanced({ q: ` ${codeSku.code} `, limit: 20 }, tx);
+        const codePrefix = await reader.searchAdvanced({ q: codeSku.code.slice(0, -1), limit: 20 }, tx);
+
+        expect(nameResult.items.map((item) => item.id).sort()).toEqual([byName, byCode].sort());
+        expect(nameResult.total).toBe(2);
+        expect(codeResult.items.map((item) => item.id)).toEqual([byCode]);
+        expect(codeResult.q).toBe(codeSku.code);
+        expect(codePrefix.items).toEqual([]);
+        expect(codePrefix.total).toBe(0);
+      });
+    });
+
+    it('q 는 기본·보조 바코드를 정확히 찾고 여러 경로가 맞아도 SKU 를 한 번만 센다', async () => {
+      await inRollbackTx(async (tx) => {
+        const token = randomUUID().slice(0, 8);
+        const [primarySku, secondarySku] = await seedSkus(tx, token, 2);
+        const primaryBarcode = `P-${randomUUID()}`;
+        const secondaryBarcode = `S-${randomUUID()}`;
+
+        await tx.insert(wmsTables.skuBarcodes).values([
+          { skuId: primarySku, barcode: primaryBarcode, isPrimary: true },
+          { skuId: secondarySku, barcode: secondaryBarcode, isPrimary: false },
+        ]);
+
+        const primary = await reader.searchAdvanced({ q: primaryBarcode }, tx);
+        const secondary = await reader.searchAdvanced({ q: secondaryBarcode }, tx);
+        const partial = await reader.searchAdvanced({ q: secondaryBarcode.slice(0, -1) }, tx);
+
+        expect(primary.items.map((item) => item.id)).toEqual([primarySku]);
+        expect(secondary.items.map((item) => item.id)).toEqual([secondarySku]);
+        expect(partial.items).toEqual([]);
+        expect(partial.total).toBe(0);
+
+        await tx
+          .update(wmsTables.skus)
+          .set({ name: `it-${primaryBarcode}`, code: primaryBarcode })
+          .where(eq(wmsTables.skus.id, primarySku));
+
+        const duplicate = await reader.searchAdvanced({ q: primaryBarcode }, tx);
+
+        expect(duplicate.items.map((item) => item.id)).toEqual([primarySku]);
+        expect(duplicate.total).toBe(1);
+      });
+    });
+
+    it('q 결과와 기존 필터를 AND 로 묶고 공백 q 는 적용하지 않는다', async () => {
+      await inRollbackTx(async (tx) => {
+        const token = randomUUID().slice(0, 8);
+        const [a, b] = await seedSkus(tx, token, 2);
+        const barcode = `it-${randomUUID()}`;
+        await tx.insert(wmsTables.skuBarcodes).values({ skuId: a, barcode });
+
+        const matched = await reader.searchAdvanced({ q: barcode, name: `it-${token}`, limit: 20 }, tx);
+        const excluded = await reader.searchAdvanced({ q: barcode, code: 'different-code', limit: 20 }, tx);
+        const empty = await reader.searchAdvanced({ q: '   ', name: `it-${token}`, limit: 20 }, tx);
+
+        expect(matched.items.map((item) => item.id)).toEqual([a]);
+        expect(matched.total).toBe(1);
+        expect(excluded.items).toEqual([]);
+        expect(excluded.total).toBe(0);
+        expect(empty.items.map((item) => item.id).sort()).toEqual([a, b].sort());
+        expect(empty.q).toBe('');
+      });
+    });
+
+    it.each(['%', '_', '\\'])('q 의 %s 는 SKU 이름에서 와일드카드가 아닌 문자로 찾는다', async (special) => {
+      await inRollbackTx(async (tx) => {
+        const token = randomUUID().slice(0, 8);
+        const [literal, other] = await seedSkus(tx, token, 2);
+        await tx
+          .update(wmsTables.skus)
+          .set({ name: `it-${token}${special}` })
+          .where(eq(wmsTables.skus.id, literal));
+        await tx
+          .update(wmsTables.skus)
+          .set({ name: `it-${token}x` })
+          .where(eq(wmsTables.skus.id, other));
+
+        const result = await reader.searchAdvanced({ q: `it-${token}${special}`, limit: 20 }, tx);
+
+        expect(result.items.map((item) => item.id)).toEqual([literal]);
+        expect(result.total).toBe(1);
+      });
+    });
+
     it('name 은 부분일치, code 는 정확일치로 거른다', async () => {
       await inRollbackTx(async (tx) => {
         const token = randomUUID().slice(0, 8);

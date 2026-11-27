@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, Query } from '@nestjs/common';
-import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { RequirePermission } from '@app/authorization';
 import { SkuCatalogService } from '../services/sku-catalog.service';
 import { CreateSkuDto } from '../dto/create-sku.dto';
@@ -49,7 +49,11 @@ export class SkuCatalogController {
   @RequirePermission('inventory.stock.read')
   @Get()
   @ApiOperation({ summary: 'SKU 검색' })
-  @ApiResponse({ status: 200, description: '검색된 SKU 목록 (최대 limit 건, 기본 50 · 최대 200)', type: [SkuResponseDto] })
+  @ApiResponse({
+    status: 200,
+    description: '검색된 SKU 목록 (최대 limit 건, 기본 50 · 최대 200)',
+    type: [SkuResponseDto],
+  })
   @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async search(@Query() query: SkuSearchQueryDto): Promise<SkuResponseDto[]> {
     return this.skus.search(query);
@@ -68,6 +72,7 @@ export class SkuCatalogController {
         total: { type: 'number' },
         limit: { type: 'number' },
         offset: { type: 'number' },
+        q: { type: 'string' },
       },
     },
   })
