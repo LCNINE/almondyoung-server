@@ -22,6 +22,8 @@ export type AddToDeliveryLink = {
   parentOrderId: string | null
   parentDisplayId: number | null
   parentCanceled: boolean
+  /** 부모만 취소했을 때 부모 환불에서 실제로 뺀 금액 */
+  parentWithheldAmount: number
   children: string[]
   waivedAmount: number
   withheldAmount: number
@@ -49,6 +51,7 @@ type LinksResponse = {
       parent_order_id: string | null
       parent_display_id: number | null
       parent_canceled: boolean
+      parent_withheld_amount: number
       children: string[]
       waived_amount: number
       withheld_amount: number
@@ -188,6 +191,7 @@ export async function getAddToDeliveryLinks(
           parentOrderId: l.parent_order_id,
           parentDisplayId: l.parent_display_id,
           parentCanceled: l.parent_canceled,
+          parentWithheldAmount: l.parent_withheld_amount,
           children: l.children,
           waivedAmount: l.waived_amount,
           withheldAmount: l.withheld_amount,

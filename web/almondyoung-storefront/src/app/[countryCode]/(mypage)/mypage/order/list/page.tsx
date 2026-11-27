@@ -42,6 +42,7 @@ export default async function OrderListPage({
           actionsMap={data.actionsMap}
           refundMap={data.refundMap}
           returnsMap={data.returnsMap}
+          linksMap={data.linksMap}
           reviewHrefs={data.reviewHrefs}
           hasError={data.hasError}
         />

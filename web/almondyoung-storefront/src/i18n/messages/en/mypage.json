@@ -1007,6 +1007,37 @@
       "dialogTitle": "Upload a new print file",
       "dialogSubtitle": "Upload one corrected file and printing continues on the same order",
       "submit": "Send this file"
+    },
+    "togetherDelivery": {
+      "groupHeader": "{count} orders ship in one box.",
+      "chip": "Ships together",
+      "withParent": "Ships with the order above.",
+      "withParentNumber": "Ships with order #{displayId}.",
+      "waived": "Shipping fee {amount} waived.",
+      "separate": "The order this was going with was canceled, so it ships separately.",
+      "separateDeducted": "The {amount} shipping fee was deducted from the canceled order's refund.",
+      "parentDeducted": "Refunded after deducting {amount} shipping for the order shipping with it.",
+      "parentRefundBack": "If you cancel that order too, we'll refund the deducted shipping fee."
+    },
+    "cancelParent": {
+      "title": "Another order ships with this one",
+      "body": "If you cancel only this order, the other ships separately and its shipping fee is deducted from your refund.",
+      "deduction": "Shipping for the other order −{amount}",
+      "together": "Cancel both · Full refund",
+      "onlyThis": "Cancel only this order",
+      "close": "Close",
+      "bodyNoDeduction": "If you cancel only this order, the other ships separately."
+    },
+    "reasonsExtra": {
+      "ADD_ITEMS": "I want to add more items",
+      "CHANGE_OPTION": "I want to change options or quantity"
+    },
+    "addItems": {
+      "confirm": "Pick items to add",
+      "toast": "Tap Add to delivery on a product page to get it with this order at no shipping fee."
+    },
+    "changeOption": {
+      "toast": "Canceled. Please add the item again with the option you want."
     }
   },
   "membership": {

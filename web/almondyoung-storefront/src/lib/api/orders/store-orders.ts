@@ -116,6 +116,7 @@ export interface StoreCancelOrderRequest {
     | "WRONG_ORDER"
     | "FOUND_CHEAPER"
     | "DELAY"
+    | "CHANGE_OPTION"
     | "OTHER"
   reasonDetail?: string
   /** 인쇄 상품을 빼고 나머지만 취소 — 첫 요청이 PRINT_PARTIAL_CANCEL_AVAILABLE 일 때 고객 동의 뒤 */

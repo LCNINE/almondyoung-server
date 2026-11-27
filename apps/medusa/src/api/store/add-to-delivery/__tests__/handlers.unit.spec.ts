@@ -98,7 +98,7 @@ describe('add-to-delivery store handlers', () => {
     waivedMock.mockResolvedValue(3000);
     const q = query({
       order: [
-        { id: 'order_p', customer_id: 'cus_1', metadata: {} },
+        { id: 'order_p', customer_id: 'cus_1', metadata: {}, display_id: 7, status: 'pending' },
         { id: 'order_c', customer_id: 'cus_1', metadata: { add_to_delivery_parent_order_id: 'order_p' } },
         { id: 'order_x', customer_id: 'cus_2', metadata: {} },
       ],
@@ -112,12 +112,18 @@ describe('add-to-delivery store handlers', () => {
     expect(Object.keys(links).sort()).toEqual(['order_c', 'order_p']);
     expect(links.order_p).toEqual({
       parent_order_id: null,
+      parent_display_id: null,
+      parent_canceled: false,
+      parent_withheld_amount: 0,
       children: ['order_c'],
       waived_amount: 0,
       withheld_amount: 3000,
     });
     expect(links.order_c).toEqual({
       parent_order_id: 'order_p',
+      parent_display_id: 7,
+      parent_canceled: false,
+      parent_withheld_amount: 0,
       children: [],
       waived_amount: 3000,
       withheld_amount: 0,
@@ -140,6 +146,18 @@ describe('add-to-delivery store handlers', () => {
     const links = await readLinks({ query: q, knex }, 'cus_1', ['order_p']);
 
     expect(links.order_p.withheld_amount).toBe(3000);
+  });
+
+  it('보류 없이 취소된 부모(판매자 탓 취소)는 차감액 0', async () => {
+    waivedMock.mockResolvedValue(3000);
+    const q = query({ order: [{ id: 'order_p', customer_id: 'cus_1', status: 'canceled', metadata: {} }] });
+    const knex = {
+      raw: jest.fn(async (_sql: string, _b: unknown[]) => ({ rows: [{ id: 'order_c', parent_id: 'order_p' }] })),
+    };
+
+    const links = await readLinks({ query: q, knex }, 'cus_1', ['order_p']);
+
+    expect(links.order_p.withheld_amount).toBe(0);
   });
 
   it('비로그인은 401', async () => {

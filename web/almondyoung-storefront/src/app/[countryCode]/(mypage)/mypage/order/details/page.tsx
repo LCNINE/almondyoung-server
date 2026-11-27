@@ -6,6 +6,7 @@ import { getOrder } from "@/lib/api/medusa/orders"
 import { retrieveCustomer } from "@/lib/api/medusa/customer"
 import { getOrderReturns } from "@/lib/api/medusa/returns"
 import { getOrderActionsByMedusaId } from "@/lib/api/orders/store-orders"
+import { getAddToDeliveryLinks } from "@/lib/api/medusa/add-to-delivery"
 import { getCashReceipts, getBankTransferDepositAccount, getActiveRefundRequest } from "@/lib/api/wallet"
 import { getReviewEligibilities } from "@/lib/api/ugc/reviews"
 import { getOwnerships } from "@/lib/api/library/library-api"
@@ -56,6 +57,7 @@ export default async function OrderDetailsPage({
     ownerships,
     eligibilities,
     printFileRejections,
+    addToDeliveryLinks,
   ] = await Promise.all([
       intentId ? getCashReceipts(intentId) : Promise.resolve([]),
       intentId ? getBankTransferDepositAccount(intentId) : Promise.resolve(null),
@@ -72,7 +74,9 @@ export default async function OrderDetailsPage({
             .then((rows) => rows.filter((row) => row.channelOrderId === order.id))
             .catch(() => [])
         : Promise.resolve([]),
+      getAddToDeliveryLinks(order ? [order.id] : []),
     ])
+  const addToDeliveryLink = order ? addToDeliveryLinks[order.id] : undefined
   const digitalOwnerships = ownerships?.data ?? []
   const reviewHrefs = Object.fromEntries(
     (eligibilities?.data ?? []).map((eligibility) => [
@@ -105,6 +109,7 @@ export default async function OrderDetailsPage({
             autoOpenRefund={refund === "1"}
             reviewHrefs={reviewHrefs}
             printFileRejections={printFileRejections}
+            addToDeliveryLink={addToDeliveryLink}
           />
         </MypageLayout>
       </div>
@@ -124,6 +129,7 @@ export default async function OrderDetailsPage({
           autoOpenRefund={refund === "1"}
           reviewHrefs={reviewHrefs}
           printFileRejections={printFileRejections}
+          addToDeliveryLink={addToDeliveryLink}
         />
       </div>
     </WithHeaderLayout>

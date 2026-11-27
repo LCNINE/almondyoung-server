@@ -6,13 +6,20 @@ import { Textarea } from "@/components/ui/textarea"
 import { useTranslations } from "next-intl"
 
 export type CancelReasonCode =
+  | "ADD_ITEMS"
   | "CHANGE_OF_MIND"
+  | "CHANGE_OPTION"
   | "WRONG_ORDER"
   | "FOUND_CHEAPER"
   | "DELAY"
   | "OTHER"
 
+/** 화면에서만 쓰는 이유. 고르면 취소하지 않고 함께 받기로 안내한다 */
+export const UI_ONLY_REASON = "ADD_ITEMS" as const
+
 const REASON_CODES: CancelReasonCode[] = [
+  "ADD_ITEMS",
+  "CHANGE_OPTION",
   "CHANGE_OF_MIND",
   "WRONG_ORDER",
   "FOUND_CHEAPER",
@@ -34,6 +41,7 @@ export function CancelReasonForm({
   onReasonDetailChange,
 }: CancelReasonFormProps) {
   const t = useTranslations("mypage.order.cancelDialog")
+  const tExtra = useTranslations("mypage.order.reasonsExtra")
 
   return (
     <div className="space-y-3">
@@ -50,7 +58,9 @@ export function CancelReasonForm({
               htmlFor={`cancel-reason-${code}`}
               className="cursor-pointer text-sm text-gray-700"
             >
-              {t(`reasons.${code}`)}
+              {code === "ADD_ITEMS" || code === "CHANGE_OPTION"
+                ? tExtra(code)
+                : t(`reasons.${code}`)}
             </Label>
           </div>
         ))}

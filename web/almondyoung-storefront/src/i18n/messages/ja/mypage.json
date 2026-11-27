@@ -1007,6 +1007,37 @@
       "dialogTitle": "新しい印刷ファイルをアップロードしてください",
       "dialogSubtitle": "修正したファイルを1つアップロードすると同じ注文で印刷が続きます",
       "submit": "このファイルで再送"
+    },
+    "togetherDelivery": {
+      "groupHeader": "注文{count}件が一つの箱で配送されます。",
+      "chip": "同梱配送",
+      "withParent": "上の注文と一緒に配送されます。",
+      "withParentNumber": "注文番号{displayId}と一緒に配送されます。",
+      "waived": "送料{amount}が無料になりました。",
+      "separate": "一緒に受け取る注文がキャンセルされたため、別々に配送されます。",
+      "separateDeducted": "送料{amount}はキャンセルした注文の返金から差し引きました。",
+      "parentDeducted": "一緒に受け取る注文の送料{amount}を差し引いて返金しました。",
+      "parentRefundBack": "その注文もキャンセルすると、差し引いた送料をお返しします。"
+    },
+    "cancelParent": {
+      "title": "一緒に受け取る注文があります",
+      "body": "この注文だけキャンセルすると、残りの注文は別々に配送され、その送料は返金から差し引かれます。",
+      "deduction": "一緒に受け取る注文の送料 −{amount}",
+      "together": "一緒にキャンセル・全額返金",
+      "onlyThis": "この注文だけキャンセル",
+      "close": "閉じる",
+      "bodyNoDeduction": "この注文だけキャンセルすると、残りの注文は別々に配送されます。"
+    },
+    "reasonsExtra": {
+      "ADD_ITEMS": "商品をもっと追加したい",
+      "CHANGE_OPTION": "オプションや数量を変えたい"
+    },
+    "addItems": {
+      "confirm": "一緒に受け取る商品を選ぶ",
+      "toast": "商品ページで「一緒に受け取る」を押すと、送料なしでこの注文と一緒に届きます。"
+    },
+    "changeOption": {
+      "toast": "キャンセルしました。希望のオプションで商品をもう一度入れてください。"
     }
   },
   "membership": {

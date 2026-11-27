@@ -154,11 +154,11 @@ export class StoreBatchOrderActionsRequestDto {
 export class StoreCancelOrderDto {
   @ApiPropertyOptional({
     description: '취소 사유 코드',
-    enum: ['CHANGE_OF_MIND', 'WRONG_ORDER', 'FOUND_CHEAPER', 'DELAY', 'OTHER'],
+    enum: ['CHANGE_OF_MIND', 'WRONG_ORDER', 'FOUND_CHEAPER', 'DELAY', 'CHANGE_OPTION', 'OTHER'],
     example: 'CHANGE_OF_MIND',
   })
   @IsString()
-  @IsIn(['CHANGE_OF_MIND', 'WRONG_ORDER', 'FOUND_CHEAPER', 'DELAY', 'OTHER'])
+  @IsIn(['CHANGE_OF_MIND', 'WRONG_ORDER', 'FOUND_CHEAPER', 'DELAY', 'CHANGE_OPTION', 'OTHER'])
   @IsOptional()
   reasonCode?: string;
 

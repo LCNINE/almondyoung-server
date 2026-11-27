@@ -30,6 +30,13 @@ import { mapOrderSummaryItems } from "@/components/orders/order-card/order-summa
 import { useTranslations } from "next-intl"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { useEffect, useMemo, useState, useTransition } from "react"
+import type { AddToDeliveryLink } from "@lib/api/medusa/add-to-delivery"
+import TogetherDeliveryNote from "@/components/orders/order-card/together-delivery-note"
+import {
+  groupForTogetherDelivery,
+  isCanceledOrder,
+  parentCancelInfo,
+} from "./together-delivery"
 
 /** 방금 결제한 주문이 이미 목록에 잡혔다고 보는 기준 (무통장 전파 지연 13~20초보다 넉넉하게) */
 const JUST_ORDERED_WINDOW_MS = 2 * 60 * 1000
@@ -118,6 +125,8 @@ interface OrderListProps {
   reviewHrefs: Record<string, string>
   /** Medusa 주문 id → 반품 목록 */
   returnsMap: Record<string, CustomerReturn[]>
+  /** Medusa 주문 id → 함께 배송 연결 */
+  linksMap?: Record<string, AddToDeliveryLink>
   hasError?: boolean
   /** 마이페이지 홈 안에 끼워 넣어 쓸 때 true — 페이지 전용 여백/최소높이 제거 */
   embedded?: boolean
@@ -226,12 +235,14 @@ export function OrderList({
   refundMap,
   reviewHrefs,
   returnsMap,
+  linksMap = {},
   hasError = false,
   embedded = false,
 }: OrderListProps) {
   const tStatus = useTranslations("mypage.order.status")
   const tList = useTranslations("mypage.order.list")
   const tEmpty = useTranslations("mypage.empty")
+  const tTogether = useTranslations("mypage.order.togetherDelivery")
 
   const router = useRouter()
   const pathname = usePathname()
@@ -440,7 +451,8 @@ export function OrderList({
       ) : (
         <>
           <section className="mt-2 space-y-2 md:mt-4 md:space-y-6">
-            {orders.map((order) => {
+            {(() => {
+            const renderOrder = (order: OrderItem) => {
               const actions = actionsMap[order.orderId]
               const refund = refundMap[order.orderId]
               const displayStatus =
@@ -463,6 +475,10 @@ export function OrderList({
                     order.showInquiry || actions?.fulfillmentStatus === "delivered"
                   }
                   coreActions={actions}
+                  addToDelivery={parentCancelInfo(
+                    linksMap[order.orderId],
+                    actions
+                  )}
                   bankTransferStatus={order.bankTransferStatus}
                   refundRequestStatus={refund}
                   hasReturns={order.items.some((item) => item.statusLabel)}
@@ -493,7 +509,52 @@ export function OrderList({
                   )}
                 </OrderActions>
               )
-            })}
+            }
+
+              return groupForTogetherDelivery(orders, linksMap, actionsMap).map((group) => {
+                if (group.children.length === 0) {
+                  const link = linksMap[group.parent.orderId]
+
+                  return (
+                    <div key={group.parent.orderId} className="space-y-2">
+                      {renderOrder(group.parent)}
+                      {link && (
+                        <TogetherDeliveryNote
+                          link={link}
+                          grouped={false}
+                          canceled={isCanceledOrder(actionsMap[group.parent.orderId])}
+                        />
+                      )}
+                    </div>
+                  )
+                }
+
+                return (
+                  <div
+                    key={group.parent.orderId}
+                    className="border-border space-y-3 rounded-2xl border p-3"
+                    data-testid="together-delivery-group"
+                  >
+                    <p className="text-foreground text-sm font-bold">
+                      {tTogether("groupHeader", { count: group.children.length + 1 })}
+                    </p>
+                    {renderOrder(group.parent)}
+                    {group.children.map((child) => (
+                      <div
+                        key={child.orderId}
+                        className="border-border space-y-2 border-t border-dashed pt-3"
+                      >
+                        <span className="bg-secondary text-foreground inline-flex h-6 items-center rounded-md px-2 text-xs font-bold">
+                          {tTogether("chip")}
+                        </span>
+                        {renderOrder(child)}
+                        <TogetherDeliveryNote link={linksMap[child.orderId]} grouped canceled={false} />
+                      </div>
+                    ))}
+                  </div>
+                )
+              })
+            })()}
           </section>
 
           {pageCount > 1 && (

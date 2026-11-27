@@ -8,6 +8,9 @@ import type { StoreOrderActionsResponse } from "@/lib/api/orders/store-orders"
 import type { CustomerReturn } from "@/lib/types/ui/returns"
 import type { DigitalAssetOwnership } from "@/lib/types/ui/library.ui"
 import OrderActions from "@/components/orders/order-card/order-actions"
+import TogetherDeliveryNote from "@/components/orders/order-card/together-delivery-note"
+import type { AddToDeliveryLink } from "@lib/api/medusa/add-to-delivery"
+import { isCanceledOrder, parentCancelInfo } from "@/domains/order/list/together-delivery"
 import OrderStatusCards from "@/components/orders/order-card/order-status-cards"
 import { mapOrderSummaryItems } from "@/components/orders/order-card/order-summary-items"
 import type { PrintFileRejection } from "@/lib/types/ui/print-orders"
@@ -25,6 +28,7 @@ export default function OrderDetailsStatusCards({
   digitalOwnerships,
   reviewHrefs,
   printFileRejections = [],
+  addToDeliveryLink,
 }: {
   order: HttpTypes.StoreOrder
   status: string
@@ -38,6 +42,7 @@ export default function OrderDetailsStatusCards({
   reviewHrefs?: Record<string, string>
   digitalOwnerships: DigitalAssetOwnership[]
   printFileRejections?: PrintFileRejection[]
+  addToDeliveryLink?: AddToDeliveryLink
 }) {
   const tList = useTranslations("mypage.order.list")
   const items = mapOrderSummaryItems(order, returns ?? [], tList, reviewHrefs)
@@ -62,6 +67,7 @@ export default function OrderDetailsStatusCards({
       orderNumber={order.display_id ? `#${order.display_id}` : undefined}
       itemCount={items.length}
       coreActions={coreActions}
+      addToDelivery={parentCancelInfo(addToDeliveryLink, coreActions)}
       bankTransferStatus={bankTransferStatus}
       refundRequestStatus={refundRequestStatus}
       refundIntentId={intentId}
@@ -98,6 +104,13 @@ export default function OrderDetailsStatusCards({
           paymentStatusLabel={awaitingDeposit ? "입금 대기" : undefined}
         >
           {actions}
+          {addToDeliveryLink && (
+            <TogetherDeliveryNote
+              link={addToDeliveryLink}
+              grouped={false}
+              canceled={isCanceledOrder(coreActions)}
+            />
+          )}
         </OrderStatusCards>
       )}
     </OrderActions>

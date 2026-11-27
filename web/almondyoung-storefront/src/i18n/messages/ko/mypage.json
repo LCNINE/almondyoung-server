@@ -1007,6 +1007,37 @@
       "dialogTitle": "새 인쇄 파일을 올려 주세요",
       "dialogSubtitle": "고친 파일 하나를 올리면 같은 주문으로 인쇄가 이어져요",
       "submit": "이 파일로 다시 보내기"
+    },
+    "togetherDelivery": {
+      "groupHeader": "주문 {count}건이 상자 하나로 배송돼요.",
+      "chip": "함께 배송",
+      "withParent": "위 주문과 함께 배송돼요.",
+      "withParentNumber": "주문번호 {displayId}와 함께 배송돼요.",
+      "waived": "배송비 {amount}원이 면제됐어요.",
+      "separate": "함께 받을 주문이 취소돼서 따로 배송돼요.",
+      "separateDeducted": "배송비 {amount}원은 취소한 주문의 환불에서 뺐어요.",
+      "parentDeducted": "함께 받을 주문 배송비 {amount}원을 빼고 환불했어요.",
+      "parentRefundBack": "함께 받을 주문도 취소하면 뺀 배송비를 돌려드려요."
+    },
+    "cancelParent": {
+      "title": "함께 받기로 한 주문이 있어요",
+      "body": "이 주문만 취소하면 남은 주문이 따로 배송돼요. 그 배송비는 환불에서 빠져요.",
+      "deduction": "함께 받을 주문 배송비 −{amount}원",
+      "together": "같이 취소하기 · 전액 환불",
+      "onlyThis": "이 주문만 취소하기",
+      "close": "닫기",
+      "bodyNoDeduction": "이 주문만 취소하면 남은 주문은 따로 배송돼요."
+    },
+    "reasonsExtra": {
+      "ADD_ITEMS": "상품을 더 담고 싶어요",
+      "CHANGE_OPTION": "옵션이나 수량을 바꾸고 싶어요"
+    },
+    "addItems": {
+      "confirm": "함께 받을 상품 고르기",
+      "toast": "상품 상세에서 함께 받기를 누르면 배송비 없이 이 주문과 같이 받아요."
+    },
+    "changeOption": {
+      "toast": "취소했어요. 같은 상품을 원하는 옵션으로 다시 담아 주세요."
     }
   },
   "membership": {

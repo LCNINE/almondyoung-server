@@ -39,7 +39,10 @@ vi.mock("@/domains/order/details/refund-request-action", () => ({
 vi.mock("@/hooks/api/use-add-to-cart", () => ({
   useAddToCart: () => ({ addToCart: vi.fn(), isLoading: false }),
 }))
-vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh }) }))
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ refresh, push: vi.fn() }),
+  useParams: () => ({ countryCode: "kr" }),
+}))
 vi.mock("@/components/shared/localized-client-link", () => ({
   default: (props: ComponentProps<"a">) => <a {...props} />,
 }))
@@ -396,5 +399,70 @@ describe("status cards and order actions", () => {
     await click("구매확정", document.querySelector('[role="dialog"]')!)
 
     expect(capture).toHaveBeenCalledWith("order-3065")
+  })
+})
+
+describe("함께 배송 부모 취소", () => {
+  beforeEach(() => {
+    container = document.createElement("div")
+    document.body.appendChild(container)
+    root = createRoot(container)
+    cancelOrder.mockReset()
+    cancelOrder.mockResolvedValue({ success: true })
+  })
+
+  afterEach(() => {
+    act(() => root.unmount())
+    container.remove()
+  })
+
+  const parentActions = () => (
+    <OrderActions
+      orderId="order-3065"
+      paymentStatus="captured"
+      productName="준비 상품"
+      availableActions={["cancel"]}
+      addToDelivery={{ withheldAmount: 3000, childOrderIds: ["order_c"] }}
+    />
+  )
+
+  it("부모를 취소하려 하면 같이 취소할지 묻고, 같이 취소는 함께 배송 주문부터 취소한다", async () => {
+    await render(parentActions())
+    await click("주문 취소")
+    await click("취소 확인")
+
+    expect(document.body.textContent).toContain("함께 받을 주문 배송비 −3,000원")
+    await click("같이 취소하기 · 전액 환불")
+
+    expect(cancelOrder.mock.calls.map((c) => c[0])).toEqual(["order_c", "order-3065"])
+  })
+
+  it("이 주문만 취소하면 부모만 취소한다", async () => {
+    await render(parentActions())
+    await click("주문 취소")
+    await click("취소 확인")
+    await click("이 주문만 취소하기")
+
+    expect(cancelOrder.mock.calls.map((c) => c[0])).toEqual(["order-3065"])
+  })
+
+  it("상품을 더 담고 싶어요를 고르면 취소하지 않는다", async () => {
+    await render(parentActions())
+    await click("주문 취소")
+    const radio = document.getElementById("cancel-reason-ADD_ITEMS") as HTMLButtonElement
+    await act(async () => radio.click())
+    await click("함께 받을 상품 고르기")
+
+    expect(cancelOrder).not.toHaveBeenCalled()
+  })
+
+  it("배송 지연으로 부모만 취소하면 차감 금액을 보이지 않는다", async () => {
+    await render(parentActions())
+    await click("주문 취소")
+    const radio = document.getElementById("cancel-reason-DELAY") as HTMLButtonElement
+    await act(async () => radio.click())
+    await click("취소 확인")
+
+    expect(document.querySelector('[data-testid="parent-cancel-deduction"]')).toBeNull()
   })
 })

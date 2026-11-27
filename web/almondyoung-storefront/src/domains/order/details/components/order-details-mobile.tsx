@@ -36,6 +36,7 @@ import { OrderDigitalDownloads } from "./order-digital-downloads"
 import { OrderReturnsSection } from "./order-returns-section"
 import type { CustomerReturn } from "@lib/types/ui/returns"
 import { getCompletedOrderReturnStatus } from "@/components/orders/order-status-display"
+import type { AddToDeliveryLink } from "@lib/api/medusa/add-to-delivery"
 
 const formatAmount = (value?: number | null) =>
   `${(value ?? 0).toLocaleString()}원`
@@ -52,6 +53,7 @@ export const OrderDetailsMobile = ({
   autoOpenRefund = false,
   reviewHrefs = {},
   printFileRejections = [],
+  addToDeliveryLink,
 }: {
   order: HttpTypes.StoreOrder | null
   countryCode: string
@@ -65,6 +67,7 @@ export const OrderDetailsMobile = ({
   autoOpenRefund?: boolean
   reviewHrefs?: Record<string, string>
   printFileRejections?: PrintFileRejection[]
+  addToDeliveryLink?: AddToDeliveryLink
 }) => {
   const tLabels = useTranslations("mypage.order.labels")
   const tStatus = useTranslations("mypage.order.status")
@@ -183,6 +186,7 @@ export const OrderDetailsMobile = ({
             autoOpenRefundMedia="(max-width: 1023px)"
             reviewHrefs={reviewHrefs}
             printFileRejections={printFileRejections}
+            addToDeliveryLink={addToDeliveryLink}
             digitalOwnerships={digitalOwnerships}
           />
           {depositAccount?.accountNumber && (

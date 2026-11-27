@@ -8,7 +8,9 @@ import {
 import {
   CancelReasonForm,
   type CancelReasonCode,
+  UI_ONLY_REASON,
 } from "@/components/orders/cancel-reason-form"
+import ParentCancelDialog from "@/components/orders/parent-cancel-dialog"
 import { CANCEL_UNAVAILABLE_MESSAGES } from "@/components/orders/order-status-badges"
 import { CustomButton } from "@/components/shared/custom-buttons"
 import LocalizedClientLink from "@/components/shared/localized-client-link"
@@ -43,7 +45,7 @@ import {
   type LucideIcon,
 } from "lucide-react"
 import { useTranslations } from "next-intl"
-import { useRouter } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
 import { useEffect, useState, useTransition, type ReactNode } from "react"
 import { RefundRequestDialog } from "@/domains/order/details/components/refund-request-dialog"
 import { toast } from "sonner"
@@ -69,6 +71,8 @@ interface OrderActionsProps {
   isDetails?: boolean
   hasReturns?: boolean
   trackingHref?: string
+  /** 이 주문에 붙은 함께 배송 주문이 있으면: 부모만 취소할 때 뺄 금액과 그 주문들 */
+  addToDelivery?: { withheldAmount: number; childOrderIds: string[] }
   children?: (actions: ReactNode) => ReactNode
 }
 
@@ -112,6 +116,7 @@ export default function OrderActions({
   isDetails = false,
   hasReturns = false,
   trackingHref,
+  addToDelivery,
   children,
 }: OrderActionsProps) {
   const availableActions = coreActions?.availableActions ?? availableActionsProp
@@ -119,10 +124,14 @@ export default function OrderActions({
     coreActions?.cancelUnavailableReason ?? cancelUnavailableReasonProp
   const channelInfo = coreActions?.channelInfo ?? channelInfoProp
   const tActions = useTranslations("mypage.order.actions")
+  const tAddItems = useTranslations("mypage.order.addItems")
+  const tChangeOption = useTranslations("mypage.order.changeOption")
   const { showCancelFailure, cancelFailureAlert } = useCancelFailureAlert()
   const { askPrintPartialCancel, printPartialCancelDialog } =
     usePrintPartialCancelDialog(() => runCancel(true))
   const router = useRouter()
+  const { countryCode } = useParams<{ countryCode: string }>()
+  const [showParentCancelDialog, setShowParentCancelDialog] = useState(false)
   const [showRefundDialog, setShowRefundDialog] = useState(false)
 
   useEffect(() => {
@@ -202,13 +211,61 @@ export default function OrderActions({
     })
   }
 
-  const handleCancelConfirm = () => runCancel(false)
+  const handleCancelConfirm = () => {
+    // 더 담고 싶어서 취소하려던 고객은 취소하지 않고 함께 받기로 안내한다
+    if (cancelReasonCode === UI_ONLY_REASON) {
+      setShowCancelDialog(false)
+      toast.info(tAddItems("toast"))
+      router.push(`/${countryCode}/store`)
+
+      return
+    }
+
+    if ((addToDelivery?.childOrderIds.length ?? 0) > 0) {
+      setShowCancelDialog(false)
+      setShowParentCancelDialog(true)
+
+      return
+    }
+
+    runCancel(false)
+  }
+
+  // 같이 취소: 함께 배송 주문을 먼저 취소해야 부모가 배송비를 빼지 않고 전액 환불된다(순서가 바뀌어도 결국 전액이 돌아간다)
+  const runCancelTogether = () => {
+    setShowParentCancelDialog(false)
+    startCancelTransition(async () => {
+      try {
+        for (const childId of addToDelivery?.childOrderIds ?? []) {
+          const child = await cancelOrderByMedusaId(childId, { reasonCode: apiReasonCode })
+          if (!child.success) {
+            showCancelFailure(child.error)
+            // 앞서 취소된 자식이 빠진 목록으로 다시 그려 다음 시도가 남은 주문만 취소하게 한다
+            router.refresh()
+
+            return
+          }
+        }
+      } catch (err: unknown) {
+        if ((err as { digest?: string }).digest === "UNAUTHORIZED") throw err
+        showCancelFailure(tActions("cancelError"))
+        router.refresh()
+
+        return
+      }
+
+      runCancel(false)
+    })
+  }
+
+  const apiReasonCode =
+    cancelReasonCode === UI_ONLY_REASON ? "CHANGE_OF_MIND" : cancelReasonCode
 
   const runCancel = (excludePrint: boolean) => {
     startCancelTransition(async () => {
       try {
         const result = await cancelOrderByMedusaId(orderId, {
-          reasonCode: cancelReasonCode,
+          reasonCode: apiReasonCode,
           ...(excludePrint ? { excludePrint: true } : {}),
           reasonDetail:
             cancelReasonCode === "OTHER" && cancelReasonDetail
@@ -225,8 +282,13 @@ export default function OrderActions({
           return
         }
         setShowCancelDialog(false)
+        setShowParentCancelDialog(false)
         // 취소는 요청 순간 확정된다(#1016 36번 재설계 §8.2) — 응답이 곧 «취소 완료»다
-        toast.success(tActions("cancelCompleted"))
+        toast.success(
+          cancelReasonCode === "CHANGE_OPTION"
+            ? tChangeOption("toast")
+            : tActions("cancelCompleted")
+        )
         router.refresh()
       } catch (err: unknown) {
         // 인증 실패는 error.tsx 가 토큰 복구를 처리하도록 전파
@@ -568,11 +630,20 @@ export default function OrderActions({
               onClick={handleCancelConfirm}
               isLoading={isCancelling}
             >
-              취소 확인
+              {cancelReasonCode === UI_ONLY_REASON ? tAddItems("confirm") : "취소 확인"}
             </CustomButton>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <ParentCancelDialog
+        open={showParentCancelDialog}
+        onOpenChange={setShowParentCancelDialog}
+        // 판매자 탓 취소(배송 지연)는 Medusa 가 보류하지 않는다 — 뺄 금액을 보이지 않는다
+        withheldAmount={apiReasonCode === "DELAY" ? 0 : (addToDelivery?.withheldAmount ?? 0)}
+        isCancelling={isCancelling}
+        onCancelTogether={runCancelTogether}
+        onCancelOnlyThis={() => runCancel(false)}
+      />
       {cancelFailureAlert}
       {printPartialCancelDialog}
     </>

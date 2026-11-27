@@ -100,6 +100,10 @@ export async function startAddToDeliveryCart(
 
 export type LinkView = {
   parent_order_id: string | null;
+  parent_display_id: number | null;
+  parent_canceled: boolean;
+  /** 부모만 취소했을 때 부모 결제에 실제로 남긴 금액. 판매자 탓 취소면 0 */
+  parent_withheld_amount: number;
   children: string[];
   waived_amount: number;
   withheld_amount: number;
@@ -113,7 +117,7 @@ export async function readLinks(
 ): Promise<Record<string, LinkView>> {
   const { data } = await deps.query.graph({
     entity: 'order',
-    fields: ['id', 'customer_id', 'metadata'],
+    fields: ['id', 'customer_id', 'status', 'metadata'],
     filters: { id: orderIds },
   });
   const own = data.filter((o) => o.customer_id === customerId);
@@ -122,6 +126,22 @@ export async function readLinks(
     customerId,
     own.map((o) => o.id),
   );
+
+  const parentIds = [
+    ...new Set(
+      own
+        .map((o) => o.metadata?.[ADD_TO_DELIVERY_PARENT_KEY])
+        .filter((id): id is string => typeof id === 'string' && id.length > 0),
+    ),
+  ];
+  const { data: parents } = parentIds.length
+    ? await deps.query.graph({
+        entity: 'order',
+        fields: ['id', 'customer_id', 'display_id', 'status', 'metadata'],
+        filters: { id: parentIds },
+      })
+    : { data: [] };
+  const parentById = new Map(parents.filter((p) => p.customer_id === customerId).map((p) => [p.id, p]));
 
   const views = await Promise.all(
     own.map(async (o): Promise<[string, LinkView]> => {
@@ -136,12 +156,17 @@ export async function readLinks(
         o.id,
         {
           parent_order_id: parentId,
+          parent_display_id: parentId ? (parentById.get(parentId)?.display_id ?? null) : null,
+          parent_canceled: parentId ? parentById.get(parentId)?.status === 'canceled' : false,
+          parent_withheld_amount: parentId ? (readHold(parentById.get(parentId)?.metadata)?.amount ?? 0) : 0,
           children,
           waived_amount: waived,
           // 이미 부모만 취소했으면 결제에 남은 보류액, 아니면 지금 부모만 취소할 때 뺄 금액
           withheld_amount: hold
             ? Math.max(0, hold.amount - hold.released)
-            : childAmounts.reduce((sum, a) => sum + a, 0),
+            : o.status === 'canceled'
+              ? 0
+              : childAmounts.reduce((sum, a) => sum + a, 0),
         },
       ];
     }),

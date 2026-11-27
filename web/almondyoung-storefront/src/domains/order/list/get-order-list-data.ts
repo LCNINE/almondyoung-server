@@ -1,5 +1,9 @@
 import "server-only"
 
+import {
+  getAddToDeliveryLinks,
+  type AddToDeliveryLink,
+} from "@/lib/api/medusa/add-to-delivery"
 import { getOrders } from "@/lib/api/medusa/orders"
 import { getOrderReturns } from "@/lib/api/medusa/returns"
 import {
@@ -32,6 +36,8 @@ export interface OrderListPageData {
   reviewHrefs: Record<string, string>
   /** Medusa 주문 id → 반품 목록. 취소 주문과 반품 없음·조회 실패는 빠진다 */
   returnsMap: Record<string, CustomerReturn[]>
+  /** Medusa 주문 id → 함께 배송 연결과 면제·차감 금액. 조회 실패면 비어 있다 */
+  linksMap: Record<string, AddToDeliveryLink>
   hasError: boolean
 }
 
@@ -100,7 +106,7 @@ export async function getOrderListPageData(params: {
   // 한 페이지가 ORDER_PAGE_SIZE 개라 많아야 그만큼 부른다
   const returnTargets = orders.filter((o) => o.status !== "canceled")
 
-  const [actionsList, refundEntries, eligibilities, returnEntries] = await Promise.all([
+  const [actionsList, refundEntries, eligibilities, returnEntries, linksMap] = await Promise.all([
     getOrderActionsBatchByMedusaId(orders.map((o) => o.id)).catch(() => []),
     Promise.all(
       refundTargets.map(
@@ -119,6 +125,7 @@ export async function getOrderListPageData(params: {
         async (o) => [o.id, await getOrderReturns(o.id).catch(() => null)] as const
       )
     ),
+    getAddToDeliveryLinks(orders.map((o) => o.id)),
   ])
 
   const count = ordersData?.count ?? 0
@@ -143,6 +150,7 @@ export async function getOrderListPageData(params: {
     returnsMap: Object.fromEntries(
       returnEntries.flatMap(([id, returns]) => (returns && returns.length > 0 ? [[id, returns]] : []))
     ),
+    linksMap,
     hasError: ordersData === null,
   }
 }
