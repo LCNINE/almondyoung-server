@@ -3,6 +3,7 @@
 
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { CanOpen } from '@/components/auth/can';
 import {
   Table,
   TableBody,
@@ -14,6 +15,7 @@ import {
 import { useCreateSalesOrder } from '@/lib/services/orders';
 import { useVariantsBatch } from '@/lib/services/products';
 import { Download, UploadCloud } from 'lucide-react';
+import Link from 'next/link';
 import { useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import {
@@ -30,9 +32,24 @@ import {
 import { describeSaveError } from '../../lib/manual-order';
 
 type SaveResult =
-  | { status: 'saved' }
+  | { status: 'saved'; orderId?: string }
   | { status: 'duplicate'; message: string }
-  | { status: 'failed'; message: string };
+  | { status: 'failed'; message: string }
+  | { status: 'unknown'; message: string };
+
+type SaveAttempt = {
+  fileName: string;
+  rowCount: number;
+  orderCount: number;
+  results: { orderNo: string; result: SaveResult }[];
+};
+
+const countResults = (results: SaveResult[]) => ({
+  saved: results.filter((result) => result.status === 'saved').length,
+  duplicate: results.filter((result) => result.status === 'duplicate').length,
+  failed: results.filter((result) => result.status === 'failed').length,
+  unknown: results.filter((result) => result.status === 'unknown').length,
+});
 
 const SAMPLE_ROWS = [
   [
@@ -97,7 +114,10 @@ export default function ManualBulkOrderPage() {
   const [fileIssues, setFileIssues] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [results, setResults] = useState<Record<string, SaveResult>>({});
+  const [attempts, setAttempts] = useState<SaveAttempt[]>([]);
   const loadRef = useRef(0);
+  const loadingRef = useRef(false);
+  const submittingRef = useRef(false);
 
   const ids = useMemo(() => variantIdsOf(rows), [rows]);
   const variantsQuery = useVariantsBatch(ids);
@@ -135,59 +155,82 @@ export default function ManualBulkOrderPage() {
   };
 
   const handleFile = async (file: File) => {
-    // 저장 중에 파일을 바꾸면 진행 중인 결과가 새 파일의 주문에 붙는다
-    if (submitting) return;
+    if (submittingRef.current) return;
     // 읽는 동안 이전 파일로 저장을 시작하지 못하게 미리보기를 먼저 비운다
     const load = ++loadRef.current;
+    loadingRef.current = true;
     setFileName(file.name);
     setResults({});
     setRows([]);
     setFileIssues([]);
-    const read = readBulkOrderCsv(await file.text());
-    if (load !== loadRef.current) return;
-    setRows(read.rows);
-    setFileIssues(read.fileIssues);
+    try {
+      const read = readBulkOrderCsv(await file.text());
+      if (load !== loadRef.current) return;
+      setRows(read.rows);
+      setFileIssues(read.fileIssues);
+    } catch {
+      if (load === loadRef.current) {
+        setFileIssues([
+          'CSV 파일을 읽지 못했습니다. 파일을 다시 선택해 주세요.',
+        ]);
+      }
+    } finally {
+      if (load === loadRef.current) loadingRef.current = false;
+    }
   };
 
   const saveOne = async (order: BulkOrder): Promise<SaveResult> => {
     if (!order.payload)
       return { status: 'failed', message: '검증되지 않은 주문입니다.' };
     try {
-      await createOrder.mutateAsync(order.payload);
-      return { status: 'saved' };
+      const saved = await createOrder.mutateAsync(order.payload);
+      return { status: 'saved', orderId: saved.id };
     } catch (err) {
       const { kind, message } = describeSaveError(err);
-      return kind === 'duplicate'
-        ? { status: 'duplicate', message }
-        : { status: 'failed', message };
+      if (kind === 'duplicate') return { status: 'duplicate', message };
+      if (kind === 'retry') return { status: 'unknown', message };
+      return { status: 'failed', message };
     }
   };
 
   // 한 건씩 차례로 저장한다. 실패해도 멈추지 않고, 이미 저장된 번호는 다시 만들지 않는다.
   const handleSave = async () => {
-    if (!ready || pendingOrders.length === 0) return;
+    if (
+      !ready ||
+      loadingRef.current ||
+      submittingRef.current ||
+      pendingOrders.length === 0
+    )
+      return;
+    submittingRef.current = true;
     setSubmitting(true);
-    let saved = 0;
-    let failed = 0;
     const load = loadRef.current;
+    const attempted: SaveAttempt['results'] = [];
     for (const order of pendingOrders) {
       if (load !== loadRef.current) break;
       const result = await saveOne(order);
-      if (result.status === 'saved') saved += 1;
-      if (result.status === 'failed') failed += 1;
+      attempted.push({ orderNo: order.orderNo, result });
       setResults((prev) => ({ ...prev, [order.orderNo]: result }));
     }
+    setAttempts((prev) => [
+      {
+        fileName,
+        rowCount: rows.length,
+        orderCount: orders.length,
+        results: attempted,
+      },
+      ...prev,
+    ]);
+    submittingRef.current = false;
     setSubmitting(false);
-    if (failed > 0)
-      toast.error(
-        `저장 ${saved}건, 실패 ${failed}건. 실패한 주문만 다시 저장할 수 있습니다.`
-      );
-    else toast.success(`${saved}건을 저장했습니다. 출고 준비로 넘어갑니다.`);
+    const counts = countResults(attempted.map(({ result }) => result));
+    const summary = `저장 ${counts.saved}건 · 기존 번호 중복 ${counts.duplicate}건 · 실패 ${counts.failed}건 · 결과 미확인 ${counts.unknown}건`;
+    if (counts.failed > 0 || counts.unknown > 0) toast.error(summary);
+    else if (counts.duplicate > 0) toast.info(summary);
+    else toast.success(summary);
   };
 
-  const failedCount = Object.values(results).filter(
-    (r) => r.status === 'failed'
-  ).length;
+  const currentCounts = countResults(Object.values(results));
   const savedOnce = Object.keys(results).length > 0;
 
   return (
@@ -197,7 +240,8 @@ export default function ManualBulkOrderPage() {
           <h1 className="text-2xl font-bold">주문입력(수동/대량)</h1>
           <p className="text-sm text-muted-foreground">
             CSV 로 여러 주문을 한 번에 저장합니다. 수기·기타 채널로 저장되고,
-            저장하면 바로 출고 준비로 넘어갑니다.
+            저장된 주문은 출고 대기열에 등록됩니다. 이 화면의 결과 내역은
+            페이지를 떠나면 사라집니다.
           </p>
         </div>
         <div className="flex gap-2">
@@ -290,7 +334,7 @@ export default function ManualBulkOrderPage() {
             </>
           ) : (
             <p className="text-sm text-green-700">
-              문제 없음. 총 {rows.length}행, 주문 {orders.length}건
+              문제 없음. 빈 행 제외 {rows.length}행, 주문 {orders.length}건
             </p>
           )}
         </Card>
@@ -345,7 +389,10 @@ export default function ManualBulkOrderPage() {
                         : '-'}
                     </TableCell>
                     <TableCell className="min-w-[10rem] whitespace-normal text-sm">
-                      <ResultCell result={results[o.orderNo]} />
+                      <ResultCell
+                        orderNo={o.orderNo}
+                        result={results[o.orderNo]}
+                      />
                     </TableCell>
                   </TableRow>
                 ))}
@@ -362,23 +409,109 @@ export default function ManualBulkOrderPage() {
         >
           {submitting
             ? '저장 중...'
-            : savedOnce && failedCount > 0
-              ? `실패한 ${pendingOrders.length}건 다시 저장`
+            : savedOnce &&
+                (currentCounts.failed > 0 || currentCounts.unknown > 0)
+              ? `실패·미확인 ${pendingOrders.length}건 다시 시도`
               : `${pendingOrders.length}건 저장`}
         </Button>
       </div>
+
+      {attempts.length > 0 && (
+        <Card className="p-4 space-y-4">
+          <h2 className="text-lg font-semibold">저장 시도 내역</h2>
+          <p className="text-sm text-muted-foreground">
+            새 파일은 모든 유효 주문을 다시 시도합니다. 같은 주문번호라도 이전
+            파일과 내용이 같다고 판단하지 않습니다. 중복·결과 미확인은
+            주문내역에서 기존 주문의 내용과 출고 상태를 확인해 주세요.
+          </p>
+          {attempts.map((attempt, index) => {
+            const counts = countResults(
+              attempt.results.map(({ result }) => result)
+            );
+
+            return (
+              <div
+                key={attempts.length - index}
+                className="space-y-2 border-t pt-3"
+              >
+                <h3 className="font-medium break-all">
+                  시도 {attempts.length - index} · {attempt.fileName}
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  빈 행 제외 {attempt.rowCount}행 · 묶인 주문{' '}
+                  {attempt.orderCount}건 · 이번 시도 {attempt.results.length}건
+                </p>
+                <p className="text-sm">
+                  저장 {counts.saved}건 · 기존 번호 중복 {counts.duplicate}건 ·
+                  실패 {counts.failed}건 · 결과 미확인 {counts.unknown}건
+                </p>
+                <ul className="space-y-2 text-sm">
+                  {attempt.results.map(({ orderNo, result }) => (
+                    <li key={orderNo} className="flex flex-wrap gap-x-3">
+                      <span className="font-mono break-all">{orderNo}</span>
+                      <ResultCell orderNo={orderNo} result={result} />
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })}
+        </Card>
+      )}
     </div>
   );
 }
 
-function ResultCell({ result }: { result?: SaveResult }) {
+function ResultCell({
+  orderNo,
+  result,
+}: {
+  orderNo: string;
+  result?: SaveResult;
+}) {
   if (!result) return <span className="text-muted-foreground">저장 전</span>;
   if (result.status === 'saved')
-    return <span className="text-green-700">저장됨</span>;
+    return (
+      <span className="text-green-700">
+        저장됨{' '}
+        {result.orderId && (
+          <CanOpen screen="/cs">
+            <Link
+              className="text-primary underline underline-offset-2"
+              href={`/cs?orderId=${encodeURIComponent(result.orderId)}&orderNo=${encodeURIComponent(orderNo)}`}
+            >
+              생성 주문 열기
+            </Link>
+          </CanOpen>
+        )}
+      </span>
+    );
   if (result.status === 'duplicate')
     return (
-      <span className="text-muted-foreground" title={result.message}>
-        이미 저장된 주문번호 — 다시 만들지 않음
+      <span className="text-muted-foreground">
+        기존 번호 중복 — 저장하지 않음. 내용은 확인 필요.{' '}
+        <CanOpen screen="/order/history">
+          <Link
+            className="text-primary underline underline-offset-2"
+            href={`/order/history?orderNo=${encodeURIComponent(orderNo)}`}
+          >
+            주문내역에서 확인
+          </Link>
+        </CanOpen>
+      </span>
+    );
+  if (result.status === 'unknown')
+    return (
+      <span className="text-amber-700">
+        결과 미확인 — {result.message}{' '}
+        <CanOpen screen="/order/history">
+          <Link
+            className="text-primary underline underline-offset-2"
+            href={`/order/history?orderNo=${encodeURIComponent(orderNo)}`}
+          >
+            주문내역에서 확인
+          </Link>
+        </CanOpen>
       </span>
     );
   return <span className="text-destructive">실패 — {result.message}</span>;
