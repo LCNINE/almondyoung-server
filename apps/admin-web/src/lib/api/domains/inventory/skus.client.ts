@@ -60,6 +60,8 @@ export const skusClient = {
    */
   searchAdvanced: async (query: {
     search?: string;
+    /** SKU명 일부 · SKU 코드 · 바코드(기본·보조) 중 하나와 맞으면 찾는다. 서버는 적용한 값을 응답 q 로 돌려준다. */
+    q?: string;
     /** 칸별 필터 — name·supplierName 은 부분일치, code·barcode 는 정확일치. */
     name?: string;
     code?: string;
@@ -68,7 +70,7 @@ export const skusClient = {
     groupId?: string;
     limit?: number;
     offset?: number;
-  }): Promise<{ items: SkuResponseDto[]; total: number; limit: number; offset: number }> => {
+  }): Promise<{ items: SkuResponseDto[]; total: number; limit: number; offset: number; q?: string }> => {
     const response = await client.get(
       `${ALMONDYOUNG_API_BASE_URL}/inventory/skus/search/advanced?${buildQueryString(query)}`
     );

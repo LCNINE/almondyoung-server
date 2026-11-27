@@ -24,8 +24,9 @@ export const useSkusTableQuery = ({
   const searchParams: SkuQuery = {
     limit: pageSize,
     offset: page ? (Number(page) - 1) * pageSize : 0,
+    q: keyword,
     code: code || undefined,
-    name: name || keyword,
+    name: name || undefined,
     barcode: barcode || undefined,
     groupId: groupId || undefined,
     supplierName: supplierName || undefined,
