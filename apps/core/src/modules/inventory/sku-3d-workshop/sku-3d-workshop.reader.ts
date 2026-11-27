@@ -142,6 +142,7 @@ export class Sku3dWorkshopReader {
       }
 
       const ids = workshops.map((w) => w.id);
+      // ponytail: 작업별 최신 행은 workshop_id 인덱스 없이 찾는다 — 작업 행이 수만을 넘어 느려지면 (workshop_id, created_at) 인덱스
       const jobs = await trx
         .selectDistinctOn([sku3dWorkshopJobs.workshopId], {
           workshopId: sku3dWorkshopJobs.workshopId,

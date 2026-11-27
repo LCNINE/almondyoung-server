@@ -385,6 +385,7 @@ export class Sku3dWorkerManager {
             : { status: 'failed', leaseToken: null, leaseUntil: null, error, finishedAt: new Date() },
         )
         .where(eq(sku3dWorkshopJobs.id, jobId));
+      await trx.update(sku3dWorkshops).set({ updatedAt: new Date() }).where(eq(sku3dWorkshops.id, job.workshopId));
       await trx.insert(sku3dWorkshopEvents).values({
         workshopId: job.workshopId,
         jobId,
