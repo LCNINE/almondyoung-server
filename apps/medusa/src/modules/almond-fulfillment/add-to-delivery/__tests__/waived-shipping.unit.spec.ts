@@ -58,7 +58,7 @@ describe('waivedShippingAmount', () => {
               id: 'order_c',
               shipping_address: { postal_code: '14500' },
               shipping_methods: [{ data: snapshot }],
-              items: [{ product_id: 'prod_gone', requires_shipping: true, subtotal: 6500, quantity: 1 }],
+              items: [{ product_id: null, requires_shipping: true, subtotal: 6500, quantity: 1 }],
             },
           ],
         };

@@ -29,7 +29,7 @@ export async function waivedShippingAmount(query: QueryGraph, orderId: string): 
     .filter((s: ShippingPolicySnapshot | undefined): s is ShippingPolicySnapshot => Boolean(s?.policy));
   if (snapshots.length === 0) return 0;
 
-  const items = (order.items ?? []).filter((i: Record<string, any>) => i?.requires_shipping !== false && i?.product_id);
+  const items = (order.items ?? []).filter((i: Record<string, any>) => i && i.requires_shipping !== false);
   const toLine = (i: Record<string, any>) => ({
     subtotal: toAmount(i.subtotal ?? toAmount(i.unit_price) * toAmount(i.quantity)),
     quantity: toAmount(i.quantity),
@@ -39,7 +39,9 @@ export async function waivedShippingAmount(query: QueryGraph, orderId: string): 
   if (snapshots.length === 1)
     return calculateShippingFee(snapshots[0].policy, items.map(toLine), order.shipping_address?.postal_code);
 
-  const productIds = [...new Set(items.map((i: Record<string, any>) => i.product_id as string))];
+  const productIds = [
+    ...new Set(items.map((i: Record<string, any>) => i.product_id as string | null).filter(Boolean)),
+  ] as string[];
   const { data: products } = await query.graph({
     entity: 'product',
     fields: ['id', 'shipping_profile.id'],
