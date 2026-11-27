@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import { DbTx } from '../../inventory/schema/inventory.schema';
 import { WaybillManager, type Actor, type IssueOpts } from './waybill.manager';
-import type { BatchResultItem, WaybillRow, WaybillView } from './waybill.types';
+import type { BatchResultItem, SenderPreview, WaybillRow, WaybillView } from './waybill.types';
 import { withdrawalVoidKey } from '../services/waybill-void-keys';
 
 export function toView(row: WaybillRow): WaybillView {
@@ -34,6 +34,10 @@ export class WaybillService {
 
   async issueForShipment(shipmentId: string, opts: IssueOpts, idemKey: string, actor: Actor): Promise<WaybillView> {
     return toView(await this.manager.issueForShipment(shipmentId, opts, idemKey, actor));
+  }
+
+  previewSenders(shipmentIds: string[]): Promise<SenderPreview[]> {
+    return this.manager.previewSenders(shipmentIds);
   }
 
   async resumeActive(shipmentId: string, opts: IssueOpts): Promise<WaybillView | null> {

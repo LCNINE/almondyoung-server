@@ -27,6 +27,7 @@ import type {
 import { PICKING_METHOD_LABELS } from '@/lib/utils/picking-method';
 import { splitShareText } from '@/features/order/fulfillments/detail/consolidation-sheet-model';
 import { plannedOrderText } from '../preparation-model';
+import { SenderPreviewSummary } from '@/features/order/fulfillments/detail/sender-preview';
 import {
   type PreparationFailure,
   type PreparationInput,
@@ -393,11 +394,14 @@ export function PrepareDialog({
             )}
           </div>
         ) : (
-          <p className="text-sm">
-            피킹 방식: {PICKING_METHOD_LABELS[input.pickingMethod]}
-            {input.pickingMethod === 'multi_order' &&
-              ` · 카트 용량 ${input.cartCapacity}`}
-          </p>
+          <div className="space-y-3">
+            <p className="text-sm">
+              피킹 방식: {PICKING_METHOD_LABELS[input.pickingMethod]}
+              {input.pickingMethod === 'multi_order' &&
+                ` · 카트 용량 ${input.cartCapacity}`}
+            </p>
+            <SenderPreviewSummary shipmentIds={input.shipmentIds} />
+          </div>
         )}
         <DialogFooter>
           <Button

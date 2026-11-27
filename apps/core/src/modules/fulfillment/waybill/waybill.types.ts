@@ -35,6 +35,41 @@ export interface IssueContext {
   profileSender?: ProfileSender | null;
 }
 
+/** 발급 전 보내는 분 미리보기의 재료 — Reader.loadSenderPreviewInputs 가 상자마다 하나 만든다 */
+export interface SenderPreviewInput {
+  shipmentId: string;
+  found: boolean;
+  /** 아직 확정 전(draft)이면 확정 때 SKU 배송 프로필로 다시 정해진다 */
+  beforePlan: boolean;
+  /** draft 의 SKU 배송 프로필이 하나로 모이지 않아 확정이 막히는 상자 */
+  profileIncompatible: boolean;
+  /** 활성 송장이 있으면 그 행의 sender_snapshot(이어 가기·재시도가 그대로 쓴다). 없으면 undefined */
+  storedSender?: unknown;
+  /** 활성 송장이 수기 등록(다른 곳에서 받은 번호)이면 우리가 보내는 분을 찍지 않는다 */
+  manualWaybill?: boolean;
+  /** 활성 송장 상태 — pending·allocated 는 이어 가기, registered 는 재발급 대상 */
+  activeStatus?: string;
+  profileSender: ProfileSender | null;
+}
+
+export type SenderPreviewReason =
+  | 'not_found'
+  | 'carrier_not_configured'
+  | 'profile_incompatible'
+  | 'sender_missing'
+  | 'manual_waybill';
+
+export interface SenderPreview {
+  shipmentId: string;
+  /** 송장에 찍힐 보내는 분 이름. 확인할 수 없으면 null */
+  name: string | null;
+  source: 'waybill' | 'profile' | 'default' | 'unknown';
+  beforePlan: boolean;
+  reason?: SenderPreviewReason;
+  /** 등록된 송장을 재발급하면 찍힐 보내는 분 — 지금 송장 값과 다를 때만 */
+  reissue?: { name: string; source: 'profile' | 'default' };
+}
+
 export interface ProfileSender {
   name: string;
   phone: string;

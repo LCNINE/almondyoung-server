@@ -3,7 +3,13 @@ import type { HanjinConfig } from './carrier/hanjin/hanjin.config';
 import type { WaybillRequest } from './carrier/carrier-gateway.interface';
 import { deriveCustOrdNo } from './cust-ord-no';
 import { WAYBILL } from './waybill.constants';
-import type { ManifestLineLite, ProfileSender, WaybillRecipient } from './waybill.types';
+import type {
+  ManifestLineLite,
+  ProfileSender,
+  SenderPreview,
+  SenderPreviewInput,
+  WaybillRecipient,
+} from './waybill.types';
 
 // 상세주소는 없는 주소(단독주택 등)가 있어 받지 않는다. 한진은 빈 상세주소를 거절하므로 보낼 때 대체값을 넣는다(hanjin-carrier.gateway).
 export const REQUIRED_RECIPIENT_FIELDS = ['recipientName', 'phone', 'postalCode', 'roadAddress'] as const;
@@ -89,6 +95,69 @@ export function storedSenderOf(snapshot: unknown): HanjinConfig['sender'] | null
   return sender.name && sender.zip && sender.baseAddress ? sender : null;
 }
 
+/** 보내는 분이 어디서 왔나 — waybill: 이미 만든 송장 행, profile: 상자의 배송 프로필, default: HANJIN_SENDER_* */
+export type SenderSource = 'waybill' | 'profile' | 'default';
+
+/** 송장에 실을 보내는 분. 발급(assembleWaybillRequest)과 발급 전 미리보기가 이 함수 하나로 고른다 */
+export function resolveSender(input: Pick<AssembleInput, 'config' | 'profileSender' | 'storedSender'>): {
+  sender: HanjinConfig['sender'];
+  source: SenderSource;
+} {
+  if (input.storedSender !== undefined) {
+    const stored = storedSenderOf(input.storedSender);
+    return stored ? { sender: stored, source: 'waybill' } : { sender: input.config.sender, source: 'default' };
+  }
+  return input.profileSender
+    ? { sender: senderOf(input.config, input.profileSender), source: 'profile' }
+    : { sender: input.config.sender, source: 'default' };
+}
+
+/**
+ * 발급 전 미리보기 — 발급과 같은 resolveSender 로 고른다. 택배사 설정이 비었거나 확정이 막히는 상자처럼
+ * 실제 값을 장담할 수 없으면 이름을 내지 않고 unknown 으로 둔다(화면은 «확인 불가»로 보인다)
+ */
+export function senderPreviewOf(
+  input: SenderPreviewInput,
+  config: HanjinConfig,
+  carrierConfigured: boolean,
+): SenderPreview {
+  const base = { shipmentId: input.shipmentId, beforePlan: input.beforePlan };
+  const unknown = (reason: NonNullable<SenderPreview['reason']>): SenderPreview => ({
+    ...base,
+    name: null,
+    source: 'unknown',
+    reason,
+  });
+
+  if (!input.found) return unknown('not_found');
+  if (input.manualWaybill) return unknown('manual_waybill');
+  if (input.storedSender === undefined) {
+    if (!carrierConfigured) return unknown('carrier_not_configured');
+    if (input.profileIncompatible) return unknown('profile_incompatible');
+  } else if (!carrierConfigured && (input.activeStatus === 'pending' || input.activeStatus === 'allocated')) {
+    // 멈춘 송장은 이어 가야 한진에 실리는데, 설정이 비면 이어 가기가 거절된다(resumeActive)
+    return unknown('carrier_not_configured');
+  }
+
+  const { sender, source } = resolveSender({
+    config,
+    profileSender: input.profileSender,
+    storedSender: input.storedSender,
+  });
+  const name = sender.name.trim();
+  if (!name) return unknown('sender_missing');
+
+  // 재발급은 지금 송장을 무효로 하고 상자의 배송 프로필로 새로 조립한다(reissue → issueForShipment)
+  if (input.activeStatus === 'registered' && carrierConfigured) {
+    const next = resolveSender({ config, profileSender: input.profileSender });
+    const nextName = next.sender.name.trim();
+    if (nextName && nextName !== name && next.source !== 'waybill') {
+      return { ...base, name, source, reissue: { name: nextName, source: next.source } };
+    }
+  }
+  return { ...base, name, source };
+}
+
 /**
  * 배송 메시지 = 메모 라벨 + 공동현관 비번. 합성 결과는 어디에도 저장하지 않는다.
  * 운송장 라벨(#913)도 이 함수를 쓴다 — 한진에 보낸 문자열과 라벨 문자열이 같은 함수에서 나와야 한다.
@@ -124,10 +193,7 @@ export function assembleWaybillRequest(input: AssembleInput): WaybillRequest {
       mobile: rc.phone,
       message: composeMessage(rc.deliveryNote, input.entrancePassword),
     },
-    sender:
-      input.storedSender === undefined
-        ? senderOf(input.config, input.profileSender)
-        : (storedSenderOf(input.storedSender) ?? input.config.sender),
+    sender: resolveSender(input).sender,
     items,
     commodityName,
     boxType: input.config.boxType,

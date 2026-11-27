@@ -1856,6 +1856,25 @@ export interface WaybillResponse {
   transientAttempts: number;
 }
 
+/**
+ * 발급 전 보내는 분 미리보기(POST /waybills/sender-preview). 서버가 실제 송장 조립과 같은 판정으로 고른 값이다.
+ * waybill=이미 만든 송장 행, profile=상자의 배송 프로필, default=택배사 기본 송화인, unknown=확인 불가
+ */
+export interface WaybillSenderPreview {
+  shipmentId: string;
+  name: string | null;
+  source: 'waybill' | 'profile' | 'default' | 'unknown';
+  beforePlan: boolean;
+  reason?:
+    | 'not_found'
+    | 'carrier_not_configured'
+    | 'profile_incompatible'
+    | 'sender_missing'
+    | 'manual_waybill';
+  /** 등록된 송장을 재발급하면 찍힐 보내는 분 — 지금 송장 값과 다를 때만 */
+  reissue?: { name: string; source: 'profile' | 'default' };
+}
+
 export interface AbandonWaybillRequest {
   reason: string;
 }

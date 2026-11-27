@@ -1,5 +1,18 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsIn, IsInt, IsNotEmpty, IsOptional, IsString, Length, MaxLength, Min } from 'class-validator';
+import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
+  IsIn,
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Length,
+  MaxLength,
+  Min,
+} from 'class-validator';
 import { carrierEnum } from '../../../inventory/schema/inventory.schema';
 import type { CarrierCode } from '../carrier/carrier-gateway.interface';
 
@@ -200,4 +213,49 @@ export class LabelPrintConfirmationDto {
   @ApiProperty() fingerprint: string;
   @ApiProperty() revision: number;
   @ApiProperty() printedAt: string;
+}
+
+/** 발급 전 보내는 분 미리보기 — 출고 준비 확인창이 고른 상자를 한 번에 묻는다 */
+export class SenderPreviewRequestDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(100)
+  @IsUUID('4', { each: true })
+  shipmentIds: string[];
+}
+
+export class SenderPreviewReissueDto {
+  @ApiProperty()
+  name: string;
+
+  @ApiProperty({ enum: ['profile', 'default'] })
+  source: 'profile' | 'default';
+}
+
+export class SenderPreviewDto {
+  @ApiProperty()
+  shipmentId: string;
+
+  @ApiProperty({ nullable: true, type: String, description: '송장에 찍힐 보내는 분 이름. 확인할 수 없으면 null' })
+  name: string | null;
+
+  @ApiProperty({
+    enum: ['waybill', 'profile', 'default', 'unknown'],
+    description: 'waybill=이미 만든 송장 행, profile=상자의 배송 프로필, default=택배사 기본 송화인, unknown=확인 불가',
+  })
+  source: 'waybill' | 'profile' | 'default' | 'unknown';
+
+  @ApiProperty({ description: '확정 전 상자 — 확정 때 담긴 SKU 의 배송 프로필로 다시 정해진다' })
+  beforePlan: boolean;
+
+  @ApiPropertyOptional({
+    enum: ['not_found', 'carrier_not_configured', 'profile_incompatible', 'sender_missing', 'manual_waybill'],
+  })
+  reason?: 'not_found' | 'carrier_not_configured' | 'profile_incompatible' | 'sender_missing' | 'manual_waybill';
+
+  @ApiPropertyOptional({
+    type: () => SenderPreviewReissueDto,
+    description: '재발급하면 찍힐 보내는 분 — 지금 송장 값과 다를 때만',
+  })
+  reissue?: SenderPreviewReissueDto;
 }

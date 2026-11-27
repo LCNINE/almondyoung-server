@@ -79,6 +79,7 @@ import {
   waybillNextStep,
 } from './waybill-view';
 import { StuckWaybillPanel } from './stuck-waybill-panel';
+import { SenderPreviewLine } from './sender-preview';
 import { pendingCancellationItems } from '@/lib/api/domains/orders/pending-cancellation.shape';
 import { NeedsInfoList } from '@/features/order/outbound-preparation/components/needs-info-list';
 import { ScanRejectionNotice } from './scan-rejection-notice';
@@ -201,6 +202,11 @@ function WaybillSection({
               ? '운송장 없이 출고된 상자예요.'
               : '지금 쓸 송장이 없어요.'}
           </p>
+        )}
+        {isWarehouse && (!!current || !isAfterDispatch(shipment.status)) && (
+          <div className="mt-2">
+            <SenderPreviewLine shipmentId={shipment.id} />
+          </div>
         )}
         {isWarehouse && nextText && (
           <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
