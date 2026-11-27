@@ -381,6 +381,9 @@ function retrySetup({ valid }) {
     jobTimeoutMs: 10_000,
     gltfValidatorModule: validator,
     edgeBin: join(workRoot, 'no-edge.exe'),
+    denyRead: [],
+    codexHome: join(workRoot, 'codex-home'),
+    userCodexHome: join(workRoot, 'user-codex-home'),
   };
 
   return { api, config, calls, codexRan, iterDir, before, fakeCodex };
@@ -410,6 +413,17 @@ test('a retry whose finished outputs fail validation stops without calling Codex
   assert.match(failed[1], /검증을 통과하지 못했어요/);
   assert.equal(failed[2], false);
   assert.deepEqual(readFileSync(join(s.iterDir, 'model.glb')), s.before);
+});
+
+test('a new job does not upload outputs left by an earlier job in the same version folder', async () => {
+  const s = retrySetup({ valid: true });
+
+  await runJob({ id: 'j2', workshopId: 'w', kind: 'create' }, { api: s.api, config: { ...s.config, codexBin: s.fakeCodex }, tools: {}, signal: new AbortController().signal });
+
+  assert.ok(!s.calls.some((c) => c[0] === 'complete' || c[0] === 'upload'));
+  assert.ok(s.calls.some((c) => c[0] === 'fail'));
+  assert.throws(() => readFileSync(join(s.iterDir, 'model.glb')));
+  assert.throws(() => readFileSync(join(s.iterDir, DONE_MARKER)));
 });
 
 test('loadConfig reads the dedicated Codex home and deny list', () => {

@@ -37,9 +37,7 @@ export function mountModelViewer(
   }
 
   viewer.setAttribute('camera-orbit', '0deg 75deg 150%');
-  // 위·아래(극각)도 끝까지 — 기본값은 22.5~157.5도라 바닥·윗면을 못 본다
-  viewer.setAttribute('min-camera-orbit', 'auto 0deg auto');
-  viewer.setAttribute('max-camera-orbit', 'auto 180deg 300%');
+  viewer.setAttribute('max-camera-orbit', 'auto auto 300%');
   viewer.setAttribute('alt', alt);
   viewer.style.width = '100%';
   viewer.style.height = '100%';

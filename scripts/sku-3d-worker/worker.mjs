@@ -2,7 +2,7 @@
 // 아몬드영 3D 작업실 홈 PC 워커. 서버에 HTTPS 로 접속해 작업을 가져가고, Codex CLI + Blender 로 만든 결과를 올린다.
 // 실행: node --env-file=worker.env --env-file=worker-key.env worker.mjs
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
@@ -86,6 +86,17 @@ export function finishedFor(iterDir, job, request) {
   } catch {
     return false;
   }
+}
+
+// 새 작업은 빈 산출물에서 시작한다 — 같은 버전 폴더에 남은 이전 작업의 GLB·렌더가 이번 결과로 올라가지 않게
+export function clearOutputs(iterDir) {
+  for (const name of readdirSync(iterDir)) {
+    if (name !== 'request.md') {
+      rmSync(join(iterDir, name), { recursive: true, force: true });
+    }
+  }
+
+  mkdirSync(join(iterDir, 'renders'), { recursive: true });
 }
 
 // gltf-transform 이 텍스처를 변환하려면 같은 설치에 sharp 가 있어야 한다
@@ -374,6 +385,7 @@ export async function runJob(job, { api, config, tools, signal }) {
       // 재시도인데 Codex 는 이미 이 요청으로 끝냈다 — Codex·Blender 를 다시 부르지 않고 있는 파일을 검증해 올린다
       events.push({ type: 'status', body: '이미 만든 결과를 검증해서 다시 올려요. Codex 는 다시 돌리지 않아요' });
     } else {
+      clearOutputs(iterDir);
       events.push({ type: 'status', body: sessionId ? '같은 Codex 세션으로 고치기 시작했어요' : 'Codex 가 만들기 시작했어요' });
       await turn(
         buildPrompt({
