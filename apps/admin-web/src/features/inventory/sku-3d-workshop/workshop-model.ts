@@ -1,4 +1,6 @@
 import type {
+  MyWorkshopDto,
+  MyWorkshopStatus,
   Sku3dDimensionBasis,
   Sku3dReviewVerdict,
   Sku3dWorkshopDetailDto,
@@ -7,6 +9,7 @@ import type {
 } from '@/lib/types/dto/inventory';
 
 export const workshopKeys = {
+  mine: ['sku-3d-workshop', 'mine'] as const,
   detail: (skuId: string) => ['sku-3d-workshop', skuId] as const,
   events: (workshopId: string) =>
     ['sku-3d-workshop', workshopId, 'events'] as const,
@@ -247,4 +250,54 @@ export function materialChangeText(
   ].filter(Boolean);
 
   return `마지막 버전을 만든 뒤 실측 자료가 바뀌었어요 (${parts.join(', ')})`;
+}
+
+export const MY_WORKSHOP_STATUS_LABEL: Record<MyWorkshopStatus, string> = {
+  making: '만드는 중',
+  review: '확인 필요',
+  failed: '다시 요청',
+  public: '공개됨',
+  waiting: '요청 전',
+};
+
+export const MY_WORKSHOP_TABS = [
+  { id: 'all', label: '전체' },
+  { id: 'making', label: '만드는 중' },
+  { id: 'review', label: '확인 필요' },
+  { id: 'public', label: '공개됨' },
+] as const;
+
+export type MyWorkshopTab = (typeof MY_WORKSHOP_TABS)[number]['id'];
+
+// 확인할 것 = 볼 버전이 나왔거나 실패해서 내가 손댈 것
+function needsMe(status: MyWorkshopStatus): boolean {
+  return status === 'review' || status === 'failed';
+}
+
+export function myWorkshopsOf(list: MyWorkshopDto[], tab: MyWorkshopTab): MyWorkshopDto[] {
+  if (tab === 'all') {
+    return list;
+  }
+
+  return list.filter((w) => (tab === 'review' ? needsMe(w.status) : w.status === tab));
+}
+
+export function myWorkshopSummary(list: MyWorkshopDto[]): { review: number; making: number } {
+  return {
+    review: list.filter((w) => needsMe(w.status)).length,
+    making: list.filter((w) => w.status === 'making').length,
+  };
+}
+
+export function myWorkshopSummaryText(list: MyWorkshopDto[]): string {
+  if (list.length === 0) {
+    return '아직 만든 작업실이 없어요';
+  }
+
+  const { review, making } = myWorkshopSummary(list);
+  const parts = [review > 0 ? `확인할 것 ${review}개` : null, making > 0 ? `만드는 중 ${making}개` : null].filter(
+    Boolean
+  );
+
+  return parts.length > 0 ? parts.join(' · ') : `작업실 ${list.length}개`;
 }

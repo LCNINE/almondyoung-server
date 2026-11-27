@@ -2150,6 +2150,22 @@ export type Sku3dWorkshopDto = {
   updatedAt: string;
 };
 
+export type MyWorkshopStatus = 'making' | 'review' | 'failed' | 'public' | 'waiting';
+
+/** 내 3D 작업실 목록 한 줄 */
+export type MyWorkshopDto = {
+  id: string;
+  skuId: string;
+  skuCode: string;
+  skuName: string;
+  photoFileId: string | null;
+  status: MyWorkshopStatus;
+  latestRevisionNumber: number | null;
+  activeJobKind: 'create' | 'revise' | null;
+  failedError: string | null;
+  updatedAt: string;
+};
+
 export type Sku3dWorkshopJobDto = {
   id: string;
   workshopId: string;
