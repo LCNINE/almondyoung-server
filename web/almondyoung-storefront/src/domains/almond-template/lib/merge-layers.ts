@@ -14,7 +14,14 @@ import { rasterize } from "./design-images"
 import { rememberPreview } from "./image-previews"
 import { makeLayer, nextGroupName } from "./layer"
 import { lineWidth } from "./line-shape"
-import type { PathPoint } from "./path-shape"
+import { union, type Ring } from "polygon-clipping"
+import {
+  fitPath,
+  shapeOutline,
+  simplify,
+  toAbsolute,
+  type PathPoint,
+} from "./path-shape"
 
 export function mergeDownReason(
   layers: Layer[],
@@ -170,6 +177,119 @@ export function replaceMergedLayers(
 // 사진이 없는 두 레이어는 그림으로 굽지 않고 그룹으로 묶는다. 화질과 편집이 그대로 남는다
 export function isVectorMerge(lower: Layer, upper: Layer) {
   return [lower, upper].every((layer) => layer.type !== "image" && !layer.image)
+}
+
+const CURVE_STEPS = 16
+const MAX_PATH_POINTS = 400
+
+function outlineOf(layer: Layer): PathPoint[] | null {
+  if (layer.type === "path")
+    return layer.pathClosed ? (layer.pathPoints ?? null) : null
+
+  return shapeOutline(layer)
+}
+
+// 도형 윤곽을 회전·반전까지 반영한 캔버스 좌표의 꺾은선으로 펼친다
+function worldRing(layer: Layer, outline: PathPoint[]): Ring {
+  const points = toAbsolute(outline, layer)
+  const cx = layer.x + layer.width / 2
+  const cy = layer.y + layer.height / 2
+  const rad = ((layer.rotation ?? 0) * Math.PI) / 180
+  const ring: Ring = []
+
+  const place = (px: number, py: number) => {
+    const dx = (px - cx) * (layer.flipX ? -1 : 1)
+    const dy = (py - cy) * (layer.flipY ? -1 : 1)
+
+    ring.push([
+      cx + dx * Math.cos(rad) - dy * Math.sin(rad),
+      cy + dx * Math.sin(rad) + dy * Math.cos(rad),
+    ])
+  }
+
+  points.forEach((a, i) => {
+    const b = points[(i + 1) % points.length]
+
+    place(a.x, a.y)
+
+    if (a.ox === undefined && b.ix === undefined) {
+      return
+    }
+
+    const c1 = { x: a.ox ?? a.x, y: a.oy ?? a.y }
+    const c2 = { x: b.ix ?? b.x, y: b.iy ?? b.y }
+
+    for (let step = 1; step < CURVE_STEPS; step++) {
+      const t = step / CURVE_STEPS
+      const u = 1 - t
+
+      place(
+        u * u * u * a.x +
+          3 * u * u * t * c1.x +
+          3 * u * t * t * c2.x +
+          t * t * t * b.x,
+        u * u * u * a.y +
+          3 * u * u * t * c1.y +
+          3 * u * t * t * c2.y +
+          t * t * t * b.y
+      )
+    }
+  })
+
+  return ring
+}
+
+// 두 도형을 겹친 모양 그대로 펜 도형 하나로 합친다. 색·선·효과는 위 레이어를 따른다.
+// ponytail: 윤곽이 한 줄인 결과만 만든다. 떨어진 모양·구멍은 펜 도형이 여러 윤곽을 받게 되면 더한다
+export function unitedShape(lower: Layer, upper: Layer): Layer | null {
+  const outlines = [lower, upper].map(outlineOf)
+
+  if (!outlines[0] || !outlines[1]) {
+    return null
+  }
+
+  const united = union(
+    [worldRing(lower, outlines[0])],
+    [worldRing(upper, outlines[1])]
+  )
+
+  if (united.length !== 1 || united[0].length !== 1) {
+    return null
+  }
+
+  const ring = united[0][0].map(([x, y]) => ({ x, y }))
+  let points = ring
+
+  for (
+    let tolerance = 0.005;
+    points.length > MAX_PATH_POINTS + 1;
+    tolerance *= 2
+  ) {
+    points = simplify(ring, tolerance)
+  }
+
+  if (points.length < 4) {
+    return null
+  }
+
+  const fitted = fitPath(points.slice(0, -1), true)
+
+  return {
+    ...upper,
+    ...fitted,
+    id: crypto.randomUUID(),
+    type: "path",
+    name: "합친 도형",
+    editable: lower.editable !== false && upper.editable !== false,
+    pathClosed: true,
+    rotation: undefined,
+    flipX: undefined,
+    flipY: undefined,
+    shapeVariant: undefined,
+    cornerRadius: undefined,
+    starPoints: undefined,
+    starRatio: undefined,
+  }
 }
 
 export function groupMergedLayers(layers: Layer[], upperId: string) {

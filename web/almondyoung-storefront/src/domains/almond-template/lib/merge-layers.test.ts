@@ -18,6 +18,7 @@ import {
   mergeMaxPx,
   rasterMergedLayer,
   replaceMergedLayers,
+  unitedShape,
 } from "./merge-layers"
 
 vi.mock("./design-images", () => ({ rasterize: vi.fn() }))
@@ -289,5 +290,71 @@ describe("도형끼리 병합", () => {
     expect(b.groupId).toBe(a.groupId)
     expect(a.groupName).toBe("그룹 1")
     expect(() => groupMergedLayers([layer("a")], "a")).toThrow()
+  })
+})
+
+describe("도형 합치기", () => {
+  it("겹친 두 사각형을 위 레이어 색의 펜 도형 하나로 합친다", () => {
+    const result = unitedShape(
+      layer("a"),
+      layer("b", { x: 10, y: 5, fill: "#0000ff" })
+    )
+
+    expect(result).toMatchObject({
+      type: "path",
+      pathClosed: true,
+      fill: "#0000ff",
+      x: 0,
+      y: 0,
+      width: 30,
+      height: 15,
+    })
+    expect(result?.pathPoints).toHaveLength(8)
+  })
+
+  it("회전한 도형은 돌아간 자리 그대로 합친다", () => {
+    const result = unitedShape(
+      layer("a", { width: 10, height: 10 }),
+      layer("b", { x: 5, y: 0, width: 10, height: 10, rotation: 45 })
+    )
+
+    expect(result?.rotation).toBeUndefined()
+    expect(result?.width).toBeCloseTo(5 + 5 + 5 * Math.SQRT2, 2)
+    expect(result?.height).toBeCloseTo(10 * Math.SQRT2, 2)
+  })
+
+  it("원은 곡선을 잘게 나눠 400점 안에 담는다", () => {
+    const result = unitedShape(
+      layer("a", { type: "ellipse" }),
+      layer("b", { type: "ellipse", x: 5 })
+    )
+
+    expect(result?.pathPoints?.length).toBeGreaterThan(16)
+    expect(result?.pathPoints?.length).toBeLessThanOrEqual(400)
+  })
+
+  it("한쪽이라도 고객 편집을 막았으면 합친 도형도 막는다", () => {
+    expect(
+      unitedShape(layer("a", { editable: false }), layer("b", { x: 10 }))
+        ?.editable
+    ).toBe(false)
+  })
+
+  it.each([
+    ["떨어진 모양", layer("a"), layer("b", { x: 50 })],
+    ["선", layer("a"), layer("b", { type: "line" })],
+    [
+      "열린 펜 선",
+      layer("a"),
+      layer("b", {
+        type: "path",
+        pathPoints: [
+          { x: 0, y: 0 },
+          { x: 1, y: 1 },
+        ],
+      }),
+    ],
+  ])("%s은 합치지 않는다", (_, lower, upper) => {
+    expect(unitedShape(lower, upper)).toBeNull()
   })
 })
