@@ -76,6 +76,9 @@ jest.mock('@/lib/services/orders', () => ({
   useAbandonWaybill: Object.assign(() => mockMutation(), {
     permission: ['fulfillment.warehouse.operate'],
   }),
+  useResumeWaybill: Object.assign(() => mockMutation(), {
+    permission: ['fulfillment.warehouse.operate'],
+  }),
   useExcludeShipmentFromBatch: Object.assign(() => mockMutation(), {
     permission: ['fulfillment.warehouse.operate'],
   }),
@@ -504,7 +507,7 @@ describe('합포장 중 기존 무효화 버튼', () => {
     ).toBeTruthy();
   });
 
-  it('멈춘 송장은 무효화가 아니라 «중단하고 다시 발급»으로 푼다(#1241)', () => {
+  it('멈춘 송장은 무효화가 아니라 같은 번호로 이어서 발급해 푼다', () => {
     mockDetail.mockImplementation((id) => {
       const base = detail(id, 'planned');
       return loaded({
@@ -517,8 +520,11 @@ describe('합포장 중 기존 무효화 버튼', () => {
 
     expect(screen.getByText('송장 발급이 멈춰 있어요')).toBeTruthy();
     expect(
-      screen.getByRole('button', { name: '중단하고 다시 발급' })
+      screen.getByRole('button', { name: /같은 번호로 이어서 발급/ })
     ).toBeTruthy();
+    expect(
+      screen.queryByRole('button', { name: '중단하고 다시 발급' })
+    ).toBeNull();
     expect(screen.queryByRole('button', { name: '무효화' })).toBeNull();
   });
 

@@ -136,6 +136,7 @@ export {
   useReissueWaybill,
   useVoidWaybill,
   useAbandonWaybill,
+  useResumeWaybill,
   useBatchIssueWaybills,
   // 반영 대기 채널 변경 닫기 (#1016 6번 행)
   useDismissChannelChange,

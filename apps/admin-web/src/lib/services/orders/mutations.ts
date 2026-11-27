@@ -1494,6 +1494,30 @@ useAbandonWaybill.permission = [
   'fulfillment.warehouse.operate',
 ] as const satisfies PermissionRequirement;
 
+// 멈춘 발급(pending/allocated)을 같은 번호로 이어 간다. 출고 준비 «이어서 처리»와 같은 서버 경로다 —
+// 활성 행이 있으면 그 행을 다시 몰고, 그 사이 없어졌으면 새로 발급한다.
+export const useResumeWaybill = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      shipmentId,
+      idempotencyKey,
+    }: {
+      shipmentId: string;
+      idempotencyKey?: string;
+    }) =>
+      orders.outboundPreparation.issueWaybills({
+        data: { shipmentIds: [shipmentId] },
+        idempotencyKey: commandKey(idempotencyKey),
+      }),
+    onSettled: (_, __, { shipmentId }) =>
+      invalidateShipment(queryClient, shipmentId),
+  });
+};
+useResumeWaybill.permission = [
+  'fulfillment.warehouse.operate',
+] as const satisfies PermissionRequirement;
+
 export const useBatchIssueWaybills = () =>
   useMutation({
     mutationFn: ({

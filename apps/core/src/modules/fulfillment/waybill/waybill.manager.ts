@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { and, eq, inArray } from 'drizzle-orm';
 import { BadRequestError, ConflictError, NotFoundError } from '@app/shared';
 import { DbService, InjectTypedDb } from '@app/db';
-import { DbTx, inventorySchema, inventoryTables } from '../../inventory/schema/inventory.schema';
+import { carrierEnum, DbTx, inventorySchema, inventoryTables } from '../../inventory/schema/inventory.schema';
 import { FulfillmentCommandService } from '../services/fulfillment-command.service';
 import { HANJIN_CONFIG } from './waybill.tokens';
 import type { HanjinConfig } from './carrier/hanjin/hanjin.config';
@@ -217,6 +217,13 @@ export class WaybillManager {
         if (!wb) throw new NotFoundError(`${WAYBILL.ERROR.NOT_FOUND}: ${waybillId}`);
         if (wb.status !== 'pending' && wb.status !== 'allocated') {
           throw new ConflictError(`${WAYBILL.ERROR.ABANDON_NOT_ALLOWED}: ${waybillId} is ${wb.status}`);
+        }
+        // allocated 는 등록 응답만 잃었을 수 있다. 출고(S)는 한진이 주문번호 중복을 보지 않아, 버리고 새로 받으면
+        // 같은 상자의 주문이 한진에 둘 남는다. 이어 갈 수 있는 행(상자 계획 확정·내용 그대로)은 같은 번호로 이어 가게 한다.
+        if (wb.status === 'allocated' && (await this.canResumeAllocated(trx, wb))) {
+          throw new ConflictError(
+            `${WAYBILL.ERROR.ABANDON_NOT_ALLOWED}: ${waybillId} is allocated and resumes with the same number`,
+          );
         }
         const ok = await this.repo.casToAbandoned(trx, waybillId, wb.status, `abandoned by operator: ${reason}`);
         if (!ok) throw new ConflictError(`${WAYBILL.ERROR.ABANDON_NOT_ALLOWED}: ${waybillId} changed concurrently`);
@@ -434,6 +441,19 @@ export class WaybillManager {
         return { response: row as WaybillRow, resourceType: 'waybill', resourceId: waybillId };
       },
       tx,
+    );
+  }
+
+  // resumeActive 가 같은 번호로 다시 몰 수 있는 allocated 인가 — 택배사 설정·상자 계획 확정·내용과 받는 분이 그대로.
+  private async canResumeAllocated(trx: DbTx, wb: WaybillRow): Promise<boolean> {
+    const carrier = carrierEnum.enumValues.find((c) => c === wb.carrier);
+    if (!carrier || !this.registry.get(carrier)?.isConfigured()) return false;
+    const ctx = await this.reader.loadIssueContext(trx, wb.shipmentId);
+
+    return (
+      ctx.status === 'planned' &&
+      wb.manifestVersion === ctx.manifestVersion &&
+      wb.recipientHash === this.reader.recipientHashOf(ctx.recipientSnapshot)
     );
   }
 

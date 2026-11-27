@@ -1,6 +1,7 @@
 import type { ShipmentWaybillHistory } from '@/lib/types/dto/fulfillment';
 import {
   abandonRisks,
+  canResume,
   stuckReason,
   stuckWaybillOf,
   waybillErrorMessage,
@@ -89,9 +90,11 @@ describe('abandonRisks', () => {
       manifestVersion: 3,
       waybills: [waybill({ status: 'allocated', trackingNo: '510012345678' })],
     });
-    const [first] = abandonRisks(stuck!);
+    const [first, second] = abandonRisks(stuck!);
     expect(first).toContain('510012345678');
-    expect(first).toContain('붙이지 마세요');
+    expect(first).toContain('이미 등록됐을 수 있어요');
+    expect(second).toContain('붙이지 말고 버리세요');
+    expect(abandonRisks(stuck!).join(' ')).not.toContain('비용이 들지 않아요');
   });
 
   it('pending 은 번호를 받았는지 모른다고 한다', () => {
@@ -103,8 +106,30 @@ describe('abandonRisks', () => {
   });
 });
 
+describe('canResume', () => {
+  it('내용이 그대로면 같은 번호로 이어 간다', () => {
+    const stuck = stuckWaybillOf({
+      manifestVersion: 3,
+      waybills: [waybill({ status: 'allocated' })],
+    });
+    expect(canResume(stuck!)).toBe(true);
+  });
+
+  it('상자 내용이 바뀌었으면 이어 가지 않는다', () => {
+    const stuck = stuckWaybillOf({
+      manifestVersion: 4,
+      waybills: [waybill({ status: 'allocated' })],
+    });
+    expect(canResume(stuck!)).toBe(false);
+  });
+});
+
 describe('waybillErrorMessage', () => {
   it.each([
+    [
+      'WAYBILL_ABANDON_NOT_ALLOWED: wb-1 is allocated and resumes with the same number',
+      '한진에 이미 등록됐을 수 있어 중단할 수 없어요. «같은 번호로 이어서 발급»을 누르세요.',
+    ],
     [
       'WAYBILL_ABANDON_NOT_ALLOWED: wb-1 is registered',
       '그 사이 발급이 끝났어요. 중단할 필요가 없어요.',
@@ -123,7 +148,7 @@ describe('waybillErrorMessage', () => {
     ],
     [
       'WAYBILL_ABANDON_NOT_ALLOWED: active waybill is allocated; operator abandon required before reissue',
-      '멈춘 발급이 있어요. 먼저 발급을 중단하세요.',
+      '멈춘 발급이 있어요. «송장 발급이 멈춰 있어요»에서 먼저 이어서 발급하세요.',
     ],
     ['WAYBILL_ACTIVE_EXISTS: s-1', '이 상자에 이미 진행 중인 송장이 있어요.'],
     [

@@ -81,7 +81,11 @@ pending/allocated ──운영자 abandon──▶ abandoned (종료)
   교착된 `pending`/`allocated` 를 종료시켜 활성 슬롯을 푼다. 슬롯이 풀려야 `reissue` 와 수기 등록이
   열린다. 스코프가 `void`(`SHIPMENT_REOPEN`)보다 넓은 것은 의도다 — 현장에서 막혔을 때 관리자를
   기다리지 않고 풀 수 있어야 한다.
-  ⚠️ `allocated` 를 버리면 한진에 채번된 `wblNo` 하나가 미사용으로 남는다. 그래서 사유가 필수다.
+  ⚠️ `allocated` 는 등록 응답만 잃었을 수 있다. 출고(S)는 한진이 주문번호 중복을 보지 않고 API 로 취소할
+  수도 없어(`docs/hanjin-api-integration-reference.md` §4.3), 버리고 새로 받으면 같은 상자의 주문이 한진에 둘 남는다.
+  그래서 **이어 갈 수 있는 `allocated`(택배사 연동 켜짐·상자 `planned`·내용과 받는 분 그대로)는 abandon 을
+  거절한다** — 같은 번호로 다시 몰면(`resumeActive`, 상자 상세 «같은 번호로 이어서 발급»·출고 준비 «이어서 처리»)
+  한진이 `ERROR-09`(기등록)를 주고 그 번호로 `registered` 가 된다. 이어 갈 수 없을 때만 버리며, 사유가 필수다.
 
 ## Seam (소비자 진입점, §9.1)
 
