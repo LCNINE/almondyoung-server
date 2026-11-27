@@ -7,6 +7,11 @@ import { adminRouteMiddlewares } from './admin/middlewares';
 import { defaultReturnWriteMiddlewares } from './reject-default-return-writes';
 import { listTransformQueryConfig as ordersListQueryConfig } from './store/orders-list/query-config';
 import { StoreGetOrdersListParams } from './store/orders-list/validators';
+import {
+  StoreAddToDeliveryCartCreate,
+  StoreAddToDeliveryLinksQuery,
+  StoreAddToDeliveryParentsQuery,
+} from './store/add-to-delivery/validators';
 import { perCustomerLimitMiddleware } from './store/carts/middlewares/per-customer-limit';
 import { customerCreationIdentityMiddleware } from './store/customers/identity-metadata';
 import { rejectAwaitingDepositCompleteMiddleware } from './store/carts/middlewares/reject-awaiting-deposit-complete';
@@ -140,16 +145,12 @@ export default defineMiddlewares({
     {
       matcher: '/store/coupons/preview',
       method: 'GET',
-      middlewares: [
-        authenticate('customer', ['session', 'bearer'], { allowUnauthenticated: true }),
-      ],
+      middlewares: [authenticate('customer', ['session', 'bearer'], { allowUnauthenticated: true })],
     },
     {
       matcher: '/store/events/:slug',
       method: 'GET',
-      middlewares: [
-        authenticate('customer', ['session', 'bearer'], { allowUnauthenticated: true }),
-      ],
+      middlewares: [authenticate('customer', ['session', 'bearer'], { allowUnauthenticated: true })],
     },
     {
       matcher: '/store/customers/me/promotions',
@@ -189,6 +190,30 @@ export default defineMiddlewares({
     {
       matcher: '/store/orders/:id/returnable',
       middlewares: [authenticate('customer', ['session', 'bearer'])],
+    },
+    {
+      matcher: '/store/add-to-delivery/parents',
+      method: 'GET',
+      middlewares: [
+        authenticate('customer', ['session', 'bearer']),
+        validateAndTransformQuery(StoreAddToDeliveryParentsQuery, {}),
+      ],
+    },
+    {
+      matcher: '/store/add-to-delivery/carts',
+      method: 'POST',
+      middlewares: [
+        authenticate('customer', ['session', 'bearer']),
+        validateAndTransformBody(StoreAddToDeliveryCartCreate),
+      ],
+    },
+    {
+      matcher: '/store/add-to-delivery/links',
+      method: 'GET',
+      middlewares: [
+        authenticate('customer', ['session', 'bearer']),
+        validateAndTransformQuery(StoreAddToDeliveryLinksQuery, {}),
+      ],
     },
     {
       // 커스텀 주문 목록(기간 필터 지원) — 본인 주문만 조회 가능하도록 인증 필수.
