@@ -61,6 +61,7 @@ export {
   useFulfillmentOperation,
   useFulfillmentRequestOutcome,
   useShipmentRecallOperation,
+  useWaybillSenderPreview,
   useLegacyPurchaseOrders,
   useLegacyPurchaseOrder,
   // 검수

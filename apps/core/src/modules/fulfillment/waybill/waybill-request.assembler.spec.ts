@@ -5,8 +5,10 @@ import {
   composeMessage,
   profileSenderOf,
   senderOf,
+  senderPreviewOf,
   storedSenderOf,
 } from './waybill-request.assembler';
+import type { SenderPreviewInput } from './waybill.types';
 import type { WaybillRequest } from './carrier/carrier-gateway.interface';
 import type { HanjinConfig } from './carrier/hanjin/hanjin.config';
 
@@ -248,5 +250,123 @@ describe('배송 프로필 보내는 분', () => {
   it('칸이 빠진 저장값(이 칸이 생기기 전 송장)은 쓰지 않는다', () => {
     expect(storedSenderOf(null)).toBeNull();
     expect(storedSenderOf({ name: 'A' })).toBeNull();
+  });
+});
+
+describe('발급 전 보내는 분 미리보기', () => {
+  const profile = { name: '위탁업체', phone: '', zip: '', baseAddress: '', detailAddress: '' };
+  const lines = [{ productName: '상품', skuName: '상품', quantity: 1, skuId: 'sku' }];
+  const input = (over: Partial<SenderPreviewInput> = {}): SenderPreviewInput => ({
+    shipmentId: 'box',
+    found: true,
+    beforePlan: false,
+    profileIncompatible: false,
+    profileSender: null,
+    ...over,
+  });
+  // 미리보기 이름이 실제 발급 요청에 실리는 이름과 같아야 한다
+  const issuedName = (i: SenderPreviewInput) =>
+    assembleWaybillRequest({
+      shipmentId: '00000000-0000-4000-8000-000000000001',
+      recipientSnapshot: snapshot,
+      lines,
+      config,
+      profileSender: i.profileSender,
+      ...(i.storedSender !== undefined ? { storedSender: i.storedSender } : {}),
+    }).sender.name;
+
+  it('프로필에 보내는 분이 있으면 그 이름, 출처는 배송 프로필', () => {
+    const i = input({ profileSender: profile });
+    expect(senderPreviewOf(i, config, true)).toEqual({
+      shipmentId: 'box',
+      name: '위탁업체',
+      source: 'profile',
+      beforePlan: false,
+    });
+    expect(issuedName(i)).toBe('위탁업체');
+  });
+
+  it('프로필 값이 없으면 기본 송화인으로 대체된다고 알린다', () => {
+    const i = input();
+    expect(senderPreviewOf(i, config, true)).toMatchObject({ name: '보내는이', source: 'default' });
+    expect(issuedName(i)).toBe('보내는이');
+  });
+
+  it('활성 송장이 있으면 프로필이 바뀌었어도 그 행의 이름 — 이어 가기가 그 값을 쓴다', () => {
+    const stored = { name: '옛 이름', zip: '1', baseAddress: '주소', detailAddress: '', tel: '' };
+    const i = input({ profileSender: profile, storedSender: stored });
+    expect(senderPreviewOf(i, config, true)).toMatchObject({ name: '옛 이름', source: 'waybill' });
+    expect(issuedName(i)).toBe('옛 이름');
+  });
+
+  it('칸이 빠진 옛 송장 행은 기본 송화인으로 등록됐던 것으로 본다', () => {
+    const i = input({ profileSender: profile, storedSender: null });
+    expect(senderPreviewOf(i, config, true)).toMatchObject({ name: '보내는이', source: 'default' });
+    expect(issuedName(i)).toBe('보내는이');
+  });
+
+  it('택배사 설정이 비었으면 이름을 내지 않는다', () => {
+    expect(senderPreviewOf(input({ profileSender: profile }), config, false)).toMatchObject({
+      name: null,
+      source: 'unknown',
+      reason: 'carrier_not_configured',
+    });
+  });
+
+  it('확정 전 상자의 SKU 프로필이 갈리면 확인 불가', () => {
+    expect(senderPreviewOf(input({ beforePlan: true, profileIncompatible: true }), config, true)).toMatchObject({
+      name: null,
+      source: 'unknown',
+      reason: 'profile_incompatible',
+      beforePlan: true,
+    });
+  });
+
+  it('기본 송화인 이름마저 비면 확인 불가', () => {
+    const blank = { ...config, sender: { ...config.sender, name: '  ' } };
+    expect(senderPreviewOf(input(), blank, true)).toMatchObject({ name: null, reason: 'sender_missing' });
+  });
+
+  it('수기 등록 송장은 우리가 찍은 보내는 분이 없어 확인 불가', () => {
+    expect(senderPreviewOf(input({ storedSender: null, manualWaybill: true }), config, true)).toMatchObject({
+      name: null,
+      source: 'unknown',
+      reason: 'manual_waybill',
+    });
+  });
+
+  it('멈춘 송장은 택배사 설정이 비면 이어 갈 수 없어 확인 불가', () => {
+    const stored = { name: '옛 이름', zip: '1', baseAddress: '주소', detailAddress: '', tel: '' };
+    expect(senderPreviewOf(input({ storedSender: stored, activeStatus: 'allocated' }), config, false)).toMatchObject({
+      name: null,
+      reason: 'carrier_not_configured',
+    });
+    // 이미 등록된 송장은 찍힌 사실이라 그대로 보인다
+    expect(senderPreviewOf(input({ storedSender: stored, activeStatus: 'registered' }), config, false)).toMatchObject({
+      name: '옛 이름',
+      source: 'waybill',
+    });
+  });
+
+  it('등록된 송장의 프로필이 바뀌었으면 재발급 때 찍힐 이름을 함께 준다 — 재발급 조립과 같다', () => {
+    const stored = { name: '옛 이름', zip: '1', baseAddress: '주소', detailAddress: '', tel: '' };
+    const i = input({ storedSender: stored, activeStatus: 'registered', profileSender: profile });
+    expect(senderPreviewOf(i, config, true)).toMatchObject({
+      name: '옛 이름',
+      source: 'waybill',
+      reissue: { name: '위탁업체', source: 'profile' },
+    });
+    expect(issuedName({ ...i, storedSender: undefined })).toBe('위탁업체');
+    // 같으면 덧붙이지 않는다
+    expect(
+      senderPreviewOf(input({ ...i, storedSender: { ...stored, name: '위탁업체' } }), config, true).reissue,
+    ).toBeUndefined();
+  });
+
+  it('없는 상자는 확인 불가', () => {
+    expect(senderPreviewOf(input({ found: false }), config, true)).toMatchObject({
+      source: 'unknown',
+      reason: 'not_found',
+    });
   });
 });

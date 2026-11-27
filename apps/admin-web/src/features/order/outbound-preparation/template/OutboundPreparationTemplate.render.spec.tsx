@@ -58,6 +58,16 @@ jest.mock('next/navigation', () => ({
 }));
 
 jest.mock('@/lib/services/orders', () => ({
+  useWaybillSenderPreview: (ids: string[]) => ({
+    isPending: false,
+    isError: false,
+    data: ids.map((shipmentId) => ({
+      shipmentId,
+      name: '위탁업체',
+      source: 'profile',
+      beforePlan: true,
+    })),
+  }),
   useLoadMoreOutboundPreparation: Object.assign(
     () => ({ mutate: jest.fn(), isPending: false, isError: false }),
     { permission: ['fulfillment.shipment.read'] }
@@ -386,6 +396,9 @@ describe('OutboundPreparationTemplate', () => {
         '상자 확정, 송장 발급, 출고 배치에 담기까지 한 번에 해요.'
       )
     ).toBeTruthy();
+    const sender = screen.getByRole('region', { name: '송장 보내는 분' });
+    expect(sender.textContent).toContain('위탁업체35상자');
+    expect(sender.textContent).toContain('상자 확정 때 다시 정해져요');
     await userEvent.click(screen.getByRole('button', { name: '시작' }));
     await waitFor(() => expect(mockRun).toHaveBeenCalledTimes(1));
 

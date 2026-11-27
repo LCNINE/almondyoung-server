@@ -28,6 +28,10 @@ type QueryState<T> = {
 
 const mockShipments = jest.fn<QueryState<ShipmentAdminSummary[]>, [string]>();
 const mockDetail = jest.fn<QueryState<ShipmentAdminDetail>, [string]>();
+const mockSenderPreview = jest.fn<
+  { isPending: boolean; isError: boolean; data: unknown[] | undefined },
+  [string[]]
+>(() => ({ isPending: false, isError: false, data: [] }));
 type ProgressState = {
   data: ConsolidationProgressResponse | null | undefined;
   isSuccess: boolean;
@@ -55,6 +59,7 @@ jest.mock('@/lib/services/orders', () => ({
   getServerDenyMessage: () => '거절됐어요',
   isRecoverableOperation: () => false,
   useFulfillmentShipments: (id: string) => mockShipments(id),
+  useWaybillSenderPreview: (ids: string[]) => mockSenderPreview(ids),
   useShipmentDetail: (id: string) => mockDetail(id),
   createIdempotentCommand: () => ({ idempotencyKey: 'key-1' }),
   isWaybillIssued: () => true,
@@ -912,6 +917,26 @@ describe('운송장 영역은 지금 쓸 송장과 다음 작업을 먼저 보�
       past.textContent?.indexOf('1111-0000-0001') ?? -1
     );
     expect(past.textContent).toContain('무효');
+  });
+
+  it('지금 쓸 송장 칸에 서버가 고른 보내는 분을 보인다', () => {
+    mockSenderPreview.mockReturnValueOnce({
+      isPending: false,
+      isError: false,
+      data: [
+        {
+          shipmentId: 'box',
+          name: '위탁업체',
+          source: 'profile',
+          beforePlan: false,
+        },
+      ],
+    });
+    show('planned', history);
+
+    const current = screen.getByRole('region', { name: '지금 쓸 송장' });
+    expect(current.textContent).toContain('보내는 분위탁업체(배송 프로필)');
+    expect(mockSenderPreview).toHaveBeenLastCalledWith(['box']);
   });
 
   it('배치에 넣기 전이면 이 상자 출고 준비로 잇는다', () => {

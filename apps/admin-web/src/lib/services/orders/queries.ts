@@ -184,6 +184,22 @@ useLoadMoreOutboundPreparation.permission = [
   'fulfillment.shipment.read',
 ] satisfies PermissionRequirement;
 
+/** 송장에 찍힐 보내는 분 — 서버의 송장 조립 판정. 화면은 화주 이름이나 프로필 목록으로 추측하지 않는다 */
+export const useWaybillSenderPreview = (
+  shipmentIds: readonly string[],
+  options: { enabled?: boolean } = {}
+) => {
+  return useQuery({
+    queryKey: orderQueryKeys.waybillSenderPreview(shipmentIds),
+    queryFn: () => orders.waybills.senderPreview(shipmentIds),
+    enabled: shipmentIds.length > 0 && (options.enabled ?? true),
+    staleTime: 0,
+  });
+};
+useWaybillSenderPreview.permission = [
+  'fulfillment.shipment.read',
+] satisfies PermissionRequirement;
+
 export const useOutboundBatchesV2 = (query: OutboundBatchV2ListQuery = {}) => {
   return useQuery({
     queryKey: orderQueryKeys.outboundBatchesV2(query),

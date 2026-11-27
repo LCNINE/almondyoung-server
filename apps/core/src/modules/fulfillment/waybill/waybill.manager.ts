@@ -8,12 +8,12 @@ import { HANJIN_CONFIG } from './waybill.tokens';
 import type { HanjinConfig } from './carrier/hanjin/hanjin.config';
 import type { CarrierCode } from './carrier/carrier-gateway.interface';
 import { CarrierGatewayRegistry } from './carrier/carrier-gateway.registry';
-import { assembleWaybillRequest, parseRecipient } from './waybill-request.assembler';
+import { assembleWaybillRequest, parseRecipient, senderPreviewOf } from './waybill-request.assembler';
 import { WaybillIssueMachine } from './waybill-issue.machine';
 import { WaybillReader } from './waybill.reader';
 import { WaybillRepository } from './waybill.repository';
 import { WAYBILL, WAYBILL_DISPATCHABLE_STATUSES } from './waybill.constants';
-import type { BatchResultItem, WaybillRow } from './waybill.types';
+import type { BatchResultItem, SenderPreview, WaybillRow } from './waybill.types';
 import { warehouseIdOf } from '../shipment/shipment-owner';
 import { resolveOperationReason } from '../shipment/shipment-operation-reasons';
 import { transitionShipments } from '../shipment/shipment-lifecycle';
@@ -149,6 +149,13 @@ export class WaybillManager {
   // 원래 멱등 키를 잃은 호출자(다른 PC·저장소 삭제)가 멈춘 활성 행(pending/allocated)을 이어 간다.
   // 같은 키 replay 와 같은 일이다 — replay 도 저장된 행을 drive 로 다시 태운다. drive 는 CAS 전이라 겹쳐 돌아도
   // 이중 등록은 없다(이 성질은 같은 키로 두 탭이 동시에 부를 때도 이미 기대고 있다).
+  /** 발급 전 보내는 분 미리보기. 출고 준비·상자 상세가 한진으로 발급할 때 찍힐 이름을 발급과 같은 판정으로 보여 준다 */
+  async previewSenders(shipmentIds: readonly string[]): Promise<SenderPreview[]> {
+    const configured = !!this.registry.get('HANJIN')?.isConfigured();
+    const inputs = await this.dbService.run((trx) => this.reader.loadSenderPreviewInputs(trx, shipmentIds));
+    return inputs.map((input) => senderPreviewOf(input, this.config, configured));
+  }
+
   // 행이 지금 상자 내용과 다르면 이어 가는 순간 옛 주소로 등록된다 — 그때는 운영자에게 넘긴다(abandon 후 재발급).
   // 활성 행이 없으면 null — 호출자가 새로 발급한다. carrier HTTP 때문에 tx? 를 받지 않는다.
   async resumeActive(shipmentId: string, opts: IssueOpts): Promise<WaybillRow | null> {

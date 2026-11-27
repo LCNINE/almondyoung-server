@@ -1,14 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import { formatInTimeZone } from 'date-fns-tz';
-import { and, asc, desc, eq, gt, notInArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, notInArray, sql } from 'drizzle-orm';
 import { DbService, InjectTypedDb } from '@app/db';
 import { NotFoundError } from '@app/shared';
 import { DbTx, inventorySchema, inventoryTables } from '../../inventory/schema/inventory.schema';
 import { canonicalFulfillmentRequestHash } from '../services/fulfillment-command.service';
 import { WAYBILL, WAYBILL_TERMINAL_STATUSES } from './waybill.constants';
-import type { IssueContext, LabelAllocation, ProfileSender, WaybillRow } from './waybill.types';
+import type { IssueContext, LabelAllocation, ProfileSender, SenderPreviewInput, WaybillRow } from './waybill.types';
 import { profileSenderOf } from './waybill-request.assembler';
 import { warehouseIdOf } from '../shipment/shipment-owner';
+import { compatibleShippingProfileId } from '../services/shipping-profile';
 import { labelLocationCode, labelSkuNameOf } from './label/label-items';
 
 const W = inventoryTables.waybills;
@@ -104,6 +105,78 @@ export class WaybillReader {
       orderNos: [...new Set(rows.flatMap((r) => labelOrderNoOf(r) ?? []))],
       profileSender: await this.loadProfileSender(trx, shipment.shippingProfileId),
     };
+  }
+
+  /**
+   * 발급 전 보내는 분 미리보기 재료. 발급이 보는 곳을 그대로 본다 — 활성 송장이 있으면 그 행의 sender_snapshot,
+   * 없으면 상자의 배송 프로필. 확정 전(draft) 상자는 출고 준비의 확정(planMany)처럼 담긴 SKU 의 배송 프로필로 정한다
+   */
+  async loadSenderPreviewInputs(trx: DbTx, shipmentIds: readonly string[]): Promise<SenderPreviewInput[]> {
+    const S = inventoryTables.shipments;
+    const L = inventoryTables.shipmentLines;
+    const ids = [...new Set(shipmentIds)];
+    if (!ids.length) return [];
+
+    const boxes = await trx
+      .select({ id: S.id, status: S.status, shippingProfileId: S.shippingProfileId })
+      .from(S)
+      .where(inArray(S.id, ids));
+    const actives = await trx
+      .select({ shipmentId: W.shipmentId, source: W.source, status: W.status, senderSnapshot: W.senderSnapshot })
+      .from(W)
+      .where(and(inArray(W.shipmentId, ids), notInArray(W.status, [...WAYBILL_TERMINAL_STATUSES])));
+    const draftIds = boxes.filter((box) => box.status === 'draft').map((box) => box.id);
+    const draftLines = draftIds.length
+      ? await trx
+          .select({ shipmentId: L.shipmentId, profileId: inventoryTables.skus.deliveryProfileId })
+          .from(L)
+          .innerJoin(inventoryTables.skus, eq(inventoryTables.skus.id, L.skuId))
+          .where(inArray(L.shipmentId, draftIds))
+      : [];
+
+    const profileIdOf = new Map<string, string | null>();
+    for (const box of boxes) {
+      profileIdOf.set(
+        box.id,
+        box.status === 'draft'
+          ? compatibleShippingProfileId(
+              draftLines.filter((line) => line.shipmentId === box.id).map((line) => line.profileId),
+            )
+          : box.shippingProfileId,
+      );
+    }
+    const profileIds = [...new Set([...profileIdOf.values()].filter((id): id is string => !!id))];
+    const P = inventoryTables.deliveryProfiles;
+    const profiles = profileIds.length
+      ? await trx
+          .select({ id: P.id, sender: P.senderSnapshot, origin: P.originAddressSnapshot })
+          .from(P)
+          .where(inArray(P.id, profileIds))
+      : [];
+
+    return ids.map((shipmentId) => {
+      const box = boxes.find((row) => row.id === shipmentId);
+      if (!box) {
+        return { shipmentId, found: false, beforePlan: false, profileIncompatible: false, profileSender: null };
+      }
+      const profileId = profileIdOf.get(shipmentId) ?? null;
+      const profile = profiles.find((row) => row.id === profileId);
+      const active = actives.find((row) => row.shipmentId === shipmentId);
+      return {
+        shipmentId,
+        found: true,
+        beforePlan: box.status === 'draft',
+        profileIncompatible: box.status === 'draft' && profileId === null,
+        ...(active
+          ? {
+              storedSender: active.senderSnapshot,
+              manualWaybill: active.source === 'manual',
+              activeStatus: active.status,
+            }
+          : {}),
+        profileSender: profile ? profileSenderOf(profile.sender, profile.origin) : null,
+      };
+    });
   }
 
   async getActiveWaybill(trx: DbTx, shipmentId: string): Promise<WaybillRow | undefined> {

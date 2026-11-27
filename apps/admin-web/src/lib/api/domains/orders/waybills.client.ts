@@ -14,9 +14,12 @@ import type {
   IssueBatchWaybillRequest,
   VoidWaybillRequest,
   AbandonWaybillRequest,
+  WaybillSenderPreview,
 } from '@/lib/types/dto/fulfillment';
 
 const BASE = ALMONDYOUNG_API_BASE_URL;
+// 서버가 한 번에 받는 상자 수
+const SENDER_PREVIEW_CHUNK = 100;
 const idem = (idempotencyKey: string) => ({
   headers: { 'Idempotency-Key': idempotencyKey },
 });
@@ -98,6 +101,24 @@ export const waybillsClient = {
       idem(idempotencyKey)
     );
     return res.data;
+  },
+
+  // 읽기다. 고른 상자가 많아 본문으로 보낸다 — 서버 한도에 맞춰 나눠 묻는다
+  senderPreview: async (
+    shipmentIds: readonly string[]
+  ): Promise<WaybillSenderPreview[]> => {
+    const chunks: string[][] = [];
+    for (let i = 0; i < shipmentIds.length; i += SENDER_PREVIEW_CHUNK) {
+      chunks.push(shipmentIds.slice(i, i + SENDER_PREVIEW_CHUNK));
+    }
+    const results = await Promise.all(
+      chunks.map((ids) =>
+        client.post<WaybillSenderPreview[]>(`${BASE}/waybills/sender-preview`, {
+          shipmentIds: ids,
+        })
+      )
+    );
+    return results.flatMap((res) => res.data);
   },
 
   getActive: async (shipmentId: string): Promise<WaybillResponse> => {

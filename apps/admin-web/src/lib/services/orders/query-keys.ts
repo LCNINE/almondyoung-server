@@ -50,6 +50,11 @@ export const orderQueryKeys = {
   fulfillmentShipments: (id: string) =>
     ['fulfillments', id, 'shipments'] as const,
   shipment: (id: string) => ['shipments', id] as const,
+  // 상자 하나면 상자 키 아래에 둬서 상자를 다시 읽을 때 함께 새로 묻는다
+  waybillSenderPreview: (ids: readonly string[]) =>
+    ids.length === 1
+      ? (['shipments', ids[0], 'sender-preview'] as const)
+      : (['shipments', 'sender-preview', [...ids].sort()] as const),
   stockPriority: (id: string) => ['stock-priority', id] as const,
   fulfillmentOperation: (id: string) => ['fulfillment-operations', id] as const,
   fulfillmentRequestOutcome: (commandType: string, idempotencyKey: string) =>

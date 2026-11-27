@@ -19,6 +19,8 @@ import {
   IssueWaybillDto,
   ReissueWaybillDto,
   RegisterManualWaybillDto,
+  SenderPreviewDto,
+  SenderPreviewRequestDto,
   VoidWaybillDto,
   WaybillResponseDto,
   type WaybillActor,
@@ -129,6 +131,15 @@ export class WaybillController {
   @ApiOkResponse({ type: WaybillResponseDto })
   active(@Param('shipmentId') shipmentId: string) {
     return this.waybills.getActiveWaybill(shipmentId);
+  }
+
+  // 읽기다. 고른 상자가 많아 주소창 대신 본문으로 받는다
+  @RequirePermission('fulfillment.shipment.read')
+  @Post('waybills/sender-preview')
+  @HttpCode(HttpStatus.OK)
+  @ApiOkResponse({ type: SenderPreviewDto, isArray: true })
+  senderPreview(@Body() dto: SenderPreviewRequestDto) {
+    return this.waybills.previewSenders(dto.shipmentIds);
   }
 
   private actor(user: AuthenticatedUser | undefined): WaybillActor {
