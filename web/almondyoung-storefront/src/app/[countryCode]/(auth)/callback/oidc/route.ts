@@ -6,7 +6,17 @@ import accountJa from "@/i18n/messages/ja/account.json"
 import accountKo from "@/i18n/messages/ko/account.json"
 import { oidcCallback } from "@/lib/api/medusa/sso"
 import { settleSmsRef } from "@/lib/sms-ref/sms-ref"
+import {
+  describeIssuedAccess,
+  describeSentSession,
+} from "@/lib/auth/session-snapshot"
+import { createWebLogger } from "@packages/web-observability"
 import { countryCodeToLocale } from "@/lib/utils/locale-path"
+
+const logger = createWebLogger({
+  component: "storefront.oidc-callback",
+  route: "/[countryCode]/callback/oidc",
+})
 
 // OIDC 콜백 처리. Route Handler 로 두는 이유:
 // page.tsx (Server Component) 에서 oidcCallback 을 직접 await 하면 Next.js 가 server-action 컨텍스트를
@@ -55,6 +65,15 @@ export async function GET(
   if (!result.success) {
     return renderError(result.error)
   }
+
+  // 로그인 직후 다음 요청에 이 쿠키가 실렸는지 restore_token.failed 와 맞춰 보려고 남긴다
+  logger.info("storefront.oidc_callback.completed", {
+    attributes: {
+      issued_access: describeIssuedAccess(result.accessToken),
+      user_agent: req.headers.get("user-agent") ?? "",
+      ...describeSentSession(req.headers.get("cookie")),
+    },
+  })
 
   // NextResponse.redirect() 대신 replace()를 사용해 콜백 URL이 브라우저 history에 남지 않게 한다.
   // Safari back-swipe 등으로 콜백 URL에 재진입하면 이미 consumed된 code가 재제출되어
