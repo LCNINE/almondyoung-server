@@ -1,4 +1,8 @@
-import { senderGroupsOf, senderLineOf } from './sender-preview-model';
+import {
+  reissueSenderText,
+  senderGroupsOf,
+  senderLineOf,
+} from './sender-preview-model';
 import type { WaybillSenderPreview } from '@/lib/types/dto/fulfillment';
 
 const preview = (
@@ -73,9 +77,82 @@ describe('senderGroupsOf', () => {
     ]);
   });
 
+  it('이름이 같아도 전화나 출고지가 다르면 다른 묶음으로 센다', () => {
+    const origin = { zip: '1', baseAddress: '주소', detailAddress: '' };
+    const groups = senderGroupsOf(
+      ['a', 'b', 'c'],
+      [
+        preview({
+          shipmentId: 'a',
+          phone: '02-1',
+          phoneSource: 'profile',
+          origin,
+          originSource: 'profile',
+        }),
+        preview({
+          shipmentId: 'b',
+          phone: '02-1',
+          phoneSource: 'profile',
+          origin,
+          originSource: 'profile',
+        }),
+        preview({
+          shipmentId: 'c',
+          phone: '02-9',
+          phoneSource: 'default',
+          origin,
+          originSource: 'profile',
+        }),
+      ]
+    );
+
+    expect(groups.map((g) => [g.phone.text, g.origin.text, g.count])).toEqual([
+      ['02-1', '(1) 주소', 2],
+      ['02-9', '(1) 주소', 1],
+    ]);
+  });
+
   it('조회 실패면 전부 확인 불가', () => {
     expect(senderGroupsOf(['a', 'b'], undefined)).toEqual([
       expect.objectContaining({ unknown: true, count: 2 }),
     ]);
+  });
+});
+
+describe('reissueSenderText', () => {
+  it('바뀌는 칸마다 그 칸의 출처를 적는다 — 이름은 프로필, 전화는 기본값일 수 있다', () => {
+    const origin = {
+      zip: '1',
+      baseAddress: '주소',
+      detailAddress: '상세주소 없음',
+    };
+    expect(
+      reissueSenderText(
+        preview({
+          shipmentId: 'a',
+          name: '옛 이름',
+          source: 'waybill',
+          phone: '02-1',
+          phoneSource: 'waybill',
+          origin,
+          originSource: 'waybill',
+          reissue: {
+            name: '위탁업체',
+            source: 'profile',
+            phone: '02-9',
+            phoneSource: 'default',
+            origin,
+            originSource: 'default',
+          },
+        })
+      )
+    ).toBe(
+      '재발급하면 이름 위탁업체(배송 프로필), 전화 02-9(기본값으로 대체)로 바뀌어요'
+    );
+  });
+
+  it('재발급 정보가 없으면 아무것도 알리지 않는다', () => {
+    expect(reissueSenderText(undefined)).toBeNull();
+    expect(reissueSenderText(preview({ shipmentId: 'a' }))).toBeNull();
   });
 });

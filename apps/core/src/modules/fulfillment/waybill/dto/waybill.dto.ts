@@ -224,12 +224,38 @@ export class SenderPreviewRequestDto {
   shipmentIds: string[];
 }
 
-export class SenderPreviewReissueDto {
+const SENDER_FIELD_SOURCES = ['waybill', 'profile', 'default', 'unknown'] as const;
+type SenderFieldSource = (typeof SENDER_FIELD_SOURCES)[number];
+
+export class SenderPreviewOriginDto {
   @ApiProperty()
-  name: string;
+  zip: string;
+
+  @ApiProperty()
+  baseAddress: string;
+
+  @ApiProperty()
+  detailAddress: string;
+}
+
+export class SenderPreviewReissueDto {
+  @ApiProperty({ nullable: true, type: String })
+  name: string | null;
 
   @ApiProperty({ enum: ['profile', 'default'] })
   source: 'profile' | 'default';
+
+  @ApiProperty({ nullable: true, type: String })
+  phone: string | null;
+
+  @ApiProperty({ enum: SENDER_FIELD_SOURCES })
+  phoneSource: SenderFieldSource;
+
+  @ApiProperty({ nullable: true, type: () => SenderPreviewOriginDto })
+  origin: SenderPreviewOriginDto | null;
+
+  @ApiProperty({ enum: SENDER_FIELD_SOURCES })
+  originSource: SenderFieldSource;
 }
 
 export class SenderPreviewDto {
@@ -244,6 +270,22 @@ export class SenderPreviewDto {
     description: 'waybill=이미 만든 송장 행, profile=상자의 배송 프로필, default=택배사 기본 송화인, unknown=확인 불가',
   })
   source: 'waybill' | 'profile' | 'default' | 'unknown';
+
+  @ApiProperty({ nullable: true, type: String, description: '송장에 찍힐 보내는 분 전화. 확인할 수 없으면 null' })
+  phone: string | null;
+
+  @ApiProperty({ enum: SENDER_FIELD_SOURCES, description: '전화의 출처 — 프로필 전화가 비면 기본값으로 메운다' })
+  phoneSource: SenderFieldSource;
+
+  @ApiProperty({
+    nullable: true,
+    type: () => SenderPreviewOriginDto,
+    description: '보내는 분 주소 = 출고지. 배송 프로필의 반품지는 송장에 실리지 않아 여기 없다',
+  })
+  origin: SenderPreviewOriginDto | null;
+
+  @ApiProperty({ enum: SENDER_FIELD_SOURCES, description: '주소의 출처 — 프로필 출고지가 비면 기본값 통째' })
+  originSource: SenderFieldSource;
 
   @ApiProperty({ description: '확정 전 상자 — 확정 때 담긴 SKU 의 배송 프로필로 다시 정해진다' })
   beforePlan: boolean;
