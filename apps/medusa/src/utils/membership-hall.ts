@@ -145,9 +145,36 @@ const iso = (value: Date | string) => (value instanceof Date ? value.toISOString
  * (core 의 membership_price 는 NOT NULL 이라 값 유무로는 못 가른다). 멤버십 특가 = 진행 중 세일의
  * 멤버십 전용 옵션이 있는 상품. 결제에 실제로 쓰이는 가격표를 읽으므로 화면과 결제가 어긋나지 않는다.
  */
-export async function loadMembershipHallRows(
+type MembershipHallRowsParams = { saleListIds: string[]; saleVariantIds: string[]; excludeMembersOnly: boolean };
+
+const ROWS_TTL_MS = 60_000;
+const rowsCache = new Map<string, { expiresAt: number; rows: Promise<MembershipHallRow[]> }>();
+
+// ponytail: 태스크 메모리 캐시라 태스크마다 따로 든다. 가격 변경은 최대 60초 늦게 보인다.
+export function loadMembershipHallRows(
   container: MedusaContainer,
-  params: { saleListIds: string[]; saleVariantIds: string[]; excludeMembersOnly: boolean },
+  params: MembershipHallRowsParams,
+): Promise<MembershipHallRow[]> {
+  const key = JSON.stringify([[...params.saleListIds].sort(), [...params.saleVariantIds].sort(), params.excludeMembersOnly]);
+  const now = Date.now();
+  const hit = rowsCache.get(key);
+
+  if (hit && hit.expiresAt > now) return hit.rows;
+
+  for (const [k, v] of rowsCache) {
+    if (v.expiresAt <= now) rowsCache.delete(k);
+  }
+
+  const rows = queryMembershipHallRows(container, params);
+  rowsCache.set(key, { expiresAt: now + ROWS_TTL_MS, rows });
+  rows.catch(() => rowsCache.delete(key));
+
+  return rows;
+}
+
+async function queryMembershipHallRows(
+  container: MedusaContainer,
+  params: MembershipHallRowsParams,
 ): Promise<MembershipHallRow[]> {
   const knex = container.resolve(ContainerRegistrationKeys.PG_CONNECTION);
   const hasSale = params.saleListIds.length > 0 && params.saleVariantIds.length > 0;
