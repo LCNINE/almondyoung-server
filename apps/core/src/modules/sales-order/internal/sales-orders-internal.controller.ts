@@ -15,6 +15,8 @@ import {
   LineReservationStatesResponse,
 } from './line-reservation-state.dto';
 import { ReleaseCustomerReturnPickupDto } from './dto/release-customer-return-pickup.dto';
+import { StoreSalesOrdersService } from '../services/store-sales-orders.service';
+import { SelfCancelableRequestDto, SelfCancelableResponse } from './self-cancelable.dto';
 
 /**
  * 서비스 간 호출 전용 판매주문 라우트 (#1016 45번). 호출자는 channel-adapter 의 채널 대사다.
@@ -29,12 +31,22 @@ export class SalesOrdersInternalController {
     private readonly returnEligibilityService: ReturnEligibilityService,
     private readonly customerReturnService: CustomerReturnService,
     private readonly lineReservationStateService: LineReservationStateService,
+    private readonly storeSalesOrders: StoreSalesOrdersService,
   ) {}
 
   @Post('lookup')
   @HttpCode(HttpStatus.OK)
   async lookup(@Body() dto: SalesOrderLookupRequestDto): Promise<SalesOrderLookupResponse> {
     return { orders: await this.lookupService.lookup(dto.salesChannel, dto.orders) };
+  }
+
+  /** 함께 배송: Medusa 가 고른 부모 후보 중 고객이 아직 직접 취소할 수 있는 주문만 돌려준다 */
+  @Post('self-cancelable')
+  @HttpCode(HttpStatus.OK)
+  async selfCancelable(@Body() dto: SelfCancelableRequestDto): Promise<SelfCancelableResponse> {
+    return {
+      channelOrderIds: await this.storeSalesOrders.selfCancelableChannelOrderIds(dto.customerId, dto.channelOrderIds),
+    };
   }
 
   /** K8 PR3 — Medusa 반품 요청이 줄마다 배송완료 판매 단위·마지막 배송완료 시각을 묻는다. 반품 차감은 싣지 않는다. */

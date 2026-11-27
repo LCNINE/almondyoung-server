@@ -8,6 +8,8 @@ import type { CustomerReturnService } from '../customer-return/customer-return.s
 import type { LineReservationStateService } from './line-reservation-state.service';
 import { LineReservationCandidatesRequestDto, LineReservationStatesRequestDto } from './line-reservation-state.dto';
 import { ReleaseCustomerReturnPickupDto } from './dto/release-customer-return-pickup.dto';
+import type { StoreSalesOrdersService } from '../services/store-sales-orders.service';
+import { SelfCancelableRequestDto } from './self-cancelable.dto';
 
 const pipe = new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: true });
 const validate = (body: unknown): Promise<SalesOrderLookupRequestDto> =>
@@ -25,6 +27,7 @@ describe('SalesOrdersInternalController', () => {
       {} as unknown as ReturnEligibilityService,
       {} as unknown as CustomerReturnService,
       {} as unknown as LineReservationStateService,
+      {} as unknown as StoreSalesOrdersService,
     );
     const dto = await validate({ salesChannel: 'medusa', orders: [{ externalOrderId: 'order_1' }] });
 
@@ -59,6 +62,7 @@ describe('SalesOrdersInternalController', () => {
         { read } as unknown as ReturnEligibilityService,
         {} as unknown as CustomerReturnService,
         {} as unknown as LineReservationStateService,
+        {} as unknown as StoreSalesOrdersService,
       );
       const dto = await pipe.transform(
         { salesChannel: 'medusa', externalOrderId: 'order_1' },
@@ -90,6 +94,7 @@ describe('SalesOrdersInternalController', () => {
         {} as unknown as ReturnEligibilityService,
         { releasePickup } as unknown as CustomerReturnService,
         {} as unknown as LineReservationStateService,
+        {} as unknown as StoreSalesOrdersService,
       );
       const dto = await validateRelease({ channelReturnId: 'return_01' });
 
@@ -153,6 +158,7 @@ describe('SalesOrdersInternalController', () => {
         {} as unknown as ReturnEligibilityService,
         {} as unknown as CustomerReturnService,
         { readStates, readCandidates } as unknown as LineReservationStateService,
+        {} as unknown as StoreSalesOrdersService,
       );
       await controller.lineReservationStates({ salesChannel: 'medusa', channelOrderItemIds: ['a'] });
       expect(readStates).toHaveBeenCalledWith('medusa', ['a']);
@@ -160,5 +166,38 @@ describe('SalesOrdersInternalController', () => {
       await controller.lineReservationCandidates({ ...dto });
       expect(readCandidates).toHaveBeenCalledWith(dto);
     });
+  });
+});
+
+describe('SalesOrdersInternalController.selfCancelable', () => {
+  const customerId = '0190a3b2-1111-7000-8000-000000000001';
+
+  async function validateSelfCancelable(body: unknown): Promise<SelfCancelableRequestDto> {
+    return new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }).transform(body, {
+      type: 'body',
+      metatype: SelfCancelableRequestDto,
+    });
+  }
+
+  it('서비스 결과를 channelOrderIds 로 감싼다', async () => {
+    const selfCancelableChannelOrderIds = jest.fn().mockResolvedValue(['order_1']);
+    const controller = new SalesOrdersInternalController(
+      {} as unknown as SalesOrderLookupService,
+      {} as unknown as ReturnEligibilityService,
+      {} as unknown as CustomerReturnService,
+      {} as unknown as LineReservationStateService,
+      { selfCancelableChannelOrderIds } as unknown as StoreSalesOrdersService,
+    );
+    const dto = await validateSelfCancelable({ customerId, channelOrderIds: ['order_1', 'order_2'] });
+
+    await expect(controller.selfCancelable(dto)).resolves.toEqual({ channelOrderIds: ['order_1'] });
+    expect(selfCancelableChannelOrderIds).toHaveBeenCalledWith(customerId, ['order_1', 'order_2']);
+  });
+
+  it('50건을 넘거나 고객 id 가 uuid 가 아니면 400', async () => {
+    const many = Array.from({ length: 51 }, (_, i) => `o${i}`);
+
+    await expect(validateSelfCancelable({ customerId, channelOrderIds: many })).rejects.toThrow();
+    await expect(validateSelfCancelable({ customerId: 'cus_1', channelOrderIds: ['o1'] })).rejects.toThrow();
   });
 });

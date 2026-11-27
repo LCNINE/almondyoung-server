@@ -341,6 +341,15 @@ export class StoreSalesOrdersService {
     );
   }
 
+  /** 함께 배송 부모 후보 판정: 고객이 아직 직접 취소할 수 있는 주문만 남긴다 */
+  async selfCancelableChannelOrderIds(customerId: string, channelOrderIds: string[]): Promise<string[]> {
+    if (channelOrderIds.length === 0) return [];
+
+    const views = await this.getActionsByChannelOrderBatch(channelOrderIds, customerId);
+
+    return views.filter((v) => v.availableActions.includes('cancel')).map((v) => v.channelOrderId);
+  }
+
   async cancelRequestByChannelOrder(
     channelOrderId: string,
     customerId: string,
