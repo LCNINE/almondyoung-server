@@ -14,6 +14,7 @@ const mockIssue = jest.fn<
   Promise<Pick<WaybillResponse, 'status' | 'trackingNo'>>,
   [unknown]
 >();
+const mockResume = jest.fn();
 let mockKey = 0;
 let mockAllowed = true;
 
@@ -25,6 +26,10 @@ jest.mock('@/lib/services/orders', () => ({
   }),
   useAbandonWaybill: Object.assign(
     () => ({ mutateAsync: mockAbandon, isPending: false }),
+    { permission: ['fulfillment.warehouse.operate'] }
+  ),
+  useResumeWaybill: Object.assign(
+    () => ({ mutateAsync: mockResume, isPending: false }),
     { permission: ['fulfillment.warehouse.operate'] }
   ),
   useIssueWaybill: Object.assign(
@@ -66,6 +71,7 @@ beforeEach(() => {
   mockAbandon.mockReset();
   jest.mocked(toast.success).mockClear();
   mockIssue.mockReset();
+  mockResume.mockReset();
   mockKey = 0;
   mockAllowed = true;
 });
@@ -79,13 +85,128 @@ it('멈춘 송장이 없으면 아무것도 그리지 않는다', () => {
   expect(container.textContent).toBe('');
 });
 
-it('권한이 없으면 경고만 보이고 중단 버튼은 없다', () => {
+it('권한이 없으면 경고만 보이고 버튼은 없다', () => {
   mockAllowed = false;
   render(<StuckWaybillPanel shipment={shipment([waybill({})])} />);
   expect(screen.getByText('송장 발급이 멈춰 있어요')).toBeTruthy();
+  expect(screen.queryByRole('button')).toBeNull();
+});
+
+it('내용이 그대로인 allocated 는 중단 없이 같은 번호로 이어서 발급한다', async () => {
+  const user = userEvent.setup();
+  mockResume.mockResolvedValue([
+    { shipmentId: 'ship-1', status: 'registered', trackingNo: '510012345678' },
+  ]);
+  render(<StuckWaybillPanel shipment={shipment([waybill({})])} />);
+
   expect(
     screen.queryByRole('button', { name: '중단하고 다시 발급' })
   ).toBeNull();
+  await user.click(
+    screen.getByRole('button', {
+      name: '같은 번호로 이어서 발급 (510012345678)',
+    })
+  );
+  expect(mockResume).toHaveBeenCalledWith({ shipmentId: 'ship-1' });
+  expect(mockAbandon).not.toHaveBeenCalled();
+  expect(mockIssue).not.toHaveBeenCalled();
+  await waitFor(() =>
+    expect(toast.success).toHaveBeenCalledWith(
+      '송장 발급을 마쳤어요 (510012345678).'
+    )
+  );
+});
+
+it('이어 가도 한진 응답을 또 못 받으면 성공으로 보이지 않는다', async () => {
+  const user = userEvent.setup();
+  mockResume.mockResolvedValue([
+    { shipmentId: 'ship-1', status: 'allocated', trackingNo: '510012345678' },
+  ]);
+  render(<StuckWaybillPanel shipment={shipment([waybill({})])} />);
+  await user.click(
+    screen.getByRole('button', { name: /같은 번호로 이어서 발급/ })
+  );
+  expect(
+    await screen.findByText(
+      '아직 한진 응답을 확인하지 못했어요. 잠시 뒤 다시 눌러 주세요.'
+    )
+  ).toBeTruthy();
+  expect(toast.success).not.toHaveBeenCalled();
+  expect(
+    screen.queryByRole('button', { name: '중단하고 다시 발급' })
+  ).toBeNull();
+});
+
+it('서버가 받는 분 변경 등으로 이어 가기를 거절하면 그때 중단을 연다', async () => {
+  const user = userEvent.setup();
+  mockResume.mockResolvedValue([
+    {
+      shipmentId: 'ship-1',
+      status: 'failed',
+      trackingNo: null,
+      code: 'WAYBILL_NEEDS_REVIEW',
+      reason: '멈춘 송장이 있어요',
+    },
+  ]);
+  render(<StuckWaybillPanel shipment={shipment([waybill({})])} />);
+  await user.click(
+    screen.getByRole('button', { name: /같은 번호로 이어서 발급/ })
+  );
+  expect(await screen.findByText(/이어 갈 수 없어요/)).toBeTruthy();
+  expect(
+    screen.queryByRole('button', { name: /같은 번호로 이어서 발급/ })
+  ).toBeNull();
+  await user.click(screen.getByRole('button', { name: '중단하고 다시 발급' }));
+  expect(screen.getByText(/이미 등록됐을 수 있어요/)).toBeTruthy();
+});
+
+it('중단을 서버가 «같은 번호로 이어 가라»로 거절하면 이어 가기를 다시 연다', async () => {
+  const user = userEvent.setup();
+  mockResume.mockResolvedValue([
+    {
+      shipmentId: 'ship-1',
+      status: 'failed',
+      trackingNo: null,
+      code: 'WAYBILL_NEEDS_REVIEW',
+    },
+  ]);
+  mockAbandon.mockRejectedValue({
+    response: {
+      status: 409,
+      data: {
+        code: 'CONFLICT',
+        message:
+          'WAYBILL_ABANDON_NOT_ALLOWED: wb-1 is allocated and resumes with the same number',
+      },
+    },
+  });
+  render(<StuckWaybillPanel shipment={shipment([waybill({})])} />);
+  await user.click(
+    screen.getByRole('button', { name: /같은 번호로 이어서 발급/ })
+  );
+  await user.click(
+    await screen.findByRole('button', { name: '중단하고 다시 발급' })
+  );
+  await user.type(screen.getByLabelText('중단 사유'), '멈춤');
+  await user.click(screen.getByRole('button', { name: '발급 중단' }));
+
+  expect(
+    await screen.findByRole('button', { name: /같은 번호로 이어서 발급/ })
+  ).toBeTruthy();
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(screen.getByText(/«같은 번호로 이어서 발급»을 누르세요/)).toBeTruthy();
+});
+
+it('pending 은 이어 가기와 중단을 함께 둔다', () => {
+  render(
+    <StuckWaybillPanel
+      shipment={shipment([waybill({ status: 'pending', trackingNo: null })])}
+    />
+  );
+  expect(screen.getByRole('button', { name: '이어서 발급' })).toBeTruthy();
+  expect(
+    screen.getByRole('button', { name: '중단하고 다시 발급' })
+  ).toBeTruthy();
 });
 
 it('위험을 읽고 사유를 적어 중단한 뒤 같은 대화상자에서 새로 발급한다', async () => {
@@ -107,7 +228,12 @@ it('위험을 읽고 사유를 적어 중단한 뒤 같은 대화상자에서 �
   await user.click(screen.getByRole('button', { name: '중단하고 다시 발급' }));
 
   expect(
-    screen.getByText(/한진 송장번호 510012345678는 받았지만/)
+    screen.queryByRole('button', { name: /같은 번호로 이어서 발급/ })
+  ).toBeNull();
+  expect(
+    screen.getByText(
+      /한진 송장번호 510012345678로 한진에 주문이 이미 등록됐을 수 있어요/
+    )
   ).toBeTruthy();
   expect(screen.getByText('register unknown_outcome')).toBeTruthy();
 
@@ -187,7 +313,7 @@ it('새 발급이 또 끝나지 않으면 성공으로 보이지 않고 같은 �
   const user = userEvent.setup();
   mockAbandon.mockResolvedValue({});
   mockIssue.mockResolvedValue({ status: 'pending', trackingNo: null });
-  render(<StuckWaybillPanel shipment={shipment([waybill({})])} />);
+  render(<StuckWaybillPanel shipment={shipment([waybill({})], 4)} />);
   await user.click(screen.getByRole('button', { name: '중단하고 다시 발급' }));
   await user.type(screen.getByLabelText('중단 사유'), '멈춤');
   await user.click(screen.getByRole('button', { name: '발급 중단' }));

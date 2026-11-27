@@ -385,8 +385,61 @@ describeIfDb('WaybillManager.issueForShipment (DB integration)', () => {
       return { seed, stuck };
     }
 
-    it('멈춘 allocated 를 끊으면 슬롯이 풀려 새 번호로 발급된다', async () => {
+    // 등록 응답만 잃었을 수 있다 — 끊고 새로 받으면 같은 상자의 주문이 한진에 둘 남는다.
+    it('내용이 그대로인 멈춘 allocated 는 끊지 못하고, 같은 번호로 이어 등록한다', async () => {
       const { seed, stuck } = await stuckAllocated();
+      const registered: string[] = [];
+      const mgr = manager(
+        new CarrierGatewayRegistry([
+          fakeCarrierGateway({
+            allocate: () => Promise.reject(new Error('새 번호를 받으면 안 된다')),
+            register: (waybillNo: string) => {
+              registered.push(waybillNo);
+              return Promise.resolve({ kind: 'already_registered' as const });
+            },
+          }),
+        ]),
+      );
+
+      await expect(mgr.abandon(stuck.id, { reason: '한진 응답 없음' }, `idem-${randomUUID()}`, actor)).rejects.toThrow(
+        /WAYBILL_ABANDON_NOT_ALLOWED: .* resumes with the same number/,
+      );
+
+      const resumed = await mgr.resumeActive(seed.shipmentId, {
+        carrier: 'HANJIN',
+        expectedManifestVersion: seed.manifestVersion,
+      });
+      expect(resumed?.id).toBe(stuck.id);
+      expect(resumed?.status).toBe('registered');
+      expect(resumed?.trackingNo).toBe(stuck.trackingNo);
+      expect(registered).toEqual([stuck.trackingNo]);
+    });
+
+    it('택배사 연동이 비어 이어 갈 수 없는 allocated 는 끊을 수 있다', async () => {
+      const { stuck } = await stuckAllocated();
+      const mgr = manager(new CarrierGatewayRegistry([fakeCarrierGateway({ isConfigured: () => false })]));
+
+      const abandoned = await mgr.abandon(stuck.id, { reason: '연동 꺼짐' }, `idem-${randomUUID()}`, actor);
+      expect(abandoned.status).toBe('abandoned');
+    });
+
+    it('한진에 넣기 전(pending)은 끊고 새 번호로 발급한다', async () => {
+      const seed = await db.transaction((tx) => seedPlannedShipmentForWaybill(tx as never, deps));
+      const stuck = await manager(
+        new CarrierGatewayRegistry([
+          fakeCarrierGateway({
+            allocate: () => {
+              throw new CarrierError('timeout', 'unknown_outcome', {});
+            },
+          }),
+        ]),
+      ).issueForShipment(
+        seed.shipmentId,
+        { carrier: 'HANJIN', expectedManifestVersion: seed.manifestVersion },
+        `idem-${randomUUID()}`,
+        actor,
+      );
+      expect(stuck.status).toBe('pending');
       const mgr = manager(new CarrierGatewayRegistry([fakeCarrierGateway()]));
 
       const abandoned = await mgr.abandon(stuck.id, { reason: '한진 응답 없음' }, `idem-${randomUUID()}`, actor);
@@ -401,7 +454,6 @@ describeIfDb('WaybillManager.issueForShipment (DB integration)', () => {
       );
       expect(fresh.id).not.toBe(stuck.id);
       expect(fresh.status).toBe('registered');
-      expect(fresh.trackingNo).not.toBe(stuck.trackingNo);
     });
 
     it('상자 내용이 바뀌어 이어 갈 수 없는 행(NEEDS_REVIEW)도 끊고 지금 내용으로 발급한다', async () => {
