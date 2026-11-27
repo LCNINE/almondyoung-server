@@ -84,7 +84,11 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
     }
     const res = await fetch(url, { ...options, headers });
     if (!res.ok) {
-      const body = (await res.json().catch(() => ({}))) as { error?: unknown; message?: unknown; retryable?: unknown } | null;
+      const body = (await res.json().catch(() => ({}))) as {
+        error?: unknown;
+        message?: unknown;
+        retryable?: unknown;
+      } | null;
       const walletCode = typeof body?.error === 'string' ? body.error : undefined;
       const message = typeof body?.message === 'string' ? body.message : `Wallet API error ${res.status}: ${path}`;
       const retryable = typeof body?.retryable === 'boolean' ? body.retryable : undefined;
@@ -146,6 +150,9 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
     const medusaSessionId = (data as any)?.session_id as string | undefined;
     if (medusaSessionId) metadata.medusaSessionId = medusaSessionId;
 
+    // 함께 배송 결제: wallet-web 이 무통장·가상계좌를 숨긴다. 완료 검증 훅이 입금 대기 카트를 한 번 더 막는다
+    if (data?.instantOnly === true) metadata.instantOnly = true;
+
     // 지연 승인 표식. wallet 은 이 값이 있는 intent 만 결제창 완료 시 승인을 보류한다.
     if (this.deferredApprovalEnabled) metadata.approvalMode = 'DEFERRED';
 
@@ -206,10 +213,9 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
    */
   private async finalizeDeferredApproval(intentId: string): Promise<string | null> {
     try {
-      const result = await this.walletFetch<{ status: string }>(
-        `/v1/payment-intents/${intentId}/finalize-approval`,
-        { method: 'POST' },
-      );
+      const result = await this.walletFetch<{ status: string }>(`/v1/payment-intents/${intentId}/finalize-approval`, {
+        method: 'POST',
+      });
       return result.status ?? null;
     } catch (err: any) {
       const msg = (err?.message ?? '') as string;
@@ -301,7 +307,12 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
         method: 'POST',
         signal: AbortSignal.timeout(WALLET_REFUND_TIMEOUT_MS),
         ...(idempotencyKey ? { headers: { 'Idempotency-Key': `medusa-refund:${idempotencyKey}` } } : {}),
-        body: JSON.stringify({ amount: refundAmount, reasonCode: 'MEDUSA_REFUND', ...(isManual ? { execution: 'MANUAL' } : {}), ...(kind ? { kind } : {}) }),
+        body: JSON.stringify({
+          amount: refundAmount,
+          reasonCode: 'MEDUSA_REFUND',
+          ...(isManual ? { execution: 'MANUAL' } : {}),
+          ...(kind ? { kind } : {}),
+        }),
       });
     } catch (error) {
       // 영구 거절(retryable: false)만 표지 붙은 NOT_ALLOWED 로 바꾼다 — 그 밖을 바꾸면 다시 불러야 할 실패가 «거절»로 닫힌다

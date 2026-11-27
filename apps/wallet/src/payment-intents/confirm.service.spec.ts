@@ -321,6 +321,17 @@ describe('ConfirmService', () => {
     ).rejects.toMatchObject({ response: { error: 'MEMBERSHIP_REQUIRES_BANK_TRANSFER' } });
   });
 
+  it.each([
+    ['BANK_TRANSFER', undefined],
+    ['TOSS', 'WIDGET'],
+  ] as const)('rejects %s (%s) for an instantOnly intent', async (methodType, tossCheckoutMode) => {
+    const { service } = makeContext({ methodType, intent: { metadata: { instantOnly: true } } });
+
+    await expect(
+      service.confirm('intent-1', { paymentMethodId: 'pm-ext', pointsToApply: 0, tossCheckoutMode }, 'corr-1'),
+    ).rejects.toMatchObject({ response: { error: 'INSTANT_PAYMENT_REQUIRED' } });
+  });
+
   it('allows bank transfer for a MEMBERSHIP_FEE intent', async () => {
     const { service } = makeContext({
       providerActionMode: 'offline-wait',

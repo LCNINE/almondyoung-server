@@ -161,6 +161,18 @@ export class ConfirmService {
       }
     }
 
+    // 함께 배송 결제(instantOnly)는 입금을 기다릴 수 없다 — 무통장·가상계좌(토스 위젯)를 서버에서도 막는다.
+    // wallet-web 이 숨기지만 API 직접 호출로 무통장이나 위젯 결제를 실어 보내는 우회를 차단한다.
+    if (externalAmount > 0 && dto.paymentMethodId && intent.metadata?.instantOnly === true) {
+      const extMethod = await this.resolveExternalMethod(dto.paymentMethodId);
+      if (extMethod.type === 'BANK_TRANSFER' || (extMethod.type === 'TOSS' && dto.tossCheckoutMode === 'WIDGET')) {
+        throw new BadRequestException({
+          error: 'INSTANT_PAYMENT_REQUIRED',
+          message: 'This payment must be paid by an instant method',
+        });
+      }
+    }
+
     // 6. userId check
     if (!intent.userId) {
       throw new BadRequestException({

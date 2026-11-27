@@ -45,6 +45,7 @@ import {
   type CashReceiptState,
 } from '@/components/payment/cash-receipt-card';
 import { BankTransferPending } from '@/components/payment/bank-transfer-pending';
+import { filterExternalMethods, isInstantOnly } from './pay-methods';
 
 interface Props {
   intent: PaymentIntent;
@@ -95,7 +96,10 @@ export function PayForm({
   const isAvailableInRegion = (type: string) => !availableMethodMap || availableMethodMap.has(type);
   // 위젯은 토스 대시보드의 variant 대로 가상계좌까지 그리고 우리가 수단을 뺄 수 없다.
   // 리전이 무통장을 막았으면 위젯을 쓰지 않고 기존 토스 결제창으로 간다 — 위젯 가상계좌가 무통장으로 바뀌어 리전 설정을 우회하지 않게.
-  const tossWidgetConfig = tossWidgetConfigProp && isAvailableInRegion('BANK_TRANSFER') ? tossWidgetConfigProp : null;
+  // 함께 배송 결제는 입금을 기다릴 수 없어 가상계좌를 그리는 위젯을 쓰지 않는다(토스 결제창은 카드만 연다)
+  const instantOnly = isInstantOnly(intent.metadata);
+  const tossWidgetConfig =
+    tossWidgetConfigProp && isAvailableInRegion('BANK_TRANSFER') && !instantOnly ? tossWidgetConfigProp : null;
 
   // 멤버십(MEMBERSHIP_FEE)은 무통장(가상계좌) 결제만 허용한다 — 카드/간편결제 비노출.
   // 무통장은 자동갱신 불가라 멤버십은 1회결제로만 굴러가며, 정기결제(CMS 등)는 추후 별도 경로.
@@ -105,16 +109,17 @@ export function PayForm({
   const widgetCoversBankTransfer =
     !!tossWidgetConfig && !isMembership && methods.some((m) => m.type === 'TOSS' && isAvailableInRegion('TOSS'));
 
-  const externalMethods = methods
-    .filter((m) => m.type !== 'POINTS' && isAvailableInRegion(m.type))
-    .filter((m) => !isMembership || m.type === 'BANK_TRANSFER')
-    .filter((m) => !widgetCoversBankTransfer || m.type !== 'BANK_TRANSFER')
-    .sort((a, b) => {
-      const aOrder = availableMethodMap?.get(a.type)?.sortOrder ?? 0;
-      const bOrder = availableMethodMap?.get(b.type)?.sortOrder ?? 0;
-      if (aOrder !== bOrder) return aOrder - bOrder;
-      return a.type.localeCompare(b.type);
-    });
+  const externalMethods = filterExternalMethods(methods, {
+    isAvailableInRegion,
+    isMembership,
+    widgetCoversBankTransfer,
+    instantOnly,
+  }).sort((a, b) => {
+    const aOrder = availableMethodMap?.get(a.type)?.sortOrder ?? 0;
+    const bOrder = availableMethodMap?.get(b.type)?.sortOrder ?? 0;
+    if (aOrder !== bOrder) return aOrder - bOrder;
+    return a.type.localeCompare(b.type);
+  });
 
   // 포인트는 리전이 POINTS 를 허용할 때만 사용 가능.
   const pointsAllowedInRegion = isAvailableInRegion('POINTS');
