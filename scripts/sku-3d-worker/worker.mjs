@@ -81,7 +81,8 @@ export function finishedFor(iterDir, job, request) {
   try {
     const marker = JSON.parse(readFileSync(path, 'utf8'));
 
-    return marker.kind === job.kind && marker.request === (request ?? '');
+    // 같은 작업의 재시도만 — 실패한 뒤 다시 만들기로 생긴 새 작업이 깨진 결과를 물려받으면 Codex 없이 바로 실패한다
+    return marker.jobId === job.id && marker.kind === job.kind && marker.request === (request ?? '');
   } catch {
     return false;
   }
