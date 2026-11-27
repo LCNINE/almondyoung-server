@@ -454,7 +454,7 @@ type Point = { x: number; y: number }
 const gap = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y)
 
 // 선분 a-b 에서 가장 멀리 떨어진 점이 tolerance 안이면 그 사이 점을 모두 버린다 (Douglas–Peucker)
-function simplify(points: Point[], tolerance: number): Point[] {
+export function simplify(points: Point[], tolerance: number): Point[] {
   if (points.length < 3) return points
   const a = points[0]
   const b = points[points.length - 1]

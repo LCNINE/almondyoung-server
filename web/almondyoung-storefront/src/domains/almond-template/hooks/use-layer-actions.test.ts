@@ -140,7 +140,7 @@ it("연속 클릭을 무시하고 실패하면 히스토리와 레이어를 보�
   expect(actions.mergeDownReason(upper.id)).toBe("")
 })
 
-it("도형끼리는 그림으로 굽지 않고 그룹으로 묶는다", async () => {
+it("겹친 도형끼리는 그림으로 굽지 않고 도형 하나로 합친다", async () => {
   const shape = { ...makeLayer("ellipse", design), name: "원" }
   front = [shape, upper]
   await act(async () => root.unmount())
@@ -148,10 +148,41 @@ it("도형끼리는 그림으로 굽지 않고 그룹으로 묶는다", async ()
   await act(async () => root.render(createElement(Harness)))
   await act(async () => actions.mergeDown(upper.id))
 
+  expect(rasterMergedLayer).not.toHaveBeenCalled()
+  expect(history.design.front).toHaveLength(1)
+  expect(history.design.front[0]).toMatchObject({
+    type: "path",
+    pathClosed: true,
+    fill: upper.fill,
+  })
+})
+
+it("떨어진 도형끼리는 그룹으로 묶는다", async () => {
+  const shape = {
+    ...makeLayer("ellipse", design),
+    name: "원",
+    x: 0,
+    y: 0,
+    width: 1,
+    height: 1,
+  }
+  const far = {
+    ...upper,
+    x: design.widthMm - 1,
+    y: design.heightMm - 1,
+    width: 1,
+    height: 1,
+  }
+  front = [shape, far]
+  await act(async () => root.unmount())
+  root = createRoot(document.createElement("div"))
+  await act(async () => root.render(createElement(Harness)))
+  await act(async () => actions.mergeDown(far.id))
+
   const [a, b] = history.design.front
   expect(rasterMergedLayer).not.toHaveBeenCalled()
   expect(a).toMatchObject({ id: shape.id, type: "ellipse" })
-  expect(b).toMatchObject({ id: upper.id, type: "rect" })
+  expect(b).toMatchObject({ id: far.id, type: "rect" })
   expect(a.groupId).toBeTruthy()
   expect(b.groupId).toBe(a.groupId)
 })

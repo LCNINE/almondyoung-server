@@ -23,6 +23,7 @@ import {
   mergeDownReason as mergeReason,
   rasterMergedLayer,
   replaceMergedLayers,
+  unitedShape,
 } from "../lib/merge-layers"
 import { reportFailure } from "./use-auth-retry"
 
@@ -64,6 +65,16 @@ type Params = {
   setGroupIds: (ids: string[]) => void
 }
 
+const fitsDesign = (next: Design) => {
+  try {
+    parseDesign(next)
+
+    return true
+  } catch {
+    return false
+  }
+}
+
 export function useLayerActions({
   design,
   change,
@@ -98,9 +109,24 @@ export function useLayerActions({
     const index = layers.findIndex((layer) => layer.id === id)
 
     if (isVectorMerge(layers[index - 1], layers[index])) {
+      const united = unitedShape(layers[index - 1], layers[index])
+
+      const next = united && {
+        ...design,
+        [side]: replaceMergedLayers(layers, id, united),
+      }
+
+      if (united && next && fitsDesign(next)) {
+        change(next)
+        setSelectedId(united.id)
+        setMessage("두 도형을 하나로 합쳤습니다.")
+
+        return
+      }
+
       change({ ...design, [side]: groupMergedLayers(layers, id) })
       setMessage(
-        "도형은 그림으로 바꾸지 않고 그룹으로 묶었습니다. 그룹을 풀면 따로 고칠 수 있습니다."
+        "떨어져 있거나 가운데가 비는 모양, 선·클립아트는 한 도형으로 합칠 수 없어 그룹으로 묶었습니다."
       )
 
       return
