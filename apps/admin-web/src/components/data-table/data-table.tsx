@@ -18,6 +18,8 @@ type DataTableProps<TData extends RowData> = {
   orderByPresetOnly?: boolean;
   search?: boolean;
   searchPlaceholder?: string;
+  /** 검색창에서 Enter 로 바로 검색한다(스캐너 입력) */
+  searchSubmitOnEnter?: boolean;
   navigateTo?: (row: Row<TData>) => string;
   /** navigateTo 경로를 같은 창 이동(router.push) 대신 새 팝업 창으로 연다 */
   openInNewWindow?: boolean;
@@ -41,6 +43,7 @@ export function DataTable<TData extends RowData>({
   orderByPresetOnly,
   search,
   searchPlaceholder,
+  searchSubmitOnEnter,
   navigateTo,
   openInNewWindow,
   noRecords,
@@ -59,6 +62,7 @@ export function DataTable<TData extends RowData>({
         orderByPresetOnly={orderByPresetOnly}
         search={search}
         searchPlaceholder={searchPlaceholder}
+        searchSubmitOnEnter={searchSubmitOnEnter}
         prefix={prefix}
       />
       {toolbar}

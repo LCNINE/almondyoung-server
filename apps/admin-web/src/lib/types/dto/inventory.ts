@@ -915,6 +915,8 @@ export interface StockHistoryQuery {
 
 export interface SkuQuery {
   id?: string;
+  /** SKU명 일부·SKU 코드·바코드(기본·보조) 중 하나와 맞으면 찾는 검색어 */
+  q?: string;
   code?: string;
   barcode?: string;
   name?: string;

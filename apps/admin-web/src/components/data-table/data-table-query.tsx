@@ -11,6 +11,7 @@ type DataTableQueryProps = {
   orderByPresetOnly?: boolean;
   search?: boolean;
   searchPlaceholder?: string;
+  searchSubmitOnEnter?: boolean;
   prefix?: string;
 };
 
@@ -20,6 +21,7 @@ export function DataTableQuery({
   orderByPresetOnly,
   search,
   searchPlaceholder,
+  searchSubmitOnEnter,
   prefix,
 }: DataTableQueryProps) {
   const hasFilters = filters && filters.length > 0;
@@ -34,7 +36,11 @@ export function DataTableQuery({
       </div>
       <div className="flex items-center gap-2">
         {search && (
-          <DataTableSearch prefix={prefix} placeholder={searchPlaceholder} />
+          <DataTableSearch
+            prefix={prefix}
+            placeholder={searchPlaceholder}
+            submitOnEnter={searchSubmitOnEnter}
+          />
         )}
         {hasOrderBy && (
           <DataTableOrderBy

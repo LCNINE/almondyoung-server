@@ -22,6 +22,11 @@ import { ChangeGroupDialog } from '../change-group-dialog';
 import { DeleteSkuDialog } from '../delete-sku-dialog';
 import { BulkAddToGroupDialog } from '../bulk-add-to-group-dialog';
 import { Button } from '@/components/ui/button';
+import {
+  SKU_SEARCH_IGNORED_MESSAGE,
+  skuSearchEmptyMessage,
+  skuSearchIgnored,
+} from '../../lib/sku-search';
 
 const PAGE_SIZE = 20;
 
@@ -56,8 +61,10 @@ export function SkusTable() {
     onDelete: canRun(useDeleteSku) ? handleDelete : undefined,
   });
 
-  const rows = data?.items ?? [];
-  const total = data?.total ?? 0;
+  const searchIgnored = skuSearchIgnored(query.q, data);
+
+  const rows = searchIgnored ? [] : (data?.items ?? []);
+  const total = searchIgnored ? 0 : (data?.total ?? 0);
 
   const { table } = useDataTable({
     data: rows,
@@ -114,8 +121,13 @@ export function SkusTable() {
         pageSize={PAGE_SIZE}
         filters={filters}
         search
-        searchPlaceholder="SKU명 검색"
-        noRecords={{ message: 'SKU 데이터가 없습니다.' }}
+        searchPlaceholder="SKU명·SKU 코드·바코드 검색"
+        searchSubmitOnEnter
+        noRecords={{
+          message: searchIgnored
+            ? SKU_SEARCH_IGNORED_MESSAGE
+            : skuSearchEmptyMessage(query.q),
+        }}
       />
 
       <SkuFormDialog
