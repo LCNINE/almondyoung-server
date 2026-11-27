@@ -2,15 +2,16 @@
 
 import { CategorySheet } from "@/components/category/sheet"
 import { useSearchSheetStore } from "@/hooks/ui/use-search-sheet-store"
+import { useCountryCode } from "@/hooks/use-country-code"
 import { cn } from "@/lib/utils"
 import { House, LayoutGrid, Search, ShoppingCart, User } from "lucide-react"
 import { useTranslations } from "next-intl"
 import Link from "next/link"
-import { useParams, usePathname } from "next/navigation"
+import { usePathname } from "next/navigation"
 
 export function BottomNavigation() {
   const pathname = usePathname()
-  const { countryCode } = useParams()
+  const countryCode = useCountryCode()
   const { onOpen } = useSearchSheetStore()
   const t = useTranslations("nav")
 

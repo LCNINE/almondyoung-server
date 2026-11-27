@@ -1,8 +1,9 @@
 "use client"
 
 import Link from "next/link"
-import { useParams } from "next/navigation"
 import React from "react"
+
+import { useCountryCode } from "@/hooks/use-country-code"
 
 /**
  * 이 컴포넌트는 Next.js `<Link />`를 생성하여 현재 국가 코드를 URL에 유지합니다.
@@ -20,7 +21,7 @@ const LocalizedClientLink = ({
   passHref?: true
   [x: string]: any
 }) => {
-  const { countryCode } = useParams()
+  const countryCode = useCountryCode()
 
   return (
     <Link href={`/${countryCode}${href}`} {...props}>
