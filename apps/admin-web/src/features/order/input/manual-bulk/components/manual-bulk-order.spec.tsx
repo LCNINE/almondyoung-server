@@ -127,6 +127,24 @@ describe('대량 수동 주문', () => {
     await waitFor(() => expect(screen.getByText('바뀐 분')).toBeTruthy());
   });
 
+  it('파일 읽기 실패를 알리고 다음 파일을 다시 선택해 저장할 수 있다', async () => {
+    mockMutateAsync.mockResolvedValue({ id: 'saved-id' });
+    render(<ManualBulkOrderPage />);
+
+    upload(fileWith(Promise.reject(new Error('read failed'))));
+    expect(
+      await screen.findByText(
+        'CSV 파일을 읽지 못했습니다. 파일을 다시 선택해 주세요.'
+      )
+    ).toBeTruthy();
+
+    upload(fileWith(csvFor('SO-1', '받는 분')));
+    fireEvent.click(await screen.findByRole('button', { name: '1건 저장' }));
+
+    await screen.findByText('시도 1 · orders.csv');
+    expect(mockMutateAsync).toHaveBeenCalledTimes(1);
+  });
+
   it('저장·중복·실패를 모두 세고 생성 주문 링크를 보여 준다', async () => {
     mockMutateAsync
       .mockResolvedValueOnce({ id: 'created-id' })

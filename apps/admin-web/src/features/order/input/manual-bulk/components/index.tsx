@@ -163,11 +163,20 @@ export default function ManualBulkOrderPage() {
     setResults({});
     setRows([]);
     setFileIssues([]);
-    const read = readBulkOrderCsv(await file.text());
-    if (load !== loadRef.current) return;
-    setRows(read.rows);
-    setFileIssues(read.fileIssues);
-    loadingRef.current = false;
+    try {
+      const read = readBulkOrderCsv(await file.text());
+      if (load !== loadRef.current) return;
+      setRows(read.rows);
+      setFileIssues(read.fileIssues);
+    } catch {
+      if (load === loadRef.current) {
+        setFileIssues([
+          'CSV 파일을 읽지 못했습니다. 파일을 다시 선택해 주세요.',
+        ]);
+      }
+    } finally {
+      if (load === loadRef.current) loadingRef.current = false;
+    }
   };
 
   const saveOne = async (order: BulkOrder): Promise<SaveResult> => {
